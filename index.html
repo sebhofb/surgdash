@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy"
+          content="default-src 'self';
+                   script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.tailwindcss.com https://unpkg.com https://www.gstatic.com https://cdn.sheetjs.com https://cdnjs.cloudflare.com;
+                   style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com https://www.gstatic.com;
+                   font-src https://fonts.gstatic.com https://fonts.googleapis.com;
+                   img-src 'self' data: blob: https://*;
+                   connect-src 'self' https://*;">
+    <title>SURGdash ©</title>
+
+    <script src="vendor/tailwind.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'gsf-prussian': '#002F4C',
+                        'gsf-boston': '#4389C8',
+                        'gsf-crimson': '#D03734',
+                        'gsf-polo': '#91B5D9',
+                        'gsf-tango': '#E28743'
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <script src="vendor/lucide.min.js"></script>
+    <style>
+        /* Engagement section "capture mode" — applied during html2canvas snapshots
+           so truncated text, scrollable containers, and clipped cards render fully. */
+        .eng-capture-mode { overflow: visible !important; max-height: none !important; }
+        .eng-capture-mode * { overflow: visible !important; text-overflow: clip !important; }
+        .eng-capture-mode .truncate { white-space: normal !important; }
+        .eng-capture-mode [class*="max-h-"] { max-height: none !important; }
+        .eng-capture-mode [class*="overflow-y-auto"], .eng-capture-mode [class*="overflow-x-auto"] { overflow: visible !important; }
+
+        /* KPI inline-save visual states.
+           dirty  = user typed but hasn't blurred yet (amber)
+           saving = blur fired, write in flight (slate)
+           saved  = write succeeded, briefly flashes green w/ ✓
+           error  = write failed (red) */
+        .kpi-cell-input { transition: background-color 0.3s, border-color 0.3s, box-shadow 0.3s; }
+        .kpi-cell-input.dirty {
+            background-color: #fef3c7;
+            border-color: #f59e0b;
+            box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.15);
+        }
+        .kpi-cell-input.saving {
+            background-color: #f1f5f9;
+            border-color: #cbd5e1;
+        }
+        .kpi-cell-input.saved {
+            background-color: #d1fae5;
+            border-color: #16a34a;
+            box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.25);
+        }
+        .kpi-cell-input.error {
+            background-color: #fee2e2;
+            border-color: #dc2626;
+            box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.25);
+        }
+        /* Saved-checkmark badge — positioned absolutely inside the cell wrapper */
+        .kpi-cell-badge {
+            position: absolute;
+            top: 50%; right: 6px;
+            transform: translateY(-50%);
+            font-size: 11px; font-weight: 700;
+            opacity: 0;
+            transition: opacity 0.25s;
+            pointer-events: none;
+        }
+        .kpi-cell-badge.show { opacity: 1; }
+        .kpi-cell-badge.saved { color: #16a34a; }
+        .kpi-cell-badge.error { color: #dc2626; }
+        .kpi-cell-badge.saving { color: #94a3b8; }
+        /* Cell wrapper so the badge can position relative to it */
+        .kpi-cell-wrap { position: relative; }
+
+        /* Per-quarter comment button on core-KPI actual cells */
+        .kpi-note-btn {
+            position: absolute; top: 50%; right: 3px; transform: translateY(-50%);
+            width: 14px; height: 14px; display: flex; align-items: center; justify-content: center;
+            border: none; border-radius: 3px; background: transparent; color: #cbd5e1;
+            cursor: pointer; padding: 0; transition: color .15s, background .15s;
+        }
+        .kpi-note-btn:hover { color: #64748b; background: #f1f5f9; }
+        .kpi-note-btn.has-note { color: #059669; }
+        .kpi-note-btn.has-note:hover { color: #047857; background: #d1fae5; }
+
+        /* Frozen first column on the matrix data-entry tables.
+           Applied to header AND each row's indicator cell so it stays put
+           when the table scrolls horizontally. */
+        .kpi-matrix-sticky-col {
+            position: sticky;
+            left: 0;
+            z-index: 3;
+            background: #ffffff;
+            box-shadow: 2px 0 6px -3px rgba(0, 0, 0, 0.08);
+        }
+        /* Header row sticky cells need a higher z so they stay above body sticky cells */
+        thead .kpi-matrix-sticky-col { z-index: 4; background: #f8fafc; }
+        /* Capture-mode should disable stickiness so html2canvas doesn't crop the column */
+        .eng-capture-mode .kpi-matrix-sticky-col { position: static !important; box-shadow: none !important; }
+    </style>
+    <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+
+    <!-- Vendored locally (js libs in vendor/) so startup doesn't depend on the
+         network and the app works offline. Update with the script in vendor/. -->
+    <link rel="stylesheet" href="vendor/leaflet.css" />
+
+    <script src="vendor/xlsx.full.min.js"></script>
+    <script src="vendor/papaparse.min.js"></script>
+    <script src="vendor/pdf-lib.min.js"></script>
+    <script src="vendor/localforage.min.js"></script>
+    <script src="vendor/leaflet.js"></script>
+    <link rel="stylesheet" href="vendor/MarkerCluster.css" />
+    <link rel="stylesheet" href="vendor/MarkerCluster.Default.css" />
+    <script src="vendor/leaflet.markercluster.js"></script>
+    <script src="vendor/html2canvas.min.js"></script>
+
+    <!-- File-based storage (replaces localforage after migration) -->
+    <script src="js/storage.js"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+        .fade-in { animation: fadeIn 0.3s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        /* Map label tooltips */
+        .map-label { background: rgba(255,255,255,.92) !important; border: 1px solid #e2e8f0 !important; border-radius: 5px !important; padding: 2px 7px !important; font-size: 11px !important; font-weight: 600 !important; color: #334155 !important; box-shadow: 0 1px 4px rgba(0,0,0,.10) !important; white-space: nowrap !important; pointer-events: none !important; }
+        .map-label::before { display: none !important; }
+        .map-label::after { content: ''; position: absolute; background: #94a3b8; pointer-events: none; opacity: 0.5; }
+        .map-label.leaflet-tooltip-right::after { right: 100%; top: 50%; transform: translateY(-50%); width: 8px; height: 1px; }
+        .map-label.leaflet-tooltip-left::after { left: 100%; top: 50%; transform: translateY(-50%); width: 8px; height: 1px; }
+        .map-label.leaflet-tooltip-top::after { left: 50%; top: 100%; transform: translateX(-50%); width: 1px; height: 6px; }
+        .map-label.leaflet-tooltip-bottom::after { left: 50%; bottom: 100%; transform: translateX(-50%); width: 1px; height: 6px; }
+        .map-label-hidden { display: none !important; }
+        input:invalid:not(:placeholder-shown), textarea:invalid:not(:placeholder-shown), select:invalid { border-color: #ef4444 !important; }
+        /* Viewer mode: hide all edit-only elements */
+        body.viewer-mode [data-edit-only] { display: none !important; }
+        /* Viewer mode: disable form inputs (still visible, just not editable).
+           Opt-out for filter-style inputs (year selectors, chart toggles, etc.)
+           by setting data-viewer-allowed on the element. */
+        body.viewer-mode input:not([data-viewer-allowed]):not([type="hidden"]),
+        body.viewer-mode textarea:not([data-viewer-allowed]),
+        body.viewer-mode select:not([data-viewer-allowed]) {
+            pointer-events: none !important;
+            background-color: #f8fafc !important;
+            color: #475569 !important;
+            border-color: #e2e8f0 !important;
+            box-shadow: none !important;
+            cursor: default !important;
+        }
+        /* Matrix data-entry cells use a custom class — disable them too */
+        body.viewer-mode .kpi-cell-input {
+            pointer-events: none !important;
+            background-color: #f8fafc !important;
+            color: #475569 !important;
+            border-color: #e2e8f0 !important;
+            box-shadow: none !important;
+            cursor: default !important;
+        }
+        body.viewer-mode .kpi-cell-input.dirty,
+        body.viewer-mode .kpi-cell-input.saved {
+            background-color: #f8fafc !important;
+        }
+        /* Viewer mode banner */
+        #viewer-mode-banner { display: none; }
+        body.viewer-mode #viewer-mode-banner { display: flex; }
+        /* Map watermark (always visible, above all Leaflet panes) */
+        .map-watermark { position: absolute !important; bottom: 8px !important; right: 10px !important; z-index: 1100 !important; display: flex; align-items: center; gap: 5px; pointer-events: none; opacity: 0.55; }
+        .map-watermark img { width: 16px; height: 16px; border-radius: 3px; }
+        .map-watermark span { font-size: 9px; font-weight: 700; color: #002F4C; font-family: 'Inter', sans-serif; letter-spacing: 0.3px; }
+    </style>
+
+    <!-- ═══════════════════════════════════════════════════════════════════
+         GSF DESIGN SYSTEM  — a single cohesive design language applied app-wide.
+         Tokens + component classes + measured global refinements of the
+         dominant card / table / button patterns, so every view inherits the
+         refreshed look. Inspired by the dark export reports (editorial eyebrow
+         labels, serif stat numbers, restrained accent, consistent cards) but
+         translated to a light, clearly-GSF surface.
+         ═══════════════════════════════════════════════════════════════════ -->
+    <style id="gsf-design-system">
+      :root{
+        --gsf-prussian:#002F4C; --gsf-prussian-600:#013a5e; --gsf-boston:#4389C8;
+        --gsf-polo:#91B5D9; --gsf-tango:#E28743; --gsf-crimson:#D03734;
+        --gsf-gold:#E0A93F; --gsf-green:#3FB984;
+        --ink:#0c2336; --muted:#566b81; --faint:#8a9bad;
+        --bg:#eaeff5; --surface:#ffffff; --surface-2:#f5f8fc;
+        --border:#e3e9f1; --border-strong:#cfdae6;
+        --accent:var(--gsf-boston); --accent-warm:var(--gsf-gold);
+        --r-sm:9px; --r:14px; --r-lg:18px;
+        --shadow-sm:0 1px 2px rgba(4,32,56,.04), 0 1px 3px rgba(4,32,56,.05);
+        --shadow:0 2px 6px rgba(4,32,56,.05), 0 10px 28px -10px rgba(4,32,56,.12);
+        --shadow-lg:0 14px 48px -14px rgba(4,32,56,.26);
+        --serif:Georgia,'Times New Roman',serif;
+        --num:'Arial Black','Arial Bold',Arial,'Helvetica Neue',sans-serif;
+        --mono:'Inter',ui-monospace,'SF Mono',monospace;
+      }
+      body{ background:var(--bg); -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; font-feature-settings:'cv05','ss01'; }
+      main#main-content, #view-body{ background:var(--bg)!important; }
+      ::selection{ background:rgba(67,137,200,.20); }
+
+      /* Editorial eyebrow label (kicker) — the export's signature pattern */
+      .gsf-eyebrow{ font-family:var(--mono); font-size:10px; font-weight:700; letter-spacing:.16em; text-transform:uppercase; color:var(--accent); display:inline-flex; align-items:center; gap:9px; }
+      .gsf-eyebrow::before{ content:''; width:18px; height:2px; border-radius:2px; background:var(--accent-warm); }
+
+      /* Big serif stat number — gives KPIs the editorial feel of the exports */
+      .gsf-stat{ font-family:var(--serif); font-weight:700; line-height:1; letter-spacing:-.01em; }
+
+      /* ── Measured global refinements of the dominant patterns ──
+         The compound selectors out-specify single Tailwind utilities, so every
+         card / pill that already uses these combos is unified — no per-view edits. */
+      .rounded-xl.border.shadow-sm,
+      .rounded-2xl.border.shadow-sm{
+        border-color:var(--border)!important;
+        border-radius:var(--r)!important;
+        box-shadow:var(--shadow-sm)!important;
+        transition:box-shadow .18s ease, border-color .18s ease, transform .18s ease;
+      }
+      .rounded-xl.border.shadow-sm.hover\:shadow-md:hover,
+      .rounded-xl.border.shadow-sm.hover\:shadow-lg:hover{ box-shadow:var(--shadow)!important; border-color:var(--border-strong)!important; }
+
+      /* Buttons: consistent motion + accessible focus everywhere */
+      button{ transition:background-color .15s, color .15s, border-color .15s, box-shadow .15s, transform .06s; }
+      button:active:not(:disabled){ transform:translateY(.5px); }
+      a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible{
+        outline:2px solid var(--accent); outline-offset:2px; border-radius:6px;
+      }
+      .bg-gsf-boston{ box-shadow:0 1px 2px rgba(4,32,56,.10); }
+
+      /* Refined scrollbars (slightly cooler, matches the new bg) */
+      .custom-scrollbar::-webkit-scrollbar-thumb{ background:#c3d0de; }
+      .custom-scrollbar::-webkit-scrollbar-thumb:hover{ background:#9fb1c4; }
+
+      /* Sidebar polish — active item gets a warm accent rail + crisper states */
+      #project-nav [data-proj], #project-nav button{ position:relative; }
+      #project-nav [data-proj].nav-on::before,
+      #project-nav button[data-proj].nav-on::before{ content:''; position:absolute; left:-3px; top:50%; transform:translateY(-50%); width:3px; height:20px; border-radius:3px; background:var(--gsf-polo); }
+
+      /* Tab bar container — a clean rule under the tabs on every page */
+      #view-tabs{ background:var(--surface); border-bottom:1px solid var(--border); box-shadow:0 1px 0 rgba(4,32,56,.02); }
+
+      /* Page-enter motion */
+      .fade-in{ animation:gsfIn .28s cubic-bezier(.2,.7,.2,1); }
+      @keyframes gsfIn{ from{ opacity:0; transform:translateY(6px); } to{ opacity:1; transform:none; } }
+
+      /* KPI card refresh — eyebrow label + serif value + accent rail.
+         Targets the dashboard KPI builder markup without per-view edits. */
+      .gsf-kpi{ background:var(--surface); border:1px solid var(--border); border-radius:var(--r); box-shadow:var(--shadow-sm); overflow:hidden; transition:box-shadow .18s, transform .18s, border-color .18s; }
+      .gsf-kpi:hover{ box-shadow:var(--shadow); transform:translateY(-1px); border-color:var(--border-strong); }
+      .gsf-kpi .gsf-kpi-rail{ height:3px; }
+      .gsf-kpi .gsf-kpi-label{ font-family:var(--mono); font-size:9.5px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--faint); }
+      .gsf-kpi .gsf-kpi-value{ font-family:var(--num); font-weight:900; font-size:30px; line-height:1; letter-spacing:-.01em; color:var(--gsf-prussian); }
+    </style>
+</head>
+<body class="text-slate-800 h-screen flex flex-col overflow-hidden">
+    <!-- Read-only mode banner (hidden when edit mode is unlocked) -->
+    <div id="viewer-mode-banner" class="shrink-0 items-center justify-between gap-3 px-4 py-2 bg-gsf-prussian/90 text-white text-xs font-semibold z-50">
+        <div class="flex items-center gap-2">
+            <i data-lucide="lock" width="12" class="text-gsf-polo"></i>
+            <span class="text-gsf-polo">Read-only mode — data syncs automatically from Google Sheets.</span>
+        </div>
+        <button onclick="App.showUnlockPrompt()" class="px-3 py-1 rounded bg-white/10 hover:bg-white/20 transition-colors text-white text-[11px] flex items-center gap-1"><i data-lucide="lock-open" width="10"></i> Unlock Editing</button>
+    </div>
+
+    <!-- Unsynced-changes banner (shown only in edit mode when local files are newer than last sync) -->
+    <div id="unsynced-banner" class="shrink-0 items-center justify-between gap-3 px-4 py-2 bg-amber-500 text-white text-xs font-semibold z-50" style="display:none;">
+        <div class="flex items-center gap-2">
+            <i data-lucide="cloud-off" width="14"></i>
+            <span>You have unsynced changes — colleagues won't see them until you push to the cloud.</span>
+        </div>
+        <button onclick="App.syncNow()" class="px-3 py-1 rounded bg-white/15 hover:bg-white/30 transition-colors text-white text-[11px] flex items-center gap-1 font-bold"><i data-lucide="upload-cloud" width="11"></i> Sync now</button>
+    </div>
+    <div class="flex flex-1 overflow-hidden">
+    <aside class="w-64 bg-gsf-prussian text-white flex flex-col shadow-xl z-20 shrink-0">
+        <div class="p-5 pb-3 border-b border-white/10">
+            <div class="flex items-center gap-3">
+                <img id="sidebar-logo" src="build/gsf_logo_symbol.png" alt="SURGdash" class="w-9 h-9 rounded-lg shadow-md">
+                <div>
+                    <h2 class="text-xl font-black tracking-tight text-white leading-tight">SURG<span class="text-gsf-polo">dash</span></h2>
+                    <p class="text-gsf-polo/50 text-[9px] font-bold uppercase tracking-wider">Project Analytics <span>&copy;</span> <span class="ml-1 px-1.5 py-0.5 rounded bg-white/10 text-gsf-polo/40 text-[8px] tracking-wide">v1.2.0</span></p>
+                </div>
+            </div>
+        </div>
+
+        <nav id="project-nav" class="flex-1 p-3 overflow-y-auto custom-scrollbar"></nav>
+
+        <div class="p-4 border-t border-white/10 bg-black/10">
+            <div class="flex items-center justify-between">
+                <div id="status-indicator" class="flex items-center gap-2 text-xs font-medium text-gsf-polo">
+                    <div class="w-2 h-2 rounded-full bg-green-400 animate-pulse"></div> System Ready
+                </div>
+                <div class="flex items-center gap-2">
+                    <button onclick="App.startOnboarding(true)" class="text-[10px] font-semibold text-gsf-polo/50 hover:text-gsf-polo transition-colors" title="Show onboarding tips">Tips</button>
+                    <button id="sidebar-lock-btn" onclick="App._editPasswordHash ? (App.editUnlocked ? App.lockEdit() : App.showUnlockPrompt()) : null" class="text-gsf-polo/50 hover:text-gsf-polo transition-colors" title="Lock/Unlock editing" style="display:none;">
+                        <i data-lucide="lock" width="12"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <main id="main-content" class="flex-1 bg-slate-50 relative flex flex-col overflow-hidden">
+        <div id="view-tabs" class="shrink-0"></div>
+        <div id="view-body" class="flex-1 overflow-y-auto custom-scrollbar"></div>
+    </main>
+    </div><!-- end flex layout wrapper -->
+
+    <script src="js/countryMap.js"></script>
+    <script src="js/pipeline.js"></script>
+    <script src="js/projects.js"></script>
+    <script src="js/app.js"></script>
+    <script src="js/taxonomy.js"></script>
+    <script src="js/updater.js"></script>
+    <script src="js/learnworlds.js"></script>
+    <script src="js/htmlExport.js"></script>
+    <script src="js/charts.js"></script>
+    <script src="js/export.js"></script>
+    <script src="js/reports.js"></script>
+    <script src="js/aicurate.js"></script>
+    <script src="js/feedback.js"></script>
+    <script src="js/incomeClassification.js"></script>
+    <script src="js/engagementAnalysis.js"></script>
+    <script src="js/engagementPhase2.js"></script>
+    <script src="js/engagementPhase3.js"></script>
+    <script src="js/engagementPhase4.js"></script>
+    <script src="js/engagementPhase5.js"></script>
+    <script src="js/engagementPhase6.js"></script>
+    <script src="js/genericCharts.js"></script>
+    <script src="js/genericViews.js"></script>
+    <script src="js/ui.js"></script>
+</body>
+</html>

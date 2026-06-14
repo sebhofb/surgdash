@@ -1,0 +1,30 @@
+# ── Dependencies & build output ───────────────────────────────
+node_modules/
+dist/
+out/
+release/
+*.dmg
+*.zip
+*.blockmap
+*.app
+
+# ── Local data exports — REAL LEARNER PII, never publish ───────
+Data sources/
+*.csv
+*.xlsx
+*.xls
+
+# ── Credentials / env (belt-and-suspenders; creds live in env vars) ──
+.env
+.env.*
+*.key
+*.pem
+*.p12
+*token*
+*secret*
+
+# ── Local tooling & OS cruft ───────────────────────────────────
+.claude/
+.DS_Store
+*.log
+npm-debug.log*
