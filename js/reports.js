@@ -1207,8 +1207,9 @@ function drawCharts() {
                 + (D.totalMin > 0 ? '<div><p style="margin:0 0 8px;font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#9fb3c8">Learning Time</p><span style="font-family:var(--serif);font-size:34px;font-weight:700;color:var(--accent);line-height:1">' + this.formatLearningTime(D.totalMin) + '</span><p style="margin:6px 0 0;font-size:12.5px;color:#9fb3c8;line-height:1.5;text-wrap:balance;max-width:30ch">of <strong style="color:#eef4f9">study time</strong> recorded across all learners, all time</p>' + '</div>' : '')
                 + (_si.contentNew ? '<div><p style="margin:0 0 8px;font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#9fb3c8">New Knowledge</p><span style="font-family:var(--serif);font-size:34px;font-weight:700;color:var(--accent);line-height:1">' + _si.contentNew.pct + '%</span><p style="margin:6px 0 0;font-size:12.5px;color:#9fb3c8;line-height:1.5;text-wrap:balance;max-width:30ch">of surveyed learners said the course content was <strong style="color:#eef4f9">new to them</strong></p>' + '</div>' : '')
                 + (_si.willApply ? '<div><p style="margin:0 0 8px;font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#9fb3c8">Intent to Apply</p><span style="font-family:var(--serif);font-size:34px;font-weight:700;color:var(--accent);line-height:1">' + _si.willApply.pct + '%</span><p style="margin:6px 0 0;font-size:12.5px;color:#9fb3c8;line-height:1.5;text-wrap:balance;max-width:30ch">say they are <strong style="color:#eef4f9">likely to apply</strong> what they learned in their work</p>' + '</div>' : '')
+                + (_si.careerValue ? '<div><p style="margin:0 0 8px;font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#9fb3c8">Career Value</p><span style="font-family:var(--serif);font-size:34px;font-weight:700;color:var(--accent);line-height:1">' + _si.careerValue.pct + '%</span><p style="margin:6px 0 0;font-size:12.5px;color:#9fb3c8;line-height:1.5;text-wrap:balance;max-width:30ch">rate what they learned as <strong style="color:#eef4f9">important to their job success</strong></p>' + '</div>' : '')
                 + '</div>'
-                + (function () { const ns = []; if (_si.contentNew) ns.push(_si.contentNew.n); if (_si.willApply) ns.push(_si.willApply.n); if (!ns.length) return ''; const bn = Math.min.apply(null, ns); const rounded = bn >= 1000 ? Math.floor(bn / 1000) * 1000 : Math.floor(bn / 100) * 100; return '<p style="margin:14px 0 0;font-family:var(--mono);font-size:9px;letter-spacing:.06em;color:#6d8ba3">Survey figures based on ' + fmt(rounded) + '+ surveys &middot; share answering 4 or 5 on a 1–5 scale</p>'; })()
+                + (function () { const ns = []; if (_si.contentNew) ns.push(_si.contentNew.n); if (_si.willApply) ns.push(_si.willApply.n); if (_si.careerValue) ns.push(_si.careerValue.n); if (!ns.length) return ''; const bn = Math.min.apply(null, ns); const rounded = bn >= 1000 ? Math.floor(bn / 1000) * 1000 : Math.floor(bn / 100) * 100; return '<p style="margin:14px 0 0;font-family:var(--mono);font-size:9px;letter-spacing:.06em;color:#6d8ba3">Survey figures based on ' + fmt(rounded) + '+ surveys &middot; share answering 4 or 5 on a 1–5 scale</p>'; })()
                 + '</div>') : '';
 
             // Interactive: month pickers recompute the period stats client-side
@@ -1462,7 +1463,7 @@ a.shl:hover{color:var(--accent);border-bottom-color:var(--accent);}
             + (provLogo && shLogoColor ? '<div style="width:1px;height:36px;background:#d6dde3;flex-shrink:0"></div>' : '')
             + (shLogoColor ? '<img src="' + shLogoColor + '" alt="SURGhub" style="height:42px;width:auto;max-width:130px;object-fit:contain;display:block">' : '')
             + '</div>'
-        : ''}
+        : (shLogo ? '<img src="' + shLogo + '" alt="SURGhub" style="height:46px;width:auto;filter:brightness(0) invert(1);flex-shrink:0">' : '')}
     </div>
   </div>
 </div>
@@ -1809,6 +1810,7 @@ function dlImpact(){
   if(IMPACTLT)cards.push({l:'LEARNING TIME',v:IMPACTLT,s:'of study time recorded across all learners, all time'});
   if(IMPACT&&IMPACT.contentNew)cards.push({l:'NEW KNOWLEDGE',v:IMPACT.contentNew.pct+'%',s:'said the course content was new to them'});
   if(IMPACT&&IMPACT.willApply)cards.push({l:'INTENT TO APPLY',v:IMPACT.willApply.pct+'%',s:'likely to apply what they learned at work'});
+  if(IMPACT&&IMPACT.careerValue)cards.push({l:'CAREER VALUE',v:IMPACT.careerValue.pct+'%',s:'rate what they learned as important to their job success'});
   if(!cards.length) return;
   var n=cards.length,pad=28,gap=20,py=84,ht=270,wd=(1000-pad*2-gap*(n-1))/n,vfont=n>=3?52:72;
   brandCanvas(1000,470,function(x){
@@ -1823,7 +1825,7 @@ function dlImpact(){
       x.fillStyle='#FFC145';x.font='700 '+vfont+'px Georgia';x.fillText(tTrunc(x,k.v,wd-48),px+24,py+132);
       x.fillStyle='#9fb3c8';x.font='14px Arial';wrapLine(x,k.s,px+24,py+170,wd-48,19);
     });
-    var ns=[];if(IMPACT&&IMPACT.contentNew)ns.push(IMPACT.contentNew.n);if(IMPACT&&IMPACT.willApply)ns.push(IMPACT.willApply.n);
+    var ns=[];if(IMPACT&&IMPACT.contentNew)ns.push(IMPACT.contentNew.n);if(IMPACT&&IMPACT.willApply)ns.push(IMPACT.willApply.n);if(IMPACT&&IMPACT.careerValue)ns.push(IMPACT.careerValue.n);
     if(ns.length){var bn=Math.min.apply(null,ns);var rd=bn>=1000?Math.floor(bn/1000)*1000:Math.floor(bn/100)*100;x.fillStyle='#6d8ba3';x.font='12px Arial';x.fillText('Survey figures based on '+fmtN(rd)+'+ surveys · share answering 4 or 5 on a 1–5 scale',28,408);}
   },PROV+' - Learning Impact');
 }

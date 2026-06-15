@@ -198,13 +198,14 @@ Object.assign(window.App, {
         const hours = minutes / 60;
         return hours.toFixed(1) + ' h';
     },
-    // Aggregate the two transformative-learning survey questions across a set of
+    // Aggregate the transformative-learning survey questions across a set of
     // course records' QuestionStats (captured by Sync Surveys): "the information
-    // was new to me" and "it is likely that I will use the information acquired".
-    // Returns { contentNew: {pct, avg, n}, willApply: {pct, avg, n} } (each key only
-    // when ≥3 responses exist), or null until survey data has been synced.
+    // was new to me", "it is likely that I will use the information acquired", and
+    // "how important are the knowledge/skills to your job success?" (career value).
+    // Returns { contentNew, willApply, careerValue } each {pct, avg, n} (only when
+    // ≥3 responses exist), or null until survey data has been synced.
     _surveyImpactStats(records) {
-        const agg = { newSum: 0, newN: 0, newHi: 0, applySum: 0, applyN: 0, applyHi: 0 };
+        const agg = { newSum: 0, newN: 0, newHi: 0, applySum: 0, applyN: 0, applyHi: 0, careerSum: 0, careerN: 0, careerHi: 0 };
         (records || []).forEach(d => {
             if (!d || !d.QuestionStats) return;
             let qs; try { qs = JSON.parse(d.QuestionStats); } catch (e) { return; }
@@ -218,13 +219,17 @@ Object.assign(window.App, {
                            (lq.includes('usar') && lq.includes('informaci')) ||
                            (lq.includes('utilise') && lq.includes('information'))) {
                     agg.applySum += (s.avg || 0) * s.n; agg.applyN += s.n; agg.applyHi += hi;
+                } else if (lq.includes('job success') || lq.includes('ussite professionnelle') || lq.includes('xito laboral')) {
+                    // "How important are the knowledge/skills acquired … to your job success?" (1–5 importance)
+                    agg.careerSum += (s.avg || 0) * s.n; agg.careerN += s.n; agg.careerHi += hi;
                 }
             });
         });
         const out = {};
         if (agg.newN >= 3) out.contentNew = { pct: Math.round(agg.newHi / agg.newN * 100), avg: +(agg.newSum / agg.newN).toFixed(2), n: agg.newN };
         if (agg.applyN >= 3) out.willApply = { pct: Math.round(agg.applyHi / agg.applyN * 100), avg: +(agg.applySum / agg.applyN).toFixed(2), n: agg.applyN };
-        return (out.contentNew || out.willApply) ? out : null;
+        if (agg.careerN >= 3) out.careerValue = { pct: Math.round(agg.careerHi / agg.careerN * 100), avg: +(agg.careerSum / agg.careerN).toFixed(2), n: agg.careerN };
+        return (out.contentNew || out.willApply || out.careerValue) ? out : null;
     },
 
     // Shared "Learning Impact" band (Platform Overview + Provider page).
