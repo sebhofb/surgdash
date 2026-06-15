@@ -51,8 +51,7 @@
     "files": [
       "**/*",
       "!node_modules/.cache",
-      "build/gsf_logo_symbol.png",
-      "build/icon.png"
+      "build/**/*"
     ]
   },
   "devDependencies": {

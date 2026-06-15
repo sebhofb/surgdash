@@ -242,7 +242,7 @@ Object.assign(window.App, {
                 <p class="text-4xl font-black text-[#FFC145]">${s.pct}%</p>
                 <p class="text-sm text-white/90 mt-1">${label}</p>
             </div>`;
-        const ns = [si.contentNew, si.willApply].filter(Boolean).map(s => s.n);
+        const ns = [si.contentNew, si.willApply, si.careerValue].filter(Boolean).map(s => s.n);
         const bn = ns.length ? Math.min(...ns) : 0;
         const rounded = bn >= 1000 ? Math.floor(bn / 1000) * 1000 : Math.floor(bn / 100) * 100;
         const stat2 = (s, heading, label) => !s ? '' : `
@@ -254,9 +254,10 @@ Object.assign(window.App, {
         return `
             <div class="bg-white rounded-xl p-6 mb-8 border shadow-sm" title="Share of end-of-course survey respondents answering 4 or 5 on a 1–5 scale">
                 <div class="flex items-center gap-2 mb-4"><i data-lucide="sparkles" width="16" class="text-gsf-boston"></i><h3 class="text-sm font-bold uppercase tracking-wide text-gsf-prussian">Learning Impact</h3></div>
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-6">
                     ${stat2(si.contentNew, 'New Knowledge', 'say the course content was <strong>new to them</strong>')}
                     ${stat2(si.willApply, 'Intent to Apply', 'say they are <strong>likely to apply</strong> what they learned')}
+                    ${stat2(si.careerValue, 'Career Value', 'rate what they learned as <strong>important to their job success</strong>')}
                 </div>
                 ${bn > 0 ? '<p class="text-[10px] text-slate-400 mt-3 uppercase tracking-wide">Based on ' + this.formatNumber(rounded) + '+ surveys</p>' : ''}
             </div>`;
