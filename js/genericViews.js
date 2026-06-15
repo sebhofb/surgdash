@@ -5065,7 +5065,7 @@ window.GenericViews = {
                         <p class="text-sm text-slate-500 mb-1">Paste the <strong>Apps Script URL</strong> shared with you by your SURGdash administrator.</p>
                         <p class="text-xs text-slate-400 mb-5">It looks like: <span class="font-mono bg-slate-100 px-1.5 py-0.5 rounded">https://script.google.com/macros/s/…/exec</span></p>
                         <div class="flex gap-2 mb-3">
-                            <input type="text" id="viewer-sheets-url" value="${App.escapeHtml(appSettings.googleSheetsUrl || '')}"
+                            <input type="text" id="viewer-sheets-url" data-viewer-allowed value="${App.escapeHtml(appSettings.googleSheetsUrl || '')}"
                                 placeholder="https://script.google.com/macros/s/…/exec"
                                 class="flex-1 px-3 py-2 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-gsf-boston/30" />
                             <button id="viewer-load-btn" onclick="GenericViews._saveViewerSheetsUrlAndPull()"

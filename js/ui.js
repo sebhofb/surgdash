@@ -2132,13 +2132,6 @@ Object.assign(window.App, {
                                 </button>
                             </div>
                         </div>
-                        <div class="border border-purple-200 rounded-xl p-4 mb-4 bg-purple-50/40 max-w-4xl">
-                            <p class="text-xs font-bold text-purple-600 uppercase tracking-wide mb-3 flex items-center gap-2">Internal <span class="text-[9px] font-bold uppercase tracking-wider text-purple-500 border border-purple-300 rounded-full px-1.5 py-0.5">GSF only</span></p>
-                            <button onclick="App.exportCoursePageTestimonials()" class="inline-flex items-center gap-2 py-3 px-5 bg-white border border-purple-300 text-purple-800 font-bold rounded-lg hover:border-purple-500 hover:shadow-md transition-all shadow-sm">
-                                <i data-lucide="megaphone" width="18" class="text-purple-600"></i> Course-Page Testimonials
-                            </button>
-                            <p class="text-xs text-purple-700/70 mt-3 max-w-2xl leading-relaxed">Best testimonials for public course pages — runs a fresh AI marketing-scoring pass, picks + edits the most compelling quotes, and exports one sheet course-by-course (AI rating &middot; cadre &middot; country &middot; star rating &middot; date). AI-edited &mdash; spot-check before publishing.</p>
-                        </div>
                         <div class="mt-4 pt-4 border-t border-slate-100">
                             <p class="text-xs font-bold text-slate-400 uppercase mb-3">AI Curation — all providers</p>
                             <div class="flex flex-wrap gap-3 mb-6">
@@ -2164,6 +2157,14 @@ Object.assign(window.App, {
                         </div>
                     </div>
 
+                    <!-- ── Internal: Course-Page Testimonials ── -->
+                    <div class="bg-white rounded-2xl shadow-sm border border-purple-200 p-8 mb-8">
+                        <h2 class="text-xl font-bold mb-2 text-purple-800 flex items-center gap-2 flex-wrap"><i data-lucide="megaphone" class="inline text-purple-600"></i> Course-Page Testimonials <span class="text-[10px] font-bold uppercase tracking-wider text-purple-500 border border-purple-300 rounded-full px-2 py-0.5">Internal · GSF only</span></h2>
+                        <p class="text-slate-600 text-sm mb-4 max-w-3xl">Best testimonials for public course pages. Runs a fresh AI marketing-scoring pass (cached — re-downloads are instant), picks and edits the most compelling quotes, and exports one sheet course-by-course: AI rating · cadre · country · star rating · date. You'll choose the minimum score and the max per course. AI-edited — spot-check before publishing.</p>
+                        <button onclick="App.exportCoursePageTestimonials()" class="inline-flex items-center gap-2 py-3 px-5 bg-purple-600 text-white font-bold rounded-lg hover:bg-purple-700 hover:shadow-md transition-all shadow-sm">
+                            <i data-lucide="megaphone" width="18"></i> Generate Course-Page Testimonials
+                        </button>
+                    </div>
 
                     <!-- Selected Testimonials Info -->
                     <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-6 mb-6">

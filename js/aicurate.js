@@ -668,6 +668,13 @@
             if (mRaw === null) return;
             this._marketingMinScore = Math.max(1, Math.min(10, parseInt(mRaw, 10) || 7));
 
+            const xRaw = await this._textPrompt('Course-page testimonials',
+                'Maximum testimonials per course (leave blank for all). Picks the highest-scoring ones.',
+                (this._marketingMaxPerCourse && this._marketingMaxPerCourse < 9999) ? String(this._marketingMaxPerCourse) : '');
+            if (xRaw === null) return;
+            const xParsed = parseInt(xRaw, 10);
+            this._marketingMaxPerCourse = (String(xRaw).trim() === '' || isNaN(xParsed) || xParsed <= 0) ? 9999 : Math.min(50, xParsed);
+
             // Marketing-score any comments not yet scored (junk filtered for free).
             const scores = await this._getMarketingScores();
             const todo = [];
@@ -722,6 +729,7 @@
             // Build one sheet, grouped course-by-course, edited quotes only.
             const demo = this._emailDemoMap || {};
             const MIN = (this._marketingMinScore != null) ? this._marketingMinScore : 7;
+            const maxPer = this._marketingMaxPerCourse || 9999;
             const tcase = (s) => String(s || '').toLowerCase().replace(/\b[a-z]/g, c => c.toUpperCase());
             const aoa = [['Course', 'AI rating', 'Testimonial (edited)', 'Cadre', 'Country', 'Star rating', 'Date']];
             const emitted = new Set();   // dedupe: a comment never repeats (within or across courses)
@@ -747,9 +755,10 @@
                     ]);
                 });
                 if (!rows.length) return;
+                const capped = rows.slice(0, maxPer);   // top N per course (already sorted by score)
                 coursesWithPicks++;
-                rows.forEach(r => aoa.push(r));
-                total += rows.length;
+                capped.forEach(r => aoa.push(r));
+                total += capped.length;
                 aoa.push(['', '', '', '', '', '', '']);   // spacer between courses
             });
             this._hideReportProgress();
