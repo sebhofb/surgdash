@@ -660,6 +660,14 @@
             const courses = Object.keys(byCourse).sort((a, b) => a.localeCompare(b));
             if (!courses.length) return alert('No learner feedback found yet. Run Sync Courses / Sync Surveys first.');
 
+            // A bit of control: minimum AI marketing score (1–10) a testimonial needs
+            // to be included. Default 7. Remembered for next time.
+            const mRaw = await this._textPrompt('Course-page testimonials',
+                'Minimum AI marketing score (1–10) for a testimonial to be included.\nHigher = fewer, stronger quotes. Default 7.',
+                String((this._marketingMinScore != null) ? this._marketingMinScore : 7));
+            if (mRaw === null) return;
+            this._marketingMinScore = Math.max(1, Math.min(10, parseInt(mRaw, 10) || 7));
+
             // Marketing-score any comments not yet scored (junk filtered for free).
             const scores = await this._getMarketingScores();
             const todo = [];
@@ -713,29 +721,35 @@
 
             // Build one sheet, grouped course-by-course, edited quotes only.
             const demo = this._emailDemoMap || {};
-            const MIN = 7;
+            const MIN = (this._marketingMinScore != null) ? this._marketingMinScore : 7;
+            const tcase = (s) => String(s || '').toLowerCase().replace(/\b[a-z]/g, c => c.toUpperCase());
             const aoa = [['Course', 'AI rating', 'Testimonial (edited)', 'Cadre', 'Country', 'Star rating', 'Date']];
+            const emitted = new Set();   // dedupe: a comment never repeats (within or across courses)
             let total = 0, coursesWithPicks = 0;
             courses.forEach(course => {
                 const picks = byCourse[course].items
-                    .map(f => ({ f, a: scores[this._djb2Hash(String(f.t || '').trim())] }))
+                    .map(f => { const h = this._djb2Hash(String(f.t || '').trim()); return { f, h, a: scores[h] }; })
                     .filter(x => x.a && x.a.u && x.a.s >= MIN && x.a.c)
                     .sort((p, q) => q.a.s - p.a.s);
-                if (!picks.length) return;
-                coursesWithPicks++;
-                picks.forEach(({ f, a }) => {
+                const rows = [];
+                picks.forEach(({ f, h, a }) => {
+                    if (emitted.has(h)) return;
+                    emitted.add(h);
                     const d = f.e ? demo[String(f.e).trim().toLowerCase()] : null;
-                    aoa.push([
+                    rows.push([
                         course,
                         a.s,
                         this._polishQuote(a.c),
-                        d && d.profession ? d.profession : '',
+                        d && d.profession ? tcase(d.profession) : '',
                         d && d.country ? d.country : '',
                         (f.r !== undefined && f.r !== null && f.r !== '') ? f.r : '',
                         f.d || ''
                     ]);
-                    total++;
                 });
+                if (!rows.length) return;
+                coursesWithPicks++;
+                rows.forEach(r => aoa.push(r));
+                total += rows.length;
                 aoa.push(['', '', '', '', '', '', '']);   // spacer between courses
             });
             this._hideReportProgress();

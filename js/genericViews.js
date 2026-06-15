@@ -10147,6 +10147,13 @@ function initProjectMap(pid){
                                 <button onclick="GenericViews._saveOrgSheetsViewUrl()" class="px-4 py-2 bg-gsf-boston text-white rounded-lg text-sm font-bold hover:bg-gsf-prussian transition-colors">Save</button>
                             </div>
                         </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-400 mb-1 uppercase tracking-wide">Claude (Anthropic) API key <span class="font-normal text-slate-300">(for AI testimonial scoring)</span></label>
+                            <div class="flex gap-2 items-center">
+                                <button onclick="App.setAnthropicKey()" class="px-4 py-2 bg-gsf-boston text-white rounded-lg text-sm font-bold hover:bg-gsf-prussian transition-colors">Set / change key</button>
+                                <span class="text-xs text-slate-400">Stored locally on this machine only — never synced, exported, or shared.</span>
+                            </div>
+                        </div>
                     </div>
                     <div class="mt-4 bg-slate-900 rounded-lg p-4 flex items-start justify-between gap-3">
                         <p class="text-xs text-emerald-300 font-mono leading-relaxed break-all flex-1">Paste the Apps Script code below into your Google Sheet's script editor, then deploy as a Web App (Execute as: Me, Access: Anyone).</p>

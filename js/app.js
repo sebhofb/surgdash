@@ -524,7 +524,35 @@ window.App = {
         document.body.classList.add('report-mode');
         if (this._autoPullInterval) { clearInterval(this._autoPullInterval); this._autoPullInterval = null; }
         this.renderView();
+        setTimeout(() => { try { this._showReporterSetupModal(); } catch (e) {} }, 350);
         return true;
+    },
+
+    // First-time setup popup shown when entering reporting mode, if the Google Sheets
+    // link or Claude API key isn't configured yet. (The persistent setup banner also
+    // covers this; this is the more prominent on-login prompt.)
+    async _showReporterSetupModal() {
+        if (document.getElementById('reporter-setup-modal')) return;
+        let url = '', key = '';
+        try { url = ((await Projects.getAppSettings()) || {}).googleSheetsUrl || ''; } catch (e) {}
+        try { key = (await this._getAnthropicKey()) || ''; } catch (e) {}
+        if (url && key) return;   // all set — no popup
+        const esc = (s) => this.escapeHtml(s);
+        const row = (title, desc, label, fn, done) => done
+            ? '<div style="display:flex;align-items:center;gap:10px;padding:12px 14px;border:1px solid #bbf7d0;background:#f0fdf4;border-radius:10px;margin-bottom:10px"><span style="color:#16a34a;font-weight:800">✓</span><div><div style="font-weight:700;color:#065f46;font-size:13px">' + esc(title) + '</div><div style="font-size:12px;color:#15803d">Already set up.</div></div></div>'
+            : '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border:1px solid #e2e8f0;border-radius:10px;margin-bottom:10px"><div style="min-width:0"><div style="font-weight:700;color:#002F4C;font-size:13px">' + esc(title) + '</div><div style="font-size:12px;color:#64748b">' + esc(desc) + '</div></div><button onclick="document.getElementById(\'reporter-setup-modal\').remove(); App.' + fn + '" style="flex-shrink:0;padding:8px 16px;background:#002F4C;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer">' + esc(label) + '</button></div>';
+        const overlay = document.createElement('div');
+        overlay.id = 'reporter-setup-modal';
+        overlay.style.cssText = 'position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;font-family:Inter,sans-serif;padding:24px';
+        overlay.innerHTML = '<div style="background:#fff;border-radius:16px;padding:28px;max-width:480px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.3)">'
+            + '<h3 style="font-size:18px;font-weight:800;color:#002F4C;margin:0 0 6px">Welcome — quick setup</h3>'
+            + '<p style="font-size:13px;color:#64748b;margin:0 0 18px">Set these up once to build provider reports. Both are stored locally on this machine.</p>'
+            + row('Google Sheets link', 'Connects your live SURGhub data so it stays current.', 'Add link', 'setupDataLink()', !!url)
+            + row('Claude API key', 'Needed for AI testimonial scoring and the course-page export.', 'Add key', 'setAnthropicKey()', !!key)
+            + '<div style="display:flex;justify-content:flex-end;margin-top:8px"><button onclick="document.getElementById(\'reporter-setup-modal\').remove()" style="padding:8px 16px;border:1px solid #e2e8f0;background:#fff;color:#64748b;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">Later</button></div>'
+            + '</div>';
+        document.body.appendChild(overlay);
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
     },
 
     lockReport() {
