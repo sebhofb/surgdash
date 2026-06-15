@@ -310,6 +310,10 @@
         <button onclick="App.relock()" class="px-3 py-1 rounded bg-white/15 hover:bg-white/30 transition-colors text-white text-[11px] flex items-center gap-1"><i data-lucide="lock" width="10"></i> Lock</button>
     </div>
 
+    <!-- First-time setup banner — prompts for the Google Sheets link (and Claude API key for
+         edit/reporting users). Populated + shown/hidden by App._refreshSetupBanner(); vanishes once configured. -->
+    <div id="setup-banner" class="shrink-0 items-center justify-between gap-3 px-4 py-2 bg-gsf-boston text-white text-xs font-semibold z-50" style="display:none;"></div>
+
     <!-- Unsynced-changes banner (shown only in edit mode when local files are newer than last sync) -->
     <div id="unsynced-banner" class="shrink-0 items-center justify-between gap-3 px-4 py-2 bg-amber-500 text-white text-xs font-semibold z-50" style="display:none;">
         <div class="flex items-center gap-2">

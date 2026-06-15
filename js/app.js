@@ -790,6 +790,51 @@ window.App = {
         banner.style.display = (this.includeSample && sampleExists && !onSurghub) ? 'flex' : 'none';
     },
 
+    // First-time setup banner: prompts for the Google Sheets link (everyone, so data
+    // can sync) and — for edit/reporting users — the Claude API key. Auto-hides once
+    // those are configured. Called fire-and-forget from renderView (async is fine).
+    async _refreshSetupBanner() {
+        const banner = document.getElementById('setup-banner');
+        if (!banner) return;
+        let url = '', key = '';
+        try { url = ((await Projects.getAppSettings()) || {}).googleSheetsUrl || ''; } catch (e) {}
+        try { key = (await this._getAnthropicKey()) || ''; } catch (e) {}
+        const canUseAI = this.editUnlocked || this.reportAccess;   // only these need the API key
+        const needsSheets = !url;
+        const needsKey = canUseAI && !key;
+        if (!needsSheets && !needsKey) { banner.style.display = 'none'; banner.innerHTML = ''; return; }
+        const btn = (label, fn) => '<button onclick="' + fn + '" class="px-3 py-1 rounded bg-white/15 hover:bg-white/30 transition-colors text-white text-[11px] font-bold whitespace-nowrap">' + label + '</button>';
+        const msg = needsSheets
+            ? 'Connect your data — add the Google Sheets link to start syncing automatically.'
+            : 'One more step — add your Claude API key to use the AI testimonial features.';
+        let actions = '';
+        if (needsSheets) actions += btn('Add Google Sheets link', 'App.setupDataLink()');
+        if (needsKey) actions += btn('Add Claude API key', 'App.setAnthropicKey()');
+        banner.innerHTML = '<div class="flex items-center gap-2"><i data-lucide="plug-zap" width="13"></i><span>' + msg + '</span></div>'
+            + '<div class="flex items-center gap-2">' + actions + '</div>';
+        banner.style.display = 'flex';
+        if (window.lucide) lucide.createIcons();
+    },
+
+    // Prompt for + save the Google Sheets sync link, then pull. Works in any mode
+    // (it only sets a local config value, like the empty-state loader).
+    async setupDataLink() {
+        const cur = ((await Projects.getAppSettings()) || {}).googleSheetsUrl || '';
+        const v = await this._textPrompt('Connect your data',
+            'Paste the Google Sheets sync link (the Apps Script Web App URL your SURGdash administrator shared). Data then syncs automatically each time you open the app.',
+            cur);
+        if (v === null) return;
+        const url = String(v).trim();
+        if (url && !/^https?:\/\//i.test(url)) { alert('That does not look like a URL — it should start with https://'); return; }
+        await Projects.saveAppSettings({ googleSheetsUrl: url });
+        if (this._refreshSetupBanner) this._refreshSetupBanner();
+        if (url && window.GenericViews && GenericViews._pullFromSheets) {
+            App.showMsg && App.showMsg('Data link saved — pulling latest data…');
+            try { await GenericViews._pullFromSheets(); } catch (e) {}
+        }
+        this.renderView();
+    },
+
     _startUnsyncedWatcher() {
         if (this._unsyncedInterval) clearInterval(this._unsyncedInterval);
         // Initial check shortly after init

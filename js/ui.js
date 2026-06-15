@@ -1973,6 +1973,7 @@ Object.assign(window.App, {
         const body = document.getElementById('view-body') || document.getElementById('main-content');
         const project = this.getCurrentProject();
         if (this._refreshSampleBanner) this._refreshSampleBanner(project);
+        if (this._refreshSetupBanner) this._refreshSetupBanner();
         const viewKey = this.currentProject + '::' + this.view;
         const sameView = this._lastRenderedViewKey === viewKey;
         this._lastRenderedViewKey = viewKey;
@@ -2074,22 +2075,8 @@ Object.assign(window.App, {
             return;
         }
 
-        // Helper: inject a "Load New Snapshot" bar at the top of any SURGhub view in viewer mode
-        const _injectViewerSurghubBar = () => {
-            if (App.editUnlocked) return;
-            const bar = document.createElement('div');
-            bar.style.cssText = 'position:sticky;top:0;z-index:50;background:#f8fafc;border-bottom:1px solid #e2e8f0;padding:8px 24px;display:flex;align-items:center;justify-content:space-between;gap:8px;';
-            bar.innerHTML = `<span style="font-size:11px;color:#94a3b8;font-weight:500;">Read-only · SURGhub snapshot</span>
-                <div style="display:flex;align-items:center;gap:8px;">
-                    <button onclick="document.getElementById('surghub-json-bar-input').click()"
-                        style="display:flex;align-items:center;gap:6px;padding:5px 12px;background:#002F4C;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                        Load New Snapshot
-                    </button>
-                    <input type="file" id="surghub-json-bar-input" accept=".json" style="display:none;" onchange="App.importSurghubJson(event)" />
-                </div>`;
-            body.insertBefore(bar, body.firstChild);
-        };
+        // (The in-body "Load New Snapshot" bar was removed — the single "Load Snapshot"
+        // button in the top nav is the one place to load a SURGhub snapshot.)
 
         const shells = this.getShells();
 
@@ -2128,22 +2115,29 @@ Object.assign(window.App, {
                                 ? '<span class="text-xs text-gsf-boston font-semibold">' + this.escapeHtml(this._periodLabel()) + '</span><button onclick="App.clearReportPeriod()" class="text-xs text-red-400 hover:text-red-600 font-bold" title="Clear period (back to all-time)">✕</button>'
                                 : '<span class="text-xs text-slate-400">all time</span>'}
                         </div>
-                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 max-w-4xl">
-                            <button onclick="App.exportAllProviderPackages()" class="flex items-center justify-center gap-2 py-3 px-4 bg-white border border-slate-200 text-gsf-prussian font-bold rounded-lg hover:border-gsf-boston hover:text-gsf-boston hover:shadow-md transition-all shadow-sm" title="One folder per provider: PDF report + anonymized users + anonymized feedback (Excel)">
-                                <i data-lucide="package" width="18" class="text-gsf-boston"></i> Full Report Packages
+                        <div class="border border-slate-200 rounded-xl p-4 mb-4 bg-slate-50/40 max-w-4xl">
+                            <p class="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">Provider reports &amp; exports</p>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                                <button onclick="App.exportAllProviderPackages()" class="flex items-center justify-center gap-2 py-3 px-4 bg-white border border-slate-200 text-gsf-prussian font-bold rounded-lg hover:border-gsf-boston hover:text-gsf-boston hover:shadow-md transition-all shadow-sm" title="One folder per provider: PDF report + anonymized users + anonymized feedback (Excel)">
+                                    <i data-lucide="package" width="18" class="text-gsf-boston"></i> Full Report Packages
+                                </button>
+                                <button onclick="App.generateAllProviderReports()" class="flex items-center justify-center gap-2 py-3 px-4 bg-white border border-slate-200 text-gsf-prussian font-bold rounded-lg hover:border-gsf-boston hover:text-gsf-boston hover:shadow-md transition-all shadow-sm">
+                                    <i data-lucide="folder-down" width="18" class="text-gsf-boston"></i> All PDF Reports
+                                </button>
+                                <button onclick="App.exportAllAnonymizedUserData()" class="flex items-center justify-center gap-2 py-3 px-4 bg-white border border-slate-200 text-gsf-prussian font-bold rounded-lg hover:border-gsf-boston hover:text-gsf-boston hover:shadow-md transition-all shadow-sm">
+                                    <i data-lucide="users" width="18" class="text-gsf-boston"></i> All User Data Exports
+                                </button>
+                                <button onclick="App.exportTestimonials()" class="flex items-center justify-center gap-2 py-3 px-4 bg-white border border-slate-200 text-gsf-prussian font-bold rounded-lg hover:border-gsf-boston hover:text-gsf-boston hover:shadow-md transition-all shadow-sm">
+                                    <i data-lucide="star" width="18" class="text-gsf-boston"></i> Testimonials Report
+                                </button>
+                            </div>
+                        </div>
+                        <div class="border border-purple-200 rounded-xl p-4 mb-4 bg-purple-50/40 max-w-4xl">
+                            <p class="text-xs font-bold text-purple-600 uppercase tracking-wide mb-3 flex items-center gap-2">Internal <span class="text-[9px] font-bold uppercase tracking-wider text-purple-500 border border-purple-300 rounded-full px-1.5 py-0.5">GSF only</span></p>
+                            <button onclick="App.exportCoursePageTestimonials()" class="inline-flex items-center gap-2 py-3 px-5 bg-white border border-purple-300 text-purple-800 font-bold rounded-lg hover:border-purple-500 hover:shadow-md transition-all shadow-sm">
+                                <i data-lucide="megaphone" width="18" class="text-purple-600"></i> Course-Page Testimonials
                             </button>
-                            <button onclick="App.generateAllProviderReports()" class="flex items-center justify-center gap-2 py-3 px-4 bg-white border border-slate-200 text-gsf-prussian font-bold rounded-lg hover:border-gsf-boston hover:text-gsf-boston hover:shadow-md transition-all shadow-sm">
-                                <i data-lucide="folder-down" width="18" class="text-gsf-boston"></i> All PDF Reports
-                            </button>
-                            <button onclick="App.exportAllAnonymizedUserData()" class="flex items-center justify-center gap-2 py-3 px-4 bg-white border border-slate-200 text-gsf-prussian font-bold rounded-lg hover:border-gsf-boston hover:text-gsf-boston hover:shadow-md transition-all shadow-sm">
-                                <i data-lucide="users" width="18" class="text-gsf-boston"></i> All User Data Exports
-                            </button>
-                            <button onclick="App.exportTestimonials()" class="flex items-center justify-center gap-2 py-3 px-4 bg-white border border-slate-200 text-gsf-prussian font-bold rounded-lg hover:border-gsf-boston hover:text-gsf-boston hover:shadow-md transition-all shadow-sm">
-                                <i data-lucide="star" width="18" class="text-gsf-boston"></i> Testimonials Report
-                            </button>
-                            <button onclick="App.exportCoursePageTestimonials()" class="flex items-center justify-center gap-2 py-3 px-4 bg-white border border-purple-200 text-purple-800 font-bold rounded-lg hover:border-purple-400 hover:shadow-md transition-all shadow-sm" title="INTERNAL: best testimonials for public course pages. Runs a fresh AI marketing-scoring pass, picks + edits the most compelling quotes, and exports one sheet course-by-course (AI rating, cadre, country, stars, date).">
-                                <i data-lucide="megaphone" width="18" class="text-purple-600"></i> Course-Page Testimonials <span class="text-[9px] font-bold uppercase tracking-wider text-purple-500 border border-purple-300 rounded-full px-1.5 py-0.5">Internal</span>
-                            </button>
+                            <p class="text-xs text-purple-700/70 mt-3 max-w-2xl leading-relaxed">Best testimonials for public course pages — runs a fresh AI marketing-scoring pass, picks + edits the most compelling quotes, and exports one sheet course-by-course (AI rating &middot; cadre &middot; country &middot; star rating &middot; date). AI-edited &mdash; spot-check before publishing.</p>
                         </div>
                         <div class="mt-4 pt-4 border-t border-slate-100">
                             <p class="text-xs font-bold text-slate-400 uppercase mb-3">AI Curation — all providers</p>
@@ -3435,7 +3429,6 @@ Object.assign(window.App, {
         }
 
         _stripFade();
-        _injectViewerSurghubBar();
         if (window.lucide) lucide.createIcons();
         // In viewer mode, set `disabled` on every form control so checkboxes,
         // radios, selects, file inputs etc. are truly inert — CSS pointer-events
@@ -3444,6 +3437,8 @@ Object.assign(window.App, {
         if (!this.editUnlocked) {
             document.querySelectorAll('input, textarea, select').forEach(el => {
                 if (el.hasAttribute('data-viewer-allowed')) return;
+                // Provider-reporting mode: report controls stay live.
+                if (this.reportAccess && el.hasAttribute('data-report-ok')) return;
                 if (el.type === 'hidden') return;
                 el.disabled = true;
             });
