@@ -2,6 +2,7 @@
   "name": "surgdash",
   "version": "2.0.0",
   "description": "SURGdash - Project Management & Analytics Dashboard",
+  "author": "Global Surgery Foundation",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -39,6 +40,7 @@
       "icon": "build/icon.icns",
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
+      "notarize": false,
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist"
     },
