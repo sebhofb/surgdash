@@ -36,6 +36,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // ── App paths ────────────────────────────────────────────────────────────
     appPath: path.resolve(__dirname),
 
+    // ── Data profile ─────────────────────────────────────────────────────────
+    // Empty for the normal profile → data lives in ~/Documents/SURGdash.
+    // A test profile (passed by main via --data-profile=test) isolates data into
+    // ~/Documents/SURGdash-test so the fresh-install experience can be tested
+    // without touching real data.
+    dataDirName: (() => {
+        const p = (process.argv.find(a => a.startsWith('--data-profile=')) || '').split('=')[1] || '';
+        return p ? ('SURGdash-' + p) : 'SURGdash';
+    })(),
+    isTestProfile: /--data-profile=.+/.test(process.argv.join(' ')),
+
     // ── App version (single source of truth: package.json) ───────────────────
     appVersion: (() => { try { return require('./package.json').version; } catch (_) { return ''; } })(),
 

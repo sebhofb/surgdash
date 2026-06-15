@@ -5,6 +5,16 @@ const os = require('os');
 
 let mainWindow;
 
+// ── Data profile ─────────────────────────────────────────────────────────
+// A non-empty profile isolates ALL app data into ~/Documents/SURGdash-<profile>
+// so you can test the fresh-install experience without touching real data.
+// Set via env (SURGDASH_PROFILE=test) or launch arg (--profile=test), or the
+// "Open Fresh Test Profile" menu item. Empty = the normal ~/Documents/SURGdash.
+const DATA_PROFILE = (function () {
+  const fromArg = (process.argv.find(a => a.startsWith('--profile=')) || '').split('=')[1];
+  return String(process.env.SURGDASH_PROFILE || fromArg || '').replace(/[^A-Za-z0-9_-]/g, '');
+})();
+
 // ── Path safety: restrict file IPC to home + tmp directories ─────────────
 function isPathSafe(filePath) {
   if (!filePath || typeof filePath !== 'string') return false;
@@ -26,7 +36,7 @@ function createWindow () {
   mainWindow = new BrowserWindow({
     width: 1300,
     height: 900,
-    title: "SURGdash \u00A9",
+    title: "SURGdash \u00A9" + (DATA_PROFILE ? "  \u2014  TEST PROFILE: " + DATA_PROFILE : ""),
     icon: path.join(__dirname, 'build', 'gsf_logo_symbol.png'),
     show: false,
     backgroundColor: '#002F4C',
@@ -34,7 +44,9 @@ function createWindow () {
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: false,
-      preload: path.join(__dirname, 'preload.js')
+      preload: path.join(__dirname, 'preload.js'),
+      // Pass the data profile to the renderer/preload so storage isolates it.
+      additionalArguments: ['--data-profile=' + DATA_PROFILE]
     }
   });
 
@@ -234,6 +246,10 @@ function buildAppMenu() {
       submenu: [
         { role: 'about' },
         { label: 'Check for Updates…', click: () => checkForUpdatesManually() },
+        { type: 'separator' },
+        DATA_PROFILE
+          ? { label: 'Switch to Normal Data', click: () => { app.relaunch({ args: process.argv.slice(1).filter(a => !a.startsWith('--profile=')) }); app.exit(0); } }
+          : { label: 'Open Fresh Test Profile…', click: () => { app.relaunch({ args: process.argv.slice(1).filter(a => !a.startsWith('--profile=')).concat(['--profile=test']) }); app.exit(0); } },
         { type: 'separator' },
         { role: 'services' },
         { type: 'separator' },

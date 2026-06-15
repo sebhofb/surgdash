@@ -8,7 +8,10 @@
     const path = electronAPI.path;
     const os   = electronAPI.os;
 
-    const DATA_DIR = path.join(os.homedir(), 'Documents', 'SURGdash');
+    // Normal data lives in ~/Documents/SURGdash. A test profile (set via
+    // --profile=test / SURGDASH_PROFILE / the "Open Fresh Test Profile" menu item)
+    // isolates everything into ~/Documents/SURGdash-<profile>, leaving real data untouched.
+    const DATA_DIR = path.join(os.homedir(), 'Documents', (electronAPI.dataDirName || 'SURGdash'));
 
     // Key-to-filepath mapping for organised folder structure
     function keyToPath(key) {
