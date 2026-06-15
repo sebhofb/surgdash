@@ -59,7 +59,8 @@ window.App = {
     demoMode: false,
     editUnlocked: false,        // true = full edit mode; false = read-only
     _editPasswordHash: null,    // SHA-256 hex string stored on disk (null = no password set)
-    _defaultPasswordHash: '4ad6ff09ce690180656b143db9b3c032baa48e8946d3d263243bb95e9116d89c', // built-in fallback
+    _defaultPasswordHash: '6b4a1673b225e8bf5f093b91be8c864427df32ca41b17cc0b82112b8f0185e41',       // bundled EDIT password (SHA-256) — ships with the app so every install starts locked
+    _defaultReportPasswordHash: '895a6072c8d3559373b6f55e64569145e22cd56e6c0cb49d284dbab9578a72d1',  // bundled PROVIDER-REPORTING password (SHA-256)
     reportAccess: false,        // true = provider-reporting role (SURGhub report workflow only; SURGfund + data writes stay locked)
     _reportPasswordHash: null,  // SHA-256 hex for the reporting-role password (separate from edit)
     _autoPullInterval: null,
@@ -72,24 +73,17 @@ window.App = {
             // Check demo mode state
             this.demoMode = !!(await Storage.getItem('surgdash_demo_active'));
 
-            // Edit password gate. If the user has set a password, lock the app and require it.
-            // If NO password is set (fresh install OR after a wipe/restore that didn't
-            // round-trip the password file), start unlocked — there's nothing to protect yet
-            // and no usable fallback (the old built-in default hash was unrecoverable).
-            this._editPasswordHash = (await Storage.getItem('surgdash_edit_password')) || null;
-            // Provider-reporting role password (separate, optional). Loaded but NOT
-            // auto-unlocked — the user enters it to unlock report mode (the unlock
-            // prompt tries the edit password first, then this one).
-            this._reportPasswordHash = (await Storage.getItem('surgdash_report_password')) || null;
-            // Start locked (read-only) if EITHER password is set, so a reporting
-            // password is meaningful even when no edit password exists.
-            if (this._editPasswordHash || this._reportPasswordHash) {
-                this.editUnlocked = false;
-                document.body.classList.add('viewer-mode');
-            } else {
-                this.editUnlocked = true;
-                document.body.classList.remove('viewer-mode');
-            }
+            // Access gate. The edit + reporting passwords are stored locally per
+            // machine AND bundled with the build (the default hashes below), so a
+            // FRESH install — e.g. a colleague's download, which has no local
+            // password file — is locked by default. The app ALWAYS opens read-only;
+            // editing or provider-reporting requires the matching password. A
+            // locally-set password (Settings) takes precedence over the bundled one.
+            this._editPasswordHash   = (await Storage.getItem('surgdash_edit_password'))   || this._defaultPasswordHash       || null;
+            this._reportPasswordHash = (await Storage.getItem('surgdash_report_password')) || this._defaultReportPasswordHash || null;
+            this.editUnlocked = false;
+            this.reportAccess = false;
+            document.body.classList.add('viewer-mode');
 
             // Catch async-rendered forms in viewer mode: any time a node is added,
             // disable form controls inside it. Stops checkbox-label forwarding too.
