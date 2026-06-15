@@ -1421,12 +1421,16 @@ Object.assign(window.App, {
         const projects = Projects.registry;
 
         // Skip full rebuild only if same project is still active AND the sample's
-        // sidebar visibility (driven by App.includeSample) hasn't changed.
-        if (this._lastSidebarProject === cur && this._lastSidebarSample === this.includeSample && navEl.querySelector('[data-proj]')) {
+        // sidebar visibility (driven by App.includeSample) hasn't changed AND the
+        // access tier is the same (the lock-button icon below depends on it, and a
+        // tier change must not be short-circuited).
+        const sbLockKey = App.editUnlocked ? 'edit' : (App.reportAccess ? 'report' : 'locked');
+        if (this._lastSidebarProject === cur && this._lastSidebarSample === this.includeSample && this._lastSidebarLock === sbLockKey && navEl.querySelector('[data-proj]')) {
             return;
         }
         this._lastSidebarProject = cur;
         this._lastSidebarSample = this.includeSample;
+        this._lastSidebarLock = sbLockKey;
 
         const item = (id, icon, label, distinct, draggable) => {
             const active = id === cur;
@@ -1614,8 +1618,12 @@ Object.assign(window.App, {
         const project = this.getCurrentProject();
         const projectKey = this.currentProject;
 
-        // Same project + same lock state: just update active states
-        const lockKey = App.editUnlocked ? 'u' : 'l';
+        // Same project + same lock state: just update active states.
+        // lockKey MUST capture every access tier that changes which tabs are
+        // locked — edit, provider-reporting, and fully-locked all differ. (Missing
+        // reportAccess here left the Reports tab locked after entering report mode,
+        // because the guard short-circuited the rebuild.)
+        const lockKey = App.editUnlocked ? 'edit' : (App.reportAccess ? 'report' : 'locked');
         if (this._lastTabBarProject === projectKey && this._lastTabBarLock === lockKey && tabsEl.querySelector('[data-tab-view]')) {
             tabsEl.querySelectorAll('[data-tab-view]').forEach(btn => {
                 if (btn.classList.contains('cursor-not-allowed')) return; // skip locked tabs
