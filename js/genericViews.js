@@ -10101,6 +10101,29 @@ function initProjectMap(pid){
                     ${App._editPasswordHash ? `<div class="mt-3 flex items-center gap-2 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2"><i data-lucide="shield-check" width="13"></i> Password is set — the app will start in read-only mode. Only you can unlock editing.</div>` : `<div class="mt-3 flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2"><i data-lucide="alert-triangle" width="13"></i> No password set — the app is fully editable by anyone. Set a password before sharing with colleagues.</div>`}
                 </div>
 
+                <!-- Provider-Reporting Password -->
+                <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-6 mb-6" data-edit-only>
+                    <h2 class="text-sm font-bold text-gsf-prussian uppercase tracking-wide mb-1">Provider-Reporting Password <span class="ml-1 text-[9px] font-bold uppercase tracking-wider text-amber-700 border border-amber-300 bg-amber-50 rounded-full px-1.5 py-0.5 align-middle">Limited access</span></h2>
+                    <p class="text-xs text-slate-400 mb-4 max-w-lg">A second password for a teammate who only needs to build SURGhub provider reports — export reports, select / auto-select testimonials, and set the feedback date filter. They <strong>cannot</strong> edit SURGfund, run Data Sync, change Settings, or set the API key. Requires an edit password to be set above (so the app starts locked).</p>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-400 mb-1 uppercase tracking-wide">New Reporting Password</label>
+                            <input type="password" id="report-pw-input" placeholder="${App._reportPasswordHash ? 'Enter new password to change' : 'Set a reporting password'}"
+                                class="w-full px-3 py-2 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-gsf-boston/30" />
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-400 mb-1 uppercase tracking-wide">Confirm Password</label>
+                            <input type="password" id="report-pw-confirm" placeholder="Re-enter password"
+                                class="w-full px-3 py-2 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-gsf-boston/30" />
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <button onclick="GenericViews._saveReportPassword()" class="px-4 py-2 bg-gsf-boston text-white rounded-lg text-sm font-bold hover:bg-gsf-prussian transition-colors">${App._reportPasswordHash ? 'Update Password' : 'Set Password'}</button>
+                        ${App._reportPasswordHash ? `<button onclick="GenericViews._removeReportPassword()" class="px-4 py-2 border border-red-200 text-red-600 rounded-lg text-sm font-bold hover:bg-red-50 transition-colors">Remove Password</button>` : ''}
+                    </div>
+                    ${App._reportPasswordHash ? `<div class="mt-3 flex items-center gap-2 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2"><i data-lucide="shield-check" width="13"></i> Reporting password is set — share it with the teammate who builds provider reports.</div>` : ''}
+                </div>
+
                 <!-- Google Sheets URL -->
                 <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-6 mb-6">
                     <h2 class="text-sm font-bold text-gsf-prussian uppercase tracking-wide mb-1">Google Sheets Integration</h2>
@@ -12904,6 +12927,25 @@ function _writeProject(ss, d) {
         if (!confirm('Remove the edit password? The app will be fully editable by anyone.')) return;
         await App.setEditPassword(null);
         App.showMsg('Edit password removed.');
+        App.renderView();
+    },
+
+    async _saveReportPassword() {
+        const pw = (document.getElementById('report-pw-input')?.value || '');
+        const confirmPw = (document.getElementById('report-pw-confirm')?.value || '');
+        if (!pw) { App.showMsg('Please enter a password.', true); return; }
+        if (pw.length < 4) { App.showMsg('Password must be at least 4 characters.', true); return; }
+        if (pw !== confirmPw) { App.showMsg('Passwords do not match.', true); return; }
+        if (App._editPasswordHash && pw === document.getElementById('edit-pw-input')?.value) { /* harmless overlap */ }
+        await App.setReportPassword(pw);
+        App.showMsg('Provider-reporting password saved.');
+        App.renderView();
+    },
+
+    async _removeReportPassword() {
+        if (!confirm('Remove the provider-reporting password? That teammate will no longer be able to unlock reporting access.')) return;
+        await App.setReportPassword(null);
+        App.showMsg('Provider-reporting password removed.');
         App.renderView();
     },
 

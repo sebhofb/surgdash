@@ -174,9 +174,34 @@
         body.viewer-mode .kpi-cell-input.saved {
             background-color: #f8fafc !important;
         }
+        /* Provider-reporting mode: like viewer mode, but elements/inputs marked
+           data-report-ok stay visible + interactive (report exports, testimonial
+           selection, feedback filters). Everything else stays locked. */
+        body.report-mode [data-edit-only]:not([data-report-ok]) { display: none !important; }
+        body.report-mode input:not([data-viewer-allowed]):not([data-report-ok]):not([type="hidden"]),
+        body.report-mode textarea:not([data-viewer-allowed]):not([data-report-ok]),
+        body.report-mode select:not([data-viewer-allowed]):not([data-report-ok]) {
+            pointer-events: none !important;
+            background-color: #f8fafc !important;
+            color: #475569 !important;
+            border-color: #e2e8f0 !important;
+            box-shadow: none !important;
+            cursor: default !important;
+        }
+        body.report-mode .kpi-cell-input {
+            pointer-events: none !important;
+            background-color: #f8fafc !important;
+            color: #475569 !important;
+            border-color: #e2e8f0 !important;
+            box-shadow: none !important;
+            cursor: default !important;
+        }
         /* Viewer mode banner */
         #viewer-mode-banner { display: none; }
         body.viewer-mode #viewer-mode-banner { display: flex; }
+        /* Provider-reporting mode banner */
+        #report-mode-banner { display: none; }
+        body.report-mode #report-mode-banner { display: flex; }
         /* Map watermark (always visible, above all Leaflet panes) */
         .map-watermark { position: absolute !important; bottom: 8px !important; right: 10px !important; z-index: 1100 !important; display: flex; align-items: center; gap: 5px; pointer-events: none; opacity: 0.55; }
         .map-watermark img { width: 16px; height: 16px; border-radius: 3px; }
@@ -276,6 +301,15 @@
         <button onclick="App.showUnlockPrompt()" class="px-3 py-1 rounded bg-white/10 hover:bg-white/20 transition-colors text-white text-[11px] flex items-center gap-1"><i data-lucide="lock-open" width="10"></i> Unlock Editing</button>
     </div>
 
+    <!-- Provider-reporting mode banner (shown when the reporting role is unlocked) -->
+    <div id="report-mode-banner" class="shrink-0 items-center justify-between gap-3 px-4 py-2 bg-amber-600 text-white text-xs font-semibold z-50">
+        <div class="flex items-center gap-2">
+            <i data-lucide="file-text" width="12"></i>
+            <span>Provider-reporting mode — you can build SURGhub reports and curate testimonials. Other editing stays locked.</span>
+        </div>
+        <button onclick="App.relock()" class="px-3 py-1 rounded bg-white/15 hover:bg-white/30 transition-colors text-white text-[11px] flex items-center gap-1"><i data-lucide="lock" width="10"></i> Lock</button>
+    </div>
+
     <!-- Unsynced-changes banner (shown only in edit mode when local files are newer than last sync) -->
     <div id="unsynced-banner" class="shrink-0 items-center justify-between gap-3 px-4 py-2 bg-amber-500 text-white text-xs font-semibold z-50" style="display:none;">
         <div class="flex items-center gap-2">
@@ -301,7 +335,7 @@
                 <img id="sidebar-logo" src="build/gsf_logo_symbol.png" alt="SURGdash" class="w-9 h-9 rounded-lg shadow-md">
                 <div>
                     <h2 class="text-xl font-black tracking-tight text-white leading-tight">SURG<span class="text-gsf-polo">dash</span></h2>
-                    <p class="text-gsf-polo/50 text-[9px] font-bold uppercase tracking-wider">Data for impact <span id="app-version" class="ml-1 px-1.5 py-0.5 rounded bg-white/10 text-gsf-polo/40 text-[8px] tracking-wide">v2.0.3</span></p>
+                    <p class="text-gsf-polo/50 text-[9px] font-bold uppercase tracking-wider">Data for impact <span id="app-version" class="ml-1 px-1.5 py-0.5 rounded bg-white/10 text-gsf-polo/40 text-[8px] tracking-wide">v2.0.4</span></p>
                 </div>
             </div>
         </div>
@@ -315,7 +349,7 @@
                 </div>
                 <div class="flex items-center gap-2">
                     <button onclick="App.startOnboarding(true)" class="text-[10px] font-semibold text-gsf-polo/50 hover:text-gsf-polo transition-colors" title="Show onboarding tips">Tips</button>
-                    <button id="sidebar-lock-btn" onclick="App._editPasswordHash ? (App.editUnlocked ? App.lockEdit() : App.showUnlockPrompt()) : null" class="text-gsf-polo/50 hover:text-gsf-polo transition-colors" title="Lock/Unlock editing" style="display:none;">
+                    <button id="sidebar-lock-btn" onclick="(App._editPasswordHash || App._reportPasswordHash) ? ((App.editUnlocked || App.reportAccess) ? App.relock() : App.showUnlockPrompt()) : null" class="text-gsf-polo/50 hover:text-gsf-polo transition-colors" title="Lock/Unlock editing" style="display:none;">
                         <i data-lucide="lock" width="12"></i>
                     </button>
                 </div>

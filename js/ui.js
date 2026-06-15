@@ -1528,10 +1528,11 @@ Object.assign(window.App, {
         // ── Update sidebar lock button visibility + icon ──
         const lockBtn = document.getElementById('sidebar-lock-btn');
         if (lockBtn) {
-            if (App._editPasswordHash) {
+            if (App._editPasswordHash || App._reportPasswordHash) {
+                const unlocked = App.editUnlocked || App.reportAccess;
                 lockBtn.style.display = '';
-                lockBtn.title = App.editUnlocked ? 'Lock editing' : 'Unlock editing';
-                lockBtn.innerHTML = App.editUnlocked
+                lockBtn.title = unlocked ? 'Lock' : 'Unlock';
+                lockBtn.innerHTML = unlocked
                     ? '<i data-lucide="lock-open" width="12"></i>'
                     : '<i data-lucide="lock" width="12"></i>';
                 if (window.lucide) lucide.createIcons();
@@ -1642,6 +1643,9 @@ Object.assign(window.App, {
             </button>`;
         };
         const editLocked = !App.editUnlocked && !!App._editPasswordHash;
+        // Reports tab opens for full edit OR the provider-reporting role. Locked
+        // only when neither is unlocked and some password is set.
+        const reportTabLocked = !App.editUnlocked && !App.reportAccess && (!!App._editPasswordHash || !!App._reportPasswordHash);
 
         let contextLabel = '';
         let tabs = '';
@@ -1660,7 +1664,7 @@ Object.assign(window.App, {
                  + tab('provider',    'building-2',       'Providers')
                  + tab('course',      'book-open',        'Courses')
                  + tab('ambassadors', 'award',            'Ambassadors')
-                 + tab('sh-reports',  'file-text',        'Reports',    editLocked)
+                 + tab('sh-reports',  'file-text',        'Reports',    reportTabLocked)
                  + tab('manage',      'list',             'Directory')
                  + tab('upload',      'refresh-cw',       'Data Sync',  editLocked)
                  + tab('methodology', 'book-open',        'Methodology');
@@ -1778,9 +1782,9 @@ Object.assign(window.App, {
                 </div>
                 ${contextProvider ? '<button onclick="App.feedbackShowSelected=!App.feedbackShowSelected; App._applySelectedFilter()" class="px-2 py-1 rounded font-semibold border transition-all ' + (this.feedbackShowSelected ? 'bg-green-100 text-green-700 border-green-300' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300') + '">☑ Selected only</button>' : ''}
                 ${hasActiveFilter ? '<button onclick="App.feedbackFilterTag=\'all\'; App.feedbackFilterDate=\'\'; App.reportFeedbackFromDate=\'\'; App.feedbackShowSelected=false; App.renderView()" class="text-gsf-crimson font-bold hover:underline">Clear</button>' : ''}
-                <button data-edit-only onclick="App.scoreFeedbackWithAI()" class="px-2.5 py-1 rounded font-bold bg-gsf-prussian text-white hover:bg-slate-900 transition-colors flex items-center gap-1" title="Score all feedback with Claude — surfaces real impact stories, filters junk, feeds provider reports">✨ Score with AI</button>
-                <button data-edit-only onclick="App.autoSelectTestimonials(${contextProvider ? "'" + this.escapeHtml(contextProvider).replace(/'/g, '&#39;') + "'" : 'null'})" class="px-2.5 py-1 rounded font-bold bg-amber-500 text-white hover:bg-amber-600 transition-colors" title="Select the top X comments per course (AI score ≥ Y) as report testimonials — then fine-tune with the checkboxes">⭐ Auto-select</button>
-                <button data-edit-only onclick="App.summarizeFeedbackWithAI(${contextProvider ? "'" + this.escapeHtml(contextProvider).replace(/'/g, '&#39;') + "'" : 'null'})" class="px-2.5 py-1 rounded font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition-colors" title="AI summary of what learners are saying, per course and per provider — shown in reports">📝 Summarize</button>
+                <button data-edit-only data-report-ok onclick="App.scoreFeedbackWithAI()" class="px-2.5 py-1 rounded font-bold bg-gsf-prussian text-white hover:bg-slate-900 transition-colors flex items-center gap-1" title="Score all feedback with Claude — surfaces real impact stories, filters junk, feeds provider reports">✨ Score with AI</button>
+                <button data-edit-only data-report-ok onclick="App.autoSelectTestimonials(${contextProvider ? "'" + this.escapeHtml(contextProvider).replace(/'/g, '&#39;') + "'" : 'null'})" class="px-2.5 py-1 rounded font-bold bg-amber-500 text-white hover:bg-amber-600 transition-colors" title="Select the top X comments per course (AI score ≥ Y) as report testimonials — then fine-tune with the checkboxes">⭐ Auto-select</button>
+                <button data-edit-only data-report-ok onclick="App.summarizeFeedbackWithAI(${contextProvider ? "'" + this.escapeHtml(contextProvider).replace(/'/g, '&#39;') + "'" : 'null'})" class="px-2.5 py-1 rounded font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition-colors" title="AI summary of what learners are saying, per course and per provider — shown in reports">📝 Summarize</button>
                 <button data-edit-only onclick="App.setAnthropicKey()" class="px-2 py-1 rounded font-semibold border bg-white text-slate-500 border-slate-200 hover:border-slate-300" title="Set / change the Anthropic API key (stored locally)">⚙</button>
                 <span class="text-slate-400 ml-auto">${filtered.length} of ${scored.length}</span>
             </div>
@@ -1812,7 +1816,7 @@ Object.assign(window.App, {
                                 ${allTags.length > 0 || showCb ? `
                                     <div class="flex flex-wrap items-center gap-1 mt-1 pt-2 border-t border-slate-100">
                                         ${allTags.map(tag => tagPill(tag, false)).join(' ')}
-                                        ${showCb ? '<label class="ml-auto inline-flex items-center gap-1 cursor-pointer" title="Select for PDF report"><input type="checkbox" class="accent-green-600 testimonial-cb" data-fb-text="' + safeText + '" data-fb-course="' + safeCourse + '" onchange="App.toggleTestimonial(\'' + this.escapeHtml(contextProvider).replace(/'/g, '&#39;') + '\', \'' + safeCourse + '\', this.dataset.fbText, this.checked)"><span class="text-[10px] font-semibold text-green-700">Use in report</span></label>' : ''}
+                                        ${showCb ? '<label class="ml-auto inline-flex items-center gap-1 cursor-pointer" title="Select for PDF report"><input type="checkbox" data-report-ok class="accent-green-600 testimonial-cb" data-fb-text="' + safeText + '" data-fb-course="' + safeCourse + '" onchange="App.toggleTestimonial(\'' + this.escapeHtml(contextProvider).replace(/'/g, '&#39;') + '\', \'' + safeCourse + '\', this.dataset.fbText, this.checked)"><span class="text-[10px] font-semibold text-green-700">Use in report</span></label>' : ''}
                                     </div>
                                 ` : ''}
                             </div>
@@ -2104,7 +2108,7 @@ Object.assign(window.App, {
                         <h2 class="text-sm font-bold text-gsf-prussian uppercase tracking-wide mb-1">Feedback Date Filter</h2>
                         <p class="text-xs text-slate-400 mb-4">Only include written feedback from this date onwards in generated reports. Leave empty to include all feedback.</p>
                         <div class="flex items-center gap-3">
-                            <input type="date" id="report-feedback-from" value="${this.reportFeedbackFromDate || ''}"
+                            <input type="date" id="report-feedback-from" data-report-ok value="${this.reportFeedbackFromDate || ''}"
                                 onchange="App.reportFeedbackFromDate=this.value"
                                 class="px-3 py-2 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-gsf-boston/30" />
                             ${this.reportFeedbackFromDate ? '<button onclick="App.reportFeedbackFromDate=&quot;&quot;; App.renderView()" class="text-xs text-red-500 hover:text-red-700 font-bold">Clear</button>' : ''}
@@ -2117,9 +2121,9 @@ Object.assign(window.App, {
                         <p class="text-slate-600 text-sm mb-4">Generate reports or anonymized user data exports for all providers at once. Reports keep all-time totals; the reporting period below clips the charts and adds an activity-within-period section.</p>
                         <div class="flex items-center gap-2 flex-wrap mb-6 bg-slate-50 border rounded-lg px-3 py-2 w-fit">
                             <span class="text-[10px] font-bold uppercase tracking-wide text-slate-400">Reporting period</span>
-                            <input type="month" value="${this.reportPeriodFrom || ''}" onchange="App.setReportPeriod('from', this.value)" class="text-xs border rounded px-2 py-1.5 outline-none focus:ring-2 focus:ring-gsf-boston/30" />
+                            <input type="month" data-report-ok value="${this.reportPeriodFrom || ''}" onchange="App.setReportPeriod('from', this.value)" class="text-xs border rounded px-2 py-1.5 outline-none focus:ring-2 focus:ring-gsf-boston/30" />
                             <span class="text-slate-400 text-xs">&ndash;</span>
-                            <input type="month" value="${this.reportPeriodTo || ''}" onchange="App.setReportPeriod('to', this.value)" class="text-xs border rounded px-2 py-1.5 outline-none focus:ring-2 focus:ring-gsf-boston/30" />
+                            <input type="month" data-report-ok value="${this.reportPeriodTo || ''}" onchange="App.setReportPeriod('to', this.value)" class="text-xs border rounded px-2 py-1.5 outline-none focus:ring-2 focus:ring-gsf-boston/30" />
                             ${(this.reportPeriodFrom || this.reportPeriodTo)
                                 ? '<span class="text-xs text-gsf-boston font-semibold">' + this.escapeHtml(this._periodLabel()) + '</span><button onclick="App.clearReportPeriod()" class="text-xs text-red-400 hover:text-red-600 font-bold" title="Clear period (back to all-time)">✕</button>'
                                 : '<span class="text-xs text-slate-400">all time</span>'}
@@ -2136,6 +2140,9 @@ Object.assign(window.App, {
                             </button>
                             <button onclick="App.exportTestimonials()" class="flex items-center justify-center gap-2 py-3 px-4 bg-white border border-slate-200 text-gsf-prussian font-bold rounded-lg hover:border-gsf-boston hover:text-gsf-boston hover:shadow-md transition-all shadow-sm">
                                 <i data-lucide="star" width="18" class="text-gsf-boston"></i> Testimonials Report
+                            </button>
+                            <button onclick="App.exportCoursePageTestimonials()" class="flex items-center justify-center gap-2 py-3 px-4 bg-white border border-purple-200 text-purple-800 font-bold rounded-lg hover:border-purple-400 hover:shadow-md transition-all shadow-sm" title="INTERNAL: best testimonials for public course pages. Runs a fresh AI marketing-scoring pass, picks + edits the most compelling quotes, and exports one sheet course-by-course (AI rating, cadre, country, stars, date).">
+                                <i data-lucide="megaphone" width="18" class="text-purple-600"></i> Course-Page Testimonials <span class="text-[9px] font-bold uppercase tracking-wider text-purple-500 border border-purple-300 rounded-full px-1.5 py-0.5">Internal</span>
                             </button>
                         </div>
                         <div class="mt-4 pt-4 border-t border-slate-100">
@@ -3038,12 +3045,12 @@ Object.assign(window.App, {
                     <div class="flex items-center justify-between gap-3 flex-wrap mb-6 bg-white border rounded-xl px-4 py-2.5 shadow-sm">
                         <div class="flex items-center gap-1.5" title="Reports keep all-time totals and add a section covering this period (new learners, certificates, responses)">
                             <span class="text-[10px] font-bold uppercase tracking-wide text-slate-400">Report period</span>
-                            <input type="month" value="${this.reportPeriodFrom || ''}" onchange="App.setReportPeriod('from', this.value)" class="text-xs border rounded px-1.5 py-1 outline-none focus:ring-2 focus:ring-gsf-boston/30" />
+                            <input type="month" data-report-ok value="${this.reportPeriodFrom || ''}" onchange="App.setReportPeriod('from', this.value)" class="text-xs border rounded px-1.5 py-1 outline-none focus:ring-2 focus:ring-gsf-boston/30" />
                             <span class="text-slate-400 text-xs">&ndash;</span>
-                            <input type="month" value="${this.reportPeriodTo || ''}" onchange="App.setReportPeriod('to', this.value)" class="text-xs border rounded px-1.5 py-1 outline-none focus:ring-2 focus:ring-gsf-boston/30" />
+                            <input type="month" data-report-ok value="${this.reportPeriodTo || ''}" onchange="App.setReportPeriod('to', this.value)" class="text-xs border rounded px-1.5 py-1 outline-none focus:ring-2 focus:ring-gsf-boston/30" />
                             ${(this.reportPeriodFrom || this.reportPeriodTo) ? '<button onclick="App.clearReportPeriod()" class="text-xs text-red-400 hover:text-red-600 font-bold ml-0.5" title="Clear period (reports go back to all-time only)">✕</button>' : ''}
                         </div>
-                        <div data-edit-only class="flex items-center gap-1.5 flex-wrap justify-end">
+                        <div data-edit-only data-report-ok class="flex items-center gap-1.5 flex-wrap justify-end">
                             <button onclick="App.exportProviderPackage(App.selectedProvider)" class="flex items-center gap-1.5 px-3.5 py-2 bg-amber-500 text-white font-bold rounded-lg text-xs shadow-sm hover:bg-amber-600 transition-colors" title="One folder with the PDF + web report + anonymized users + anonymized feedback (Excel)"><i data-lucide="package" width="14"></i> Report Package</button>
                             <button onclick="App.exportProviderHtmlReport(App.selectedProvider)" class="flex items-center gap-1.5 px-3 py-2 border rounded-lg text-xs font-bold text-slate-600 hover:text-gsf-boston hover:bg-slate-50 transition-colors" title="Interactive dark-themed report (single .html file)"><i data-lucide="globe" width="14"></i> Web</button>
                             <button onclick="App.generateProviderReport(App.selectedProvider)" class="flex items-center gap-1.5 px-3 py-2 border rounded-lg text-xs font-bold text-slate-600 hover:text-gsf-boston hover:bg-slate-50 transition-colors" title="Printable PDF report"><i data-lucide="download" width="14"></i> PDF</button>

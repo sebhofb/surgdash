@@ -1443,8 +1443,8 @@ a.shl:hover{color:var(--accent);border-bottom-color:var(--accent);}
 
   <div style="margin:18px 0 28px;border:1px solid #FFC14559;border-left:4px solid var(--accent);border-radius:8px;padding:24px 28px 22px;background:linear-gradient(135deg,#FFC14522,#001a2b 82%)">
     <p style="margin:0 0 5px;font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--accent)">What's Next</p>
-    <h3 style="margin:0 0 7px;font-size:21px;font-weight:700;color:#eef4f9;line-height:1.2">A few ways we can reach more learners &mdash; together</h3>
-    <p style="margin:0 0 20px;font-size:13px;color:#9fb3c8;line-height:1.6;max-width:780px">These numbers grow fastest when we promote your course side by side. The SURGhub team will actively support every option below &mdash; just tell us which one and we'll set it up with you.</p>
+    <h3 style="margin:0 0 7px;font-size:21px;font-weight:700;color:#eef4f9;line-height:1.2">${D.totalLrn > 0 ? 'Congratulations &mdash; together we&rsquo;ve reached <span style="color:var(--accent)">' + fmt(D.totalLrn) + ' learners</span>' : 'A few ways we can reach more learners &mdash; together'}</h3>
+    <p style="margin:0 0 20px;font-size:13px;color:#9fb3c8;line-height:1.6;max-width:780px">${D.totalLrn > 0 ? 'And we can reach even more &mdash; together. ' : ''}These numbers grow fastest when we promote your course side by side. The SURGhub team will actively support every option below &mdash; just tell us which one and we'll set it up with you.</p>
 
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:14px;margin-bottom:18px">
       <div style="border:1px solid #FFC14542;border-radius:7px;padding:16px 18px;background:#FFC14512">
@@ -2176,10 +2176,13 @@ if(Object.keys(GEO).length){
             return wb;
         },
 
-        _buildFeedbackWorkbook(providerName) {
+        async _buildFeedbackWorkbook(providerName) {
             const pSnap = this.getAnalyticsSnap().filter(d => d.Provider === providerName);
             if (pSnap.length === 0) return null;
             const demo = this._emailDemoMap || {};
+            // AI rating per comment (0–10, blank if not yet scored). The Excel keeps
+            // ALL raw comments unedited regardless of testimonial selection.
+            const aiScores = (typeof this._getAiScores === 'function') ? (await this._getAiScores()) : (this._aiScoreMap || {});
             const wb = XLSX.utils.book_new();
             let sheetsAdded = 0;
             pSnap.forEach(c => {
@@ -2191,6 +2194,7 @@ if(Object.keys(GEO).length){
                     .filter(f => f.t && !String(f.t).match(/^no\s*data$/i) && String(f.t).trim().length > 0)
                     .map((f, i) => {
                         const d = f.e ? demo[String(f.e).trim().toLowerCase()] : null;
+                        const ai = aiScores[this._djb2Hash(String(f.t || '').trim())];
                         return {
                             '#': i + 1,
                             'Date': f.d || '',
@@ -2198,7 +2202,8 @@ if(Object.keys(GEO).length){
                             'Type': f.s || '',
                             'Country': d && d.country ? d.country : '',
                             'Profession': d && d.profession ? d.profession : '',
-                            'Feedback': String(f.t).trim()
+                            'Feedback': String(f.t).trim(),
+                            'AI rating': (ai && typeof ai.s === 'number') ? ai.s : ''
                         };
                     });
                 if (rows.length === 0) return;
@@ -2252,7 +2257,7 @@ if(Object.keys(GEO).length){
             } catch (e) { console.error('[Package] users workbook failed for', providerName, e); }
 
             try {
-                const fwb = this._buildFeedbackWorkbook(providerName);
+                const fwb = await this._buildFeedbackWorkbook(providerName);
                 if (fwb) { this._writeWorkbook(fwb, path.join(provDir, safeName + '_feedback' + suffix + '.xlsx')); status.feedback = true; }
             } catch (e) { console.error('[Package] feedback workbook failed for', providerName, e); }
 

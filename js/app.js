@@ -60,6 +60,8 @@ window.App = {
     editUnlocked: false,        // true = full edit mode; false = read-only
     _editPasswordHash: null,    // SHA-256 hex string stored on disk (null = no password set)
     _defaultPasswordHash: '4ad6ff09ce690180656b143db9b3c032baa48e8946d3d263243bb95e9116d89c', // built-in fallback
+    reportAccess: false,        // true = provider-reporting role (SURGhub report workflow only; SURGfund + data writes stay locked)
+    _reportPasswordHash: null,  // SHA-256 hex for the reporting-role password (separate from edit)
     _autoPullInterval: null,
 
     async init() {
@@ -74,13 +76,17 @@ window.App = {
             // If NO password is set (fresh install OR after a wipe/restore that didn't
             // round-trip the password file), start unlocked — there's nothing to protect yet
             // and no usable fallback (the old built-in default hash was unrecoverable).
-            const storedHash = await Storage.getItem('surgdash_edit_password');
-            if (storedHash) {
-                this._editPasswordHash = storedHash;
+            this._editPasswordHash = (await Storage.getItem('surgdash_edit_password')) || null;
+            // Provider-reporting role password (separate, optional). Loaded but NOT
+            // auto-unlocked — the user enters it to unlock report mode (the unlock
+            // prompt tries the edit password first, then this one).
+            this._reportPasswordHash = (await Storage.getItem('surgdash_report_password')) || null;
+            // Start locked (read-only) if EITHER password is set, so a reporting
+            // password is meaningful even when no edit password exists.
+            if (this._editPasswordHash || this._reportPasswordHash) {
                 this.editUnlocked = false;
                 document.body.classList.add('viewer-mode');
             } else {
-                this._editPasswordHash = null;
                 this.editUnlocked = true;
                 document.body.classList.remove('viewer-mode');
             }
@@ -94,6 +100,8 @@ window.App = {
                         if (node.nodeType !== 1) return; // element nodes only
                         const apply = (el) => {
                             if (el.hasAttribute('data-viewer-allowed')) return;
+                            // In provider-reporting mode, report controls stay live.
+                            if (this.reportAccess && el.hasAttribute('data-report-ok')) return;
                             if (el.type === 'hidden') return;
                             if (!el.disabled) el.disabled = true;
                         };
@@ -483,7 +491,9 @@ window.App = {
         const hash = await this._hashPassword(pw);
         if (hash !== this._editPasswordHash) return false;
         this.editUnlocked = true;
+        this.reportAccess = false;                       // full edit supersedes reporting
         document.body.classList.remove('viewer-mode');
+        document.body.classList.remove('report-mode');
         if (this._autoPullInterval) { clearInterval(this._autoPullInterval); this._autoPullInterval = null; }
         this.renderView();
         return true;
@@ -492,8 +502,49 @@ window.App = {
     lockEdit() {
         this.editUnlocked = false;
         document.body.classList.add('viewer-mode');
+        document.body.classList.remove('report-mode');
         this._startAutoPull();
         this.renderView();
+    },
+
+    // ── Provider-reporting role (separate password) ───────────────────────────
+    // Unlocks ONLY the SURGhub provider-report workflow (export reports, select /
+    // auto-select testimonials, feedback time filter). SURGfund, Data Sync,
+    // Settings, the API key, and all data writes stay locked.
+    async setReportPassword(pw) {
+        if (!pw) {
+            this._reportPasswordHash = null;
+            await Storage.setItem('surgdash_report_password', null);
+        } else {
+            this._reportPasswordHash = await this._hashPassword(pw);
+            await Storage.setItem('surgdash_report_password', this._reportPasswordHash);
+        }
+    },
+
+    async unlockReport(pw) {
+        const hash = await this._hashPassword(pw);
+        if (!this._reportPasswordHash || hash !== this._reportPasswordHash) return false;
+        this.reportAccess = true;
+        this.editUnlocked = false;
+        document.body.classList.remove('viewer-mode');
+        document.body.classList.add('report-mode');
+        if (this._autoPullInterval) { clearInterval(this._autoPullInterval); this._autoPullInterval = null; }
+        this.renderView();
+        return true;
+    },
+
+    lockReport() {
+        this.reportAccess = false;
+        document.body.classList.remove('report-mode');
+        if (!this.editUnlocked) document.body.classList.add('viewer-mode');
+        this._startAutoPull();
+        this.renderView();
+    },
+
+    // Relock whichever elevated mode is active (used by the sidebar lock button).
+    relock() {
+        if (this.editUnlocked) this.lockEdit();
+        else if (this.reportAccess) this.lockReport();
     },
 
     showUnlockPrompt() {
@@ -506,8 +557,8 @@ window.App = {
                 <div style="width:48px;height:48px;border-radius:50%;background:#002F4C10;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">
                     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#002F4C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
                 </div>
-                <h3 style="font-size:16px;font-weight:700;color:#002F4C;margin-bottom:6px;">Enter Edit Password</h3>
-                <p style="font-size:12px;color:#94a3b8;margin-bottom:20px;">This unlocks editing for the current session.</p>
+                <h3 style="font-size:16px;font-weight:700;color:#002F4C;margin-bottom:6px;">Enter Password</h3>
+                <p style="font-size:12px;color:#94a3b8;margin-bottom:20px;">Unlocks editing (or provider-reporting access) for this session.</p>
                 <input type="password" id="unlock-pw-input" placeholder="Password" data-viewer-allowed
                     style="width:100%;box-sizing:border-box;padding:10px 14px;border:1px solid #e2e8f0;border-radius:10px;font-size:14px;outline:none;margin-bottom:8px;" />
                 <p id="unlock-error" style="font-size:11px;color:#dc2626;min-height:18px;margin-bottom:12px;"></p>
@@ -523,10 +574,12 @@ window.App = {
         const tryUnlock = async () => {
             const pw = input.value;
             if (!pw) { errEl.textContent = 'Please enter a password.'; return; }
-            const ok = await App.unlockEdit(pw);
-            if (ok) {
+            if (await App.unlockEdit(pw)) {
                 overlay.remove();
                 App.showMsg('Edit mode unlocked.');
+            } else if (await App.unlockReport(pw)) {
+                overlay.remove();
+                App.showMsg('Provider-reporting mode unlocked.');
             } else {
                 errEl.textContent = 'Incorrect password.';
                 input.value = '';

@@ -43,6 +43,32 @@
 
     const SYSTEM_PROMPT = 'You curate learner feedback for SURGhub, the United Nations Global Surgery Learning Hub — free online surgical training, mostly for clinicians in low- and middle-income countries. You will receive a JSON array of feedback comments from end-of-course surveys. For EACH comment, return one result object.\n\nScore 0-10 for testimonial quality in a partner-facing report:\n- 9-10: specific, vivid impact story (changed clinical practice, helped patients, career milestone, teaching others)\n- 7-8: concrete and credible praise with some specificity (what they learned, how they will use it)\n- 4-6: genuine but generic praise ("excellent course, well structured")\n- 1-3: bare thanks, single words, vague\n- 0: junk, complaints, off-topic, gibberish, requests for certificates\n\nquotable: true only if the comment (possibly cleaned) could stand alone as a quote a partner would be proud to share. Complaints and suggestions are never quotable, but score suggestions with theme "suggestion" so they can be triaged.\n\nquote: produce a cleaned version whenever quotable=true AND ALSO whenever themes include \"suggestion\" or \"complaint\" (those appear in report sections even though quotable=false). ALWAYS fix: standalone \"i\" to \"I\", sentence-initial capitals, obvious misspellings (e.g. \"its prefect\" becomes \"It\'s perfect\"), doubled words/spaces, missing terminal punctuation. Trim filler and repetition. NEVER change wording, meaning, or language (do not translate). Max ~50 words, no quotation marks added. If the comment is garbled or its meaning unclear, set quotable=false and leave quote empty instead of guessing. Empty string otherwise.';
 
+    // Marketing-tuned scoring for the INTERNAL "best testimonials for public
+    // course pages" export — a fresh AI pass focused purely on what would make a
+    // prospective learner want to enrol. Cached separately (surghub_marketing_ai).
+    const MARKETING_SCHEMA = {
+        type: 'object',
+        properties: {
+            results: {
+                type: 'array',
+                items: {
+                    type: 'object',
+                    properties: {
+                        i: { type: 'integer', description: 'index of the comment in the input list' },
+                        score: { type: 'integer', description: 'public-course-page appeal 0-10' },
+                        usable: { type: 'boolean', description: 'safe + compelling to show publicly on a course page' },
+                        quote: { type: 'string', description: 'edited public quote; empty if not usable' }
+                    },
+                    required: ['i', 'score', 'usable', 'quote'],
+                    additionalProperties: false
+                }
+            }
+        },
+        required: ['results'],
+        additionalProperties: false
+    };
+    const MARKETING_PROMPT = 'You curate learner testimonials for SURGhub — the United Nations Global Surgery Learning Hub (free online surgical training, mostly for clinicians in low- and middle-income countries). These quotes will be shown PUBLICLY on course landing pages to encourage prospective learners to enrol. For EACH end-of-course comment, return one result object.\n\nscore 0-10 = how compelling this is as a public testimonial that would make a prospective clinician want to take the course:\n- 9-10: vivid, specific, credible, emotionally resonant outcome (changed practice, helped patients, career growth, confidence gained)\n- 7-8: clear, concrete, specific and positive\n- 4-6: generic positive ("great course")\n- 1-3: vague or bare\n- 0: junk, complaints, suggestions, requests, off-topic, anything unusable publicly\n\nusable: true only if it could appear publicly (after light editing) — credible and positive, no complaints/requests, no profanity, and no personally identifying details or names of individuals.\n\nquote: an edited version for public display — fix spelling, grammar, capitalisation and punctuation; trim filler and repetition for brevity and clarity; max ~40 words; keep the meaning and the original language (do not translate); no surrounding quotation marks. Empty string if not usable.';
+
     Object.assign(window.App, {
 
         // Electron does not support window.prompt() — this is a minimal
@@ -608,6 +634,123 @@
                 this.renderView();
                 alert('AI scoring stopped: ' + e.message + '\n\nProgress was saved — run again to continue.');
             }
+        },
+
+        // ── INTERNAL: best testimonials for public course pages ───────────────
+        // A fresh marketing-tuned AI pass (separate cache: surghub_marketing_ai),
+        // then a one-sheet export grouped course-by-course with edited quotes.
+        _marketingScoreMap: null,
+        async _getMarketingScores() {
+            if (this._marketingScoreMap) return this._marketingScoreMap;
+            try { this._marketingScoreMap = (await Storage.getItem('surghub_marketing_ai')) || {}; } catch (e) { this._marketingScoreMap = {}; }
+            return this._marketingScoreMap;
+        },
+        async _claudeMarketingBatch(apiKey, comments) {
+            const parsed = await this._claudeJSON(apiKey, MARKETING_PROMPT, JSON.stringify(comments.map((t, i) => ({ i, text: t }))), MARKETING_SCHEMA, 8000);
+            return Array.isArray(parsed.results) ? parsed.results : [];
+        },
+
+        async exportCoursePageTestimonials() {
+            const apiKey = await this._getAnthropicKey();
+            if (!apiKey) return this.setAnthropicKey();
+            if (typeof XLSX === 'undefined') return alert('Spreadsheet library not loaded — reopen the app and try again.');
+
+            // All feedback across every provider, grouped by course.
+            const byCourse = this._feedbackByCourse(null);
+            const courses = Object.keys(byCourse).sort((a, b) => a.localeCompare(b));
+            if (!courses.length) return alert('No learner feedback found yet. Run Sync Courses / Sync Surveys first.');
+
+            // Marketing-score any comments not yet scored (junk filtered for free).
+            const scores = await this._getMarketingScores();
+            const todo = [];
+            const seen = new Set();
+            courses.forEach(c => byCourse[c].items.forEach(f => {
+                const t = String(f.t || '').trim();
+                if (!t) return;
+                const h = this._djb2Hash(t);
+                if (scores[h] || seen.has(h)) return;
+                seen.add(h);
+                if (this._isJunkFeedback(t)) { scores[h] = { s: 0, u: false, c: '' }; return; }
+                todo.push({ h, t });
+            }));
+
+            if (todo.length) {
+                if (!confirm('Marketing-score ' + todo.length.toLocaleString() + ' new comments with Claude (' + ANTHROPIC_MODEL + ') for public course-page suitability?\n\n' +
+                    Math.ceil(todo.length / BATCH_SIZE) + ' API calls · rough cost well under $' + Math.max(1, Math.ceil(todo.length / 1500)) + '.\nAlready-scored comments are reused. This is a separate pass from "Score with AI".')) return;
+                this._aiCancelled = false; this._reportCancelled = false;
+                this._aiUsage = { in: 0, out: 0 };
+                this._showReportProgress('Scoring testimonials for course pages…', true);
+                let done = 0, failed = 0;
+                try {
+                    for (let i = 0; i < todo.length; i += BATCH_SIZE) {
+                        if (this._aiCancelled || this._reportCancelled) break;
+                        const batch = todo.slice(i, i + BATCH_SIZE);
+                        this._showReportProgress('Scoring testimonials for course pages… ' + done + ' / ' + todo.length, true);
+                        try {
+                            const results = await this._claudeMarketingBatch(apiKey, batch.map(b => b.t));
+                            results.forEach(r => {
+                                const item = batch[r.i];
+                                if (!item) return;
+                                const s = Math.max(0, Math.min(10, Number(r.score) || 0));
+                                scores[item.h] = { s, u: !!r.usable && s > 0, c: r.usable ? String(r.quote || '').trim() : '' };
+                            });
+                            done += batch.length;
+                            await Storage.setItem('surghub_marketing_ai', scores);
+                        } catch (e) {
+                            failed++;
+                            if (/Invalid Anthropic API key/.test(e.message)) throw e;
+                            if (failed >= 3) throw new Error('Three batches failed in a row — stopping. Last error: ' + e.message);
+                        }
+                    }
+                    await Storage.setItem('surghub_marketing_ai', scores);
+                    this._marketingScoreMap = scores;
+                } catch (e) {
+                    await Storage.setItem('surghub_marketing_ai', scores); this._marketingScoreMap = scores;
+                    this._hideReportProgress(); this.renderView();
+                    return alert('Marketing scoring stopped: ' + e.message + '\n\nProgress was saved — run the export again to continue.');
+                }
+            }
+
+            // Build one sheet, grouped course-by-course, edited quotes only.
+            const demo = this._emailDemoMap || {};
+            const MIN = 7;
+            const aoa = [['Course', 'AI rating', 'Testimonial (edited)', 'Cadre', 'Country', 'Star rating', 'Date']];
+            let total = 0, coursesWithPicks = 0;
+            courses.forEach(course => {
+                const picks = byCourse[course].items
+                    .map(f => ({ f, a: scores[this._djb2Hash(String(f.t || '').trim())] }))
+                    .filter(x => x.a && x.a.u && x.a.s >= MIN && x.a.c)
+                    .sort((p, q) => q.a.s - p.a.s);
+                if (!picks.length) return;
+                coursesWithPicks++;
+                picks.forEach(({ f, a }) => {
+                    const d = f.e ? demo[String(f.e).trim().toLowerCase()] : null;
+                    aoa.push([
+                        course,
+                        a.s,
+                        this._polishQuote(a.c),
+                        d && d.profession ? d.profession : '',
+                        d && d.country ? d.country : '',
+                        (f.r !== undefined && f.r !== null && f.r !== '') ? f.r : '',
+                        f.d || ''
+                    ]);
+                    total++;
+                });
+                aoa.push(['', '', '', '', '', '', '']);   // spacer between courses
+            });
+            this._hideReportProgress();
+            if (!total) { this.renderView(); return alert('No testimonials reached the public-page bar (AI marketing score ≥ ' + MIN + ', usable). Try again after more feedback is collected.'); }
+
+            const ws = XLSX.utils.aoa_to_sheet(aoa);
+            ws['!cols'] = [{ wch: 34 }, { wch: 9 }, { wch: 72 }, { wch: 20 }, { wch: 18 }, { wch: 11 }, { wch: 12 }];
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Course-Page Testimonials');
+            const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+            const savePath = await electronAPI.invoke('pick-save-path', 'SURGhub_Course-Page_Testimonials.xlsx');
+            if (!savePath) { this.renderView(); return; }
+            electronAPI.fs.writeFileSync(savePath, new Uint8Array(out));
+            this.renderView();
+            alert('Course-page testimonials exported ✓\n\n' + total + ' testimonials across ' + coursesWithPicks + ' courses (AI marketing score ≥ ' + MIN + ', edited for clarity).\n\nInternal use — these are AI-edited; spot-check before publishing.');
         },
 
         // Collect per-course feedback entries for a provider (latest rows).
