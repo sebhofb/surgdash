@@ -285,6 +285,19 @@
             const migrationFlag = path.join(DATA_DIR, '.migrated');
             if (fs.existsSync(migrationFlag)) return false;
 
+            // A test/fresh profile must emulate a brand-new install. The legacy
+            // localforage store lives in Electron's IndexedDB, which is tied to
+            // userData and is NOT profile-isolated — so migrating it here would
+            // repopulate the "fresh" profile with the real machine's old data.
+            // Skip migration entirely and just stamp the flag.
+            if (electronAPI.isTestProfile) {
+                try {
+                    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+                    fs.writeFileSync(migrationFlag, new Date().toISOString(), 'utf8');
+                } catch (_) { /* best-effort */ }
+                return false;
+            }
+
             // Ensure data dir exists
             if (!fs.existsSync(DATA_DIR)) {
                 fs.mkdirSync(DATA_DIR, { recursive: true });

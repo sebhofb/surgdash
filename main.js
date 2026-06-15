@@ -10,9 +10,38 @@ let mainWindow;
 // so you can test the fresh-install experience without touching real data.
 // Set via env (SURGDASH_PROFILE=test) or launch arg (--profile=test), or the
 // "Open Fresh Test Profile" menu item. Empty = the normal ~/Documents/SURGdash.
+//
+// The chosen profile is also persisted to a pointer file in the (stable) per-app
+// userData dir. Packaged macOS apps do NOT reliably carry app.relaunch() args, so
+// relying on --profile alone left the relaunch on the normal profile. The pointer
+// file is read on startup as a fallback, making the switch dependable.
+function profilePointerPath() {
+  try { return path.join(app.getPath('userData'), 'active-profile'); } catch (_) { return null; }
+}
+
+// Permanently delete a test profile's data dir so re-entering it is a clean slate.
+// Hard-guarded to only ever touch ~/Documents/SURGdash-<profile>, never the real
+// ~/Documents/SURGdash data dir.
+function wipeProfileDir(profile) {
+  const safe = String(profile || '').replace(/[^A-Za-z0-9_-]/g, '');
+  if (!safe) return;                       // empty == the real profile — never wipe
+  try {
+    const dir = path.join(os.homedir(), 'Documents', 'SURGdash-' + safe);
+    if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+  } catch (_) { /* best-effort */ }
+}
+
 const DATA_PROFILE = (function () {
   const fromArg = (process.argv.find(a => a.startsWith('--profile=')) || '').split('=')[1];
-  return String(process.env.SURGDASH_PROFILE || fromArg || '').replace(/[^A-Za-z0-9_-]/g, '');
+  let p = process.env.SURGDASH_PROFILE || fromArg || '';
+  if (!p) {
+    // No env/argv profile — fall back to the persisted pointer (survives relaunch).
+    try {
+      const pp = profilePointerPath();
+      if (pp && fs.existsSync(pp)) p = fs.readFileSync(pp, 'utf8').trim();
+    } catch (_) { /* no pointer — normal profile */ }
+  }
+  return String(p || '').replace(/[^A-Za-z0-9_-]/g, '');
 })();
 
 // ── Path safety: restrict file IPC to home + tmp directories ─────────────
@@ -248,8 +277,19 @@ function buildAppMenu() {
         { label: 'Check for Updates…', click: () => checkForUpdatesManually() },
         { type: 'separator' },
         DATA_PROFILE
-          ? { label: 'Switch to Normal Data', click: () => { app.relaunch({ args: process.argv.slice(1).filter(a => !a.startsWith('--profile=')) }); app.exit(0); } }
-          : { label: 'Open Fresh Test Profile…', click: () => { app.relaunch({ args: process.argv.slice(1).filter(a => !a.startsWith('--profile=')).concat(['--profile=test']) }); app.exit(0); } },
+          ? { label: 'Switch to Normal Data', click: () => {
+                try { const pp = profilePointerPath(); if (pp && fs.existsSync(pp)) fs.unlinkSync(pp); } catch (_) {}
+                app.relaunch({ args: process.argv.slice(1).filter(a => !a.startsWith('--profile=')) });
+                app.exit(0);
+              } }
+          : { label: 'Open Fresh Test Profile…', click: () => {
+                // Clean slate every time: wipe the test dir, persist the pointer,
+                // then relaunch into the isolated profile.
+                wipeProfileDir('test');
+                try { const pp = profilePointerPath(); if (pp) fs.writeFileSync(pp, 'test', 'utf8'); } catch (_) {}
+                app.relaunch({ args: process.argv.slice(1).filter(a => !a.startsWith('--profile=')).concat(['--profile=test']) });
+                app.exit(0);
+              } },
         { type: 'separator' },
         { role: 'services' },
         { type: 'separator' },
