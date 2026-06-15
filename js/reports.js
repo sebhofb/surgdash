@@ -1431,19 +1431,39 @@ a.shl:hover{color:var(--accent);border-bottom-color:var(--accent);}
   ${secEyebrow('Course Details')}
   ${courseSections}
 
-  <div style="margin:6px 0 28px;border:1px solid #FFC14538;border-radius:5px;padding:20px 24px;background:linear-gradient(135deg,#FFC14510,#001a2b 70%);display:flex;align-items:center;justify-content:space-between;gap:28px;flex-wrap:wrap">
-    <div style="min-width:0;flex:1">
-      <p style="margin:0 0 8px;font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--accent)">What's Next</p>
-      <p style="margin:0;font-size:13px;color:#9fb3c8;line-height:1.65">Ready to reach even more learners? Publish your next course, refresh existing content, or explore new formats &mdash; the SURGhub team supports you end to end. And don't keep these results to yourself: every chart and results card in this report can be downloaded as a branded image, ready to share with your partners, funders and community.</p>
-      <p style="margin:12px 0 0"><a href="https://www.surghub.org" target="_blank" rel="noopener" style="font-family:var(--mono);font-size:11px;letter-spacing:.04em;color:var(--accent);text-decoration:none">Visit surghub.org &#8599;</a></p>
+  <div style="margin:18px 0 28px;border:1px solid #FFC14559;border-left:4px solid var(--accent);border-radius:8px;padding:24px 28px 22px;background:linear-gradient(135deg,#FFC14522,#001a2b 82%)">
+    <p style="margin:0 0 5px;font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--accent)">What's Next</p>
+    <h3 style="margin:0 0 7px;font-size:21px;font-weight:700;color:#eef4f9;line-height:1.2">A few ways we can reach more learners &mdash; together</h3>
+    <p style="margin:0 0 20px;font-size:13px;color:#9fb3c8;line-height:1.6;max-width:780px">These numbers grow fastest when we promote your course side by side. The SURGhub team will actively support every option below &mdash; just tell us which one and we'll set it up with you.</p>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:14px;margin-bottom:18px">
+      <div style="border:1px solid #FFC14542;border-radius:7px;padding:16px 18px;background:#FFC14512">
+        <p style="margin:0 0 6px;font-size:14px;font-weight:700;color:#FFD27a;line-height:1.3">&#128227;&nbsp; Promote your course in your own network &mdash; regularly</p>
+        <p style="margin:0;font-size:12.5px;color:#aebccb;line-height:1.6">A short post to your members, a line in your newsletter, a mention at your next meeting or webinar &mdash; these reach exactly the clinicians this course is built for. It's the single biggest lever you hold, and most partners haven't tapped it yet. Tell us and we'll co-create the posts, graphics and copy, and run the promotion <strong style="color:#d4dde7">jointly with you</strong>.</p>
+      </div>
+      <div style="border:1px solid #FFC14542;border-radius:7px;padding:16px 18px;background:#FFC14512">
+        <p style="margin:0 0 6px;font-size:14px;font-weight:700;color:#FFD27a;line-height:1.3">&#129309;&nbsp; Open doors to new communities, together</p>
+        <p style="margin:0;font-size:12.5px;color:#aebccb;line-height:1.6">Know a society, training programme, hospital network, ministry or region that would value this training? Introduce us &mdash; and we'll <strong style="color:#d4dde7">plan and run joint outreach with you</strong> to bring them on board.</p>
+      </div>
     </div>
-    ${(provLogo || shLogoColor)
-      ? '<div style="display:flex;align-items:center;gap:14px;background:#fff;border-radius:8px;padding:10px 14px;flex-shrink:0">'
-          + (provLogo ? '<img src="' + provLogo + '" alt="' + esc(providerName) + '" style="height:46px;width:auto;max-width:140px;object-fit:contain;display:block">' : '')
-          + (provLogo && shLogoColor ? '<div style="width:1px;height:40px;background:#d6dde3;flex-shrink:0"></div>' : '')
-          + (shLogoColor ? '<img src="' + shLogoColor + '" alt="SURGhub" style="height:46px;width:auto;max-width:140px;object-fit:contain;display:block">' : '')
-          + '</div>'
-      : ''}
+
+    <p style="margin:0 0 9px;font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#6d8ba3">More ways to build on this</p>
+    <ul style="margin:0 0 18px;padding:0;list-style:none;display:grid;gap:9px">
+      <li style="display:flex;gap:10px;font-size:12.5px;color:#9fb3c8;line-height:1.55"><span style="color:var(--accent);flex-shrink:0;font-weight:700">&#9656;</span><span><strong style="color:#d4dde7">Publish your next course.</strong> Build on this momentum with new content &mdash; the SURGhub team supports you end to end, from outline to launch.</span></li>
+      <li style="display:flex;gap:10px;font-size:12.5px;color:#9fb3c8;line-height:1.55"><span style="color:var(--accent);flex-shrink:0;font-weight:700">&#9656;</span><span><strong style="color:#d4dde7">Refresh or extend what's here.</strong> Update modules, add formats like video, interactive scenarios or assessments, or add languages to widen your reach.</span></li>
+      <li style="display:flex;gap:10px;font-size:12.5px;color:#9fb3c8;line-height:1.55"><span style="color:var(--accent);flex-shrink:0;font-weight:700">&#9656;</span><span><strong style="color:#d4dde7">Share these results.</strong> Every chart and results card in this report downloads as a branded image &mdash; ready for your partners, funders, board and community.</span></li>
+    </ul>
+
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:24px;flex-wrap:wrap;border-top:1px solid #FFC14524;padding-top:16px">
+      <p style="margin:0;font-size:12.5px;color:#d4dde7;line-height:1.5">Ready to pick one? <strong style="color:#eef4f9">Reply to the SURGhub team</strong> and we'll make it happen with you. &nbsp;<a href="https://www.surghub.org" target="_blank" rel="noopener" style="font-family:var(--mono);font-size:11px;letter-spacing:.04em;color:var(--accent);text-decoration:none;white-space:nowrap">Visit surghub.org &#8599;</a></p>
+      ${(provLogo || shLogoColor)
+        ? '<div style="display:flex;align-items:center;gap:14px;background:#fff;border-radius:8px;padding:10px 14px;flex-shrink:0">'
+            + (provLogo ? '<img src="' + provLogo + '" alt="' + esc(providerName) + '" style="height:42px;width:auto;max-width:130px;object-fit:contain;display:block">' : '')
+            + (provLogo && shLogoColor ? '<div style="width:1px;height:36px;background:#d6dde3;flex-shrink:0"></div>' : '')
+            + (shLogoColor ? '<img src="' + shLogoColor + '" alt="SURGhub" style="height:42px;width:auto;max-width:130px;object-fit:contain;display:block">' : '')
+            + '</div>'
+        : ''}
+    </div>
   </div>
 </div>
 
