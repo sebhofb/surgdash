@@ -266,6 +266,7 @@
     </style>
 </head>
 <body class="text-slate-800 h-screen flex flex-col overflow-hidden">
+    <div id="app-splash" style="position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:#002F4C;color:#fff;transition:opacity .4s"><img src="build/gsf_logo_symbol.png" alt="" style="width:72px;height:72px;border-radius:14px;box-shadow:0 4px 24px rgba(0,0,0,.4)"><div style="font-size:30px;font-weight:900;letter-spacing:-.01em">SURG<span style="color:#91B5D9">dash</span></div><div style="font-size:12px;opacity:.7;letter-spacing:.04em">Data for impact</div><div style="font-size:10px;opacity:.45;margin-top:6px">&copy; GSF</div></div>
     <!-- Read-only mode banner (hidden when edit mode is unlocked) -->
     <div id="viewer-mode-banner" class="shrink-0 items-center justify-between gap-3 px-4 py-2 bg-gsf-prussian/90 text-white text-xs font-semibold z-50">
         <div class="flex items-center gap-2">
@@ -283,6 +284,16 @@
         </div>
         <button onclick="App.syncNow()" class="px-3 py-1 rounded bg-white/15 hover:bg-white/30 transition-colors text-white text-[11px] flex items-center gap-1 font-bold"><i data-lucide="upload-cloud" width="11"></i> Sync now</button>
     </div>
+
+    <!-- Sample-active banner — shown on every SURGfund tab (not SURGhub) whenever the
+         demonstration project is blended into the figures, so demo data is never mistaken for real data. -->
+    <div id="sample-active-banner" class="shrink-0 items-center justify-between gap-3 px-4 py-2 bg-purple-600 text-white text-xs font-semibold z-50" style="display:none;">
+        <div class="flex items-center gap-2">
+            <i data-lucide="flask-conical" width="13"></i>
+            <span>Sample project is blended in — these figures include demonstration data, not just real projects.</span>
+        </div>
+        <button onclick="App.toggleSampleInclude(false)" class="px-3 py-1 rounded bg-white/15 hover:bg-white/30 transition-colors text-white text-[11px] flex items-center gap-1 font-bold"><i data-lucide="eye-off" width="11"></i> Hide sample</button>
+    </div>
     <div class="flex flex-1 overflow-hidden">
     <aside class="w-64 bg-gsf-prussian text-white flex flex-col shadow-xl z-20 shrink-0">
         <div class="p-5 pb-3 border-b border-white/10">
@@ -290,7 +301,7 @@
                 <img id="sidebar-logo" src="build/gsf_logo_symbol.png" alt="SURGdash" class="w-9 h-9 rounded-lg shadow-md">
                 <div>
                     <h2 class="text-xl font-black tracking-tight text-white leading-tight">SURG<span class="text-gsf-polo">dash</span></h2>
-                    <p class="text-gsf-polo/50 text-[9px] font-bold uppercase tracking-wider">Project Analytics <span>&copy;</span> <span class="ml-1 px-1.5 py-0.5 rounded bg-white/10 text-gsf-polo/40 text-[8px] tracking-wide">v1.2.0</span></p>
+                    <p class="text-gsf-polo/50 text-[9px] font-bold uppercase tracking-wider">Data for impact <span id="app-version" class="ml-1 px-1.5 py-0.5 rounded bg-white/10 text-gsf-polo/40 text-[8px] tracking-wide">v2.0.1</span></p>
                 </div>
             </div>
         </div>
@@ -341,5 +352,38 @@
     <script src="js/genericCharts.js"></script>
     <script src="js/genericViews.js"></script>
     <script src="js/ui.js"></script>
+    <script>
+      // ── Splash controller ────────────────────────────────────────────────
+      // The window is created hidden (main.js show:false) and only revealed on
+      // 'ready-to-show'. If we faded the splash off a renderer timer it would
+      // play out while the window is still hidden and the user would never see
+      // it. So: keep the splash up for a minimum window AFTER the window is
+      // actually shown, then fade. main.js calls window.__armSplash() right
+      // after mainWindow.show(); the visibilitychange path is a fallback.
+      (function () {
+        var faded = false;
+        function fade() {
+          if (faded) return; faded = true;
+          var s = document.getElementById('app-splash');
+          if (!s) return;
+          s.style.opacity = '0';
+          setTimeout(function () { if (s && s.parentNode) s.remove(); }, 500);
+        }
+        var MIN_VISIBLE_MS = 1600;
+        window.__armSplash = function () { setTimeout(fade, MIN_VISIBLE_MS); };
+        if (document.visibilityState === 'visible') {
+          window.__armSplash();
+        } else {
+          document.addEventListener('visibilitychange', function onVis() {
+            if (document.visibilityState === 'visible') {
+              document.removeEventListener('visibilitychange', onVis);
+              window.__armSplash();
+            }
+          });
+        }
+        // Hard safety: never let the splash linger if something goes wrong.
+        setTimeout(fade, 6000);
+      })();
+    </script>
 </body>
 </html>

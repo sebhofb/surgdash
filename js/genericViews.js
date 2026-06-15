@@ -348,8 +348,8 @@ window.GenericViews = {
                         <div class="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-1 shrink-0">${yearSelector}</div>
                     </div>
                     <div class="border-t border-slate-100 px-5 py-2 flex items-center gap-2 flex-wrap bg-slate-50/50">
-                        <button onclick="GenericViews._exportProjectSnapshot('${project.id}', ${isAllYear ? "'all'" : year})" class="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold text-gsf-boston hover:bg-gsf-boston hover:text-white transition-all" title="Export an interactive web snapshot — shareable as a single HTML file"><i data-lucide="globe" width="12"></i> Snapshot</button>
-                        <button onclick="GenericViews._exportSubmissionForm('${project.id}')" class="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold text-emerald-700 hover:bg-emerald-600 hover:text-white transition-all" title="Generate a standalone HTML submission form to send to a colleague"><i data-lucide="file-edit" width="12"></i> Submission Form</button>
+                        <button data-edit-only onclick="GenericViews._exportProjectSnapshot('${project.id}', ${isAllYear ? "'all'" : year})" class="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold text-gsf-boston hover:bg-gsf-boston hover:text-white transition-all" title="Export an interactive web snapshot — shareable as a single HTML file"><i data-lucide="globe" width="12"></i> Snapshot</button>
+                        <button data-edit-only onclick="GenericViews._exportSubmissionForm('${project.id}')" class="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold text-emerald-700 hover:bg-emerald-600 hover:text-white transition-all" title="Generate a standalone HTML submission form to send to a colleague"><i data-lucide="file-edit" width="12"></i> Submission Form</button>
                         ${project.hcwMultiplierEnabled ? `<span class="w-px h-4 bg-slate-200 mx-1"></span><button onclick="App.showHcwMultiplier=!App.showHcwMultiplier; App.renderView()" class="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold transition-all ${multiplierEnabled ? 'bg-gsf-boston text-white' : 'text-slate-500 hover:bg-slate-100'}" title="HCW multiplier ×${multiplierRate}"><i data-lucide="trending-up" width="12"></i> ×${multiplierRate} HCW</button>` : ''}
                         ${(project.sheetsTabUrl || appSettings.googleSheetsViewUrl) || project.linkGsf || project.linkFolder || (project.linksExtra || []).some(l => l.url) ? `<span class="w-px h-4 bg-slate-200 mx-1 ml-auto"></span>` : '<span class="ml-auto"></span>'}
                         ${(project.sheetsTabUrl || appSettings.googleSheetsViewUrl) ? `<button onclick="electronAPI.openExternal('${App.escapeHtml(project.sheetsTabUrl || appSettings.googleSheetsViewUrl)}')" class="p-1.5 rounded text-emerald-600 hover:bg-emerald-50 transition-all" title="Open Google Sheet"><i data-lucide="sheet" width="14"></i></button>` : ''}
@@ -5049,7 +5049,8 @@ window.GenericViews = {
         const year       = App.kpiYear === 'all' ? 'all' : (App.kpiYear || now.getFullYear());
         const appSettings = await Projects.getAppSettings();
 
-        const genericProjects = Projects.registry.filter(p => p.type === 'generic' && !p.isSample);
+        const hasSampleProject = Projects.registry.some(p => p.type === 'generic' && p.isSample);
+        const genericProjects = Projects.registry.filter(p => p.type === 'generic' && (App.includeSample || !p.isSample));
         if (genericProjects.length === 0) {
             const appSettings = await Projects.getAppSettings();
             if (!App.editUnlocked) {
@@ -5093,7 +5094,7 @@ window.GenericViews = {
                             <span>New Project</span>
                             <span class="text-[10px] font-normal opacity-70">Start a blank project</span>
                         </button>
-                        <button onclick="GenericViews._localRestore()" class="flex flex-col items-center gap-2 px-5 py-5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 hover:border-gsf-boston hover:text-gsf-boston transition-colors">
+                        <button data-edit-only onclick="GenericViews._localRestore()" class="flex flex-col items-center gap-2 px-5 py-5 bg-white border border-slate-200 rounded-xl text-sm font-bold text-slate-700 hover:border-gsf-boston hover:text-gsf-boston transition-colors">
                             <i data-lucide="hard-drive-upload" width="20"></i>
                             <span>Restore Local Backup</span>
                             <span class="text-[10px] font-normal text-slate-400">Load a .json backup file</span>
@@ -5445,24 +5446,30 @@ window.GenericViews = {
                                 <p class="text-xs text-slate-500 mt-0.5">${genericProjects.length} active project${genericProjects.length !== 1 ? 's' : ''}</p>
                             </div>
                         </div>
-                        <div class="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-1 shrink-0">${yearSelector}</div>
+                        <div class="flex items-center gap-2 shrink-0">
+                            ${hasSampleProject ? `<label class="flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-600 cursor-pointer select-none" title="Blend the demonstration (sample) project in or out of the organisation totals and charts">
+                                <input type="checkbox" data-viewer-allowed ${App.includeSample ? 'checked' : ''} onchange="App.toggleSampleInclude(this.checked)" class="accent-purple-600 cursor-pointer">
+                                <i data-lucide="flask-conical" width="12" class="text-purple-500"></i> Sample
+                            </label>` : `<button onclick="App.addSampleProject()" class="flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-600 hover:border-purple-300 hover:text-purple-700 transition-colors select-none" title="Add a demonstration project — fully populated with KPIs, quality data, facilities and events — then blend it into the dashboard to preview a complete org view"><i data-lucide="flask-conical" width="12" class="text-purple-500"></i> Add sample</button>`}
+                            <div class="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-1">${yearSelector}</div>
+                        </div>
                     </div>
                     <div class="border-t border-slate-100 px-5 py-2 flex items-center gap-2 flex-wrap bg-slate-50/50">
-                        <button onclick="GenericViews._exportAllProjectsPdf()" class="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold text-gsf-boston hover:bg-gsf-boston hover:text-white transition-all" title="Generate combined PDF report for all projects"><i data-lucide="file-stack" width="12"></i> All Projects PDF</button>
-                        <button onclick="GenericViews._exportIntakeForm()" class="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold text-emerald-700 hover:bg-emerald-600 hover:text-white transition-all" title="Generate a new-project intake form for a colleague to fill in"><i data-lucide="user-plus" width="12"></i> Intake Form</button>
-                        <button onclick="GenericViews._exportOrgSnapshot(${isAllYear ? "'all'" : year})" class="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-all" title="Export interactive web snapshot (internal — beta banner, full data)"><i data-lucide="globe" width="12"></i> Snapshot</button>
-                        <button onclick="GenericViews._showExternalSnapshotPicker(${isAllYear ? "'all'" : year})" class="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold text-emerald-700 hover:bg-emerald-50 transition-all" title="Export a clean, website-ready snapshot — pick exactly which projects, years, and indicators to include"><i data-lucide="share-2" width="12"></i> External</button>
+                        <button data-edit-only onclick="GenericViews._exportAllProjectsPdf()" class="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold text-gsf-boston hover:bg-gsf-boston hover:text-white transition-all" title="Generate combined PDF report for all projects"><i data-lucide="file-stack" width="12"></i> All Projects PDF</button>
+                        <button data-edit-only onclick="GenericViews._exportIntakeForm()" class="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold text-emerald-700 hover:bg-emerald-600 hover:text-white transition-all" title="Generate a new-project intake form for a colleague to fill in"><i data-lucide="user-plus" width="12"></i> Intake Form</button>
+                        <button data-edit-only onclick="GenericViews._exportOrgSnapshot(${isAllYear ? "'all'" : year})" class="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-all" title="Export interactive web snapshot (internal — beta banner, full data)"><i data-lucide="globe" width="12"></i> Snapshot</button>
+                        <button data-edit-only onclick="GenericViews._showExternalSnapshotPicker(${isAllYear ? "'all'" : year})" class="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold text-emerald-700 hover:bg-emerald-50 transition-all" title="Export a clean, website-ready snapshot — pick exactly which projects, years, and indicators to include"><i data-lucide="share-2" width="12"></i> External</button>
                         ${anyMultiplierEnabled ? `<button onclick="App.showHcwMultiplier=!App.showHcwMultiplier; App.renderView()" class="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold transition-all ${orgShowMultiplier ? 'bg-gsf-boston text-white' : 'text-slate-500 hover:bg-slate-100'}" title="Apply HCW multiplier effect"><i data-lucide="trending-up" width="12"></i> HCW</button>` : ''}
                         <span class="w-px h-4 bg-slate-200 mx-1"></span>
                         <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Sheets</span>
                         <button id="sheets-sync-btn" onclick="GenericViews._syncToSheets()" data-edit-only class="p-1.5 rounded text-emerald-600 hover:bg-emerald-50 transition-all" title="Push all projects + org summary to Google Sheets"><i data-lucide="upload" width="14"></i></button>
                         <button id="sheets-pull-btn" onclick="GenericViews._pullFromSheets()" class="p-1.5 rounded text-emerald-600 hover:bg-emerald-50 transition-all" title="Pull KPI data back from Google Sheets"><i data-lucide="download" width="14"></i></button>
                         ${appSettings.googleSheetsViewUrl ? `<button onclick="electronAPI.openExternal('${App.escapeHtml(appSettings.googleSheetsViewUrl)}')" class="p-1.5 rounded text-emerald-600 hover:bg-emerald-50 transition-all" title="Open Google Sheet"><i data-lucide="sheet" width="14"></i></button>` : ''}
-                        <span class="w-px h-4 bg-slate-200 mx-1"></span>
-                        <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Local</span>
-                        <button onclick="GenericViews._localBackup()" class="p-1.5 rounded text-slate-500 hover:bg-slate-100 transition-all" title="Save a complete JSON backup — SURGfund projects + SURGhub data + settings"><i data-lucide="hard-drive-download" width="14"></i></button>
-                        <button onclick="GenericViews._localRestore()" class="p-1.5 rounded text-slate-500 hover:bg-slate-100 transition-all" title="Restore from a previous full backup file (also available in view mode so viewers can load a colleague's snapshot)"><i data-lucide="hard-drive-upload" width="14"></i></button>
-                        <button onclick="GenericViews._showLocalBackupBrowser()" class="p-1.5 rounded text-slate-500 hover:bg-slate-100 transition-all" title="Restore from an automatic backup — the pre-sync / pre-pull snapshots SURGdash saves on its own (one-click, no file hunting)"><i data-lucide="history" width="14"></i></button>
+                        <span data-edit-only class="w-px h-4 bg-slate-200 mx-1"></span>
+                        <span data-edit-only class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Local</span>
+                        <button data-edit-only onclick="GenericViews._localBackup()" class="p-1.5 rounded text-slate-500 hover:bg-slate-100 transition-all" title="Save a complete JSON backup — SURGfund projects + SURGhub data + settings"><i data-lucide="hard-drive-download" width="14"></i></button>
+                        <button data-edit-only onclick="GenericViews._localRestore()" class="p-1.5 rounded text-slate-500 hover:bg-slate-100 transition-all" title="Restore from a previous full backup file (edit mode only)"><i data-lucide="hard-drive-upload" width="14"></i></button>
+                        <button data-edit-only onclick="GenericViews._showLocalBackupBrowser()" class="p-1.5 rounded text-slate-500 hover:bg-slate-100 transition-all" title="Restore from an automatic backup — the pre-sync / pre-pull snapshots SURGdash saves on its own (one-click, no file hunting)"><i data-lucide="history" width="14"></i></button>
                     </div>
                 </header>
 
@@ -5536,7 +5543,7 @@ window.GenericViews = {
         const now  = new Date();
         const year = App.kpiYear === 'all' ? 'all' : (App.kpiYear || now.getFullYear());
 
-        const genericProjects = Projects.registry.filter(p => p.type === 'generic' && !p.isSample);
+        const genericProjects = Projects.registry.filter(p => p.type === 'generic' && (App.includeSample || !p.isSample));
 
         const projectData = await Promise.all(genericProjects.map(async p => {
             const [allTargets, allActuals] = await Promise.all([
@@ -5659,16 +5666,16 @@ window.GenericViews = {
                     <div class="flex items-center gap-2 flex-wrap">
                         <div class="flex items-center gap-1 bg-slate-100 rounded-lg p-1">${yearSelector}</div>
                         ${anyMultiplierEnabled ? `<button onclick="App.showHcwMultiplier=!App.showHcwMultiplier; App.renderView()" class="flex items-center gap-1.5 px-3 py-2 rounded-lg border text-sm font-semibold transition-all ${tableShowMultiplier ? 'bg-gsf-boston text-white border-gsf-boston' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}" title="Apply HCW multiplier effect"><i data-lucide="trending-up" width="14"></i> HCW</button>` : ''}
-                        <button onclick="GenericViews._exportOrgExcel(${year})" class="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-all">
+                        <button data-edit-only onclick="GenericViews._exportOrgExcel(${year})" class="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-all">
                             <i data-lucide="file-spreadsheet" width="14" class="text-emerald-600"></i> Excel
                         </button>
-                        <button onclick="GenericViews._exportOrgPdf(${year})" class="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-all">
+                        <button data-edit-only onclick="GenericViews._exportOrgPdf(${year})" class="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-all">
                             <i data-lucide="file-text" width="14" class="text-red-500"></i> PDF
                         </button>
-                        <button onclick="GenericViews._exportOrgSnapshot(${isAllYear ? "'all'" : year})" class="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-all" title="Export interactive web snapshot">
+                        <button data-edit-only onclick="GenericViews._exportOrgSnapshot(${isAllYear ? "'all'" : year})" class="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-200 bg-white text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-all" title="Export interactive web snapshot">
                             <i data-lucide="globe" width="14" class="text-gsf-boston"></i> Web Snapshot
                         </button>
-                        <button onclick="GenericViews._exportAllProjectsPdf()" class="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gsf-boston bg-gsf-boston text-sm font-semibold text-white hover:bg-gsf-prussian transition-all" title="Generate combined PDF report for all projects">
+                        <button data-edit-only onclick="GenericViews._exportAllProjectsPdf()" class="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gsf-boston bg-gsf-boston text-sm font-semibold text-white hover:bg-gsf-prussian transition-all" title="Generate combined PDF report for all projects">
                             <i data-lucide="file-stack" width="14"></i> All Projects PDF
                         </button>
                     </div>
@@ -9447,7 +9454,7 @@ function initProjectMap(pid){
         const registry = Projects.registry || [];
         const projects = registry.filter(p => p.type === 'generic' && !p.isSample);
         const sample   = registry.find(p => p.type === 'generic' && p.isSample);
-        if (sample) projects.push(sample); // keep sample data visible too
+        if (sample && App.includeSample) projects.push(sample); // sample blends in/out via the org toggle
 
         // Load events + updates for every project in parallel
         const perProject = await Promise.all(projects.map(async p => {
@@ -9706,7 +9713,7 @@ function initProjectMap(pid){
     },
 
     async renderOrgCalendar(main) {
-        const genericProjects = Projects.registry.filter(p => p.type === 'generic' && !p.isSample);
+        const genericProjects = Projects.registry.filter(p => p.type === 'generic' && (App.includeSample || !p.isSample));
         const allData = await Promise.all(genericProjects.map(async p => {
             const [events, updates] = await Promise.all([Projects.getEvents(p.id), Projects.getUpdates(p.id)]);
             return { project: p, events, updates };
@@ -10450,10 +10457,10 @@ function initProjectMap(pid){
                     <p class="text-sm text-slate-500 mb-4">Generate a PDF report with KPI data, trend charts, and recent narrative updates.</p>
                     ${!hasData ? '<p class="text-amber-600 text-sm mb-4">Add some events or updates first to generate a meaningful report.</p>' : ''}
                     <div class="flex items-center gap-3">
-                        <button onclick="GenericViews._generateReport('${project.id}')" class="px-6 py-2.5 bg-gsf-boston text-white rounded-lg text-sm font-bold hover:bg-gsf-prussian transition-colors flex items-center gap-2 ${!hasData ? 'opacity-50 pointer-events-none' : ''}">
+                        <button data-edit-only onclick="GenericViews._generateReport('${project.id}')" class="px-6 py-2.5 bg-gsf-boston text-white rounded-lg text-sm font-bold hover:bg-gsf-prussian transition-colors flex items-center gap-2 ${!hasData ? 'opacity-50 pointer-events-none' : ''}">
                             <i data-lucide="file-text" width="16"></i> Generate PDF
                         </button>
-                        <button onclick="GenericViews._exportKpiData('${project.id}')" class="px-6 py-2.5 border-2 border-gsf-boston text-gsf-boston rounded-lg text-sm font-bold hover:bg-gsf-boston hover:text-white transition-colors flex items-center gap-2 ${events.length === 0 ? 'opacity-50 pointer-events-none' : ''}">
+                        <button data-edit-only onclick="GenericViews._exportKpiData('${project.id}')" class="px-6 py-2.5 border-2 border-gsf-boston text-gsf-boston rounded-lg text-sm font-bold hover:bg-gsf-boston hover:text-white transition-colors flex items-center gap-2 ${events.length === 0 ? 'opacity-50 pointer-events-none' : ''}">
                             <i data-lucide="download" width="16"></i> Export to Excel
                         </button>
                     </div>
@@ -11197,7 +11204,7 @@ ${additionalPages.map((inner, i) => `
     },
 
     async renderOrgMap(main) {
-        const allProjects = Projects.registry.filter(p => p.type !== 'org' && p.type !== 'surghub' && !p.isSample);
+        const allProjects = Projects.registry.filter(p => p.type !== 'org' && p.type !== 'surghub' && (App.includeSample || !p.isSample));
 
         main.innerHTML = `
             <div style="display:flex;flex-direction:column;height:100%">
@@ -11944,7 +11951,7 @@ ${additionalPages.map((inner, i) => `
                         <i data-lucide="save" width="14"></i> Save Settings
                     </button>
                     <span id="save-settings-hint" class="text-[11px] text-amber-600 font-bold hidden ml-3">⚠ You have unsaved changes</span>
-                    <button onclick="GenericViews._confirmDeleteProject('${project.id}')" class="px-4 py-2 text-red-500 hover:bg-red-50 rounded-lg text-sm font-medium transition-colors">Delete Project</button>
+                    <button data-edit-only onclick="GenericViews._confirmDeleteProject('${project.id}')" class="px-4 py-2 text-red-500 hover:bg-red-50 rounded-lg text-sm font-medium transition-colors">Delete Project</button>
                 </div>
             </div>`;
 
@@ -13714,6 +13721,7 @@ function _writeProject(ss, d) {
     },
 
     async _confirmDeleteProject(projectId) {
+        if (!App.editUnlocked) return;   // viewers can't delete (button is also hidden via data-edit-only)
         const project = Projects.getProject(projectId);
         if (!confirm(`Delete "${project.name}" and all its data? This cannot be undone.`)) return;
         await Projects.deleteProject(projectId);

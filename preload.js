@@ -36,6 +36,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // ── App paths ────────────────────────────────────────────────────────────
     appPath: path.resolve(__dirname),
 
+    // ── App version (single source of truth: package.json) ───────────────────
+    appVersion: (() => { try { return require('./package.json').version; } catch (_) { return ''; } })(),
+
     // ── File-system (synchronous, matching the existing Storage API) ─────────
     fs: {
         existsSync(p)          { return fs.existsSync(p); },

@@ -142,7 +142,7 @@ Object.assign(window.App, {
             <div id="eng-section-provider" class="bg-white rounded-xl shadow-sm border overflow-hidden">
                 <div class="bg-slate-50 border-b p-5 flex justify-between items-start gap-4 flex-wrap">
                     <div>
-                        <h2 class="font-bold text-lg text-gsf-prussian flex items-center gap-2"><i data-lucide="award" class="text-gsf-boston"></i> Provider Scorecard</h2>
+                        <h2 class="font-bold text-lg text-gsf-prussian flex items-center gap-2"><i data-lucide="award" class="text-gsf-boston"></i> Provider Scorecard<span class="text-[9px] font-bold uppercase tracking-wider text-amber-700 border border-amber-300 bg-amber-50 rounded-full px-1.5 py-0.5 ml-2 align-middle">Beta</span></h2>
                         <p class="text-xs text-slate-500 mt-1">Composite score (0–100) blending rating, completion % and engagement depth. Use to triage which providers need attention vs. which are pulling their weight.</p>
                     </div>
                     ${this._engActionBtns('eng-section-provider', 'provider', 'Provider_Scorecard')}

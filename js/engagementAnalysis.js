@@ -726,7 +726,7 @@ Object.assign(window.App, {
                     <div class="flex items-center gap-3">
                         <label class="inline-flex items-center gap-2 text-xs text-slate-600">
                             <span class="font-semibold text-slate-400 uppercase tracking-wide">Min learners</span>
-                            <input type="number" min="0" step="5" value="${this._engMinEnrolments}" onchange="App._setEngMinEnrolments(this.value)" class="w-20 px-2 py-1 border rounded text-slate-700 outline-none text-xs">
+                            <input type="number" data-viewer-allowed min="0" step="5" value="${this._engMinEnrolments}" onchange="App._setEngMinEnrolments(this.value)" class="w-20 px-2 py-1 border rounded text-slate-700 outline-none text-xs">
                         </label>
                         ${this._engActionBtns('eng-section-country', 'country', 'Country_Engagement')}
                     </div>
@@ -1502,7 +1502,7 @@ Object.assign(window.App, {
             <div id="eng-section-income" class="bg-white rounded-xl shadow-sm border overflow-hidden">
                 <div class="bg-slate-50 border-b p-5 flex justify-between items-start gap-4 flex-wrap">
                     <div>
-                        <h2 class="font-bold text-lg text-gsf-prussian flex items-center gap-2"><i data-lucide="scale" class="text-gsf-boston"></i> LMIC vs HIC Comparison</h2>
+                        <h2 class="font-bold text-lg text-gsf-prussian flex items-center gap-2"><i data-lucide="scale" class="text-gsf-boston"></i> LMIC vs HIC Comparison<span class="text-[9px] font-bold uppercase tracking-wider text-amber-700 border border-amber-300 bg-amber-50 rounded-full px-1.5 py-0.5 ml-2 align-middle">Beta</span></h2>
                         <p class="text-xs text-slate-500 mt-1">Engagement across World Bank income tiers. Mission audience (LIC + LMIC) breaks out at the bottom — useful for funders and impact reports.</p>
                     </div>
                     ${this._engActionBtns('eng-section-income', 'income', 'Income_Tier_Comparison')}

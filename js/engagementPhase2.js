@@ -52,13 +52,13 @@ Object.assign(window.App, {
                     <div class="flex items-center gap-3 flex-wrap">
                         <label class="inline-flex items-center gap-2 text-xs text-slate-600">
                             <span class="font-semibold text-slate-400 uppercase tracking-wide">Metric</span>
-                            <select onchange="App._setImpactMapMetric(this.value)" class="bg-white border rounded px-2 py-1 text-slate-700 outline-none text-xs">
+                            <select data-viewer-allowed onchange="App._setImpactMapMetric(this.value)" class="bg-white border rounded px-2 py-1 text-slate-700 outline-none text-xs">
                                 ${metrics.map(m => `<option value="${m.v}" ${m.v===this._impactMapMetric?'selected':''}>${m.l}</option>`).join('')}
                             </select>
                         </label>
                         <label class="inline-flex items-center gap-2 text-xs text-slate-600">
                             <span class="font-semibold text-slate-400 uppercase tracking-wide">Min learners</span>
-                            <input type="number" min="0" step="10" value="${this._impactMapMin}" onchange="App._setImpactMapMin(this.value)" class="w-20 px-2 py-1 border rounded text-slate-700 outline-none text-xs">
+                            <input type="number" data-viewer-allowed min="0" step="10" value="${this._impactMapMin}" onchange="App._setImpactMapMin(this.value)" class="w-20 px-2 py-1 border rounded text-slate-700 outline-none text-xs">
                         </label>
                         ${this._engActionBtns('eng-impact-map', 'impactmap', 'Impact_Map_' + cur.short.replace(/[^a-zA-Z0-9]/g, '_'))}
                     </div>
@@ -173,7 +173,7 @@ Object.assign(window.App, {
             <div id="eng-section-reachgap" class="bg-white rounded-xl shadow-sm border overflow-hidden">
                 <div class="bg-slate-50 border-b p-5 flex justify-between items-start gap-4 flex-wrap">
                     <div>
-                        <h2 class="font-bold text-lg text-gsf-prussian flex items-center gap-2"><i data-lucide="target" class="text-gsf-boston"></i> Reach-Gap (Surgical-Care Priority)</h2>
+                        <h2 class="font-bold text-lg text-gsf-prussian flex items-center gap-2"><i data-lucide="target" class="text-gsf-boston"></i> Reach-Gap (Surgical-Care Priority)<span class="text-[9px] font-bold uppercase tracking-wider text-amber-700 border border-amber-300 bg-amber-50 rounded-full px-1.5 py-0.5 ml-2 align-middle">Beta</span></h2>
                         <p class="text-xs text-slate-500 mt-1">How well are we reaching countries with documented surgical-care gaps (Lancet Commission on Global Surgery)?</p>
                     </div>
                     ${this._engActionBtns('eng-section-reachgap', 'reachgap', 'Reach_Gap_Lancet')}

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, net, clipboard, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, net, clipboard, nativeImage, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -28,6 +28,8 @@ function createWindow () {
     height: 900,
     title: "SURGdash \u00A9",
     icon: path.join(__dirname, 'build', 'gsf_logo_symbol.png'),
+    show: false,
+    backgroundColor: '#002F4C',
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -37,6 +39,13 @@ function createWindow () {
   });
 
   mainWindow.loadFile('index.html');
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
+    // Start the splash's minimum-visible timer from the moment the window is
+    // actually on screen — the renderer can't reliably detect window-show on
+    // its own, and fading off a load-timer makes the splash invisible.
+    mainWindow.webContents.executeJavaScript('window.__armSplash && window.__armSplash()').catch(() => {});
+  });
 
   // \u2500\u2500 Unsynced-changes warning on close \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
   // Ask the renderer whether there are local changes that haven't been pushed
@@ -132,10 +141,13 @@ async function handleCloseRequest() {
 // Checks GitHub Releases shortly after launch (and every 6h). Downloads in the
 // background; offers a restart when ready, and otherwise installs silently on the
 // next quit. Never blocks the app — an offline/unreachable feed is swallowed, so
-// SURGdash still works with no network.
+// SURGdash still works with no network. Users can also trigger a check on demand
+// from the app menu → "Check for Updates…" (see buildAppMenu).
+let autoUpdater = null;
+let manualUpdateCheck = false;   // true while a user-initiated check is in flight (controls feedback dialogs)
+
 function initAutoUpdate() {
   if (!app.isPackaged) return;                 // no-op in `electron .` dev
-  let autoUpdater;
   try { ({ autoUpdater } = require('electron-updater')); }
   catch (e) { console.warn('[update] electron-updater unavailable:', e && e.message); return; }
 
@@ -144,9 +156,40 @@ function initAutoUpdate() {
 
   autoUpdater.on('error', (err) => {
     console.warn('[update] check failed (ignored):', err == null ? 'unknown' : (err.message || String(err)));
+    if (manualUpdateCheck && mainWindow && !mainWindow.isDestroyed()) {
+      manualUpdateCheck = false;
+      dialog.showMessageBox(mainWindow, {
+        type: 'warning', buttons: ['OK'], title: 'Update check failed',
+        message: "Couldn't check for updates right now.",
+        detail: 'Please check your internet connection and try again shortly.'
+      });
+    }
+  });
+
+  autoUpdater.on('update-not-available', () => {
+    if (manualUpdateCheck && mainWindow && !mainWindow.isDestroyed()) {
+      manualUpdateCheck = false;
+      dialog.showMessageBox(mainWindow, {
+        type: 'info', buttons: ['OK'], title: 'You’re up to date',
+        message: 'SURGdash v' + app.getVersion() + ' is the latest version.'
+      });
+    }
+  });
+
+  autoUpdater.on('update-available', (info) => {
+    if (manualUpdateCheck && mainWindow && !mainWindow.isDestroyed()) {
+      const v = (info && info.version) ? ('v' + info.version) : 'A new version';
+      dialog.showMessageBox(mainWindow, {
+        type: 'info', buttons: ['OK'], title: 'Update available',
+        message: v + ' is available and downloading now.',
+        detail: 'You’ll be prompted to restart as soon as it’s ready — usually under a minute.'
+      });
+      // leave manualUpdateCheck set; the download completes into 'update-downloaded' (restart prompt)
+    }
   });
 
   autoUpdater.on('update-downloaded', (info) => {
+    manualUpdateCheck = false;
     if (!mainWindow || mainWindow.isDestroyed()) return;
     const v = (info && info.version) ? ('v' + info.version) : 'A new version';
     const choice = dialog.showMessageBoxSync(mainWindow, {
@@ -166,8 +209,48 @@ function initAutoUpdate() {
   setInterval(check, 6 * 60 * 60 * 1000);        // every 6 hours while open
 }
 
+// User-initiated check from the app menu — gives explicit feedback, unlike the
+// silent background checks.
+function checkForUpdatesManually() {
+  if (!app.isPackaged) {
+    if (mainWindow && !mainWindow.isDestroyed()) dialog.showMessageBox(mainWindow, {
+      type: 'info', buttons: ['OK'], title: 'Check for Updates',
+      message: 'Auto-update only runs in the installed app.',
+      detail: 'This is a development build; the packaged SURGdash app checks GitHub automatically.'
+    });
+    return;
+  }
+  if (!autoUpdater) return;
+  manualUpdateCheck = true;
+  try { autoUpdater.checkForUpdates().catch(() => {}); } catch (e) {}
+}
+
+// Standard macOS menu + a "Check for Updates…" item. Keeps the default
+// copy/paste/quit/window shortcuts via roles.
+function buildAppMenu() {
+  const template = [
+    {
+      label: app.name,
+      submenu: [
+        { role: 'about' },
+        { label: 'Check for Updates…', click: () => checkForUpdatesManually() },
+        { type: 'separator' },
+        { role: 'services' },
+        { type: 'separator' },
+        { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' },
+        { type: 'separator' },
+        { role: 'quit' }
+      ]
+    },
+    { role: 'editMenu' },
+    { role: 'windowMenu' }
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
 app.whenReady().then(() => {
   createWindow();
+  buildAppMenu();
   initAutoUpdate();
 });
 

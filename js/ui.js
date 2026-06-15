@@ -1024,7 +1024,7 @@ Object.assign(window.App, {
         const cm = (window.Charts && Charts._currentMonth) ? Charts._currentMonth() : '';
         const monthLabel = cm ? new Date(cm + '-01').toLocaleDateString('en-US', { month: 'short' }) : 'current month';
         return `<label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer ml-auto" title="When off, only complete months are shown to avoid the misleading flatline at the end. Turn on to see the in-progress month.">
-            <input type="checkbox" ${this.includePartialMonth ? 'checked' : ''} onchange="App.includePartialMonth=this.checked; App.renderView()">
+            <input type="checkbox" data-viewer-allowed ${this.includePartialMonth ? 'checked' : ''} onchange="App.includePartialMonth=this.checked; App.renderView()">
             <span>Include ${this.escapeHtml(monthLabel)} (partial)</span>
         </label>`;
     },
@@ -1311,11 +1311,11 @@ Object.assign(window.App, {
             : `if(window.Charts){const s=(App.userHistory||[]).find(d=>d.Timestamp===App.selectedDate)||(App.userHistory||[])[0]||{}; if(s.TotalUsers) Charts.drawAudience(s);}`;
         return `<div class="flex flex-wrap items-center gap-4 mb-3">
             <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
-                <input type="checkbox" id="${toggleId}" onchange="${redrawCall}"> Show monthly bars
+                <input type="checkbox" data-viewer-allowed id="${toggleId}" onchange="${redrawCall}"> Show monthly bars
             </label>
             <label class="inline-flex items-center gap-2 text-sm text-slate-600">
                 <span class="text-xs font-semibold text-slate-400 uppercase">Period</span>
-                <select onchange="App.${stateKey}=this.value; ${redrawCall}" class="bg-white border rounded px-2 py-1 text-slate-700 outline-none text-xs">${opts}</select>
+                <select data-viewer-allowed onchange="App.${stateKey}=this.value; ${redrawCall}" class="bg-white border rounded px-2 py-1 text-slate-700 outline-none text-xs">${opts}</select>
             </label>
         </div>`;
     },
@@ -1335,7 +1335,7 @@ Object.assign(window.App, {
                 <div class="flex flex-wrap gap-4 items-center">
                     ${this._timelineControls(cfg.kind, this[cfg.rangeKey] || 'all')}
                     <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer mb-3" title="Drama mode — start y-axis near the first visible value to exaggerate slope. Use sparingly.">
-                        <input type="checkbox" ${trimOn ? 'checked' : ''} onchange="App.${cfg.trimKey}=this.checked; ${redraw}">
+                        <input type="checkbox" data-viewer-allowed ${trimOn ? 'checked' : ''} onchange="App.${cfg.trimKey}=this.checked; ${redraw}">
                         <span>Trim y-axis <span class="text-[10px] text-slate-400">(drama)</span></span>
                     </label>
                     ${this._partialMonthToggle()}
@@ -1414,11 +1414,13 @@ Object.assign(window.App, {
         const cur = this.currentProject;
         const projects = Projects.registry;
 
-        // Skip full rebuild only if same project is still active
-        if (this._lastSidebarProject === cur && navEl.querySelector('[data-proj]')) {
+        // Skip full rebuild only if same project is still active AND the sample's
+        // sidebar visibility (driven by App.includeSample) hasn't changed.
+        if (this._lastSidebarProject === cur && this._lastSidebarSample === this.includeSample && navEl.querySelector('[data-proj]')) {
             return;
         }
         this._lastSidebarProject = cur;
+        this._lastSidebarSample = this.includeSample;
 
         const item = (id, icon, label, distinct, draggable) => {
             const active = id === cur;
@@ -1454,7 +1456,10 @@ Object.assign(window.App, {
         html += `<div>
             <p class="px-3 pb-1.5 text-[9px] font-bold uppercase tracking-widest"><span class="text-gsf-boston">SURG</span><span class="text-gsf-polo/60">fund Projects</span></p>
             <div id="sidebar-project-list" class="space-y-0.5">`;
-        const fieldProjects = projects.filter(p => p.type !== 'surghub');
+        // The sample/demo project only appears in the sidebar when it's blended in
+        // (App.includeSample). Keep it visible if it happens to be the current
+        // project so the user is never stranded on a hidden page.
+        const fieldProjects = projects.filter(p => p.type !== 'surghub' && (App.includeSample || !p.isSample || p.id === cur));
         if (fieldProjects.length === 0) {
             html += `<p class="px-3 py-2 text-xs text-slate-500 italic">No projects yet</p>`;
         } else {
@@ -1649,8 +1654,8 @@ Object.assign(window.App, {
                  + tab('provider',    'building-2',       'Providers')
                  + tab('course',      'book-open',        'Courses')
                  + tab('ambassadors', 'award',            'Ambassadors')
-                 + tab('sh-reports',  'file-text',        'Reports')
-                 + tab('manage',      'list',             'Directory',  editLocked)
+                 + tab('sh-reports',  'file-text',        'Reports',    editLocked)
+                 + tab('manage',      'list',             'Directory')
                  + tab('upload',      'refresh-cw',       'Data Sync',  editLocked)
                  + tab('methodology', 'book-open',        'Methodology');
         } else {
@@ -1716,7 +1721,11 @@ Object.assign(window.App, {
         else if (this.feedbackSort === 'rating') filtered.sort((a, b) => (b.r || 0) - (a.r || 0));
         else if (this.feedbackSort === 'ai') {
             const aiM = this._aiScoreMap || {};
-            filtered.sort((a, b) => (((aiM[this._djb2Hash(String(b.t || '').trim())] || {}).s || 0)) - (((aiM[this._djb2Hash(String(a.t || '').trim())] || {}).s || 0)));
+            if (Object.keys(aiM).length) {
+                filtered.sort((a, b) => (((aiM[this._djb2Hash(String(b.t || '').trim())] || {}).s || 0)) - (((aiM[this._djb2Hash(String(a.t || '').trim())] || {}).s || 0)));
+            } else {
+                filtered.sort((a, b) => (b.d || '').localeCompare(a.d || ''));
+            }
         }
 
         // Tag pill renderer
@@ -1743,7 +1752,7 @@ Object.assign(window.App, {
             <div class="flex flex-wrap items-center gap-3 mb-4 text-xs">
                 <div class="flex items-center gap-1.5">
                     <span class="text-slate-500 font-medium">Sort:</span>
-                    <select onchange="App.feedbackSort=this.value; App.renderView()" class="bg-white border rounded px-2 py-1 text-slate-700 outline-none text-xs">
+                    <select data-viewer-allowed onchange="App.feedbackSort=this.value; App.renderView()" class="bg-white border rounded px-2 py-1 text-slate-700 outline-none text-xs">
                         <option value="date" ${this.feedbackSort === 'date' ? 'selected' : ''}>Newest First</option>
                         <option value="length" ${this.feedbackSort === 'length' ? 'selected' : ''}>Longest First</option>
                         <option value="rating" ${this.feedbackSort === 'rating' ? 'selected' : ''}>Highest Rating</option>
@@ -1752,21 +1761,21 @@ Object.assign(window.App, {
                 </div>
                 <div class="flex items-center gap-1.5">
                     <span class="text-slate-500 font-medium">Tag:</span>
-                    <select onchange="App.feedbackFilterTag=this.value; App.renderView()" class="bg-white border rounded px-2 py-1 text-slate-700 outline-none text-xs">
+                    <select data-viewer-allowed onchange="App.feedbackFilterTag=this.value; App.renderView()" class="bg-white border rounded px-2 py-1 text-slate-700 outline-none text-xs">
                         <option value="all" ${!this.feedbackFilterTag || this.feedbackFilterTag === 'all' ? 'selected' : ''}>All (${scored.length})</option>
                         ${tagOptions.map(([tag, count]) => '<option value="' + this.escapeHtml(tag) + '" ' + (this.feedbackFilterTag === tag ? 'selected' : '') + '>' + this.escapeHtml(tag) + ' (' + count + ')</option>').join('')}
                     </select>
                 </div>
                 <div class="flex items-center gap-1.5">
                     <span class="text-slate-500 font-medium">From:</span>
-                    <input type="date" value="${this.feedbackFilterDate || ''}" onchange="App.feedbackFilterDate=this.value; App.reportFeedbackFromDate=this.value; App.renderView()" class="bg-white border rounded px-2 py-1 text-slate-700 outline-none text-xs" />
+                    <input type="date" data-viewer-allowed value="${this.feedbackFilterDate || ''}" onchange="App.feedbackFilterDate=this.value; App.reportFeedbackFromDate=this.value; App.renderView()" class="bg-white border rounded px-2 py-1 text-slate-700 outline-none text-xs" />
                 </div>
                 ${contextProvider ? '<button onclick="App.feedbackShowSelected=!App.feedbackShowSelected; App._applySelectedFilter()" class="px-2 py-1 rounded font-semibold border transition-all ' + (this.feedbackShowSelected ? 'bg-green-100 text-green-700 border-green-300' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300') + '">☑ Selected only</button>' : ''}
                 ${hasActiveFilter ? '<button onclick="App.feedbackFilterTag=\'all\'; App.feedbackFilterDate=\'\'; App.reportFeedbackFromDate=\'\'; App.feedbackShowSelected=false; App.renderView()" class="text-gsf-crimson font-bold hover:underline">Clear</button>' : ''}
-                <button onclick="App.scoreFeedbackWithAI()" class="px-2.5 py-1 rounded font-bold bg-gsf-prussian text-white hover:bg-slate-900 transition-colors flex items-center gap-1" title="Score all feedback with Claude — surfaces real impact stories, filters junk, feeds provider reports">✨ Score with AI</button>
-                <button onclick="App.autoSelectTestimonials(${contextProvider ? "'" + this.escapeHtml(contextProvider).replace(/'/g, '&#39;') + "'" : 'null'})" class="px-2.5 py-1 rounded font-bold bg-amber-500 text-white hover:bg-amber-600 transition-colors" title="Select the top X comments per course (AI score ≥ Y) as report testimonials — then fine-tune with the checkboxes">⭐ Auto-select</button>
-                <button onclick="App.summarizeFeedbackWithAI(${contextProvider ? "'" + this.escapeHtml(contextProvider).replace(/'/g, '&#39;') + "'" : 'null'})" class="px-2.5 py-1 rounded font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition-colors" title="AI summary of what learners are saying, per course and per provider — shown in reports">📝 Summarize</button>
-                <button onclick="App.setAnthropicKey()" class="px-2 py-1 rounded font-semibold border bg-white text-slate-500 border-slate-200 hover:border-slate-300" title="Set / change the Anthropic API key (stored locally)">⚙</button>
+                <button data-edit-only onclick="App.scoreFeedbackWithAI()" class="px-2.5 py-1 rounded font-bold bg-gsf-prussian text-white hover:bg-slate-900 transition-colors flex items-center gap-1" title="Score all feedback with Claude — surfaces real impact stories, filters junk, feeds provider reports">✨ Score with AI</button>
+                <button data-edit-only onclick="App.autoSelectTestimonials(${contextProvider ? "'" + this.escapeHtml(contextProvider).replace(/'/g, '&#39;') + "'" : 'null'})" class="px-2.5 py-1 rounded font-bold bg-amber-500 text-white hover:bg-amber-600 transition-colors" title="Select the top X comments per course (AI score ≥ Y) as report testimonials — then fine-tune with the checkboxes">⭐ Auto-select</button>
+                <button data-edit-only onclick="App.summarizeFeedbackWithAI(${contextProvider ? "'" + this.escapeHtml(contextProvider).replace(/'/g, '&#39;') + "'" : 'null'})" class="px-2.5 py-1 rounded font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition-colors" title="AI summary of what learners are saying, per course and per provider — shown in reports">📝 Summarize</button>
+                <button data-edit-only onclick="App.setAnthropicKey()" class="px-2 py-1 rounded font-semibold border bg-white text-slate-500 border-slate-200 hover:border-slate-300" title="Set / change the Anthropic API key (stored locally)">⚙</button>
                 <span class="text-slate-400 ml-auto">${filtered.length} of ${scored.length}</span>
             </div>
 
@@ -1858,14 +1867,14 @@ Object.assign(window.App, {
         // Checkboxes for currently selected items (can uncheck to remove from chart)
         let checkboxes = selected.map(cat =>
             '<label class="inline-flex items-center gap-1.5 whitespace-nowrap cursor-pointer">' +
-            '<input type="checkbox" checked onchange="App.toggleCategory(\'' + stateKey + '\',\'' + esc(cat) + '\',\'' + chartElId + '\',\'' + dataAccessor + '\')" class="accent-[#4389C8]">' +
+            '<input type="checkbox" data-viewer-allowed checked onchange="App.toggleCategory(\'' + stateKey + '\',\'' + esc(cat) + '\',\'' + chartElId + '\',\'' + dataAccessor + '\')" class="accent-[#4389C8]">' +
             '<span class="text-gsf-prussian font-semibold">' + this.escapeHtml(cat) + '</span></label>'
         ).join('');
 
         // 3 dropdowns to add more
         let dropdowns = '';
         for (let d = 0; d < 3; d++) {
-            dropdowns += '<select data-sk="' + stateKey + '" data-ch="' + chartElId + '" data-ac="' + dataAccessor + '" ' +
+            dropdowns += '<select data-viewer-allowed data-sk="' + stateKey + '" data-ch="' + chartElId + '" data-ac="' + dataAccessor + '" ' +
                 'onchange="App.addCategory(this)" class="bg-white border rounded px-2 py-0.5 text-slate-600 text-xs outline-none">' +
                 '<option value="">+ Add...</option>' +
                 available.map(c => '<option value="' + this.escapeHtml(c) + '">' + this.escapeHtml(c) + '</option>').join('') +
@@ -1953,6 +1962,7 @@ Object.assign(window.App, {
         this.renderTabBar();
         const body = document.getElementById('view-body') || document.getElementById('main-content');
         const project = this.getCurrentProject();
+        if (this._refreshSampleBanner) this._refreshSampleBanner(project);
         const viewKey = this.currentProject + '::' + this.view;
         const sameView = this._lastRenderedViewKey === viewKey;
         this._lastRenderedViewKey = viewKey;
@@ -2201,7 +2211,7 @@ Object.assign(window.App, {
                                 <div><h2 class="font-bold text-lg text-gsf-prussian">Providers (${provs.length})</h2><p class="text-xs text-slate-500 mt-1">Untick a provider to exclude it — and all its courses — from every analytic, dashboard total and report.</p></div>
                                 <div class="flex items-center gap-2 shrink-0">
                                     <span id="prov-exclude-badge" class="text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-3 py-1 whitespace-nowrap" style="${excludedN ? '' : 'display:none'}">${excludedN} excluded</span>
-                                    <button onclick="App.addNewProvider()" class="px-3 py-1.5 bg-gsf-boston text-white text-xs font-bold rounded-lg hover:bg-gsf-prussian transition-colors whitespace-nowrap">+ Add Provider</button>
+                                    <button data-edit-only onclick="App.addNewProvider()" class="px-3 py-1.5 bg-gsf-boston text-white text-xs font-bold rounded-lg hover:bg-gsf-prussian transition-colors whitespace-nowrap">+ Add Provider</button>
                                 </div>
                             </div>
                             <div class="max-h-[320px] overflow-y-auto custom-scrollbar divide-y divide-slate-100">
@@ -2213,7 +2223,7 @@ Object.assign(window.App, {
                     <div class="bg-white rounded-xl shadow-sm border overflow-hidden mb-8">
                         <div class="bg-slate-50 border-b p-5 flex justify-between items-center">
                             <h2 class="font-bold text-lg text-gsf-prussian">Tracked Course Directory (${shells.length})</h2>
-                            <button onclick="App.addNewCourse()" class="px-4 py-2 bg-gsf-boston text-white text-sm font-bold rounded-lg hover:bg-gsf-prussian transition-colors">+ Add Course</button>
+                            <button data-edit-only onclick="App.addNewCourse()" class="px-4 py-2 bg-gsf-boston text-white text-sm font-bold rounded-lg hover:bg-gsf-prussian transition-colors">+ Add Course</button>
                         </div>
                         <div class="overflow-x-auto max-h-[500px] overflow-y-auto custom-scrollbar">
                             <table class="w-full text-left border-collapse text-sm table-fixed">
@@ -2271,7 +2281,7 @@ Object.assign(window.App, {
                                             <td class="py-2 px-3 text-right text-xs font-medium ${s.Rating >= 4 ? 'text-green-600' : s.Rating > 0 ? 'text-gsf-crimson' : 'text-slate-300'}">${s.Rating > 0 ? s.Rating.toFixed(2) : '-'}</td>
                                             <td class="py-2 px-3 text-center text-xs">${s.URL ? '<span class="text-green-600">Y</span>' : '<span class="text-red-400">N</span>'}</td>
                                             <td class="py-2 px-3 text-center"><input type="checkbox" ${s.isExcluded ? '' : 'checked'} onchange="App.toggleExcludeCourse(${s.idx})" title="${s.isExcluded ? 'Click to include in analytics' : 'Click to exclude from analytics'}"></td>
-                                            <td class="py-2 px-3 text-center"><button onclick="App.editCourseByIndex(${s.idx})" class="text-gsf-boston hover:text-gsf-prussian text-xs underline">edit</button></td>
+                                            <td class="py-2 px-3 text-center"><button data-edit-only onclick="App.editCourseByIndex(${s.idx})" class="text-gsf-boston hover:text-gsf-prussian text-xs underline">edit</button></td>
                                         </tr>`;
                                         }).join('');
                                     })()}
@@ -2280,7 +2290,7 @@ Object.assign(window.App, {
                         </div>
                     </div>
 
-                    <div class="bg-white p-6 md:p-8 rounded-xl shadow-sm border border-slate-200 mb-8">
+                    <div data-edit-only class="bg-white p-6 md:p-8 rounded-xl shadow-sm border border-slate-200 mb-8">
                         <div class="flex items-center gap-3 mb-6 pb-4 border-b border-slate-100">
                             <div class="bg-gsf-polo/20 text-gsf-boston p-2 rounded-lg"><i data-lucide="file-text"></i></div>
                             <h2 class="text-lg font-bold text-gsf-prussian">Report Settings</h2>
@@ -2779,7 +2789,7 @@ Object.assign(window.App, {
 
                     <div class="inline-flex items-center gap-1 mb-8 bg-white border rounded-xl p-1 shadow-sm">${dashPills}</div>
 
-                    <div class="bg-white border rounded-xl shadow-sm p-4 mb-8">
+                    <div data-edit-only class="bg-white border rounded-xl shadow-sm p-4 mb-8">
                         <div class="flex items-center gap-2 mb-2">
                             <i data-lucide="sparkles" class="text-gsf-boston" width="16"></i>
                             <h2 class="font-bold text-sm text-gsf-prussian">Ask the data</h2>
@@ -2831,21 +2841,21 @@ Object.assign(window.App, {
                         <div>
                             <h1 class="text-3xl font-black text-gsf-prussian">Ambassador Analytics</h1>
                             <div class="flex items-center gap-3 mt-2">
-                                <p class="text-slate-500 text-sm">Upload the "Leads" export to view ambassador referrals. <a href="#" onclick="electronAPI.openExternal('https://www.surghub.org/author/affiliates?tab=leads'); return false" class="text-gsf-boston hover:underline font-medium">Export Leads Report</a></p>
+                                <p class="text-slate-500 text-sm">Upload the "Leads" export to view ambassador referrals. <a href="#" data-edit-only onclick="electronAPI.openExternal('https://www.surghub.org/author/affiliates?tab=leads'); return false" class="text-gsf-boston hover:underline font-medium">Export Leads Report</a></p>
                                 ${this._lastUpdatedBadge('ambassador')}
                             </div>
                         </div>
                         ${this.isLoading ? '<div class="text-gsf-boston font-bold">Processing Ambassadors...</div>' : `
-                            <button onclick="document.getElementById('ambassador-upload-input').click()" class="bg-gsf-boston text-white px-6 py-3 rounded-lg font-bold shadow-sm hover:bg-gsf-prussian transition-colors">
+                            <button data-edit-only onclick="document.getElementById('ambassador-upload-input').click()" class="bg-gsf-boston text-white px-6 py-3 rounded-lg font-bold shadow-sm hover:bg-gsf-prussian transition-colors">
                                 <i data-lucide="upload-cloud" class="inline mr-2" width="18"></i> Upload Leads File
                             </button>
                         `}
-                        <input id="ambassador-upload-input" type="file" accept=".csv,.xlsx,.xls" onchange="App.processStandaloneAmbassadors(event)" class="hidden" />
+                        <input id="ambassador-upload-input" data-edit-only type="file" accept=".csv,.xlsx,.xls" onchange="App.processStandaloneAmbassadors(event)" class="hidden" />
                     </header>
 
                     ${snap.TotalReferrals ? `
                         <div class="flex items-center justify-end mb-2">
-                            <button onclick="App.openHtmlExport()" class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-400 hover:text-gsf-boston hover:bg-slate-50 rounded-lg transition-colors ml-1"><i data-lucide="file-code-2" width="12"></i> Export HTML</button>
+                            <button data-edit-only onclick="App.openHtmlExport()" class="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-400 hover:text-gsf-boston hover:bg-slate-50 rounded-lg transition-colors ml-1"><i data-lucide="file-code-2" width="12"></i> Export HTML</button>
                         </div>
                         <div id="amb-kpi-grid" class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
                             ${[
@@ -2879,15 +2889,15 @@ Object.assign(window.App, {
                         <div class="bg-white p-6 rounded-xl shadow-sm border mb-8">
                             <h3 class="text-lg font-bold mb-4 flex items-center gap-2 text-gsf-prussian">Cumulative Referrals Over Time ${this._chartWidthBtns('chart_ambassador_total')} ${this._resetChartBtn('chart_ambassador_total')} ${this._chartBtns('chart_ambassador_total', 'Referrals_Growth')}</h3>
                             <div class="mb-3 flex flex-wrap gap-4 items-center">
-                                <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" id="toggle-amb-growth-bars" onchange="if(window.Charts && App.ambassadorData) window.Charts.drawAmbassadors(App.ambassadorData)"> Show monthly bars</label>
+                                <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed id="toggle-amb-growth-bars" onchange="if(window.Charts && App.ambassadorData) window.Charts.drawAmbassadors(App.ambassadorData)"> Show monthly bars</label>
                                 <label class="inline-flex items-center gap-2 text-sm text-slate-600">
                                     <span class="text-xs font-semibold text-slate-400 uppercase">Period</span>
-                                    <select onchange="App.ambGrowthRange=this.value; if(window.Charts && App.ambassadorData) window.Charts.drawAmbassadors(App.ambassadorData)" class="bg-white border rounded px-2 py-1 text-slate-700 outline-none text-xs">
+                                    <select data-viewer-allowed onchange="App.ambGrowthRange=this.value; if(window.Charts && App.ambassadorData) window.Charts.drawAmbassadors(App.ambassadorData)" class="bg-white border rounded px-2 py-1 text-slate-700 outline-none text-xs">
                                         ${[{v:'3',l:'Last 3 mo'},{v:'6',l:'Last 6 mo'},{v:'12',l:'Last 12 mo'},{v:'24',l:'Last 24 mo'},{v:'all',l:'All time'}].map(r=>`<option value="${r.v}" ${String(this.ambGrowthRange)===r.v?'selected':''}>${r.l}</option>`).join('')}
                                     </select>
                                 </label>
                                 <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer" title="Drama mode — start y-axis near the first visible value to exaggerate slope. Use sparingly.">
-                                    <input type="checkbox" ${this.ambGrowthTrim ? 'checked' : ''} onchange="App.ambGrowthTrim=this.checked; if(window.Charts && App.ambassadorData) window.Charts.drawAmbassadors(App.ambassadorData)">
+                                    <input type="checkbox" data-viewer-allowed ${this.ambGrowthTrim ? 'checked' : ''} onchange="App.ambGrowthTrim=this.checked; if(window.Charts && App.ambassadorData) window.Charts.drawAmbassadors(App.ambassadorData)">
                                     <span>Trim y-axis <span class="text-[10px] text-slate-400">(drama)</span></span>
                                 </label>
                                 ${this._partialMonthToggle()}
@@ -3027,7 +3037,7 @@ Object.assign(window.App, {
                             <input type="month" value="${this.reportPeriodTo || ''}" onchange="App.setReportPeriod('to', this.value)" class="text-xs border rounded px-1.5 py-1 outline-none focus:ring-2 focus:ring-gsf-boston/30" />
                             ${(this.reportPeriodFrom || this.reportPeriodTo) ? '<button onclick="App.clearReportPeriod()" class="text-xs text-red-400 hover:text-red-600 font-bold ml-0.5" title="Clear period (reports go back to all-time only)">✕</button>' : ''}
                         </div>
-                        <div class="flex items-center gap-1.5 flex-wrap justify-end">
+                        <div data-edit-only class="flex items-center gap-1.5 flex-wrap justify-end">
                             <button onclick="App.exportProviderPackage(App.selectedProvider)" class="flex items-center gap-1.5 px-3.5 py-2 bg-amber-500 text-white font-bold rounded-lg text-xs shadow-sm hover:bg-amber-600 transition-colors" title="One folder with the PDF + web report + anonymized users + anonymized feedback (Excel)"><i data-lucide="package" width="14"></i> Report Package</button>
                             <button onclick="App.exportProviderHtmlReport(App.selectedProvider)" class="flex items-center gap-1.5 px-3 py-2 border rounded-lg text-xs font-bold text-slate-600 hover:text-gsf-boston hover:bg-slate-50 transition-colors" title="Interactive dark-themed report (single .html file)"><i data-lucide="globe" width="14"></i> Web</button>
                             <button onclick="App.generateProviderReport(App.selectedProvider)" class="flex items-center gap-1.5 px-3 py-2 border rounded-lg text-xs font-bold text-slate-600 hover:text-gsf-boston hover:bg-slate-50 transition-colors" title="Printable PDF report"><i data-lucide="download" width="14"></i> PDF</button>
@@ -3072,9 +3082,9 @@ Object.assign(window.App, {
                     <div class="bg-white p-6 rounded-xl shadow-sm border mb-8">
                         <h3 class="text-lg font-bold mb-4 flex items-center gap-2 text-gsf-prussian"><i data-lucide="trending-up" class="text-gsf-boston"></i> Provider Growth ${this._chartWidthBtns('chart_growth')} ${this._resetChartBtn('chart_growth')} ${this._chartBtns('chart_growth', 'Provider_Growth')}</h3>
                         <div class="mb-3 flex flex-wrap gap-4">
-                            <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" checked onchange="if(window.Charts) window.Charts.redrawProviderGrowth(App.getAnalyticsHistory(), App.selectedProvider)" data-series="prov-enroll"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#1a5276"></span> Learners</label>
-                            <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" checked onchange="if(window.Charts) window.Charts.redrawProviderGrowth(App.getAnalyticsHistory(), App.selectedProvider)" data-series="prov-cert"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#4389C8"></span> Certificates</label>
-                            <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" id="toggle-prov-growth-bars" onchange="if(window.Charts) window.Charts.redrawProviderGrowth(App.getAnalyticsHistory(), App.selectedProvider)"> Show monthly bars</label>
+                            <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed checked onchange="if(window.Charts) window.Charts.redrawProviderGrowth(App.getAnalyticsHistory(), App.selectedProvider)" data-series="prov-enroll"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#1a5276"></span> Learners</label>
+                            <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed checked onchange="if(window.Charts) window.Charts.redrawProviderGrowth(App.getAnalyticsHistory(), App.selectedProvider)" data-series="prov-cert"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#4389C8"></span> Certificates</label>
+                            <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed id="toggle-prov-growth-bars" onchange="if(window.Charts) window.Charts.redrawProviderGrowth(App.getAnalyticsHistory(), App.selectedProvider)"> Show monthly bars</label>
                         </div>
                         <div style="${this._chartWidthStyle('chart_growth')}">
                             <div id="chart_growth" style="width: 100%; height: 500px;"></div>
@@ -3084,8 +3094,8 @@ Object.assign(window.App, {
                     <div class="bg-white p-6 rounded-xl shadow-sm border mb-8">
                         <h3 class="text-lg font-bold mb-4 flex items-center gap-2 text-gsf-prussian"><i data-lucide="message-square" class="text-gsf-boston"></i> Feedback Trends ${this._chartBtns('chart_feedback_growth', 'Feedback_Trends')}</h3>
                         <div class="mb-3 flex flex-wrap gap-4">
-                            <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" checked onchange="if(window.Charts) window.Charts.redrawProviderFeedback(App.getAnalyticsHistory(), App.selectedProvider, document.getElementById('toggle-prov-fb-bars').checked)" data-series="prov-rating"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#D03734"></span> Avg Rating</label>
-                            <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" id="toggle-prov-fb-bars" onchange="if(window.Charts) window.Charts.redrawProviderFeedback(App.getAnalyticsHistory(), App.selectedProvider, this.checked)"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#85c1e9"></span> Survey Volume</label>
+                            <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed checked onchange="if(window.Charts) window.Charts.redrawProviderFeedback(App.getAnalyticsHistory(), App.selectedProvider, document.getElementById('toggle-prov-fb-bars').checked)" data-series="prov-rating"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#D03734"></span> Avg Rating</label>
+                            <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed id="toggle-prov-fb-bars" onchange="if(window.Charts) window.Charts.redrawProviderFeedback(App.getAnalyticsHistory(), App.selectedProvider, this.checked)"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#85c1e9"></span> Survey Volume</label>
                         </div>
                         <div id="chart_feedback_growth" style="width: 100%; height: 400px;"></div>
                     </div>
@@ -3104,7 +3114,7 @@ Object.assign(window.App, {
                                 <h3 class="text-lg font-bold text-gsf-prussian">Learner Feedback</h3>
                                 ${provCourseNames.length > 1 ? `<div class="flex items-center gap-2 text-xs">
                                     <span class="text-slate-500 font-medium">Course:</span>
-                                    <select onchange="App._provFeedbackCourse=this.value; App.renderView()" class="bg-white border rounded px-2 py-1 text-slate-700 outline-none text-xs">
+                                    <select data-viewer-allowed onchange="App._provFeedbackCourse=this.value; App.renderView()" class="bg-white border rounded px-2 py-1 text-slate-700 outline-none text-xs">
                                         <option value="all" ${!this._provFeedbackCourse || this._provFeedbackCourse === 'all' ? 'selected' : ''}>All Courses</option>
                                         ${provCourseNames.map(c => '<option value="' + this.escapeHtml(c) + '" ' + (this._provFeedbackCourse === c ? 'selected' : '') + '>' + this.escapeHtml(c) + '</option>').join('')}
                                     </select>
@@ -3188,9 +3198,9 @@ Object.assign(window.App, {
                     <div class="bg-white p-6 rounded-xl shadow-sm border mb-8">
                         <h3 class="text-lg font-bold mb-4 flex items-center gap-2 text-gsf-prussian"><i data-lucide="trending-up" class="text-gsf-boston"></i> Course Growth ${this._chartWidthBtns('chart_growth')} ${this._resetChartBtn('chart_growth')} ${this._chartBtns('chart_growth', 'Course_Growth')}</h3>
                         <div class="mb-3 flex flex-wrap gap-4">
-                            <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" checked onchange="if(window.Charts) window.Charts.drawCourse(App.getAnalyticsHistory(), App.selectedCourse)" data-series="crs-enroll"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#1a5276"></span> Learners</label>
-                            <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" checked onchange="if(window.Charts) window.Charts.drawCourse(App.getAnalyticsHistory(), App.selectedCourse)" data-series="crs-cert"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#4389C8"></span> Certificates</label>
-                            <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" id="toggle-crs-growth-bars" onchange="if(window.Charts) window.Charts.drawCourse(App.getAnalyticsHistory(), App.selectedCourse)"> Show monthly bars</label>
+                            <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed checked onchange="if(window.Charts) window.Charts.drawCourse(App.getAnalyticsHistory(), App.selectedCourse)" data-series="crs-enroll"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#1a5276"></span> Learners</label>
+                            <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed checked onchange="if(window.Charts) window.Charts.drawCourse(App.getAnalyticsHistory(), App.selectedCourse)" data-series="crs-cert"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#4389C8"></span> Certificates</label>
+                            <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed id="toggle-crs-growth-bars" onchange="if(window.Charts) window.Charts.drawCourse(App.getAnalyticsHistory(), App.selectedCourse)"> Show monthly bars</label>
                         </div>
                         <div style="${this._chartWidthStyle('chart_growth')}">
                             <div id="chart_growth" style="width: 100%; height: 500px;"></div>
@@ -3207,8 +3217,8 @@ Object.assign(window.App, {
                     <div class="bg-white p-6 rounded-xl shadow-sm border mb-8">
                         <h3 class="text-lg font-bold mb-4 flex items-center gap-2 text-gsf-prussian"><i data-lucide="message-square" class="text-gsf-boston"></i> Feedback Trends ${this._chartBtns('chart_feedback_growth', 'Course_Feedback')}</h3>
                         <div class="mb-3 flex flex-wrap gap-4">
-                            <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" checked data-series="crs-rating"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#D03734"></span> Avg Rating</label>
-                            <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" id="toggle-crs-fb-bars" onchange="if(window.Charts) window.Charts.drawCourse(App.getAnalyticsHistory(), App.selectedCourse)"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#85c1e9"></span> Survey Volume</label>
+                            <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed checked data-series="crs-rating"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#D03734"></span> Avg Rating</label>
+                            <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed id="toggle-crs-fb-bars" onchange="if(window.Charts) window.Charts.drawCourse(App.getAnalyticsHistory(), App.selectedCourse)"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#85c1e9"></span> Survey Volume</label>
                         </div>
                         <div id="chart_feedback_growth" style="width: 100%; height: 400px;"></div>
                     </div>
@@ -3695,7 +3705,7 @@ Object.assign(window.App, {
         const esc = (x) => this.escapeHtml(x);
         return '<div style="position:relative;display:inline-block">'
             + '<div class="flex items-center">'
-            + '<input id="' + id + '-input" type="text" value="' + esc(current || '') + '" autocomplete="off" placeholder="Type to filter…"'
+            + '<input id="' + id + '-input" data-viewer-allowed type="text" value="' + esc(current || '') + '" autocomplete="off" placeholder="Type to filter…"'
             + ' oninput="App._comboFilter(\'' + id + '\')" onfocus="App._comboFocus(\'' + id + '\')" onblur="App._comboBlur(\'' + id + '\')" onkeydown="App._comboKey(\'' + id + '\',event)"'
             + ' class="bg-white border border-r-0 rounded-l-md py-1.5 px-2 text-gsf-boston text-sm font-bold outline-none focus:ring-2 focus:ring-gsf-boston/30" style="min-width:340px" />'
             + '<button type="button" tabindex="-1" onmousedown="event.preventDefault();App._comboToggle(\'' + id + '\')" title="Show all" class="border rounded-r-md py-1.5 px-2 bg-slate-50 hover:bg-slate-100 text-slate-500 cursor-pointer">▾</button>'
@@ -3925,7 +3935,7 @@ Object.assign(window.App, {
                                 ` : '<p class="text-sm text-white/75">One concise, number-anchored narrative of why SURGhub matters — generated from the live platform data. Great for intros, funder emails and board slides.</p>'}
                             </div>
                             <div class="flex flex-col gap-2 shrink-0">
-                                <button onclick="App.generatePlatformStory()" class="px-4 py-2 bg-amber-400 text-gsf-prussian font-bold rounded-lg text-sm hover:bg-amber-300 transition-colors">${st ? '↻ Regenerate' : '✨ Tell the story'}</button>
+                                <button data-edit-only onclick="App.generatePlatformStory()" class="px-4 py-2 bg-amber-400 text-gsf-prussian font-bold rounded-lg text-sm hover:bg-amber-300 transition-colors">${st ? '↻ Regenerate' : '✨ Tell the story'}</button>
                                 ${st ? '<button onclick="App._copyAiStory(this)" class="px-4 py-2 bg-white/10 text-white font-bold rounded-lg text-sm hover:bg-white/20 transition-colors">Copy text</button>' : ''}
                             </div>
                         </div>
@@ -4125,15 +4135,15 @@ Object.assign(window.App, {
                         <div class="bg-white p-6 rounded-xl shadow-sm border mb-8">
                             <h3 class="text-lg font-bold mb-4 flex items-center gap-2 text-gsf-prussian">User Growth ${this._chartWidthBtns('chart_audience_growth')} ${this._resetChartBtn('chart_audience_growth')} ${this._chartBtns('chart_audience_growth', 'User_Growth')}</h3>
                             <div class="mb-3 flex flex-wrap gap-4 items-center">
-                                <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" id="toggle-aud-growth-bars" onchange="const s=(App.userHistory||[]).find(d=>d.Timestamp===App.selectedDate)||(App.userHistory||[])[0]||{}; if(window.Charts && s.TotalUsers) window.Charts.drawAudience(s)"> Show monthly bars</label>
+                                <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed id="toggle-aud-growth-bars" onchange="const s=(App.userHistory||[]).find(d=>d.Timestamp===App.selectedDate)||(App.userHistory||[])[0]||{}; if(window.Charts && s.TotalUsers) window.Charts.drawAudience(s)"> Show monthly bars</label>
                                 <label class="inline-flex items-center gap-2 text-sm text-slate-600">
                                     <span class="text-xs font-semibold text-slate-400 uppercase">Period</span>
-                                    <select onchange="App.userGrowthRange=this.value; const s=(App.userHistory||[]).find(d=>d.Timestamp===App.selectedDate)||(App.userHistory||[])[0]||{}; if(window.Charts && s.TotalUsers) window.Charts.drawAudience(s)" class="bg-white border rounded px-2 py-1 text-slate-700 outline-none text-xs">
+                                    <select data-viewer-allowed onchange="App.userGrowthRange=this.value; const s=(App.userHistory||[]).find(d=>d.Timestamp===App.selectedDate)||(App.userHistory||[])[0]||{}; if(window.Charts && s.TotalUsers) window.Charts.drawAudience(s)" class="bg-white border rounded px-2 py-1 text-slate-700 outline-none text-xs">
                                         ${[{v:'3',l:'Last 3 mo'},{v:'6',l:'Last 6 mo'},{v:'12',l:'Last 12 mo'},{v:'24',l:'Last 24 mo'},{v:'all',l:'All time'}].map(r=>`<option value="${r.v}" ${String(this.userGrowthRange)===r.v?'selected':''}>${r.l}</option>`).join('')}
                                     </select>
                                 </label>
                                 <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer" title="Start the y-axis near the first visible value so the slope looks steeper. Use for presentations — note this can mislead by exaggerating change.">
-                                    <input type="checkbox" ${this.userGrowthTrim ? 'checked' : ''} onchange="App.userGrowthTrim=this.checked; const s=(App.userHistory||[]).find(d=>d.Timestamp===App.selectedDate)||(App.userHistory||[])[0]||{}; if(window.Charts && s.TotalUsers) window.Charts.drawAudience(s)">
+                                    <input type="checkbox" data-viewer-allowed ${this.userGrowthTrim ? 'checked' : ''} onchange="App.userGrowthTrim=this.checked; const s=(App.userHistory||[]).find(d=>d.Timestamp===App.selectedDate)||(App.userHistory||[])[0]||{}; if(window.Charts && s.TotalUsers) window.Charts.drawAudience(s)">
                                     <span>Trim y-axis <span class="text-[10px] text-slate-400">(drama mode)</span></span>
                                 </label>
                                 ${this._partialMonthToggle()}
@@ -4149,9 +4159,9 @@ Object.assign(window.App, {
                     <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-100 mb-8">
                         <h3 class="text-lg font-bold mb-4 flex items-center gap-2 text-gsf-prussian"><i data-lucide="trending-up" class="text-gsf-boston"></i> Platform Growth ${this._chartWidthBtns('chart_growth')} ${this._resetChartBtn('chart_growth')} ${this._chartBtns('chart_growth', 'Platform_Growth')}</h3>
                         <div class="mb-3 flex flex-wrap gap-4 items-center">
-                            <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" checked onchange="if(window.Charts) window.Charts.redrawPlatformGrowth(App.getPlatformHistory())" data-series="plat-enroll"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#1a5276"></span> Learners</label>
-                            <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" checked onchange="if(window.Charts) window.Charts.redrawPlatformGrowth(App.getPlatformHistory())" data-series="plat-cert"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#4389C8"></span> Certificates</label>
-                            <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" id="toggle-plat-growth-bars" onchange="if(window.Charts) window.Charts.redrawPlatformGrowth(App.getPlatformHistory())"> Show monthly bars</label>
+                            <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed checked onchange="if(window.Charts) window.Charts.redrawPlatformGrowth(App.getPlatformHistory())" data-series="plat-enroll"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#1a5276"></span> Learners</label>
+                            <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed checked onchange="if(window.Charts) window.Charts.redrawPlatformGrowth(App.getPlatformHistory())" data-series="plat-cert"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#4389C8"></span> Certificates</label>
+                            <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed id="toggle-plat-growth-bars" onchange="if(window.Charts) window.Charts.redrawPlatformGrowth(App.getPlatformHistory())"> Show monthly bars</label>
                             ${this._partialMonthToggle()}
                         </div>
                         <div style="${this._chartWidthStyle('chart_growth')}">

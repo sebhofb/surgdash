@@ -19,11 +19,12 @@ window.App = {
     selectedProvider: '',
     selectedCourse: '',
     feedbackFilterDate: '',
-    feedbackSort: 'date',            // 'date' | 'length' | 'rating'
+    feedbackSort: 'ai',            // 'date' | 'length' | 'rating' | 'ai'
     feedbackFilterTag: 'all',        // 'all' | tag name (flag or topic)
     feedbackShowSelected: false,     // true = show only checked testimonials
     _provFeedbackCourse: 'all',      // course filter on provider feedback page
     hideLowLearners: false,
+    includeSample: false,            // blend the demo/sample SURGfund project into org totals & charts
     selectedCountries: [],
     selectedProfessions: [],
     selectedAmbassadors: [],
@@ -104,6 +105,16 @@ window.App = {
             this._viewerInputObserver.observe(document.body, { childList: true, subtree: true });
 
             this._startAutoPull();
+
+            // Stamp the real app version into the sidebar (single source of truth:
+            // package.json, exposed via preload). Falls back to the hardcoded label.
+            try {
+                const _v = document.getElementById('app-version');
+                if (_v && window.electronAPI && window.electronAPI.appVersion) _v.textContent = 'v' + window.electronAPI.appVersion;
+            } catch (_) {}
+
+            // Restore the "blend the sample project in/out" preference (viewer-toggleable).
+            this.includeSample = !!(await Storage.getItem('surgdash_include_sample'));
 
             // Load project registry
             await Projects.loadRegistry();
@@ -216,6 +227,9 @@ window.App = {
         }
 
         if (this.renderView) this.renderView();
+        // Splash fade is owned by the controller in index.html, which anchors its
+        // minimum-visible timer to actual window-show (main.js 'ready-to-show')
+        // so the splash is reliably seen — don't fade it from here.
 
         // Lazy-load the big anon_users blob (~31MB) JUST AFTER first paint — not
         // blocking it — then re-render once so any engagement panels fill with real
@@ -233,6 +247,38 @@ window.App = {
     getCurrentProject() {
         if (this.currentProject === 'org') return Projects.ORG_PROJECT;
         return Projects.getProject(this.currentProject) || Projects.getProject('surghub');
+    },
+
+    // Blend the demonstration (sample) project in/out of the org dashboard totals
+    // and charts. Pure view-state — touches no project data — so it's available
+    // to viewers as well as editors. Persists across sessions.
+    async toggleSampleInclude(on) {
+        this.includeSample = (on === undefined) ? !this.includeSample : !!on;
+        try { await Storage.setItem('surgdash_include_sample', this.includeSample ? '1' : ''); } catch (_) {}
+        // If we just hid the sample while viewing it, step back to the Org overview
+        // so the user isn't left on a project that's no longer in the sidebar.
+        if (!this.includeSample) {
+            const cur = this.getCurrentProject();
+            if (cur && cur.isSample) { this.currentProject = 'org'; this.view = 'org-dashboard'; }
+        }
+        if (this.renderView) this.renderView();
+    },
+
+    // Add the demonstration sample project on demand. Works in view mode too — it's
+    // a purely local demo: excluded from Google Sheets sync, from organisation
+    // totals by default, and from every generated report. Blends it straight in so
+    // the user immediately sees a fully-populated org view they can toggle off again.
+    async addSampleProject() {
+        try {
+            await Projects.createSampleProject();
+            this.includeSample = true;
+            try { await Storage.setItem('surgdash_include_sample', '1'); } catch (_) {}
+            if (this.showMsg) this.showMsg('Sample project added — blended into the dashboard ✓');
+        } catch (e) {
+            console.error('addSampleProject failed:', e);
+            if (this.showMsg) this.showMsg('Could not add the sample project.', true);
+        }
+        if (this.renderView) this.renderView();
     },
 
     async switchProject(projectId) {
@@ -683,6 +729,18 @@ window.App = {
         if (!banner) return;
         const dirty = await this._hasUnsyncedChanges();
         banner.style.display = dirty ? 'flex' : 'none';
+    },
+
+    // Show the "demo data is blended in" flag on every SURGfund tab (not SURGhub)
+    // whenever the sample project is both present and toggled on. Called from
+    // renderView so it tracks the current tab. Pure UI — no data side effects.
+    _refreshSampleBanner(project) {
+        const banner = document.getElementById('sample-active-banner');
+        if (!banner) return;
+        const proj = project || this.getCurrentProject();
+        const onSurghub = !!(proj && proj.type === 'surghub');
+        const sampleExists = !!(window.Projects && Projects.registry && Projects.registry.some(p => p.isSample));
+        banner.style.display = (this.includeSample && sampleExists && !onSurghub) ? 'flex' : 'none';
     },
 
     _startUnsyncedWatcher() {

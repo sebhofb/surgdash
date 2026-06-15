@@ -203,7 +203,7 @@ Object.assign(window.App, {
             <div id="eng-section-funnel" class="bg-white rounded-xl shadow-sm border overflow-hidden">
                 <div class="bg-slate-50 border-b p-5 flex justify-between items-start gap-4 flex-wrap">
                     <div>
-                        <h2 class="font-bold text-lg text-gsf-prussian flex items-center gap-2"><i data-lucide="git-pull-request-arrow" class="text-gsf-boston"></i> Drop-Off Funnel</h2>
+                        <h2 class="font-bold text-lg text-gsf-prussian flex items-center gap-2"><i data-lucide="git-pull-request-arrow" class="text-gsf-boston"></i> Drop-Off Funnel<span class="text-[9px] font-bold uppercase tracking-wider text-amber-700 border border-amber-300 bg-amber-50 rounded-full px-1.5 py-0.5 ml-2 align-middle">Beta</span></h2>
                         <p class="text-xs text-slate-500 mt-1">Where learners leak between Enrolled and Certified. Stages: <em>Enrolled</em> (signed up) → <em>Started</em> (have a start date) → <em>Engaged</em> (≥30 minutes invested) → <em>Completed</em> (LearnWorlds completion flag) → <em>Certified</em>.</p>
                     </div>
                     ${this._engActionBtns('eng-section-funnel', 'funnel', 'Drop_Off_Funnel')}
@@ -351,7 +351,7 @@ Object.assign(window.App, {
             <div id="eng-section-cohort" class="bg-white rounded-xl shadow-sm border overflow-hidden">
                 <div class="bg-slate-50 border-b p-5 flex justify-between items-start gap-4 flex-wrap">
                     <div>
-                        <h2 class="font-bold text-lg text-gsf-prussian flex items-center gap-2"><i data-lucide="layout-grid" class="text-gsf-boston"></i> Cohort Progress</h2>
+                        <h2 class="font-bold text-lg text-gsf-prussian flex items-center gap-2"><i data-lucide="layout-grid" class="text-gsf-boston"></i> Cohort Progress<span class="text-[9px] font-bold uppercase tracking-wider text-amber-700 border border-amber-300 bg-amber-50 rounded-full px-1.5 py-0.5 ml-2 align-middle">Beta</span></h2>
                         <p class="text-xs text-slate-500 mt-1">Monthly cohorts based on <em>course start month</em>. Each row shows how that cohort has progressed through the funnel as of today.</p>
                         <p class="text-[11px] text-amber-700 italic mt-1">⚠ Recent cohorts will show lower completion/cert rates simply because less time has passed. The trend matters more than the absolute numbers for newer rows.</p>
                     </div>
