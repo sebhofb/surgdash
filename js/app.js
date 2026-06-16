@@ -755,7 +755,7 @@ window.App = {
         if (!m.ok) {
             if (m.reason === 'nourl') return this.showMsg('Add your Google Sheets link first.', true);
             if (m.reason === 'olddeploy') return this.showMsg('The Web App is still serving the OLD script. Pasting the code + Save isn’t enough — in Apps Script go to Deploy → Manage deployments → ✎ Edit → Version: “New version” → Deploy (keeps the same URL).', true);
-            if (m.reason === 'notimestamp') return this.showMsg('Quick-check is live ✓ — but no sync is recorded yet. Click “Sync to Sheets” once, then check again (that stamps the timestamp it reads).', true);
+            if (m.reason === 'notimestamp') return this.showMsg('Quick-check is live ✓ — now click “Sync to Sheets” once to stamp the first timestamp, then check again.');
             return this.showMsg('Couldn’t reach the cloud' + (m.error ? (': ' + m.error) : '') + '.', true);
         }
         if (m.cloudMs > m.seenMs + 30000) {
