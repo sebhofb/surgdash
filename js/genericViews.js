@@ -12166,6 +12166,10 @@ function doGet(e) {
       // last-modified time, if the Drive scope happens to be granted (also catches
       // manual sheet edits). Return whichever is newer.
       try { _lm = PropertiesService.getScriptProperties().getProperty('lastSync') || ''; } catch (_p) {}
+      // Manual edits typed into the Sheet (caught by the onEdit trigger below).
+      try { var _le = PropertiesService.getScriptProperties().getProperty('lastEdit') || ''; if (_le > _lm) _lm = _le; } catch (_q) {}
+      // Bonus, only if the Drive scope happens to be granted (also catches edits
+      // made before the trigger existed).
       try { var _d = DriveApp.getFileById(ss.getId()).getLastUpdated(); if (_d) { var _di = _d.toISOString(); if (_di > _lm) _lm = _di; } } catch (_e) {}
       return _json({ ok: true, meta: true, lastModified: _lm });
     }
@@ -12403,6 +12407,16 @@ function doPost(e) {
     try { PropertiesService.getScriptProperties().setProperty('lastSync', new Date().toISOString()); } catch(_e) {}
     return _json({ ok: true });
   } catch(err) { return _json({ ok: false, error: err.message }); }
+}
+
+// Simple trigger: fires whenever someone edits a cell by hand. Stamps the edit
+// time so the app's quick "?meta=1" check can flag manual sheet changes too — not
+// just pushes from the app. No installation or extra permission needed (a function
+// literally named onEdit auto-runs on this bound spreadsheet, and ScriptProperties
+// needs no OAuth scope). Programmatic writes (the app's push) don't fire this — they
+// stamp lastSync in doPost instead.
+function onEdit(e) {
+  try { PropertiesService.getScriptProperties().setProperty('lastEdit', new Date().toISOString()); } catch(_e) {}
 }
 
 function _json(obj) {
