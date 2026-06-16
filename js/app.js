@@ -403,9 +403,11 @@ window.App = {
         }
         const toast = document.createElement('div');
         toast.style.cssText = `pointer-events:auto;padding:12px 18px;border-radius:10px;font-size:13px;font-weight:500;line-height:1.4;color:#fff;box-shadow:0 4px 20px rgba(0,0,0,0.18);opacity:0;transform:translateX(20px);transition:opacity 0.3s,transform 0.3s;font-family:'Inter',sans-serif;`
-            + (isError
-                ? 'background:linear-gradient(135deg,#dc2626,#b91c1c);'
-                : 'background:linear-gradient(135deg,#059669,#047857);');
+            + (isError === 'warn'
+                ? 'background:linear-gradient(135deg,#f59e0b,#d97706);'      // amber — attention / action available
+                : isError
+                    ? 'background:linear-gradient(135deg,#dc2626,#b91c1c);'  // red — error
+                    : 'background:linear-gradient(135deg,#059669,#047857);'); // green — success
         toast.textContent = msg;
         container.appendChild(toast);
         // Animate in
@@ -760,7 +762,7 @@ window.App = {
         }
         if (m.cloudMs > m.seenMs + 30000) {
             this._showCloudUpdateBanner(m.cloudMs);
-            this.showMsg('New data is available in the cloud — use the banner to Pull. ☁');
+            this.showMsg('New data is available in the cloud — use the banner to Pull. ☁', 'warn');
         } else {
             this._dismissCloudBanner();
             this.showMsg('You’re up to date — no new cloud data since your last pull. ✓');
