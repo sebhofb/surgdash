@@ -34,13 +34,19 @@ function wipeProfileDir(profile) {
 const DATA_PROFILE = (function () {
   const fromArg = (process.argv.find(a => a.startsWith('--profile=')) || '').split('=')[1];
   let p = process.env.SURGDASH_PROFILE || fromArg || '';
-  if (!p) {
-    // No env/argv profile — fall back to the persisted pointer (survives relaunch).
-    try {
-      const pp = profilePointerPath();
-      if (pp && fs.existsSync(pp)) p = fs.readFileSync(pp, 'utf8').trim();
-    } catch (_) { /* no pointer — normal profile */ }
-  }
+  // Read + CONSUME the relaunch pointer. It exists ONLY to carry the profile across
+  // the single app.relaunch from "Open Fresh Test Profile" (packaged macOS can drop
+  // the --profile arg). We delete it on every launch so a test profile can NEVER
+  // persist across a normal reopen — a stuck pointer once made real data look "gone".
+  // A plain quit-and-reopen therefore always returns to the real data.
+  try {
+    const pp = profilePointerPath();
+    if (pp && fs.existsSync(pp)) {
+      const fromPointer = fs.readFileSync(pp, 'utf8').trim();
+      if (!p) p = fromPointer;
+      fs.unlinkSync(pp);   // one-shot
+    }
+  } catch (_) { /* no pointer — normal profile */ }
   return String(p || '').replace(/[^A-Za-z0-9_-]/g, '');
 })();
 
