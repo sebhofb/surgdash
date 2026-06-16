@@ -4,8 +4,13 @@ window.Projects = {
     STANDARD_KPIS: [
         { id: 'hcw_strengthened',        name: 'Healthcare Workers Strengthened',                  nameBig: 'Healthcare Workers',  nameSub: 'Strengthened',                              unit: 'HCWs',       icon: 'stethoscope', color: '#4389C8' },
         { id: 'patients_reached',        name: 'Patients Reached with Improved Surgical Care',     nameBig: 'Patients',            nameSub: 'Reached with Improved Surgical Care',       unit: 'patients',   icon: 'heart',       color: '#D03734' },
-        { id: 'population_access',       name: 'Population with Improved Access to Surgical Care', nameBig: 'Population',          nameSub: 'with Improved Access to Surgical Care',     unit: 'people',     icon: 'globe',       color: '#10B981' },
-        { id: 'facilities_strengthened', name: 'Facilities Strengthened',                          nameBig: 'Facilities',          nameSub: 'Strengthened',                              unit: 'facilities', icon: 'building-2',  color: '#E28743' }
+        // stock:true = a point-in-time state (the same catchment/facility persists
+        // year to year), so an all-time roll-up takes the MAX across years per
+        // project — never the sum, which would multiply the same reach by #years.
+        // Flow KPIs (HCW, patients) accumulate, so they sum. This mirrors the
+        // web export's _isStock rule so the app and exports report identical totals.
+        { id: 'population_access',       name: 'Population with Improved Access to Surgical Care', nameBig: 'Population',          nameSub: 'with Improved Access to Surgical Care',     unit: 'people',     icon: 'globe',       color: '#10B981', stock: true },
+        { id: 'facilities_strengthened', name: 'Facilities Strengthened',                          nameBig: 'Facilities',          nameSub: 'Strengthened',                              unit: 'facilities', icon: 'building-2',  color: '#E28743', stock: true }
     ],
 
     // GSF programme areas — projects are categorised into one. `lucide` drives the
@@ -527,6 +532,27 @@ window.Projects = {
 
     getActualsForYear(allActuals, year) {
         return (allActuals.find(a => a.year === year) || {}).kpis || {};
+    },
+
+    // All-time roll-up across years for ONE project's actuals (or targets) rows
+    // — an array of { year, kpis }. Stock KPIs (kpi.stock) take the MAX across
+    // years (the same catchment/facilities persist, so summing would multiply the
+    // same reach by the number of years); flow KPIs (HCW, patients) sum. Pass a
+    // Set of years to exclude (e.g. App._chartHiddenYears). This mirrors the web
+    // export's _isStock rule so the in-app Org Overview and the exports agree.
+    rollupAllYears(rows, hiddenYears) {
+        const out = {};
+        this.STANDARD_KPIS.forEach(kpi => { out[kpi.id] = 0; });
+        (rows || []).forEach(yr => {
+            if (hiddenYears && hiddenYears.has(yr.year)) return;
+            const k = yr.kpis || {};
+            this.STANDARD_KPIS.forEach(kpi => {
+                const v = k[kpi.id] || 0;
+                if (kpi.stock) { if (v > out[kpi.id]) out[kpi.id] = v; }
+                else { out[kpi.id] += v; }
+            });
+        });
+        return out;
     },
 
     // ── Budget (per-year allocated + spent) ──────────────────────────

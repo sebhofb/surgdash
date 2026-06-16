@@ -209,11 +209,10 @@ window.GenericViews = {
 
         let targets = {}, yearTotals = {};
         if (isAllYear) {
-            targets = {};
-            yearTotals = {};
-            Projects.STANDARD_KPIS.forEach(kpi => { yearTotals[kpi.id] = 0; targets[kpi.id] = 0; });
-            allActuals.forEach(yr => { Projects.STANDARD_KPIS.forEach(kpi => { yearTotals[kpi.id] += (yr.kpis || {})[kpi.id] || 0; }); });
-            allTargets.forEach(yr => { Projects.STANDARD_KPIS.forEach(kpi => { targets[kpi.id]   += (yr.kpis || {})[kpi.id] || 0; }); });
+            // Project-level all-time: stock KPIs (population, facilities) take the
+            // max across years; flow KPIs sum. Matches the org roll-up + export.
+            yearTotals = Projects.rollupAllYears(allActuals);
+            targets    = Projects.rollupAllYears(allTargets);
         } else {
             targets    = { ...Projects.getTargetsForYear(allTargets, year) };
             yearTotals = { ...Projects.getActualsForYear(allActuals, year) };
@@ -5142,18 +5141,10 @@ window.GenericViews = {
         const projectKpis = projectData.map(d => {
             let actual, target;
             if (year === 'all') {
-                actual = {}; target = {};
-                Projects.STANDARD_KPIS.forEach(kpi => { actual[kpi.id] = 0; target[kpi.id] = 0; });
-                (d.allActuals || []).forEach(yr => {
-                    if (!hiddenYrsForAll.has(yr.year)) {
-                        Projects.STANDARD_KPIS.forEach(kpi => { actual[kpi.id] += (yr.kpis || {})[kpi.id] || 0; });
-                    }
-                });
-                (d.allTargets || []).forEach(yr => {
-                    if (!hiddenYrsForAll.has(yr.year)) {
-                        Projects.STANDARD_KPIS.forEach(kpi => { target[kpi.id] += (yr.kpis || {})[kpi.id] || 0; });
-                    }
-                });
+                // Stock KPIs (population, facilities) take max-per-project across
+                // years; flow KPIs sum. Matches the web export so totals agree.
+                actual = Projects.rollupAllYears(d.allActuals, hiddenYrsForAll);
+                target = Projects.rollupAllYears(d.allTargets, hiddenYrsForAll);
             } else {
                 actual = Projects.getActualsForYear(d.allActuals, year);
                 target = Projects.getTargetsForYear(d.allTargets, year);
@@ -5576,18 +5567,10 @@ window.GenericViews = {
         const projectKpis = projectData.map(d => {
             let actual, target;
             if (isAllYear) {
-                actual = {}; target = {};
-                Projects.STANDARD_KPIS.forEach(kpi => { actual[kpi.id] = 0; target[kpi.id] = 0; });
-                (d.allActuals || []).forEach(yr => {
-                    if (!hiddenYrsForAll.has(yr.year)) {
-                        Projects.STANDARD_KPIS.forEach(kpi => { actual[kpi.id] += (yr.kpis || {})[kpi.id] || 0; });
-                    }
-                });
-                (d.allTargets || []).forEach(yr => {
-                    if (!hiddenYrsForAll.has(yr.year)) {
-                        Projects.STANDARD_KPIS.forEach(kpi => { target[kpi.id] += (yr.kpis || {})[kpi.id] || 0; });
-                    }
-                });
+                // Stock KPIs (population, facilities) take max-per-project across
+                // years; flow KPIs sum. Matches the web export so totals agree.
+                actual = Projects.rollupAllYears(d.allActuals, hiddenYrsForAll);
+                target = Projects.rollupAllYears(d.allTargets, hiddenYrsForAll);
             } else {
                 actual = { ...Projects.getActualsForYear(d.allActuals, year) };
                 target = { ...Projects.getTargetsForYear(d.allTargets, year) };
