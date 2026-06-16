@@ -710,26 +710,58 @@ window.App = {
         this._cloudCheckInterval = setInterval(run, 10 * 60 * 1000);   // every 10 min
     },
 
+    // Hit the Apps Script ?meta=1 endpoint and compare the cloud's last-modified
+    // time to what this device last pulled/pushed. Returns a result object instead
+    // of acting, so both the silent check and the manual button can reuse it.
+    //   { ok:true, cloudMs, seenMs, lastModified } | { ok:false, reason, error? }
+    //   reason: 'nourl' | 'neterr' | 'badresp' | 'unsupported'
+    async _fetchCloudMeta() {
+        const appSettings = await Projects.getAppSettings();
+        const url = appSettings && appSettings.googleSheetsUrl;
+        if (!url) return { ok: false, reason: 'nourl' };
+        const metaUrl = url + (url.indexOf('?') >= 0 ? '&' : '?') + 'meta=1';
+        let res;
+        try { res = await electronAPI.invoke('http-request', { url: metaUrl, method: 'GET' }); }
+        catch (e) { return { ok: false, reason: 'neterr', error: String((e && e.message) || e) }; }
+        if (!res || res.error || !res.body) return { ok: false, reason: 'neterr', error: (res && res.error) || 'no response' };
+        let r; try { r = JSON.parse(res.body); } catch (_) { return { ok: false, reason: 'badresp' }; }
+        if (!r || !r.lastModified) return { ok: false, reason: 'unsupported' };   // pre-meta Apps Script
+        const cloudMs = new Date(r.lastModified).getTime();
+        if (!cloudMs) return { ok: false, reason: 'unsupported' };
+        const lastSyncMs = appSettings.googleSheetsLastSync ? new Date(appSettings.googleSheetsLastSync).getTime() : 0;
+        const lastPullMs = appSettings.googleSheetsLastPull ? new Date(appSettings.googleSheetsLastPull).getTime() : 0;
+        return { ok: true, cloudMs, seenMs: Math.max(lastSyncMs, lastPullMs), lastModified: r.lastModified };
+    },
+
     async _checkCloudFreshness() {
         try {
             // Auto-pull devices refresh themselves — never nag them.
             if (await Storage.getItem('surgdash_autopull_enabled')) return;
-            const appSettings = await Projects.getAppSettings();
-            const url = appSettings && appSettings.googleSheetsUrl;
-            if (!url) return;
-            const metaUrl = url + (url.indexOf('?') >= 0 ? '&' : '?') + 'meta=1';
-            const res = await electronAPI.invoke('http-request', { url: metaUrl, method: 'GET' });
-            if (!res || res.error || !res.body) return;
-            let r; try { r = JSON.parse(res.body); } catch (_) { return; }
-            if (!r || !r.lastModified) return;          // pre-meta Apps Script → stay silent
-            const cloudMs = new Date(r.lastModified).getTime();
-            if (!cloudMs) return;
-            const lastSyncMs = appSettings.googleSheetsLastSync ? new Date(appSettings.googleSheetsLastSync).getTime() : 0;
-            const lastPullMs = appSettings.googleSheetsLastPull ? new Date(appSettings.googleSheetsLastPull).getTime() : 0;
-            const seenMs = Math.max(lastSyncMs, lastPullMs, this._cloudBannerDismissedMs || 0);
+            const m = await this._fetchCloudMeta();
+            if (!m.ok) return;                          // silent: errors / pre-meta script show nothing
             // 30s grace so this device's own just-finished push/pull doesn't self-trigger.
-            if (cloudMs > seenMs + 30000) this._showCloudUpdateBanner(cloudMs);
+            if (m.cloudMs > Math.max(m.seenMs, this._cloudBannerDismissedMs || 0) + 30000) this._showCloudUpdateBanner(m.cloudMs);
         } catch (_) { /* best-effort, never throws into the UI */ }
+    },
+
+    // Manual "Check for cloud updates" button — same check, but always gives
+    // feedback (incl. when up to date or when the script needs redeploying), so it
+    // doubles as a way to test the freshness endpoint without waiting for the timer.
+    async checkCloudUpdatesManually() {
+        this.showMsg('Checking the cloud for new data…');
+        const m = await this._fetchCloudMeta();
+        if (!m.ok) {
+            if (m.reason === 'nourl') return this.showMsg('Add your Google Sheets link first.', true);
+            if (m.reason === 'unsupported') return this.showMsg('Your Apps Script doesn’t support the quick check yet — open Settings → Copy Script, paste it into your Apps Script editor, and redeploy the Web App.', true);
+            return this.showMsg('Couldn’t reach the cloud' + (m.error ? (': ' + m.error) : '') + '.', true);
+        }
+        if (m.cloudMs > m.seenMs + 30000) {
+            this._showCloudUpdateBanner(m.cloudMs);
+            this.showMsg('New data is available in the cloud — use the banner to Pull. ☁');
+        } else {
+            this._dismissCloudBanner();
+            this.showMsg('You’re up to date — no new cloud data since your last pull. ✓');
+        }
     },
 
     _showCloudUpdateBanner(cloudMs) {

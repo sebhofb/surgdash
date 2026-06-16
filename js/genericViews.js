@@ -10151,6 +10151,12 @@ function initProjectMap(pid){
                                 <span class="text-xs text-slate-500 leading-relaxed">Automatically pull updates from the cloud on launch and every 5&nbsp;min.
                                     <strong class="text-slate-600">Leave OFF if you edit data on this device</strong> — a pull overwrites local data, so auto-pull can revert unsynced edits. Turn ON only for a read-only viewer screen. You can always Pull/Push manually with the buttons above. ${autoPullOn ? '<span class="text-amber-600 font-semibold">Currently ON.</span>' : '<span class="text-emerald-600 font-semibold">Currently OFF — manual only (recommended for editors).</span>'}</span>
                             </label>
+                            <div class="mt-2.5">
+                                <button onclick="App.checkCloudUpdatesManually()" class="inline-flex items-center gap-1.5 px-3 py-1.5 border border-emerald-300 text-emerald-700 rounded-lg text-xs font-bold hover:bg-emerald-50 transition-colors">
+                                    <i data-lucide="cloud-download" width="13"></i> Check for cloud updates
+                                </button>
+                                <span class="ml-2 text-[11px] text-slate-400">Asks the cloud if there's newer data — shows the banner if so, or confirms you're up to date.</span>
+                            </div>
                         </div>
                     </div>
                     <div class="mt-4 bg-slate-900 rounded-lg p-4 flex items-start justify-between gap-3">
