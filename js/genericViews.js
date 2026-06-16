@@ -12162,7 +12162,11 @@ function doGet(e) {
     // app can detect new cloud data without downloading every sheet. (?meta=1)
     if (e && e.parameter && e.parameter.meta) {
       var _lm = '';
-      try { _lm = DriveApp.getFileById(ss.getId()).getLastUpdated().toISOString(); } catch (_e) {}
+      // Primary: the push timestamp (no extra permission). Bonus: the Drive file's
+      // last-modified time, if the Drive scope happens to be granted (also catches
+      // manual sheet edits). Return whichever is newer.
+      try { _lm = PropertiesService.getScriptProperties().getProperty('lastSync') || ''; } catch (_p) {}
+      try { var _d = DriveApp.getFileById(ss.getId()).getLastUpdated(); if (_d) { var _di = _d.toISOString(); if (_di > _lm) _lm = _di; } } catch (_e) {}
       return _json({ ok: true, meta: true, lastModified: _lm });
     }
     const SKIP = new Set(['📊 Organisation', '__SURGdash__', '📋 SURGdash Backup']);
@@ -12394,6 +12398,9 @@ function doPost(e) {
       _writeProject(ss, d);
       _storeRaw(ss, d);       // save JSON snapshot for doGet
     }
+    // Record when the cloud last changed so the app's quick "?meta=1" check can
+    // detect new data cheaply. ScriptProperties needs no extra permission.
+    try { PropertiesService.getScriptProperties().setProperty('lastSync', new Date().toISOString()); } catch(_e) {}
     return _json({ ok: true });
   } catch(err) { return _json({ ok: false, error: err.message }); }
 }

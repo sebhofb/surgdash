@@ -725,9 +725,11 @@ window.App = {
         catch (e) { return { ok: false, reason: 'neterr', error: String((e && e.message) || e) }; }
         if (!res || res.error || !res.body) return { ok: false, reason: 'neterr', error: (res && res.error) || 'no response' };
         let r; try { r = JSON.parse(res.body); } catch (_) { return { ok: false, reason: 'badresp' }; }
-        if (!r || !r.lastModified) return { ok: false, reason: 'unsupported' };   // pre-meta Apps Script
+        if (!r) return { ok: false, reason: 'badresp' };
+        if (!r.meta) return { ok: false, reason: 'olddeploy' };       // endpoint not live → old deployment / wrong URL
+        if (!r.lastModified) return { ok: false, reason: 'notimestamp' };  // live, but no sync recorded yet
         const cloudMs = new Date(r.lastModified).getTime();
-        if (!cloudMs) return { ok: false, reason: 'unsupported' };
+        if (!cloudMs) return { ok: false, reason: 'notimestamp' };
         const lastSyncMs = appSettings.googleSheetsLastSync ? new Date(appSettings.googleSheetsLastSync).getTime() : 0;
         const lastPullMs = appSettings.googleSheetsLastPull ? new Date(appSettings.googleSheetsLastPull).getTime() : 0;
         return { ok: true, cloudMs, seenMs: Math.max(lastSyncMs, lastPullMs), lastModified: r.lastModified };
@@ -752,7 +754,8 @@ window.App = {
         const m = await this._fetchCloudMeta();
         if (!m.ok) {
             if (m.reason === 'nourl') return this.showMsg('Add your Google Sheets link first.', true);
-            if (m.reason === 'unsupported') return this.showMsg('Your Apps Script doesn’t support the quick check yet — open Settings → Copy Script, paste it into your Apps Script editor, and redeploy the Web App.', true);
+            if (m.reason === 'olddeploy') return this.showMsg('The Web App is still serving the OLD script. Pasting the code + Save isn’t enough — in Apps Script go to Deploy → Manage deployments → ✎ Edit → Version: “New version” → Deploy (keeps the same URL).', true);
+            if (m.reason === 'notimestamp') return this.showMsg('Quick-check is live ✓ — but no sync is recorded yet. Click “Sync to Sheets” once, then check again (that stamps the timestamp it reads).', true);
             return this.showMsg('Couldn’t reach the cloud' + (m.error ? (': ' + m.error) : '') + '.', true);
         }
         if (m.cloudMs > m.seenMs + 30000) {
