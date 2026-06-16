@@ -13392,6 +13392,16 @@ function _writeProject(ss, d) {
         this._updateSyncOverlay('Finalising…', 99);
         // Internal write — we just pushed everything, don't re-trigger auto-sync
         await Projects.saveAppSettings({ googleSheetsUrl: url, googleSheetsLastSync: syncedAt }, { internal: true });
+        // The server stamps its OWN lastSync (its clock, at the END of this multi-part
+        // upload). Adopt that as our last-synced marker — otherwise the freshness check
+        // reads our just-finished push as "new data" (our local syncedAt is the push
+        // START, minutes behind the server's end-of-upload stamp + any clock skew).
+        try {
+            const _meta = await App._fetchCloudMeta();
+            if (_meta && _meta.ok && _meta.lastModified) {
+                await Projects.saveAppSettings({ googleSheetsLastSync: _meta.lastModified }, { internal: true });
+            }
+        } catch (_) { /* best-effort — falls back to local syncedAt */ }
         this._updateSyncOverlay('Done ✓', 100);
         // Brief pause so the user sees 100% before the overlay disappears
         await new Promise(r => setTimeout(r, 350));
