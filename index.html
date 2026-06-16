@@ -114,6 +114,16 @@
     <link rel="stylesheet" href="vendor/leaflet.css" />
 
     <script src="vendor/xlsx.full.min.js"></script>
+    <!-- xlsx-js-style: styling-capable SheetJS fork (colours + bold), exposed as a SEPARATE global
+         (window.XLSXStyle) so the community build above stays the canonical XLSX for every existing
+         export + the import path. Used only by the SURGfund "Excel" workbook export. -->
+    <script>window.__cXLSX = window.XLSX; window.XLSX = undefined;</script>
+    <script src="vendor/xlsx-js-style.min.js"></script>
+    <script>
+      window.XLSXStyle = (window.XLSX && window.XLSX.utils) ? window.XLSX : null;
+      window.XLSX = window.__cXLSX;
+      try { delete window.__cXLSX; } catch (_) { window.__cXLSX = undefined; }
+    </script>
     <script src="vendor/papaparse.min.js"></script>
     <script src="vendor/pdf-lib.min.js"></script>
     <script src="vendor/localforage.min.js"></script>
