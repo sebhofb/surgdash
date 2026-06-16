@@ -12150,6 +12150,15 @@ ${additionalPages.map((inner, i) => `
     },
 
     _getAppsScriptCode() {
+        // SINGLE SOURCE OF TRUTH: the canonical bundled script file. Reading it here
+        // guarantees "Copy Script" can never drift from the real script — a past drift
+        // shipped a SURGhub-less copy that broke SURGhub sync when redeployed. The
+        // inline copy below is only a last-resort fallback if the file can't be read.
+        try {
+            const _p = electronAPI.path.join(electronAPI.appPath, 'scripts', 'google-apps-script.js');
+            const _code = electronAPI.fs.readFileSync(_p, 'utf8');
+            if (_code && _code.indexOf('surghub_chunk') !== -1 && _code.indexOf('parameter.meta') !== -1) return _code;
+        } catch (_) { /* fall through to the inline fallback */ }
         return `// SURGdash Google Sheets Sync
 // Paste into Google Apps Script → Save → Deploy as Web App
 // Execute as: Me  |  Access: Anyone

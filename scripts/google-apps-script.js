@@ -6,6 +6,16 @@
 function doGet(e) {
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
+    // Cheap freshness check (?meta=1): return ONLY the last-change time so the app can
+    // detect new cloud data without downloading everything. lastSync = last push,
+    // lastEdit = manual cell edit (onEdit), plus Drive file modified time if granted.
+    if (e && e.parameter && e.parameter.meta) {
+      var _lm = '';
+      try { _lm = PropertiesService.getScriptProperties().getProperty('lastSync') || ''; } catch (_p) {}
+      try { var _le = PropertiesService.getScriptProperties().getProperty('lastEdit') || ''; if (_le > _lm) _lm = _le; } catch (_q) {}
+      try { var _d = DriveApp.getFileById(ss.getId()).getLastUpdated(); if (_d) { var _di = _d.toISOString(); if (_di > _lm) _lm = _di; } } catch (_e2) {}
+      return _json({ ok: true, meta: true, lastModified: _lm });
+    }
     var SKIP = {'📊 Organisation':1, '__SURGdash__':1, '📋 SURGdash Backup':1, '📋 SURGhub':1};
     var projects = [];
     ss.getSheets().forEach(function(sheet) {
@@ -298,8 +308,16 @@ function doPost(e) {
       _writeProject(ss, d);
       _storeRaw(ss, d);       // save JSON snapshot for doGet
     }
+    // Stamp the last-change time so the app's ?meta=1 freshness check works.
+    try { PropertiesService.getScriptProperties().setProperty('lastSync', new Date().toISOString()); } catch(_e) {}
     return _json({ ok: true });
   } catch(err) { return _json({ ok: false, error: err.message }); }
+}
+
+// Simple trigger: fires on a manual cell edit. Stamps lastEdit so the ?meta check
+// also flags hand edits (not just app pushes). No install / no extra scope needed.
+function onEdit(e) {
+  try { PropertiesService.getScriptProperties().setProperty('lastEdit', new Date().toISOString()); } catch(_e) {}
 }
 
 function _json(obj) {
