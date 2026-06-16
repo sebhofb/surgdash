@@ -13715,13 +13715,24 @@ function _writeProject(ss, d) {
                 surghubRestored = proceedSurghub;
             }
 
-            // Internal write — must not re-trigger auto-sync (would create a loop)
-            await Projects.saveAppSettings({ googleSheetsLastPull: new Date().toISOString() }, { internal: true });
+            // Internal write — must not re-trigger auto-sync (would create a loop).
+            // CRITICAL (data-loss fix): only advance the pull baseline when we FULLY
+            // reconciled with the cloud. If we preserved any local edits above (the
+            // SURGhub blob, or SURGfund projects skipped as dirty), advancing
+            // googleSheetsLastPull would push the dirty-baseline PAST those edits' file
+            // mtimes — so the NEXT silent pull would no longer see them as dirty and
+            // would silently overwrite them with the older cloud copy (one-cycle
+            // protection only). Holding the old baseline keeps them protected until the
+            // user pushes (which advances googleSheetsLastSync and clears the dirty state).
+            const _fullyReconciled = !surghubSkipped && skippedDirty.length === 0;
+            if (_fullyReconciled) {
+                await Projects.saveAppSettings({ googleSheetsLastPull: new Date().toISOString() }, { internal: true });
+            }
             // Local data now matches the cloud — clear the dirty flag, but only if we
             // didn't PRESERVE any local changes that still need pushing (SURGhub blob
             // or projects with unsynced edits we skipped). Leaving it dirty keeps the
             // unsynced banner up so the user knows to Sync those changes to the cloud.
-            if (App.markClean && !surghubSkipped && skippedDirty.length === 0) App.markClean();
+            if (App.markClean && _fullyReconciled) App.markClean();
 
             const parts = [];
             if (created) parts.push(`${created} created`);
