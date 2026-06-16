@@ -304,7 +304,35 @@ function buildAppMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
+// If SURGdash is run from outside /Applications (e.g. straight from the DMG or
+// Downloads), macOS "translocates" it to a random read-only path — which silently
+// blocks electron-updater from replacing the bundle, so auto-updates download but
+// never install. Offer to move it to /Applications on launch to avoid that.
+// Packaged macOS only; never during `npm start` (app.isPackaged === false).
+function offerMoveToApplications() {
+  try {
+    if (process.platform !== 'darwin' || !app.isPackaged) return;
+    if (app.isInApplicationsFolder && app.isInApplicationsFolder()) return;
+    const choice = dialog.showMessageBoxSync({
+      type: 'question',
+      buttons: ['Move to Applications (recommended)', 'Not now'],
+      defaultId: 0,
+      cancelId: 1,
+      message: 'Move SURGdash to your Applications folder?',
+      detail: 'SURGdash is running from outside the Applications folder. macOS can block automatic updates from installing in this case. Moving it to Applications fixes that — it only takes a moment and the app will reopen.'
+    });
+    if (choice === 0) {
+      // Moves the bundle and relaunches from /Applications; may throw if the user
+      // cancels the auth prompt or a copy already exists — fall back to launching here.
+      app.moveToApplicationsFolder();
+    }
+  } catch (e) {
+    console.warn('moveToApplicationsFolder skipped:', e && e.message);
+  }
+}
+
 app.whenReady().then(() => {
+  offerMoveToApplications();
   createWindow();
   buildAppMenu();
   initAutoUpdate();
