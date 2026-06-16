@@ -20,15 +20,16 @@ function profilePointerPath() {
 }
 
 // Permanently delete a test profile's data dir so re-entering it is a clean slate.
-// Hard-guarded to only ever touch ~/Documents/SURGdash-<profile>, never the real
-// ~/Documents/SURGdash data dir.
+// Hard-guarded to only ever touch a NAMED test profile dir, never the real data.
 function wipeProfileDir(profile) {
   const safe = String(profile || '').replace(/[^A-Za-z0-9_-]/g, '');
   if (!safe) return;                       // empty == the real profile — never wipe
-  try {
-    const dir = path.join(os.homedir(), 'Documents', 'SURGdash-' + safe);
-    if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
-  } catch (_) { /* best-effort */ }
+  const targets = [];
+  try { targets.push(path.join(app.getPath('userData'), 'data-' + safe)); } catch (_) {}
+  targets.push(path.join(os.homedir(), 'Documents', 'SURGdash-' + safe)); // legacy location
+  for (const dir of targets) {
+    try { if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true }); } catch (_) { /* best-effort */ }
+  }
 }
 
 const DATA_PROFILE = (function () {
@@ -49,6 +50,47 @@ const DATA_PROFILE = (function () {
   } catch (_) { /* no pointer — normal profile */ }
   return String(p || '').replace(/[^A-Za-z0-9_-]/g, '');
 })();
+
+// ── Data directory (moved OUT of ~/Documents) ───────────────────────────────
+// Data used to live in ~/Documents/SURGdash, but ~/Documents is commonly
+// cloud-synced (Google Drive mirroring / iCloud "Desktop & Documents"). A sync
+// engine watching a live ~450MB database caused CPU churn, false "unsynced"
+// flags, and even reverted edits. We now keep it under the per-app userData dir,
+// which is NEVER cloud-synced and still survives app reinstalls.
+function appDataDir() {
+  const sub = DATA_PROFILE ? ('data-' + DATA_PROFILE) : 'data';
+  return path.join(app.getPath('userData'), sub);
+}
+function legacyDataDir() {
+  return path.join(os.homedir(), 'Documents', DATA_PROFILE ? ('SURGdash-' + DATA_PROFILE) : 'SURGdash');
+}
+
+// One-time, automatic, NON-DESTRUCTIVE migration out of ~/Documents into userData.
+// Runs before the window loads. Copies to a temp dir then atomically renames, so a
+// half-finished copy can NEVER be mistaken for a complete one (no partial-state
+// data loss). The old folder is left untouched as a fallback. Only the real
+// profile is migrated (test profiles are ephemeral).
+function migrateDataDirIfNeeded() {
+  try {
+    if (DATA_PROFILE) return;                 // never migrate a test profile
+    const dest = appDataDir();
+    const src  = legacyDataDir();
+    let destHasContent = false;
+    try { destHasContent = fs.existsSync(dest) && fs.readdirSync(dest).length > 0; } catch (_) {}
+    if (destHasContent) return;               // already migrated (or already using new dir)
+    let srcHasContent = false;
+    try { srcHasContent = fs.existsSync(src) && fs.readdirSync(src).length > 0; } catch (_) {}
+    if (!srcHasContent) return;               // fresh install — nothing to migrate
+    const tmp = dest + '.migrating';
+    try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (_) {}
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.cpSync(src, tmp, { recursive: true });
+    fs.renameSync(tmp, dest);                  // atomic: dest appears only if the copy fully succeeded
+    console.log('[migrate] data copied', src, '→', dest);
+  } catch (e) {
+    console.error('[migrate] data dir migration failed (will retry next launch):', e && e.message);
+  }
+}
 
 // ── Path safety: restrict file IPC to home + tmp directories ─────────────
 function isPathSafe(filePath) {
@@ -81,7 +123,7 @@ function createWindow () {
       sandbox: false,
       preload: path.join(__dirname, 'preload.js'),
       // Pass the data profile to the renderer/preload so storage isolates it.
-      additionalArguments: ['--data-profile=' + DATA_PROFILE]
+      additionalArguments: ['--data-profile=' + DATA_PROFILE, '--surgdash-datadir=' + appDataDir()]
     }
   });
 
@@ -339,6 +381,7 @@ function offerMoveToApplications() {
 
 app.whenReady().then(() => {
   offerMoveToApplications();
+  migrateDataDirIfNeeded();   // one-time copy ~/Documents/SURGdash → userData (before any window)
   createWindow();
   buildAppMenu();
   initAutoUpdate();

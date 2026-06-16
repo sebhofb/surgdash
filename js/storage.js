@@ -1,5 +1,6 @@
 // File-based storage module — drop-in replacement for localforage
-// Stores data as JSON files in ~/Documents/SURGdash/
+// Stores data as JSON files under the per-app userData dir (main.js resolves the
+// path and migrates out of the legacy ~/Documents/SURGdash on first launch).
 // Uses electronAPI exposed by preload.js (contextIsolation: true)
 // Writes use atomic write-then-rename to prevent corruption.
 
@@ -8,10 +9,14 @@
     const path = electronAPI.path;
     const os   = electronAPI.os;
 
-    // Normal data lives in ~/Documents/SURGdash. A test profile (set via
-    // --profile=test / SURGDASH_PROFILE / the "Open Fresh Test Profile" menu item)
-    // isolates everything into ~/Documents/SURGdash-<profile>, leaving real data untouched.
-    const DATA_DIR = path.join(os.homedir(), 'Documents', (electronAPI.dataDirName || 'SURGdash'));
+    // Data now lives under the per-app userData dir (NOT ~/Documents, which is
+    // commonly cloud-synced and caused CPU/sync problems). main.js resolves the
+    // absolute path, runs the one-time migration out of ~/Documents, and passes it
+    // here via electronAPI.dataDir. Fall back to the legacy ~/Documents path only if
+    // that wiring is somehow absent (defensive — keeps an old build working).
+    const DATA_DIR = (electronAPI.dataDir && electronAPI.dataDir.length)
+        ? electronAPI.dataDir
+        : path.join(os.homedir(), 'Documents', (electronAPI.dataDirName || 'SURGdash'));
 
     // Key-to-filepath mapping for organised folder structure
     function keyToPath(key) {

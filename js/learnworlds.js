@@ -146,7 +146,7 @@ window.LearnWorlds = (function () {
     // every call is wrapped so it can NEVER break or slow-fail a sync. raw/ holds
     // emails + referrer_id, so storage.js keys() hard-excludes it from every export.
     let _rawPullId = null, _rawComplete = false, _rawPages = 0, _rawBytes = 0, _rawStartedAt = null;
-    function _rawDir() { return electronAPI.path.join(electronAPI.os.homedir(), 'Documents', 'SURGdash', 'surghub', 'raw'); }
+    function _rawDir() { return electronAPI.path.join(Storage.DATA_DIR, 'surghub', 'raw'); }
     function _rawStamp() { const d = new Date(); const p = n => String(n).padStart(2, '0'); return '' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + '-' + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds()); }
     function _finalizeRawPull() {
         if (!_rawPullId) return;

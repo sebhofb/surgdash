@@ -4118,7 +4118,7 @@ Object.assign(window.App, {
                     </div>
                     ${this._deriveVerifySection()}
                     ${rawSection}
-                    <div class="bg-slate-50 border rounded-xl px-5 py-4 text-[11px] text-slate-500 leading-relaxed">These checks read the data already on disk — they don't call LearnWorlds. <strong>▲</strong> flags a gap worth a look (often expected — e.g. dated-coverage below 100% because some history predates growth-timeline collection). A <strong class="text-red-600">▼</strong> under "what changed" means a total dropped versus the last snapshot, which usually signals an incomplete sync — if so, restore a pre-sync backup from <span class="font-mono">~/Documents/SURGdash/backups/</span>.</div>
+                    <div class="bg-slate-50 border rounded-xl px-5 py-4 text-[11px] text-slate-500 leading-relaxed">These checks read the data already on disk — they don't call LearnWorlds. <strong>▲</strong> flags a gap worth a look (often expected — e.g. dated-coverage below 100% because some history predates growth-timeline collection). A <strong class="text-red-600">▼</strong> under "what changed" means a total dropped versus the last snapshot, which usually signals an incomplete sync — if so, restore a pre-sync backup (org dashboard → the history/clock icon → Restore).</div>
         `;
     },
 

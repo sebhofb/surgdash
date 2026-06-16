@@ -2491,7 +2491,7 @@ window.GenericViews = {
             ]);
             const fs = electronAPI.fs;
             const path = electronAPI.path;
-            const backupDir = path.join(electronAPI.os.homedir(), 'Documents', 'SURGdash', 'backups');
+            const backupDir = path.join(Storage.DATA_DIR, 'backups');
             if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
             const backupStamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
             fs.writeFileSync(
@@ -2787,7 +2787,7 @@ window.GenericViews = {
 
     _showLocalBackupBrowser() {
         const list = this._listAutoBackups();
-        if (!list.length) { alert('No automatic backups found yet in ~/Documents/SURGdash/backups.'); return; }
+        if (!list.length) { alert('No automatic backups found yet.'); return; }
         GenericViews._autoBackupList = list;
         const dot = { full: '#206095', projects: '#4389C8', surghub: '#7A9E9F' };
         const rows = list.slice(0, 80).map((b, i) => `
@@ -2837,7 +2837,7 @@ window.GenericViews = {
             for (const old of snaps.slice(0, Math.max(0, snaps.length - 10))) { try { fs.unlinkSync(path.join(dir, old)); } catch (_) {} }
         } catch (e) { console.warn('pre-restore snapshot failed:', e); }
         if (!safetyOk) {
-            alert('Could not write a safety backup of your current data — restore aborted to avoid unrecoverable data loss.\n\nCheck that ~/Documents/SURGdash/backups is writable with free space, then try again.');
+            alert('Could not write a safety backup of your current data — restore aborted to avoid unrecoverable data loss.\n\nCheck that the app\'s data folder is writable with free space, then try again.');
             return;
         }
 
@@ -2899,7 +2899,7 @@ window.GenericViews = {
     async _restorePreImportBackup(projectId) {
         const fs = electronAPI.fs;
         const path = electronAPI.path;
-        const backupDir = path.join(electronAPI.os.homedir(), 'Documents', 'SURGdash', 'backups');
+        const backupDir = path.join(Storage.DATA_DIR, 'backups');
 
         let files = [];
         if (fs.existsSync(backupDir)) {
@@ -2961,7 +2961,7 @@ window.GenericViews = {
         document.getElementById('restore-modal-overlay')?.remove();
         const fs = electronAPI.fs;
         const path = electronAPI.path;
-        const backupDir = path.join(electronAPI.os.homedir(), 'Documents', 'SURGdash', 'backups');
+        const backupDir = path.join(Storage.DATA_DIR, 'backups');
         const files = GenericViews._restoreFiles || [];
         if (!files[idx]) return;
 
