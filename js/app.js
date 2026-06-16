@@ -87,21 +87,39 @@ window.App = {
 
             // Catch async-rendered forms in viewer mode: any time a node is added,
             // disable form controls inside it. Stops checkbox-label forwarding too.
+            // This fires on EVERY DOM mutation. Charts/maps mutate the DOM constantly,
+            // so running a querySelectorAll synchronously per mutation pegged the CPU
+            // on viewer machines (the observer is only active for non-editors). Batch
+            // the added nodes and scan once per ~200ms burst instead.
+            this._viewerScanPending = [];
+            this._viewerScanTimer = null;
+            const _applyDisable = (el) => {
+                if (el.hasAttribute('data-viewer-allowed')) return;
+                // In provider-reporting mode, report controls stay live.
+                if (this.reportAccess && el.hasAttribute('data-report-ok')) return;
+                if (el.type === 'hidden') return;
+                if (!el.disabled) el.disabled = true;
+            };
+            const _runViewerScan = () => {
+                this._viewerScanTimer = null;
+                if (this.editUnlocked) { this._viewerScanPending = []; return; }
+                const nodes = this._viewerScanPending;
+                this._viewerScanPending = [];
+                for (const node of nodes) {
+                    if (!node.isConnected) continue;
+                    if (node.matches && node.matches('input, textarea, select')) _applyDisable(node);
+                    if (node.querySelectorAll) node.querySelectorAll('input, textarea, select').forEach(_applyDisable);
+                }
+            };
             this._viewerInputObserver = new MutationObserver((mutations) => {
-                if (this.editUnlocked) return;
+                if (this.editUnlocked) return;   // editors: nothing to disable, stay cheap
                 for (const m of mutations) {
-                    m.addedNodes.forEach(node => {
-                        if (node.nodeType !== 1) return; // element nodes only
-                        const apply = (el) => {
-                            if (el.hasAttribute('data-viewer-allowed')) return;
-                            // In provider-reporting mode, report controls stay live.
-                            if (this.reportAccess && el.hasAttribute('data-report-ok')) return;
-                            if (el.type === 'hidden') return;
-                            if (!el.disabled) el.disabled = true;
-                        };
-                        if (node.matches && node.matches('input, textarea, select')) apply(node);
-                        if (node.querySelectorAll) node.querySelectorAll('input, textarea, select').forEach(apply);
-                    });
+                    for (const node of m.addedNodes) {
+                        if (node.nodeType === 1) this._viewerScanPending.push(node);
+                    }
+                }
+                if (this._viewerScanPending.length && !this._viewerScanTimer) {
+                    this._viewerScanTimer = setTimeout(_runViewerScan, 200);
                 }
             });
             this._viewerInputObserver.observe(document.body, { childList: true, subtree: true });
@@ -815,16 +833,25 @@ window.App = {
         if (this._refreshUnsyncedBanner) this._refreshUnsyncedBanner();
     },
 
-    async _hasUnsyncedChanges() {
+    async _hasUnsyncedChanges(deep = false) {
         try {
             if (!this.editUnlocked) return false;        // viewers can't push, never warn them
             const settings = await Projects.getAppSettings();
             if (!settings.googleSheetsUrl) return false; // no remote configured → nothing to warn about
 
-            // Tier 1: in-memory dirty flag — definitive for the current session
+            // Tier 1: in-memory dirty flag — definitive for the current session.
+            // Every real data write goes through Storage.setItem → markDirty, and a
+            // successful push calls markClean, so this is the authoritative signal
+            // while the app is open.
             if (this._unsyncedDirty) return true;
 
-            // Tier 2: file-mtime check (catches state across app restarts only)
+            // Tier 2: file-mtime scan — ONLY run on the startup check (deep=true), to
+            // catch "closed with unsynced edits" across restarts. We deliberately do
+            // NOT re-run it on the periodic refresh: file mtimes get bumped by things
+            // that aren't user edits (notably Google Drive re-syncing the folder),
+            // which made the banner flip on every few seconds. If the deep scan finds
+            // stale files we latch _unsyncedDirty so it persists until the next sync.
+            if (!deep) return false;
             const fs = electronAPI.fs, path = electronAPI.path;
             const lastSyncMs = settings.googleSheetsLastSync ? new Date(settings.googleSheetsLastSync).getTime() : 0;
             const lastPullMs = settings.googleSheetsLastPull ? new Date(settings.googleSheetsLastPull).getTime() : 0;
@@ -884,7 +911,7 @@ window.App = {
                         if (NAV_STATE_FILES.has(e.name)) continue; // skip nav/UI state
                         try {
                             const stat = fs.statSync(full);
-                            if (stat.mtimeMs > threshold) return true;
+                            if (stat.mtimeMs > threshold) { this._unsyncedDirty = true; return true; }
                         } catch (_) {}
                     }
                 }
@@ -905,10 +932,10 @@ window.App = {
     },
 
     // Refresh the unsynced-changes banner. Called periodically and after sync events.
-    async _refreshUnsyncedBanner() {
+    async _refreshUnsyncedBanner(deep = false) {
         const banner = document.getElementById('unsynced-banner');
         if (!banner) return;
-        const dirty = await this._hasUnsyncedChanges();
+        const dirty = await this._hasUnsyncedChanges(deep);
         banner.style.display = dirty ? 'flex' : 'none';
     },
 
@@ -971,10 +998,12 @@ window.App = {
 
     _startUnsyncedWatcher() {
         if (this._unsyncedInterval) clearInterval(this._unsyncedInterval);
-        // Initial check shortly after init
-        setTimeout(() => this._refreshUnsyncedBanner(), 1500);
-        // Re-check every 10 s
-        this._unsyncedInterval = setInterval(() => this._refreshUnsyncedBanner(), 10000);
+        // Initial check shortly after init — DEEP (mtime scan) to catch unsynced
+        // edits left from a previous session.
+        setTimeout(() => this._refreshUnsyncedBanner(true), 1500);
+        // Periodic re-check is SHALLOW (in-memory dirty flag only) — cheap, and not
+        // fooled by file-mtime churn (e.g. Google Drive re-syncing the folder).
+        this._unsyncedInterval = setInterval(() => this._refreshUnsyncedBanner(), 30000);
     },
 
     async syncNow() {
