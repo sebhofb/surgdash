@@ -52,6 +52,9 @@
         // Settings
         if (key === 'surgdash_last_project') return path.join('settings', 'last_project.json');
         if (key === 'surgdash_demo_active')  return path.join('settings', 'demo_active.json');
+        // Per-device auto-pull opt-in. Deliberately NOT in relativeToKey's reverse
+        // map → keys() never enumerates it → it stays device-local, never pushed.
+        if (key === 'surgdash_autopull_enabled') return path.join('settings', 'autopull_enabled.json');
         if (key === 'surgdash_onboarding')      return path.join('settings', 'onboarding.json');
         if (key === 'surgdash_edit_password')  return path.join('settings', 'edit_password.json');
         if (key === 'report_cover_path')     return path.join('settings', 'report_cover_path.json');

@@ -674,8 +674,16 @@ window.App = {
         return this._completionLoadPromise;
     },
 
-    _startAutoPull() {
-        if (this._autoPullInterval) clearInterval(this._autoPullInterval);
+    async _startAutoPull() {
+        if (this._autoPullInterval) { clearInterval(this._autoPullInterval); this._autoPullInterval = null; }
+        // Per-device safety: auto-pull is OPT-IN, OFF by default. A cloud pull
+        // OVERWRITES local project data, so on an editor's machine a silent launch
+        // pull can wipe unsynced edits (the bonesetter data-loss incident). Only
+        // devices explicitly opted in — e.g. a read-only viewer screen — auto-pull;
+        // everyone else uses the manual Pull / Push buttons. The flag is stored
+        // device-locally (settings/autopull_enabled.json) and never pushed to Sheets.
+        const autoOn = await Storage.getItem('surgdash_autopull_enabled');
+        if (!autoOn) return;
         const pull = async () => {
             const settings = await Projects.getAppSettings();
             if (settings.googleSheetsUrl && window.GenericViews) {

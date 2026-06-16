@@ -10047,6 +10047,7 @@ function initProjectMap(pid){
         const presetKpis = allKpis.filter(k => k.preset);
         const customKpis = allKpis.filter(k => !k.preset);
         const appSettings = await Projects.getAppSettings();
+        const autoPullOn = !!(await Storage.getItem('surgdash_autopull_enabled'));
 
         const presetRows = presetKpis.map(kpi => `
             <div class="flex items-center gap-3 p-3 rounded-lg bg-slate-50 border border-slate-200">
@@ -10153,6 +10154,15 @@ function initProjectMap(pid){
                                 <button onclick="App.setAnthropicKey()" class="px-4 py-2 bg-gsf-boston text-white rounded-lg text-sm font-bold hover:bg-gsf-prussian transition-colors">Set / change key</button>
                                 <span class="text-xs text-slate-400">Stored locally on this machine only — never synced, exported, or shared.</span>
                             </div>
+                        </div>
+                        <div class="pt-3 border-t border-slate-100">
+                            <label class="block text-[10px] font-bold text-slate-400 mb-1 uppercase tracking-wide">Automatic cloud pull <span class="font-normal text-slate-300">(this device only)</span></label>
+                            <label class="flex items-start gap-3 cursor-pointer">
+                                <input type="checkbox" id="org-autopull-toggle" ${autoPullOn ? 'checked' : ''} onchange="GenericViews._toggleAutoPull(this.checked)"
+                                    class="mt-0.5 rounded border-slate-300 text-gsf-boston focus:ring-gsf-boston/30" />
+                                <span class="text-xs text-slate-500 leading-relaxed">Automatically pull updates from the cloud on launch and every 5&nbsp;min.
+                                    <strong class="text-slate-600">Leave OFF if you edit data on this device</strong> — a pull overwrites local data, so auto-pull can revert unsynced edits. Turn ON only for a read-only viewer screen. You can always Pull/Push manually with the buttons above. ${autoPullOn ? '<span class="text-amber-600 font-semibold">Currently ON.</span>' : '<span class="text-emerald-600 font-semibold">Currently OFF — manual only (recommended for editors).</span>'}</span>
+                            </label>
                         </div>
                     </div>
                     <div class="mt-4 bg-slate-900 rounded-lg p-4 flex items-start justify-between gap-3">
@@ -13175,6 +13185,20 @@ function _writeProject(ss, d) {
         const url = (document.getElementById('org-sheets-view-url')?.value || '').trim();
         await Projects.saveAppSettings({ googleSheetsViewUrl: url || null });
         App.showMsg(url ? 'Spreadsheet URL saved.' : 'URL cleared.');
+        App.renderView();
+    },
+
+    // Per-device auto-pull opt-in. OFF (manual) is the safe default; ON is for
+    // read-only viewer screens. Starts/stops the auto-pull timer immediately.
+    async _toggleAutoPull(on) {
+        await Storage.setItem('surgdash_autopull_enabled', !!on, { internal: true });
+        if (on) {
+            App._startAutoPull();
+            App.showMsg('Auto-pull ON for this device — it will refresh from the cloud on launch and every 5 min.');
+        } else {
+            if (App._autoPullInterval) { clearInterval(App._autoPullInterval); App._autoPullInterval = null; }
+            App.showMsg('Auto-pull OFF — this device updates only when you click Pull. Safe for editing.');
+        }
         App.renderView();
     },
 
