@@ -107,6 +107,7 @@ window.App = {
             this._viewerInputObserver.observe(document.body, { childList: true, subtree: true });
 
             this._startAutoPull();
+            this._startCloudFreshnessCheck();
 
             // Stamp the real app version into the sidebar (single source of truth:
             // package.json, exposed via preload). Falls back to the hardcoded label.
@@ -693,6 +694,66 @@ window.App = {
         // Delay the first pull slightly so the UI has rendered (banner needs DOM)
         setTimeout(() => pull(), 600);
         this._autoPullInterval = setInterval(pull, 5 * 60 * 1000);
+    },
+
+    // ── Cloud freshness check ("new data available" banner) ─────────────────
+    // For MANUAL devices (auto-pull OFF), periodically ask the Apps Script only for
+    // the Sheet's last-modified time (?meta=1 — cheap, no full download). If the
+    // cloud is newer than this device last pulled/pushed, show a dismissible banner
+    // offering a one-click Pull. Auto-pull devices already stay current, so they
+    // skip this. Fully silent + best-effort: any error, or an old script without the
+    // meta endpoint (no lastModified field), simply shows nothing.
+    _startCloudFreshnessCheck() {
+        if (this._cloudCheckInterval) { clearInterval(this._cloudCheckInterval); this._cloudCheckInterval = null; }
+        const run = () => { try { this._checkCloudFreshness(); } catch (_) {} };
+        setTimeout(run, 4000);                          // after launch settles
+        this._cloudCheckInterval = setInterval(run, 10 * 60 * 1000);   // every 10 min
+    },
+
+    async _checkCloudFreshness() {
+        try {
+            // Auto-pull devices refresh themselves — never nag them.
+            if (await Storage.getItem('surgdash_autopull_enabled')) return;
+            const appSettings = await Projects.getAppSettings();
+            const url = appSettings && appSettings.googleSheetsUrl;
+            if (!url) return;
+            const metaUrl = url + (url.indexOf('?') >= 0 ? '&' : '?') + 'meta=1';
+            const res = await electronAPI.invoke('http-request', { url: metaUrl, method: 'GET' });
+            if (!res || res.error || !res.body) return;
+            let r; try { r = JSON.parse(res.body); } catch (_) { return; }
+            if (!r || !r.lastModified) return;          // pre-meta Apps Script → stay silent
+            const cloudMs = new Date(r.lastModified).getTime();
+            if (!cloudMs) return;
+            const lastSyncMs = appSettings.googleSheetsLastSync ? new Date(appSettings.googleSheetsLastSync).getTime() : 0;
+            const lastPullMs = appSettings.googleSheetsLastPull ? new Date(appSettings.googleSheetsLastPull).getTime() : 0;
+            const seenMs = Math.max(lastSyncMs, lastPullMs, this._cloudBannerDismissedMs || 0);
+            // 30s grace so this device's own just-finished push/pull doesn't self-trigger.
+            if (cloudMs > seenMs + 30000) this._showCloudUpdateBanner(cloudMs);
+        } catch (_) { /* best-effort, never throws into the UI */ }
+    },
+
+    _showCloudUpdateBanner(cloudMs) {
+        this._cloudBannerSeenMs = cloudMs || 0;
+        const el = document.getElementById('cloud-update-banner');
+        if (!el) return;
+        el.style.display = 'flex';
+        if (window.lucide) lucide.createIcons();
+    },
+
+    _dismissCloudBanner() {
+        // Remember the dismissed cloud state so the same data doesn't re-nag.
+        this._cloudBannerDismissedMs = Math.max(this._cloudBannerDismissedMs || 0, this._cloudBannerSeenMs || 0);
+        const el = document.getElementById('cloud-update-banner');
+        if (el) el.style.display = 'none';
+    },
+
+    async pullFromCloudNow() {
+        this._dismissCloudBanner();
+        // Manual (non-silent) pull — keeps its overwrite-confirm + per-project
+        // dirty-skip, so it never silently clobbers unsynced local edits.
+        if (window.GenericViews && GenericViews._pullFromSheets) {
+            await GenericViews._pullFromSheets(false);
+        }
     },
 
     // ── Unsynced-changes detection ──────────────────────────────────────────

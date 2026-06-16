@@ -12152,6 +12152,13 @@ ${additionalPages.map((inner, i) => `
 function doGet(e) {
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
+    // Cheap freshness check — return ONLY the spreadsheet's last-modified time so the
+    // app can detect new cloud data without downloading every sheet. (?meta=1)
+    if (e && e.parameter && e.parameter.meta) {
+      var _lm = '';
+      try { _lm = DriveApp.getFileById(ss.getId()).getLastUpdated().toISOString(); } catch (_e) {}
+      return _json({ ok: true, meta: true, lastModified: _lm });
+    }
     const SKIP = new Set(['📊 Organisation', '__SURGdash__', '📋 SURGdash Backup']);
     const projects = [];
     ss.getSheets().forEach(sheet => {
