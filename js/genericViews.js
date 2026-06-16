@@ -5073,6 +5073,11 @@ window.GenericViews = {
                                 <i data-lucide="download" width="13"></i> Load Data
                             </button>
                         </div>
+                        <label class="flex items-start gap-2.5 text-left mb-3 px-1 cursor-pointer">
+                            <input type="checkbox" id="viewer-autopull-toggle" data-viewer-allowed checked
+                                class="mt-0.5 rounded border-slate-300 text-gsf-boston focus:ring-gsf-boston/30" />
+                            <span class="text-[11px] text-slate-500 leading-relaxed">Keep this device up to date automatically (pulls the latest on launch &amp; every 5&nbsp;min). <strong class="text-slate-600">Only turn this off if you are an admin who edits data on this device</strong> — auto-pull overwrites local data.</span>
+                        </label>
                         ${alreadyHasUrl ? `<button onclick="GenericViews._saveViewerSheetsUrlAndPull()" class="w-full mt-1 px-4 py-2 border border-slate-200 rounded-lg text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors flex items-center justify-center gap-2"><i data-lucide="refresh-cw" width="13"></i> Refresh with saved URL</button>` : ''}
                         <p id="viewer-load-status" class="mt-3 text-xs text-slate-400 min-h-[18px]"></p>
                     </div>
@@ -10158,7 +10163,7 @@ function initProjectMap(pid){
                         <div class="pt-3 border-t border-slate-100">
                             <label class="block text-[10px] font-bold text-slate-400 mb-1 uppercase tracking-wide">Automatic cloud pull <span class="font-normal text-slate-300">(this device only)</span></label>
                             <label class="flex items-start gap-3 cursor-pointer">
-                                <input type="checkbox" id="org-autopull-toggle" ${autoPullOn ? 'checked' : ''} onchange="GenericViews._toggleAutoPull(this.checked)"
+                                <input type="checkbox" id="org-autopull-toggle" data-viewer-allowed ${autoPullOn ? 'checked' : ''} onchange="GenericViews._toggleAutoPull(this.checked)"
                                     class="mt-0.5 rounded border-slate-300 text-gsf-boston focus:ring-gsf-boston/30" />
                                 <span class="text-xs text-slate-500 leading-relaxed">Automatically pull updates from the cloud on launch and every 5&nbsp;min.
                                     <strong class="text-slate-600">Leave OFF if you edit data on this device</strong> — a pull overwrites local data, so auto-pull can revert unsynced edits. Turn ON only for a read-only viewer screen. You can always Pull/Push manually with the buttons above. ${autoPullOn ? '<span class="text-amber-600 font-semibold">Currently ON.</span>' : '<span class="text-emerald-600 font-semibold">Currently OFF — manual only (recommended for editors).</span>'}</span>
@@ -12978,6 +12983,12 @@ function _writeProject(ss, d) {
             if (statusEl) statusEl.textContent = '⚠ That doesn\'t look like an Apps Script URL. Check you\'re using the correct link.';
             return;
         }
+        // Persist the per-device auto-pull choice from the onboarding toggle (defaults
+        // ON for viewers; admins uncheck it). Read it now, BEFORE the card below is
+        // replaced by the progress UI. Stored device-locally, never pushed to Sheets.
+        const _autoPullEl = document.getElementById('viewer-autopull-toggle');
+        const _autoPullOn = _autoPullEl ? _autoPullEl.checked : true;
+        await Storage.setItem('surgdash_autopull_enabled', _autoPullOn, { internal: true });
         if (btn) { btn.disabled = true; btn.style.opacity = '0.6'; }
 
         // Replace the welcome card with a full progress UI
@@ -13166,6 +13177,9 @@ function _writeProject(ss, d) {
             // Force sidebar rebuild (skip-cache)
             App._lastSidebarProject = null;
             App.renderView();
+            // Honour the onboarding auto-pull choice for this session too (next launch
+            // reads the persisted flag regardless).
+            if (_autoPullOn) App._startAutoPull();
         } catch (err) {
             console.error('Viewer pull error:', err);
             const progressEl = document.getElementById('viewer-pull-progress');
