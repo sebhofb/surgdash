@@ -755,7 +755,7 @@ window.App = {
         if (!m.ok) {
             if (m.reason === 'nourl') return this.showMsg('Add your Google Sheets link first.', true);
             if (m.reason === 'olddeploy') return this.showMsg('The Web App is still serving the OLD script. Pasting the code + Save isn’t enough — in Apps Script go to Deploy → Manage deployments → ✎ Edit → Version: “New version” → Deploy (keeps the same URL).', true);
-            if (m.reason === 'notimestamp') return this.showMsg('Quick-check is live ✓ — now click “Sync to Sheets” once to stamp the first timestamp, then check again.');
+            if (m.reason === 'notimestamp') return this.showMsg('Quick-check is live ✓ — it just needs a timestamp source. In the Apps Script editor: open the script, click Run once, and approve the Drive permission it asks for. Then check again. (Or, in edit mode, push once via “Sync to Sheets”.)');
             return this.showMsg('Couldn’t reach the cloud' + (m.error ? (': ' + m.error) : '') + '.', true);
         }
         if (m.cloudMs > m.seenMs + 30000) {
