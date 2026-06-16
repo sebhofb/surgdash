@@ -5455,6 +5455,7 @@ window.GenericViews = {
                         <button data-edit-only onclick="GenericViews._exportIntakeForm()" class="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold text-emerald-700 hover:bg-emerald-600 hover:text-white transition-all" title="Generate a new-project intake form for a colleague to fill in"><i data-lucide="user-plus" width="12"></i> Intake Form</button>
                         <button data-edit-only onclick="GenericViews._exportOrgSnapshot(${isAllYear ? "'all'" : year})" class="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-all" title="Export interactive web snapshot (internal — beta banner, full data)"><i data-lucide="globe" width="12"></i> Snapshot</button>
                         <button data-edit-only onclick="GenericViews._showExternalSnapshotPicker(${isAllYear ? "'all'" : year})" class="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold text-emerald-700 hover:bg-emerald-50 transition-all" title="Export a clean, website-ready snapshot — pick exactly which projects, years, and indicators to include"><i data-lucide="share-2" width="12"></i> External</button>
+                        <button data-edit-only onclick="GenericViews._exportFullExcel()" class="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold text-emerald-700 hover:bg-emerald-600 hover:text-white transition-all" title="Export an Excel workbook — organisation KPI summary + one tab per project, matching the Google Sheet layout (opens cleanly in Excel)"><i data-lucide="file-spreadsheet" width="12"></i> Excel</button>
                         ${anyMultiplierEnabled ? `<button onclick="App.showHcwMultiplier=!App.showHcwMultiplier; App.renderView()" class="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold transition-all ${orgShowMultiplier ? 'bg-gsf-boston text-white' : 'text-slate-500 hover:bg-slate-100'}" title="Apply HCW multiplier effect"><i data-lucide="trending-up" width="12"></i> HCW</button>` : ''}
                         <span class="w-px h-4 bg-slate-200 mx-1"></span>
                         <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Sheets</span>
@@ -5767,6 +5768,335 @@ window.GenericViews = {
             console.error(err);
             alert('Export failed: ' + err.message);
         }
+    },
+
+    // ===== FULL EXCEL EXPORT — mirrors the Google Sheet layout (org summary tab + one tab per project),
+    //        but Excel-safe: ASCII/≤31-char tab names, no oversized cells. =====
+    async _exportFullExcel() {
+        try {
+            const projects = Projects.registry.filter(p => p.type === 'generic');
+            if (!projects.length) { App.showMsg('No SURGfund projects to export.', true); return; }
+            App.showMsg('Building Excel…');
+
+            // Reuse the EXACT payload the Google sync builds, so values + layout match the Sheet 1:1.
+            const payloads = [];
+            for (const p of projects) {
+                try { payloads.push(JSON.parse(await this._buildProjectPayload(p))); }
+                catch (e) { console.warn('[Excel export] skipped project', p && p.name, e); }
+            }
+            if (!payloads.length) { App.showMsg('Nothing to export.', true); return; }
+
+            const generatedAt = new Date().toLocaleString();
+            const wb = XLSX.utils.book_new();
+            const used = new Set();
+
+            // Sheet 1 — Organisation KPI Summary (first tab, matches the 📊 Organisation tab)
+            XLSX.utils.book_append_sheet(wb, this._aoaToSheet(this._buildOrgSummaryAOA(payloads, generatedAt)),
+                this._xlsxSheetName('Organisation KPI Summary', used));
+
+            // One tab per project — real first, samples last (matches the Sheet ordering)
+            const ordered = payloads.filter(p => !p.isSample).concat(payloads.filter(p => p.isSample));
+            ordered.forEach(d => {
+                XLSX.utils.book_append_sheet(wb, this._aoaToSheet(this._buildProjectAOA(d)),
+                    this._xlsxSheetName(d.shortName || d.name || 'Project', used));
+            });
+
+            const stamp = new Date().toISOString().substring(0, 10);
+            const savePath = await electronAPI.invoke('pick-save-path', `SURGfund KPI Export ${stamp}.xlsx`);
+            if (!savePath) { App.showMsg('Export cancelled.'); return; }
+            electronAPI.fs.writeFileSync(savePath, new Uint8Array(XLSX.write(wb, { bookType: 'xlsx', type: 'array' })));
+            App.showMsg(`Excel saved — org summary + ${ordered.length} project tab${ordered.length === 1 ? '' : 's'}.`);
+        } catch (err) {
+            console.error('[Excel export] failed', err);
+            App.showMsg('Excel export failed: ' + (err && err.message || err), true);
+        }
+    },
+
+    // Excel-safe worksheet name: strip illegal chars (: \ / ? * [ ]) + control chars, cap 31, dedupe, avoid reserved "History".
+    _xlsxSheetName(raw, used) {
+        let name = String(raw == null ? '' : raw)
+            .replace(/[:\\/?*\[\]]/g, ' ').replace(/[\x00-\x1f]/g, ' ').replace(/\s+/g, ' ').trim();
+        if (!name) name = 'Sheet';
+        name = name.substring(0, 31).trim();
+        if (name.toLowerCase() === 'history') name = 'History_';
+        let final = name, n = 2;
+        while (used.has(final.toLowerCase())) {
+            const suffix = ' (' + n + ')';
+            final = name.substring(0, 31 - suffix.length).trim() + suffix;
+            n++;
+        }
+        used.add(final.toLowerCase());
+        return final;
+    },
+
+    // Build a worksheet from a {rows, merges, numFmt, textCells, cols} spec.
+    // NOTE: the vendored SheetJS community build writes values, merges, number formats and column
+    // widths — but NOT cell fills/bold (Pro-only). So the layout matches the Sheet; colours do not.
+    _aoaToSheet(spec) {
+        const ws = XLSX.utils.aoa_to_sheet(spec.rows);
+        if (spec.merges && spec.merges.length) ws['!merges'] = spec.merges;
+        if (spec.cols && spec.cols.length) ws['!cols'] = spec.cols;
+        (spec.numFmt || []).forEach(({ r, c, z }) => {
+            const cell = ws[XLSX.utils.encode_cell({ r, c })];
+            if (cell && cell.t === 'n') cell.z = z;
+        });
+        (spec.textCells || []).forEach(({ r, c }) => {
+            const cell = ws[XLSX.utils.encode_cell({ r, c })];
+            if (cell) { cell.t = 's'; cell.v = String(cell.v); cell.z = '@'; }
+        });
+        // Excel hard cap is 32,767 chars/cell. Truncate any oversized text so the file never needs "repair".
+        Object.keys(ws).forEach(addr => {
+            if (addr[0] === '!') return;
+            const cell = ws[addr];
+            if (cell && cell.t === 's' && typeof cell.v === 'string' && cell.v.length > 32000) {
+                cell.v = cell.v.substring(0, 32000) + ' …[truncated]';
+            }
+        });
+        return ws;
+    },
+
+    // Port of Apps Script _writeOrgSummary (the 📊 Organisation tab).
+    _buildOrgSummaryAOA(projects, generatedAt) {
+        const rows = [], merges = [], numFmt = [];
+        const numOrBlank = v => { if (!v) return ''; const n = Number(v); return Number.isFinite(n) ? n : v; };
+        let r = 0;
+        const push = vals => { rows.push(vals ? vals.slice() : []); r++; };
+        const mrg = (rr, c1, c2) => merges.push({ s: { r: rr, c: c1 }, e: { r: rr, c: c2 } });
+
+        push(['Organisation KPI Summary']); mrg(r - 1, 0, 8);
+        push(['Generated: ' + generatedAt]); mrg(r - 1, 0, 8);
+        push([]); // one blank spacer (Apps Script does row += 2)
+
+        const kpiKeys = ['hcw_strengthened', 'patients_reached', 'facilities_strengthened', 'population_access'];
+        const real = projects.filter(p => !p.isSample);
+        const ordered = real.concat(projects.filter(p => p.isSample));
+
+        const yearSet = {};
+        projects.forEach(p => (p.years || []).forEach(y => { yearSet[y.year] = true; }));
+        const years = Object.keys(yearSet).sort();
+
+        years.forEach(yKey => {
+            const yr = Number(yKey);
+            push([yr + ' — KPI Results (Plan vs Actual)']); mrg(r - 1, 0, 8);
+            push(['Project', 'HCW', '', 'Patients', '', 'Facilities', '', 'Population', '']);
+            mrg(r - 1, 1, 2); mrg(r - 1, 3, 4); mrg(r - 1, 5, 6); mrg(r - 1, 7, 8);
+            push(['', 'Plan', 'Actual', 'Plan', 'Actual', 'Plan', 'Actual', 'Plan', 'Actual']);
+            const dataStart = r;
+            const totT = {}, totA = {}; kpiKeys.forEach(k => { totT[k] = 0; totA[k] = 0; });
+            ordered.forEach(p => {
+                const y = (p.years || []).find(yy => yy.year === yr) || { targets: {}, actuals: {} };
+                const t = y.targets || {}, a = y.actuals || {};
+                const label = p.isSample ? (p.name + ' (sample)') : p.name;
+                const row = [label];
+                kpiKeys.forEach(k => { row.push(numOrBlank(t[k])); row.push(numOrBlank(a[k])); });
+                push(row);
+                if (!p.isSample) kpiKeys.forEach(k => { totT[k] += Number(t[k]) || 0; totA[k] += Number(a[k]) || 0; });
+            });
+            const totRow = ['TOTAL (excl. sample)'];
+            kpiKeys.forEach(k => { totRow.push(numOrBlank(totT[k])); totRow.push(numOrBlank(totA[k])); });
+            push(totRow);
+            const numRows = ordered.length + 1;
+            for (let rr = dataStart; rr < dataStart + numRows; rr++) for (let cc = 1; cc <= 8; cc++) numFmt.push({ r: rr, c: cc, z: '#,##0' });
+            push([]);
+        });
+
+        const hasAnyQ = real.some(p => (p.years || []).some(y => y.quarters && Object.keys(y.quarters).length));
+        if (hasAnyQ) {
+            years.forEach(yKey => {
+                const yr = Number(yKey);
+                const anyQ = real.some(p => { const y = (p.years || []).find(yy => yy.year === yr); return y && y.quarters && Object.keys(y.quarters).length; });
+                if (!anyQ) return;
+                push([yr + ' — Quarterly Actuals (cumulative, all projects)']); mrg(r - 1, 0, 8);
+                push(['Quarter', 'HCW', 'Patients', 'Facilities', 'Population']);
+                const qStart = r;
+                [1, 2, 3, 4].forEach(q => {
+                    const sums = { hcw_strengthened: 0, patients_reached: 0, facilities_strengthened: 0, population_access: 0 };
+                    let any = false;
+                    real.forEach(p => {
+                        const y = (p.years || []).find(yy => yy.year === yr); if (!y || !y.quarters) return;
+                        const qd = y.quarters[q]; if (!qd) return;
+                        kpiKeys.forEach(k => { if (qd[k] != null) { sums[k] += Number(qd[k]) || 0; any = true; } });
+                    });
+                    if (!any) return;
+                    push(['Q' + q, numOrBlank(sums.hcw_strengthened), numOrBlank(sums.patients_reached), numOrBlank(sums.facilities_strengthened), numOrBlank(sums.population_access)]);
+                });
+                for (let rr = qStart; rr < r; rr++) for (let cc = 1; cc <= 4; cc++) numFmt.push({ r: rr, c: cc, z: '#,##0' });
+                push([]);
+            });
+        }
+
+        return { rows, merges, numFmt, textCells: [], cols: [200, 100, 100, 100, 100, 100, 100, 100, 100].map(wpx => ({ wpx })) };
+    },
+
+    // Port of Apps Script _writeProject (one tab per project).
+    _buildProjectAOA(d) {
+        const rows = [], merges = [], numFmt = [], textCells = [];
+        const numOrBlank = v => { if (!v) return ''; const n = Number(v); return Number.isFinite(n) ? n : v; };
+        let r = 0;
+        const push = vals => { rows.push(vals ? vals.slice() : []); r++; };
+        const mrg = (rr, c1, c2) => merges.push({ s: { r: rr, c: c1 }, e: { r: rr, c: c2 } });
+        const hdr = label => { push([label]); mrg(r - 1, 0, 8); };
+
+        // PROJECT INFO
+        hdr('PROJECT INFO');
+        if (d.isSample) push(['⚠ SAMPLE', 'Demonstration project — excluded from organisation totals']);
+        push(['Name', d.name || '']);
+        push(['Short Name', d.shortName || '']);
+        push(['Description', d.description || '']);
+        push(['Color', d.color || '']);
+        push(['Icon', d.icon || '']);
+        push(['Start Date', d.startDate || '']); textCells.push({ r: r - 1, c: 1 });
+        push(['End Date', d.endDate || '']); textCells.push({ r: r - 1, c: 1 });
+        push(['HCW Multiplier', d.hcwMultiplierEnabled ? 'Yes' : 'No']);
+        push(['HCW Multiplier Rate', d.hcwMultiplierRate !== undefined ? d.hcwMultiplierRate : '']);
+        push(['Quality KPIs', (d.enabledQualityKpis || []).join(', ')]);
+        if (d.lat != null) push(['Latitude', d.lat]);
+        if (d.lng != null) push(['Longitude', d.lng]);
+        if (d.sheetsTabUrl) push(['Sheets Tab URL', d.sheetsTabUrl]);
+        if ((d.locations || []).length > 0) push(['Locations', JSON.stringify(d.locations)]);
+        push(['Synced At', d.syncedAt || '']);
+        push([]);
+
+        // LINKS
+        hdr('LINKS');
+        push(['GSF Page', d.linkGsf || '']);
+        push(['Working Folder', d.linkFolder || '']);
+        (d.linksExtra || []).forEach((l, i) => push(['Extra Link ' + (i + 1), (l && l.url) || '', (l && l.label) || '']));
+        push([]);
+
+        // KPIs BY YEAR
+        hdr('KPIs BY YEAR');
+        push(['Year', 'HCW', '', 'Patients', '', 'Facilities', '', 'Population', '']);
+        mrg(r - 1, 1, 2); mrg(r - 1, 3, 4); mrg(r - 1, 5, 6); mrg(r - 1, 7, 8);
+        push(['', 'Plan', 'Actual', 'Plan', 'Actual', 'Plan', 'Actual', 'Plan', 'Actual']);
+        const years = d.years || [];
+        const kpiStart = r;
+        years.forEach(yr => {
+            const t = yr.targets || {}, a = yr.actuals || {};
+            push([yr.year,
+                numOrBlank(t.hcw_strengthened), numOrBlank(a.hcw_strengthened),
+                numOrBlank(t.patients_reached), numOrBlank(a.patients_reached),
+                numOrBlank(t.facilities_strengthened), numOrBlank(a.facilities_strengthened),
+                numOrBlank(t.population_access), numOrBlank(a.population_access)]);
+        });
+        if (years.length) for (let rr = kpiStart; rr < kpiStart + years.length; rr++) for (let cc = 1; cc <= 8; cc++) numFmt.push({ r: rr, c: cc, z: '#,##0' });
+        push([]);
+
+        // KPIs BY QUARTER (cumulative actuals)
+        const hasQ = years.some(yr => yr.quarters && Object.keys(yr.quarters).length);
+        if (hasQ) {
+            hdr('KPIs BY QUARTER (cumulative actuals)');
+            push(['Year', 'Quarter', 'HCW', 'Patients', 'Facilities', 'Population']);
+            const qStart = r; let qCount = 0;
+            years.forEach(yr => {
+                if (!yr.quarters) return;
+                [1, 2, 3, 4].forEach(q => {
+                    const qd = yr.quarters[q]; if (!qd) return;
+                    const hasAny = ['hcw_strengthened', 'patients_reached', 'facilities_strengthened', 'population_access'].some(k => qd[k] != null);
+                    if (!hasAny) return;
+                    push([yr.year, 'Q' + q,
+                        qd.hcw_strengthened != null ? Number(qd.hcw_strengthened) : '',
+                        qd.patients_reached != null ? Number(qd.patients_reached) : '',
+                        qd.facilities_strengthened != null ? Number(qd.facilities_strengthened) : '',
+                        qd.population_access != null ? Number(qd.population_access) : '']);
+                    qCount++;
+                });
+            });
+            if (qCount > 0) for (let rr = qStart; rr < qStart + qCount; rr++) for (let cc = 2; cc <= 5; cc++) numFmt.push({ r: rr, c: cc, z: '#,##0' });
+            push([]);
+        }
+
+        // KPI COMMENTS
+        const hasComments = years.some(yr => (yr.targetComments && Object.keys(yr.targetComments).length) || (yr.actualComments && Object.keys(yr.actualComments).length));
+        if (hasComments) {
+            hdr('KPI COMMENTS');
+            push(['Year', 'KPI', 'Target Note', 'Actual Note']);
+            const kk = ['hcw_strengthened', 'patients_reached', 'facilities_strengthened', 'population_access'];
+            const lbl = ['HCW Strengthened', 'Patients Reached', 'Facilities Strengthened', 'Population Access'];
+            years.forEach(yr => kk.forEach((k, i) => {
+                const tc = (yr.targetComments || {})[k], ac = (yr.actualComments || {})[k];
+                if (tc || ac) push([yr.year, lbl[i], tc || '', ac || '']);
+            }));
+            push([]);
+        }
+
+        // KPI CHANGE LOG
+        const kpiLog = d.kpiLog || [];
+        if (kpiLog.length > 0) {
+            hdr('KPI CHANGE LOG');
+            push(['Timestamp', 'Year', 'Note', 'HCW Plan', 'HCW Actual', 'Patients Plan', 'Patients Actual', 'Facilities Plan', 'Facilities Actual']);
+            const logStart = r;
+            const slice = kpiLog.slice(0, 100);
+            slice.forEach(e => {
+                let ts = '';
+                try { ts = e.timestamp ? new Date(e.timestamp).toLocaleString() : ''; } catch (_) { ts = String(e.timestamp || ''); }
+                const t = e.targets || {}, a = e.actuals || {};
+                push([ts, e.year || '', e.note || '',
+                    numOrBlank(t.hcw_strengthened), numOrBlank(a.hcw_strengthened),
+                    numOrBlank(t.patients_reached), numOrBlank(a.patients_reached),
+                    numOrBlank(t.facilities_strengthened), numOrBlank(a.facilities_strengthened)]);
+            });
+            for (let rr = logStart; rr < logStart + slice.length; rr++) for (let cc = 3; cc <= 8; cc++) numFmt.push({ r: rr, c: cc, z: '#,##0' });
+            push([]);
+        }
+
+        // QUALITY INDICATORS
+        const qData = d.qualityData || [];
+        if (qData.length > 0) {
+            hdr('QUALITY INDICATORS');
+            push(['KPI ID', 'Year', 'Quarter', 'Target', 'Actual']);
+            qData.forEach(q => {
+                const act = (q.actual !== undefined && q.actual !== null) ? q.actual : ((q.value !== undefined && q.value !== null) ? q.value : '');
+                const tgt = (q.target !== undefined && q.target !== null) ? q.target : '';
+                push([q.kpiId || '', q.year || '', q.quarter || '', tgt, act]);
+            });
+            push([]);
+        }
+
+        // ACTIVITIES — HCW TRACKING (by year)
+        const TYPE_LABELS = { training_mentoring: 'Training / Mentoring', site_visit: 'Site Visit', other_update: 'Other Update', workshop: 'Training / Mentoring', mentoring: 'Training / Mentoring', other: 'Other Update' };
+        const events = (d.events || []).slice().sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+        const byYear = {};
+        events.forEach(ev => { const y = String(ev.date || '').substring(0, 4) || 'Undated'; (byYear[y] = byYear[y] || []).push(ev); });
+        const evYears = Object.keys(byYear).sort().reverse();
+        hdr('ACTIVITIES — HCW TRACKING (by year)');
+        if (events.length === 0) {
+            push(['No activities logged yet.']);
+        } else {
+            evYears.forEach(y => {
+                const list = byYear[y];
+                const yTotal = list.reduce((s, ev) => s + (Number(ev.hcw_count) || 0), 0);
+                const yNew = list.reduce((s, ev) => s + (Number(ev.hcw_new_count) || 0), 0);
+                push([y + '  ·  ' + list.length + ' activit' + (list.length === 1 ? 'y' : 'ies') + '  ·  ' + yTotal.toLocaleString() + ' HCWs (' + yNew.toLocaleString() + ' new)']);
+                mrg(r - 1, 0, 7);
+                push(['Start', 'End', 'Type', 'Title', 'HCWs', 'New HCWs', 'Facilities', 'Notes']);
+                const blockStart = r;
+                list.forEach(ev => {
+                    const fac = (ev.facilities_count != null) ? ev.facilities_count : ((ev.facilities || []).length || '');
+                    push([ev.date || '', ev.endDate || '', TYPE_LABELS[ev.type] || ev.type || '', ev.title || '', numOrBlank(ev.hcw_count), numOrBlank(ev.hcw_new_count), fac, ev.notes || '']);
+                });
+                push(['', '', '', 'Year total', yTotal, yNew, '', '']);
+                for (let rr = blockStart; rr < r; rr++) for (let cc = 4; cc <= 5; cc++) numFmt.push({ r: rr, c: cc, z: '#,##0' });
+                push([]);
+            });
+        }
+        push([]);
+
+        // UPDATES
+        hdr('UPDATES');
+        push(['Date', 'Tag', 'Title', 'Body']);
+        (d.updates || []).forEach(u => push([u.date || '', (u.tags || []).join(', '), u.title || '', u.body || '']));
+        push([]);
+
+        // FACILITIES
+        const facs = d.facilities || [];
+        if (facs.length > 0) {
+            hdr('FACILITIES');
+            push(['Name', 'Hub', 'Latitude', 'Longitude', 'Catchment Pop', 'Annual Patients', 'Notes']);
+            facs.forEach(f => push([f.name || '', f.isHub ? 'Yes' : '', f.lat != null ? f.lat : '', f.lng != null ? f.lng : '', numOrBlank(f.catchmentPop), numOrBlank(f.annualPatients), f.notes || '']));
+        }
+
+        return { rows, merges, numFmt, textCells, cols: [120, 120, 200, 260, 100, 100, 100, 100, 100].map(wpx => ({ wpx })) };
     },
 
     async _exportOrgPdf(year) {
