@@ -84,14 +84,28 @@
           active: rb.hasOutcomes ? (rb.activeLearners || 0) : 0, certs: rb.hasOutcomes ? (rb.totalCerts || 0) : 0 };
       }
 
+      // platform rating distribution from FeedbackBank .r (1–5) — NUMBERS ONLY. Also a
+      // text→rating map (normalised) so curated quotes can show their own star rating.
+      const ratingMap = {}; let rTotal = 0, rSum = 0, r45 = 0;
+      const normT = (t) => String(t || '').toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 140);
+      snap.forEach(d => {
+        if (!d || !d.FeedbackBank) return;
+        let fb; try { fb = JSON.parse(d.FeedbackBank); } catch (e) { return; }
+        (Array.isArray(fb) ? fb : []).forEach(f => {
+          const r = Number(f && f.r) || 0;
+          if (r >= 1 && r <= 5) { rTotal++; rSum += r; if (r >= 4) r45++; if (f.t) ratingMap[normT(f.t)] = r; }
+        });
+      });
+      const rating = rTotal >= 10 ? { avg: +(rSum / rTotal).toFixed(1), pct45: Math.round(r45 / rTotal * 100), n: rTotal } : null;
+
       // curated learner voices — TEXT ONLY (no attribution beyond a generic label). '@'-bearing dropped.
+      // Each quote carries its own star rating when we can match it back to a FeedbackBank entry.
       let quotes = [];
       try {
         const sel = (ROOT.Storage ? (await Storage.getItem('surghub_selected_testimonials')) : null) || {};
         Object.keys(sel).forEach(prov => { const courses = sel[prov] || {}; Object.keys(courses).forEach(cn => { (courses[cn] || []).forEach(t => {
-          if (typeof t === 'string') { const txt = t.trim(); if (txt.length >= 45 && txt.length <= 320 && txt.indexOf('@') === -1) quotes.push({ text: txt, course: cn }); }
+          if (typeof t === 'string') { const txt = t.trim(); if (txt.length >= 45 && txt.length <= 320 && txt.indexOf('@') === -1) quotes.push({ text: txt, course: cn, r: ratingMap[normT(txt)] || null }); }
         }); }); });
-        // shuffle-light + cap
         quotes = quotes.slice(0, 9);
       } catch (e) { quotes = []; }
 
@@ -115,7 +129,7 @@
         countryMap: Object.keys(iso).length ? iso : null,
         countryMapLMIC: Object.keys(isoLMIC).length ? isoLMIC : null,
         income: income, lmicShare: lmicShare, conflict: conflict,
-        cadres: cadres, survey: survey, amb: amb, quotes: quotes,
+        cadres: cadres, survey: survey, amb: amb, rating: rating, quotes: quotes,
         logos: { gsf: gsf, surghub: surghub }
       };
     },
@@ -183,9 +197,18 @@
         + (D.amb.hasOutcomes ? '<div class="kpi rv lite"><div class="v green num" data-to="' + D.amb.certs + '">0</div><div class="l">Certificates earned</div></div>' : '')
       ) : '';
 
-      const quoteCards = (D.quotes || []).map((q, i) =>
-        '<div class="quote rv"><span class="mark">“</span><p class="q">' + esc(q.text) + '</p>' + (q.course ? '<p class="by">— ' + esc(q.course) + '</p>' : '<p class="by">— A SURGhub learner</p>') + '</div>'
+      const stars = (r) => { r = Math.round(Number(r) || 0); if (r < 1) return ''; let s = '<span class="stars">'; for (let i = 1; i <= 5; i++) s += '<span class="' + (i <= r ? 'on' : '') + '">★</span>'; return s + '</span>'; };
+
+      const quoteCards = (D.quotes || []).map((q) =>
+        '<div class="quote rv"><span class="mark">“</span><p class="q">' + esc(q.text) + '</p>' + (q.r ? stars(q.r) : '') + (q.course ? '<p class="by">— ' + esc(q.course) + '</p>' : '<p class="by">— A SURGhub learner</p>') + '</div>'
       ).join('');
+
+      // Overall platform rating band (shown atop the voices section)
+      const ratingBand = D.rating ? (
+        '<div class="ratingband rv d1"><div class="rb-pct num" data-to="' + D.rating.pct45 + '" data-suffix="%">0</div>'
+        + '<div class="rb-meta"><div class="rb-stars">★★★★★ <b>' + D.rating.avg + '</b><span> / 5 average</span></div>'
+        + '<div class="rb-sub">of ' + fmt(D.rating.n) + ' learner ratings give SURGhub 4 or 5 stars</div></div></div>'
+      ) : '';
 
       const sec = (id, dot, cls, inner) => '<section id="' + id + '" class="' + (cls || '') + '" data-dot="' + dot + '"><div class="wrap">' + inner + '</div></section>';
 
@@ -284,6 +307,7 @@
         var io = new IntersectionObserver(function (ents) {
           ents.forEach(function (en) {
             if (!en.isIntersecting) return; var el = en.target; el.classList.add('in');
+            if (el.hasAttribute && el.hasAttribute('data-to') && !el._d) { el._d = 1; countUp(el); }
             [].slice.call(el.querySelectorAll('[data-to]')).forEach(function (c) { if (!c._d) { c._d = 1; countUp(c); } });
             [].slice.call(el.querySelectorAll('.fill[data-w]')).forEach(function (f) { f.style.width = f.getAttribute('data-w') + '%'; });
             if (el.classList.contains('dial') && el._fire && !el._df) { el._df = 1; el._fire(); }
@@ -323,7 +347,7 @@
 
         + (ambCards ? sec('network', 'Network', '', '<p class="eyebrow rv">Reach that multiplies</p><h2 class="rv d1">A community that spreads itself.</h2><p class="lead rv d2" style="margin-bottom:24px">Volunteer ambassadors bring SURGhub to their own networks — and their learners go on to earn certificates.</p><div class="kpis">' + ambCards + '</div>') : '')
 
-        + (quoteCards ? sec('voices', 'Voices', 'dark', '<p class="eyebrow rv">In their own words</p><h2 class="rv d1">What it means on the ground.</h2><div class="quotes">' + quoteCards + '</div><p class="muted rv" style="margin-top:20px">Curated, anonymised learner feedback — no names or personal details.</p>') : '')
+        + ((quoteCards || ratingBand) ? sec('voices', 'Voices', 'dark', '<p class="eyebrow rv">Rated by learners</p><h2 class="rv d1">Trusted by the people who use it.</h2>' + ratingBand + (quoteCards ? '<div class="quotes">' + quoteCards + '</div>' : '') + (quoteCards ? '<p class="muted rv" style="margin-top:20px">Curated, anonymised learner feedback — no names or personal details.</p>' : '')) : '')
 
         + sec('join', 'Join', 'darker', '<p class="eyebrow rv">Open · free · global</p><h1 class="rv d1" style="font-size:clamp(30px,5vw,58px)">Surgical education<br>for everyone, everywhere.</h1><p class="lead rv d2">Over ' + fmt(D.learners) + ' healthcare workers in ' + fmt(D.countries) + '+ countries are already learning on SURGhub. Join them — or partner with the Global Surgery Foundation to reach more.</p><a class="btn rv d3" href="https://surghub.org" target="_blank" rel="noopener">Explore SURGhub →</a><p class="foot rv d4">Aggregated, anonymised platform data — counts only, no personal information. Data as of ' + esc(D.snapshotDate) + '. Built with SURGdash.</p>');
 
@@ -342,13 +366,15 @@
         + '.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:18px;margin-top:34px}.kpi{background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:16px;padding:26px 24px}.kpi.lite{background:var(--paper2);border-color:#dce8f1}'
         + '.kpi .v{font-size:clamp(34px,5vw,54px);font-weight:800;line-height:1;letter-spacing:-.02em;color:#fff}.kpi.lite .v{color:var(--ink)}.kpi .v.green{color:var(--green)}.kpi .v.boston{color:var(--boston-soft)}.kpi.lite .v.boston{color:var(--boston)}'
         + '.kpi .l{margin-top:10px;font-size:15px;color:#a9c3d6}.kpi.lite .l{color:#5b7488}.kpi .s{margin-top:6px;font-size:13px;color:#7f9bb1}.pill{display:inline-block;margin-top:10px;font-size:12px;font-weight:600;background:rgba(63,185,132,.16);color:#8fe3bf;border-radius:999px;padding:3px 11px}'
-        + '.chartcard{background:#fff;border:1px solid #e4edf4;border-radius:18px;padding:24px 22px 12px;position:relative}.legend{display:flex;gap:20px;flex-wrap:wrap;font-size:13px;color:#5b7488;margin-bottom:8px}.legend span{display:inline-flex;align-items:center;gap:7px}.sw{width:12px;height:12px;border-radius:3px;display:inline-block}.gline{fill:none;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}.ann{font-size:13px;font-weight:700}#growth{cursor:crosshair}.tip{position:absolute;top:14px;right:22px;font-size:13px;background:#04263d;color:#eaf2f8;padding:6px 11px;border-radius:8px;opacity:0;transition:opacity .15s;pointer-events:none}'
+        + '.chartcard{background:#fff;border:1px solid #e4edf4;border-radius:18px;padding:24px 22px 12px;position:relative}.legend{display:flex;gap:20px;flex-wrap:wrap;font-size:13px;color:#5b7488;margin-bottom:8px}.legend span{display:inline-flex;align-items:center;gap:7px}.sw{width:12px;height:12px;border-radius:3px;display:inline-block}.gline{fill:none;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}.ann{font-size:13px;font-weight:700}#growth{display:block;width:100%;height:auto;aspect-ratio:820 / 340;cursor:crosshair}.tip{position:absolute;top:14px;right:22px;font-size:13px;background:#04263d;color:#eaf2f8;padding:6px 11px;border-radius:8px;opacity:0;transition:opacity .15s;pointer-events:none}'
         + '.bars{display:flex;flex-direction:column;gap:13px;margin-top:8px}.bar{display:grid;grid-template-columns:170px 1fr 70px;align-items:center;gap:14px}.bar .lab{font-size:15px}.track{height:18px;background:rgba(255,255,255,.1);border-radius:999px;overflow:hidden}body .track{background:rgba(120,140,160,.16)}.dark .track{background:rgba(255,255,255,.1)}.fill{height:100%;width:0;border-radius:999px;background:var(--boston);transition:width 1.1s cubic-bezier(.2,.7,.2,1)}.fill.slate{background:#7d96a8}.bar .val{text-align:right;font-weight:700;font-variant-numeric:tabular-nums}'
         + '.cols{display:grid;grid-template-columns:1fr 1fr;gap:40px;align-items:center}@media(max-width:820px){.cols{grid-template-columns:1fr;gap:28px}}.bignum{font-size:clamp(56px,11vw,118px);font-weight:800;letter-spacing:-.03em;line-height:.95;color:#fff}.statline{font-size:18px;color:#bdd3e4;margin-top:8px}'
         + '.conflict{margin-top:22px;background:rgba(229,115,115,.12);border:1px solid rgba(229,115,115,.35);border-radius:14px;padding:18px 20px}.conflict .v{font-size:34px;font-weight:800;color:#ffb4b4}.conflict .l{color:#e7c3c3;font-size:14px}'
         + '#map .mapoff{text-align:center;color:#6d8ba3;font-size:13px;padding:200px 0}.toggle{background:rgba(255,255,255,.06);border:1px solid var(--line);color:#cfe2f1;font-weight:600;font-size:14px;padding:11px 20px;border-radius:10px;cursor:pointer;transition:all .2s}.toggle:hover,.toggle.on{background:var(--boston);border-color:var(--boston);color:#fff}'
         + '.dials{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:26px;margin-top:30px}.dial{text-align:center}.dial svg{transform:rotate(-90deg)}.dial .pc{font-size:30px;font-weight:800;fill:#fff}.dial .cap{margin-top:12px;font-size:15px;color:#b9cede;max-width:24ch;margin-left:auto;margin-right:auto}'
         + '.quotes{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px;margin-top:26px}.quote{background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:16px;padding:22px 24px 20px}.quote .q{font-family:Georgia,serif;font-size:19px;line-height:1.5;color:#eaf2f8;margin:0}.quote .mark{font-family:Georgia,serif;font-size:46px;line-height:0;color:var(--boston-soft);height:18px;display:block}.quote .by{margin:16px 0 0;font-size:13px;color:#9fc1dc;font-weight:600}'
+        + '.stars{display:inline-flex;gap:2px;font-size:15px;color:rgba(255,255,255,.22);margin:6px 0 2px}.stars .on{color:#f5b301}'
+        + '.ratingband{display:flex;align-items:center;gap:28px;background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:18px;padding:26px 30px;margin:6px 0 30px;flex-wrap:wrap}.rb-pct{font-size:clamp(48px,8vw,76px);font-weight:800;color:var(--green);line-height:1}.rb-stars{font-size:22px;color:#f5b301;letter-spacing:2px}.rb-stars b{color:#fff;margin-left:10px;font-size:24px;letter-spacing:0}.rb-stars span{color:#9fc1dc;font-weight:400;font-size:16px;letter-spacing:0}.rb-sub{color:#b9cede;font-size:15px;margin-top:8px}'
         + '.btn{display:inline-block;margin-top:26px;background:var(--boston);color:#fff;font-weight:700;text-decoration:none;padding:15px 30px;border-radius:12px;font-size:16px;transition:transform .2s,background .2s}.btn:hover{transform:translateY(-2px);background:#3f97da}.foot{margin-top:42px;font-size:13px;color:#7f9bb1;border-top:1px solid var(--line);padding-top:20px}'
         + '@media(prefers-reduced-motion:reduce){.rv{transition:none;opacity:1;transform:none}.fill{transition:none}.cue{animation:none}}';
 
