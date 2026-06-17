@@ -54,23 +54,48 @@
       const iso = {}, isoLMIC = {};
       const inc = { HIC: 0, UMIC: 0, LMIC: 0, LIC: 0, Unknown: 0 };
       const IC = ROOT.IncomeClassification || null;
-      const priAll = []; // priority = low- & lower-middle-income (the surgical-care reach gap)
       Object.keys(cc).forEach(name => {
         const n = Number(cc[name]) || 0; if (n <= 0) return;
         const code = (ROOT.countryToISO && countryToISO(name)) || null;
         const tier = IC ? IC.classify(name) : 'Unknown';
         if (inc[tier] === undefined) inc[tier] = 0;
         inc[tier] += n;
-        if (tier === 'LMIC' || tier === 'LIC') priAll.push({ name: name, count: n });
         if (code) { iso[code] = (iso[code] || 0) + n; if (tier === 'LMIC' || tier === 'LIC') isoLMIC[code] = (isoLMIC[code] || 0) + n; }
       });
-      const priorityCountries = priAll.sort((a, b) => b.count - a.count).slice(0, 8);
       const incTotal = inc.HIC + inc.UMIC + inc.LMIC + inc.LIC + inc.Unknown;
       // High income (HIC) bar intentionally omitted from the chart — the story is reach into lower-income
       // settings. incTotal still includes HIC so the shown bars read as a share of ALL located learners.
       const incomeOrder = [['LIC', 'Low income'], ['LMIC', 'Lower-middle'], ['UMIC', 'Upper-middle']];
       const income = incTotal > 0 ? incomeOrder.map(([t, label]) => ({ tier: t, label: label, count: inc[t], pct: Math.round(inc[t] / incTotal * 100) })) : [];
       const lmicShare = incTotal > 0 ? Math.round((inc.LMIC + inc.LIC) / incTotal * 100) : 0;
+
+      // Reach-gap priority — mirror the in-app Reach-Gap (Lancet) card EXACTLY so the numbers match:
+      // share of located learners (per-country ENROLMENTS from _computeEngagement) in the Lancet
+      // priority country list (IC.isLancetPriority — LIC/LMIC + selected UMIC with surgical-care gaps).
+      let priorityShare = lmicShare, priorityCountries = [];
+      try {
+        const eng = (ROOT.App && App._computeEngagement) ? App._computeEngagement() : null;
+        const bc = eng && eng.byCountry;
+        if (bc && IC && IC.isLancetPriority) {
+          const rows = Object.keys(bc).map(name => ({ name: name, count: Number(bc[name].enrolls) || 0 }));
+          const totalE = rows.reduce((s, r) => s + r.count, 0);
+          const priE = rows.filter(r => IC.isLancetPriority(r.name)).reduce((s, r) => s + r.count, 0);
+          if (totalE > 0) {
+            priorityShare = Math.round(priE / totalE * 100);
+            priorityCountries = rows.filter(r => IC.isLancetPriority(r.name) && r.count > 0)
+              .sort((a, b) => b.count - a.count).slice(0, 8)
+              .map(r => ({ name: r.name, count: r.count, pct: Math.round(r.count / totalE * 100) }));
+          }
+        }
+      } catch (e) { /* fall through to the course-country fallback */ }
+      // Fallback when per-user engagement data isn't loaded: LMIC/LIC course-country aggregation.
+      if (!priorityCountries.length) {
+        const t = incTotal || 1;
+        priorityCountries = Object.keys(cc).map(name => ({ name: name, count: Number(cc[name]) || 0, tier: IC ? IC.classify(name) : 'Unknown' }))
+          .filter(r => r.count > 0 && (r.tier === 'LMIC' || r.tier === 'LIC'))
+          .sort((a, b) => b.count - a.count).slice(0, 8)
+          .map(r => ({ name: r.name, count: r.count, pct: Math.round(r.count / t * 100) }));
+      }
 
       const conflict = App.getConflictLearners ? App.getConflictLearners(aud) : 0;
 
@@ -127,6 +152,32 @@
         ['surghub_logo_white.png', 'SURGhub_app_square_white.png', 'surghub_logo_color.png', 'surghub_logo.png', 'surghub_white.png'].some(f => (surghub = read(f)));
       } catch (e) {}
 
+      // Best-effort: pull each linked article's social/hero image (og:image) so the story + feature
+      // cards show a real photo. Remote URL (loads when the page is opened online; the card falls back
+      // to a branded gradient + initials otherwise). Time-boxed so it never blocks the export.
+      const ogImage = async (pageUrl, fallback) => {
+        try {
+          const r = await Promise.race([
+            (ROOT.electronAPI && electronAPI.invoke) ? electronAPI.invoke('http-request', { url: pageUrl, method: 'GET' }) : Promise.resolve(null),
+            new Promise(res => setTimeout(() => res(null), 6000))
+          ]);
+          const h = (r && r.body) || '';
+          let m = h.match(/<meta[^>]+(?:property|name)=["'](?:og:image(?::secure_url)?|twitter:image)["'][^>]*\scontent=["']([^"']+)["']/i);
+          if (!m) m = h.match(/<meta[^>]+content=["']([^"']+)["'][^>]*(?:property|name)=["'](?:og:image|twitter:image)["']/i);
+          const u = (m && m[1]) ? m[1].trim() : (fallback || '');
+          return /^https?:\/\//i.test(u) ? u : (fallback || '');
+        } catch (e) { return fallback || ''; }
+      };
+      let storyImgs = { dennis: '', william: '', amb: '' };
+      try {
+        const og = await Promise.all([
+          ogImage('https://www.surghub.org/blog/impact-stories-dennis-nyangau-kenya', 'https://lwfiles.mycourse.app/globalsurgery-public/caa46ea48c4005abef86cf2eeedd13cd.jpg'),
+          ogImage('https://www.surghub.org/blog/impact-stories-william-baraka-congo', ''),
+          ogImage('https://www.surghub.org/blog/driven-by-the-community-surghub-surpasses-50000-users', '')
+        ]);
+        storyImgs = { dennis: og[0], william: og[1], amb: og[2] };
+      } catch (e) {}
+
       const minutesToHours = Math.round(minutes / 60);
       const certRate = (App.formatCertRate ? App.formatCertRate(certs, enrol, { asNumber: true }) : (enrol > 0 ? +(certs / enrol * 100).toFixed(1) : null));
 
@@ -138,8 +189,9 @@
         learnersSeries: cum(signups), certsSeries: cum(certMonth),
         countryMap: Object.keys(iso).length ? iso : null,
         countryMapLMIC: Object.keys(isoLMIC).length ? isoLMIC : null,
-        income: income, lmicShare: lmicShare, priorityCountries: priorityCountries, conflict: conflict,
+        income: income, lmicShare: lmicShare, priorityShare: priorityShare, priorityCountries: priorityCountries, conflict: conflict,
         cadres: cadres, survey: survey, amb: amb, rating: rating, quotes: quotes,
+        storyImgs: storyImgs,
         logos: { gsf: gsf, surghub: surghub }
       };
     },
@@ -309,9 +361,9 @@
       ).join('');
 
       const dials = D.survey ? [
-        D.survey.contentNew ? '<div class="dial rv" data-pct="' + D.survey.contentNew.pct + '" data-cap="said the content was new to them"></div>' : '',
-        D.survey.willApply ? '<div class="dial rv" data-pct="' + D.survey.willApply.pct + '" data-cap="intend to apply what they learned"></div>' : '',
-        D.survey.careerValue ? '<div class="dial rv" data-pct="' + D.survey.careerValue.pct + '" data-cap="rate it important to their work"></div>' : ''
+        D.survey.contentNew ? '<div class="dial rv" data-pct="' + D.survey.contentNew.pct + '" data-color="#5aa7e0" data-cap="said the content was <b style=&quot;color:#5aa7e0&quot;>new</b> to them"></div>' : '',
+        D.survey.willApply ? '<div class="dial rv" data-pct="' + D.survey.willApply.pct + '" data-color="#4fd09a" data-cap="intend to <b style=&quot;color:#4fd09a&quot;>apply</b> what they learned"></div>' : '',
+        D.survey.careerValue ? '<div class="dial rv" data-pct="' + D.survey.careerValue.pct + '" data-color="#f5b301" data-cap="rate it important to their <b style=&quot;color:#f5b301&quot;>work</b>"></div>' : ''
       ].join('') : '';
       const surveyN = D.survey ? Math.max((D.survey.willApply || {}).n || 0, (D.survey.contentNew || {}).n || 0, (D.survey.careerValue || {}).n || 0) : 0;
 
@@ -338,14 +390,29 @@
       ) : '';
 
       // Cert-rate highlight for the growth section — framed against typical online-course completion.
-      const certHi = (D.certRate != null ? '<div class="certhi rv d2"><div class="certhi-num num" data-to="' + D.certRate + '" data-suffix="%">0</div><div class="certhi-lab">of learners finish and certify — <b>2–3× the typical completion rate</b> for online courses, where most never reach the end.</div></div>' : '');
+      const certHi = (D.certRate != null ? '<div class="certhi rv d2"><div class="certhi-num num" data-to="' + D.certRate + '" data-suffix="%">0</div><div class="certhi-lab">of learners finish and certify — <b>2–3× the typical completion rate</b> for online learning platforms.</div></div>' : '');
 
-      // Editorial deep-links to the public surghub.org blog — two learner stories + a featured ambassador piece.
+      // Editorial deep-links to the public surghub.org blog — two learner stories + a featured ambassador
+      // piece. Each shows the article's hero photo when online; otherwise a branded gradient + initials.
+      const SI = D.storyImgs || {};
+      const cover = (img, initials, grad) => '<div class="story-cover" style="background:' + grad + '">' + (img ? '<img src="' + esc(img) + '" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">' : '') + '<span class="story-init">' + initials + '</span></div>';
       const storyCards = '<div class="stories">'
-        + '<a class="story rv d1" href="https://www.surghub.org/blog/impact-stories-dennis-nyangau-kenya" target="_blank" rel="noopener"><span class="story-k">Impact story</span><div class="story-av">DN</div><div class="story-nm">Dennis Nyangau</div><div class="story-loc">🇰🇪 Kenya</div><span class="story-go">Read the full story →</span></a>'
-        + '<a class="story rv d2" href="https://www.surghub.org/blog/impact-stories-william-baraka-congo" target="_blank" rel="noopener"><span class="story-k">Impact story</span><div class="story-av">WB</div><div class="story-nm">William Baraka</div><div class="story-loc">🇨🇩 DR Congo</div><span class="story-go">Read the full story →</span></a>'
+        + '<a class="story rv d1" href="https://www.surghub.org/blog/impact-stories-dennis-nyangau-kenya" target="_blank" rel="noopener">' + cover(SI.dennis, 'DN', 'linear-gradient(135deg,#2f86c9,#1f9c63)') + '<div class="story-body"><span class="story-k">Impact story</span><div class="story-nm">Dennis Nyangau</div><div class="story-loc">🇰🇪 Kenya · essential emergency care</div><span class="story-go">Read the full story →</span></div></a>'
+        + '<a class="story rv d2" href="https://www.surghub.org/blog/impact-stories-william-baraka-congo" target="_blank" rel="noopener">' + cover(SI.william, 'WB', 'linear-gradient(135deg,#9b8cff,#2f86c9)') + '<div class="story-body"><span class="story-k">Impact story</span><div class="story-nm">William Baraka</div><div class="story-loc">🇨🇩 DR Congo · when knowledge saves a life</div><span class="story-go">Read the full story →</span></div></a>'
         + '</div>';
-      const ambFeature = '<a class="feature rv d3" href="https://www.surghub.org/blog/driven-by-the-community-surghub-surpasses-50000-users" target="_blank" rel="noopener"><span class="feature-k">From the community</span><span class="feature-t">Driven by the community: passing 50,000 learners</span><span class="feature-s">Three ambassadors on what keeps them growing SURGhub — read the story →</span></a>';
+      const ambFeature = '<a class="feature rv d3" href="https://www.surghub.org/blog/driven-by-the-community-surghub-surpasses-50000-users" target="_blank" rel="noopener">' + (SI.amb ? '<div class="feature-img"><img src="' + esc(SI.amb) + '" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.parentNode.remove()"></div>' : '') + '<div class="feature-body"><span class="feature-k">From the community</span><span class="feature-t">Driven by the community: passing 50,000 learners</span><span class="feature-s">Three ambassadors on what keeps them growing SURGhub — read the story →</span></div></a>';
+
+      // Subtle network-globe backdrop for the "spreads itself" section (meridians + a few nodes).
+      const netGlobe = '<svg class="netbg" viewBox="0 0 480 480" aria-hidden="true">'
+        + '<circle cx="240" cy="240" r="200" fill="none" stroke="#2f86c9" stroke-width="1.2"/>'
+        + '<ellipse cx="240" cy="240" rx="78" ry="200" fill="none" stroke="#2f86c9" stroke-width="1.2"/>'
+        + '<ellipse cx="240" cy="240" rx="150" ry="200" fill="none" stroke="#2f86c9" stroke-width="1.2"/>'
+        + '<ellipse cx="240" cy="240" rx="200" ry="78" fill="none" stroke="#2f86c9" stroke-width="1.2"/>'
+        + '<ellipse cx="240" cy="240" rx="200" ry="150" fill="none" stroke="#2f86c9" stroke-width="1.2"/>'
+        + '<line x1="40" y1="240" x2="440" y2="240" stroke="#2f86c9" stroke-width="1.2"/>'
+        + '<line x1="240" y1="40" x2="240" y2="440" stroke="#2f86c9" stroke-width="1.2"/>'
+        + '<g fill="#3FB984"><circle cx="240" cy="40" r="5"/><circle cx="410" cy="170" r="5"/><circle cx="120" cy="360" r="5"/><circle cx="372" cy="356" r="5"/></g>'
+        + '</svg>';
 
       // Cadre donut (replaces the cadre bars) — precise inline-SVG arc segments + a legend.
       const donutColors = ['#2f86c9', '#3FB984', '#7fb6e3', '#f5b301', '#9b8cff', '#5fd0c5'];
@@ -366,7 +433,7 @@
 
       // Top reached priority (low-/lower-middle-income) countries — ranked list with flags.
       const priorityList = (D.priorityCountries || []).map((c, i) =>
-        '<div class="prow rv" style="transition-delay:' + (Math.min(i, 8) * 0.05) + 's"><span class="prank">' + (i + 1) + '</span><span class="pflag">' + flag(c.name) + '</span><span class="pname">' + esc(c.name) + '</span><span class="pcount num" data-to="' + (Number(c.count) || 0) + '">0</span></div>'
+        '<div class="prow rv" style="transition-delay:' + (Math.min(i, 8) * 0.05) + 's"><span class="prank">' + (i + 1) + '</span><span class="pflag">' + flag(c.name) + '</span><span class="pname">' + esc(c.name) + '</span><span class="pcount num" data-to="' + (Number(c.pct) || 0) + '" data-suffix="%">0</span></div>'
       ).join('');
 
       const sec = (id, dot, cls, inner) => '<section id="' + id + '" class="' + (cls || '') + '" data-dot="' + dot + '"><div class="wrap">' + inner + '</div></section>';
@@ -391,8 +458,8 @@
         [].slice.call(document.querySelectorAll('.kin')).forEach(wrapWords);
 
         function buildDial(d) {
-          var pct = +d.getAttribute('data-pct'), cap = d.getAttribute('data-cap') || '', r = 58, c = 2 * Math.PI * r;
-          d.innerHTML = '<svg width="150" height="150" viewBox="0 0 150 150"><circle cx="75" cy="75" r="' + r + '" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="12"\/><circle class="ring" cx="75" cy="75" r="' + r + '" fill="none" stroke="#7fb6e3" stroke-width="12" stroke-linecap="round" stroke-dasharray="' + c + '" stroke-dashoffset="' + c + '" style="transition:stroke-dashoffset 1.4s cubic-bezier(.2,.7,.2,1)"\/><text class="pc" x="75" y="75" text-anchor="middle" dominant-baseline="central" transform="rotate(90 75 75)">0%<\/text><\/svg><p class="cap">' + cap + '<\/p>';
+          var pct = +d.getAttribute('data-pct'), cap = d.getAttribute('data-cap') || '', color = d.getAttribute('data-color') || '#7fb6e3', r = 58, c = 2 * Math.PI * r;
+          d.innerHTML = '<svg width="150" height="150" viewBox="0 0 150 150"><circle cx="75" cy="75" r="' + r + '" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="12"\/><circle class="ring" cx="75" cy="75" r="' + r + '" fill="none" stroke="' + color + '" stroke-width="12" stroke-linecap="round" stroke-dasharray="' + c + '" stroke-dashoffset="' + c + '" style="transition:stroke-dashoffset 1.4s cubic-bezier(.2,.7,.2,1)"\/><text class="pc" x="75" y="75" text-anchor="middle" dominant-baseline="central" transform="rotate(90 75 75)">0%<\/text><\/svg><p class="cap">' + cap + '<\/p>';
           d._fire = function () { var ring = d.querySelector('.ring'), txt = d.querySelector('.pc'); if (reduce) { ring.style.strokeDashoffset = c * (1 - pct / 100); txt.textContent = pct + '%'; return; } requestAnimationFrame(function () { ring.style.strokeDashoffset = c * (1 - pct / 100); }); var st = null; function step(ts) { st = st || ts; var p = Math.min((ts - st) / 1400, 1), e = 1 - Math.pow(1 - p, 4); txt.textContent = Math.round(pct * e) + '%'; if (p < 1) requestAnimationFrame(step); } requestAnimationFrame(step); };
         }
         [].slice.call(document.querySelectorAll('.dial')).forEach(buildDial);
@@ -535,7 +602,7 @@
         + '</div>' + certHi)
 
         + sec('reach', 'Reach', 'dark', '<p class="eyebrow rv"><span class="chap">02</span>The reach gap — surgical-care priority</p><div class="cols"><div><h2 class="rv">Where surgical care is hardest to reach.</h2><p class="lead rv" style="margin:0 0 20px;font-size:18px">Reach is easy to claim. What matters is reaching the places that carry the greatest unmet surgical need.</p>'
-        + '<div class="reach-hi rv d1"><div class="reach-hi-num num" data-to="' + (D.lmicShare || 0) + '" data-suffix="%">0</div><div class="reach-hi-lab"><b>Priority learner share</b><br>of located learners are in low- and lower-middle-income countries.</div></div>'
+        + '<div class="reach-hi rv d1"><div class="reach-hi-num num" data-to="' + (D.priorityShare || 0) + '" data-suffix="%">0</div><div class="reach-hi-lab"><b>Priority learner share</b><br>of located learners are in Lancet-priority countries — the places with the largest unmet surgical need.</div></div>'
         + '<p class="muted rv d3" style="margin-top:16px">Priority settings are the low- and lower-middle-income countries the Lancet Commission on Global Surgery identifies as carrying the largest unmet need for safe, timely surgical care.</p></div>'
         + '<div class="rv d2"><p class="muted" style="margin-bottom:12px;letter-spacing:.14em;text-transform:uppercase;font-size:12px">Top reached priority countries</p><div class="plist">' + priorityList + '</div></div></div>'
         + '<div class="rv d2" style="margin-top:34px"><div id="map" style="width:100%;height:460px"></div><div id="map-legend"></div><div style="text-align:center;margin-top:14px"><button id="lmic-toggle" class="toggle">See only the hardest places</button></div></div>')
@@ -544,7 +611,7 @@
 
         + (dials ? sec('impact', 'Impact', 'dark', '<p class="eyebrow rv"><span class="chap">03</span>Reach is not the point — practice is</p><h2 class="rv d1">Learning that changes practice.</h2><p class="lead rv d2" style="margin-bottom:8px">A course only counts if it changes what happens at the bedside.</p><div class="dials">' + dials + '</div>' + (surveyN ? '<p class="muted rv d4" style="text-align:center;margin-top:26px">Based on ' + fmt(surveyN) + ' post-course survey responses.</p>' : '') + '<p class="lead rv" style="text-align:center;margin:30px auto 0">And behind the numbers, individual clinicians — here are two of them.</p>' + storyCards) : '')
 
-        + (ambCards ? sec('network', 'Network', '', '<p class="eyebrow rv"><span class="chap">04</span>Now it spreads itself</p><h2 class="rv d1">A community that spreads itself.</h2><p class="lead rv d2" style="margin-bottom:24px">The surest sign of a movement is when its own members start doing the inviting. Volunteer ambassadors carry SURGhub into their networks — and those learners go on to certify.</p><div class="kpis">' + ambCards + '</div>' + ambFeature) : '')
+        + (ambCards ? sec('network', 'Network', '', netGlobe + '<div class="netfg"><p class="eyebrow rv"><span class="chap">04</span>Now it spreads itself</p><h2 class="rv d1">A community that spreads itself.</h2><p class="lead rv d2" style="margin-bottom:24px">The surest sign of a movement is when its own members start doing the inviting. Volunteer ambassadors carry SURGhub into their networks — and those learners go on to certify.</p><div class="kpis">' + ambCards + '</div>' + ambFeature + '</div>') : '')
 
         + ((quoteCards || ratingBand) ? sec('voices', 'Voices', 'dark', '<p class="eyebrow rv">In their own words</p><h2 class="rv d1">Trusted by the people who use it.</h2><p class="lead rv d2" style="margin-bottom:20px">Behind the percentages are real clinicians — here, anonymised, in their own words.</p>' + ratingBand + (quoteCards ? '<div class="quotes">' + quoteCards + '</div>' : '') + (quoteCards ? '<p class="muted rv" style="margin-top:20px">Curated, anonymised learner feedback — no names or personal details.</p>' : '')) : '')
 
@@ -582,12 +649,13 @@
         + '.dials{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:26px;margin-top:30px}.dial{text-align:center}.dial svg{transform:rotate(-90deg)}.dial .pc{font-size:30px;font-weight:800;fill:#fff}.dial .cap{margin-top:12px;font-size:15px;color:#b9cede;max-width:24ch;margin-left:auto;margin-right:auto}'
         + '.quotes{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:30px;margin-top:32px}.quote{display:flex;flex-direction:column;align-items:center;text-align:center;background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:16px;padding:34px 30px 30px;transition:transform .25s ease,border-color .25s ease,background .25s ease}.quote:hover{transform:translateY(-4px);border-color:rgba(127,182,227,.5);background:rgba(255,255,255,.08)}.quote .q{font-family:Georgia,serif;font-size:19px;line-height:1.5;color:#eaf2f8;margin:0}.quote .mark{font-family:Georgia,serif;font-size:52px;line-height:1;color:var(--boston-soft);margin:0 0 4px;display:block}.quote .by{margin:18px 0 0;font-size:13px;color:#9fc1dc;font-weight:600}'
         + '.stars{display:inline-flex;gap:2px;font-size:15px;color:rgba(255,255,255,.22);margin:6px 0 2px}.stars .on{color:#f5b301}'
-        + '.ratingband{display:flex;align-items:center;gap:36px;background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:18px;padding:26px 32px;margin:6px 0 30px;flex-wrap:wrap}.rb-pct{font-size:clamp(48px,8vw,76px);font-weight:800;color:var(--green);line-height:1}.rb-pct-lab{font-size:14px;color:#b9cede;margin-top:6px}.rb-avg-block{padding-left:36px;border-left:1px solid var(--line)}@media(max-width:600px){.rb-avg-block{padding-left:0;border-left:0}}.rb-stars{font-size:26px;color:#f5b301;letter-spacing:3px}.rb-avg{font-size:15px;color:#b9cede;margin-top:8px}.rb-avg b{color:#fff;font-size:22px;margin-right:4px}.rb-foot{flex-basis:100%;font-size:13px;color:#7f9bb1;margin-top:4px}'
+        + '.ratingband{display:flex;align-items:center;gap:52px;background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:18px;padding:34px 42px;margin:10px 0 34px;flex-wrap:wrap}.rb-block{display:flex;flex-direction:column;justify-content:center}.rb-pct{font-size:clamp(52px,8vw,80px);font-weight:800;color:var(--green);line-height:1}.rb-pct-lab{font-size:15px;color:#b9cede;margin-top:10px}.rb-avg-block{padding-left:52px;border-left:1px solid var(--line)}@media(max-width:600px){.rb-avg-block{padding-left:0;border-left:0}}.rb-stars{font-size:30px;color:#f5b301;letter-spacing:5px;line-height:1}.rb-avg{font-size:15px;color:#b9cede;margin-top:12px}.rb-avg b{color:#fff;font-size:24px;margin-right:6px}.rb-foot{flex-basis:100%;font-size:13px;color:#7f9bb1;margin-top:20px;padding-top:18px;border-top:1px solid var(--line)}'
         + '.btn{display:inline-block;margin-top:26px;background:var(--boston);color:#fff;font-weight:700;text-decoration:none;padding:15px 30px;border-radius:12px;font-size:16px;transition:transform .2s,background .2s}.btn:hover{transform:translateY(-2px);background:#3f97da}.joinwrap{display:flex;align-items:center;justify-content:space-between;gap:48px;flex-wrap:wrap}.joinmain{flex:1;min-width:300px}.joinlogo{flex:none}.joinlogo img{height:130px;width:auto;opacity:.96;filter:drop-shadow(0 10px 26px rgba(0,0,0,.4))}@media(max-width:820px){.joinlogo img{height:80px}}.foot{margin-top:48px;font-size:13px;color:#7f9bb1;border-top:1px solid var(--line);padding-top:22px}.foot .joint{margin:0 0 10px;color:#9fb6c9;max-width:82ch}.foot .footmeta{margin:0;color:#6d8ba3}'
         + '.certhi{margin-top:24px;display:flex;align-items:center;gap:22px;background:#fff;border:1px solid #d7ead9;border-left:5px solid var(--green);border-radius:16px;padding:22px 26px}.certhi-num{font-size:clamp(40px,6vw,64px);font-weight:800;line-height:.9;color:#1f9c63;letter-spacing:-.02em;flex:none}.certhi-lab{font-size:16px;color:#3d5567}.certhi-lab b{color:var(--ink)}'
-        + '.stories{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:24px}@media(max-width:680px){.stories{grid-template-columns:1fr}}.story{display:block;text-decoration:none;background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:16px;padding:24px 24px 22px;transition:transform .25s ease,border-color .25s ease,background .25s ease}.story:hover{transform:translateY(-4px);border-color:rgba(127,182,227,.5);background:rgba(255,255,255,.08)}.story-k{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--boston-soft);font-weight:700}.story-av{width:46px;height:46px;border-radius:50%;background:linear-gradient(135deg,var(--boston),#1f9c63);color:#fff;font-weight:800;font-size:15px;display:flex;align-items:center;justify-content:center;margin:14px 0 12px}.story-nm{font-size:20px;font-weight:700;color:#eaf2f8}.story-loc{font-size:14px;color:#9fc1dc;margin-top:2px}.story-go{display:inline-block;margin-top:14px;font-size:14px;font-weight:700;color:var(--boston-soft)}.story:hover .story-go{color:#fff}'
-        + '.feature{display:block;text-decoration:none;margin-top:26px;background:linear-gradient(120deg,rgba(47,134,201,.10),rgba(63,185,132,.10));border:1px solid #dce8f1;border-radius:16px;padding:24px 28px;transition:transform .25s ease,border-color .25s ease}.feature:hover{transform:translateY(-3px);border-color:var(--boston)}.feature-k{display:block;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--boston);font-weight:700}.feature-t{display:block;font-size:21px;font-weight:700;color:var(--ink);margin-top:8px}.feature-s{display:block;font-size:15px;color:#5b7488;margin-top:8px}'
-        + '.donutbox{display:flex;align-items:center;gap:44px;flex-wrap:wrap;margin-top:24px}.donut-wrap{flex:none;width:220px;height:220px}.donutsvg{width:220px;height:220px;display:block}.donut-legend{flex:1;min-width:260px;display:flex;flex-direction:column;gap:12px}.leg{display:grid;grid-template-columns:16px 1fr auto 46px;align-items:center;gap:14px}.legdot{width:14px;height:14px;border-radius:4px;display:inline-block}.legnm{font-size:15px;color:#cfe2f1}.legv{font-size:15px;color:#fff;font-weight:700;text-align:right;font-variant-numeric:tabular-nums}.legpct{font-size:13px;color:#9fc1dc;text-align:right}'
+        + '.stories{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:24px}@media(max-width:680px){.stories{grid-template-columns:1fr}}.story{display:block;text-decoration:none;background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:16px;overflow:hidden;transition:transform .25s ease,border-color .25s ease,background .25s ease}.story:hover{transform:translateY(-4px);border-color:rgba(127,182,227,.5);background:rgba(255,255,255,.08)}.story-cover{position:relative;height:170px;display:flex;align-items:center;justify-content:center;overflow:hidden}.story-cover img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}.story-init{font-size:40px;font-weight:800;color:rgba(255,255,255,.92);letter-spacing:.02em}.story-body{padding:18px 22px 20px}.story-k{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--boston-soft);font-weight:700}.story-nm{font-size:20px;font-weight:700;color:#eaf2f8;margin-top:8px}.story-loc{font-size:14px;color:#9fc1dc;margin-top:2px}.story-go{display:inline-block;margin-top:14px;font-size:14px;font-weight:700;color:var(--boston-soft)}.story:hover .story-go{color:#fff}'
+        + '.feature{display:flex;align-items:stretch;text-decoration:none;margin-top:26px;background:linear-gradient(120deg,rgba(47,134,201,.10),rgba(63,185,132,.10));border:1px solid #dce8f1;border-radius:16px;overflow:hidden;transition:transform .25s ease,border-color .25s ease}.feature:hover{transform:translateY(-3px);border-color:var(--boston)}.feature-img{flex:none;width:230px;overflow:hidden}.feature-img img{width:100%;height:100%;min-height:150px;object-fit:cover;display:block}.feature-body{padding:24px 28px}@media(max-width:680px){.feature{flex-direction:column}.feature-img{width:100%;height:170px}}.feature-k{display:block;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--boston);font-weight:700}.feature-t{display:block;font-size:21px;font-weight:700;color:var(--ink);margin-top:8px}.feature-s{display:block;font-size:15px;color:#5b7488;margin-top:8px}'
+        + '.donutbox{display:flex;align-items:center;gap:44px;flex-wrap:wrap;margin-top:24px}.donut-wrap{flex:none;width:220px;height:220px}.donutsvg{width:220px;height:220px;display:block}.donut-legend{flex:1;min-width:260px;display:flex;flex-direction:column;gap:12px}.leg{display:grid;grid-template-columns:16px 1fr auto 46px;align-items:center;gap:14px}.legdot{width:14px;height:14px;border-radius:4px;display:inline-block}.legnm{font-size:15px;color:#334155}.legv{font-size:15px;color:var(--ink);font-weight:700;text-align:right;font-variant-numeric:tabular-nums}.legpct{font-size:13px;color:#64748b;text-align:right}'
+        + '#network{overflow:hidden}.netfg{position:relative;z-index:1}.netbg{position:absolute;right:-90px;top:50%;transform:translateY(-50%);width:560px;height:560px;opacity:.05;pointer-events:none;z-index:0}@media(max-width:760px){.netbg{display:none}}'
         + '.plist{display:flex;flex-direction:column}.prow{display:grid;grid-template-columns:26px 26px 1fr auto;align-items:center;gap:12px;padding:9px 4px;border-bottom:1px solid rgba(255,255,255,.07)}.prank{font-size:13px;font-weight:700;color:#7f9bb1;font-variant-numeric:tabular-nums}.pflag{font-size:18px}.pname{font-size:16px;color:#eaf2f8}.pcount{font-size:14px;color:#9fc1dc;text-align:right;font-variant-numeric:tabular-nums}'
         + '@media(prefers-reduced-motion:reduce){.rv{transition:none;opacity:1;transform:none}.fill{transition:none}.cue{animation:none}.kin .w{opacity:1;transform:none;transition:none}.aurora{animation:none}.num.pop{animation:none}.stars .on{transition:none}.quote.rv{transform:none}}';
 
