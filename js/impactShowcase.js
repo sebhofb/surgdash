@@ -236,16 +236,16 @@
 
         // growth chart (inline SVG) with a hover scrubber
         function drawGrowth() {
-          var svg = document.getElementById('growth'); if (!svg || svg._done) return;
-          var A = D.learnersSeries || [], B = D.certsSeries || []; if (!A.length) { if (svg.parentNode) svg.parentNode.style.display = 'none'; svg._done = 1; return; }
-          // Draw in REAL pixel coordinates read from the rendered element, and set the viewBox to
-          // match — no reliance on SVG intrinsic / aspect-ratio sizing (which collapsed to 0 height
-          // in some browsers). Retry on the next frame if the element isn't laid out yet.
-          var W = svg.clientWidth || (svg.getBoundingClientRect ? svg.getBoundingClientRect().width : 0) || 0;
-          var H = svg.clientHeight || 340;
+          var wrap = document.getElementById('growth-wrap'); if (!wrap || wrap._done) return;
+          var A = D.learnersSeries || [], B = D.certsSeries || []; if (!A.length) { wrap.style.display = 'none'; wrap._done = 1; return; }
+          // Build the chart as a COMPLETE <svg> string set on a DIV wrapper's innerHTML — the HTML
+          // parser then creates real SVG-namespaced nodes. (Setting innerHTML directly on an <svg>
+          // element makes some browsers parse <text>/<path> as HTML, so x/y are ignored and the
+          // labels collapse into plain inline text — that was the bug.) Fixed 340px box; pixel coords.
+          var W = wrap.clientWidth || (wrap.getBoundingClientRect ? wrap.getBoundingClientRect().width : 0) || 0;
+          var H = 340;
           if (W < 50) { requestAnimationFrame(drawGrowth); return; }
-          svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
-          svg._done = 1;
+          wrap._done = 1;
           var padL = 10, padR = 12, padT = 22, padB = 30, n = A.length;
           var maxY = 1; A.forEach(function (p) { maxY = Math.max(maxY, p.v); });
           function X(i) { return padL + (W - padL - padR) * (i / (Math.max(1, n - 1))); }
@@ -253,7 +253,7 @@
           function path(arr) { var d = ''; for (var i = 0; i < arr.length; i++) { d += (i ? 'L' : 'M') + X(i).toFixed(1) + ' ' + Y(arr[i].v).toFixed(1) + ' '; } return d.trim(); }
           var area = 'M' + X(0) + ' ' + Y(0) + ' ' + path(A).slice(1) + ' L' + X(n - 1) + ' ' + Y(0) + ' Z';
           var lab0 = A[0].m, lab1 = A[n - 1].m;
-          svg.innerHTML = '<line x1="' + padL + '" y1="' + Y(0) + '" x2="' + (W - padR) + '" y2="' + Y(0) + '" stroke="#e4edf4"\/>'
+          var inner = '<line x1="' + padL + '" y1="' + Y(0) + '" x2="' + (W - padR) + '" y2="' + Y(0) + '" stroke="#e4edf4"\/>'
             + '<line x1="' + padL + '" y1="' + Y(maxY * 0.5) + '" x2="' + (W - padR) + '" y2="' + Y(maxY * 0.5) + '" stroke="#eef4f9"\/>'
             + '<path d="' + area + '" fill="rgba(47,134,201,.10)" opacity="0" id="garea"\/>'
             + '<path class="gline" d="' + (B.length ? path(B) : '') + '" stroke="#3FB984" id="gcert"\/>'
@@ -264,10 +264,12 @@
             + '<text x="' + (W - padR) + '" y="' + (H - 9) + '" text-anchor="end" font-size="12" fill="#90a6b8">' + lab1 + '<\/text>'
             + '<line id="gcur" x1="0" y1="' + padT + '" x2="0" y2="' + Y(0) + '" stroke="#9fc1dc" stroke-width="1" opacity="0"\/>'
             + '<circle id="gd1" r="4.5" fill="#2f86c9" opacity="0"\/><circle id="gd2" r="4.5" fill="#3FB984" opacity="0"\/>';
+          wrap.innerHTML = '<svg id="growth" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Cumulative registered learners and certificates over time" style="display:block;width:100%;height:' + H + 'px">' + inner + '<\/svg>';
+          var svg = document.getElementById('growth');
           var lines = [svg.querySelector('#genr'), svg.querySelector('#gcert')].filter(Boolean);
           lines.forEach(function (p) { var len = p.getTotalLength(); p.style.strokeDasharray = len; p.style.strokeDashoffset = len; if (!reduce) p.style.transition = 'stroke-dashoffset 1.5s ease'; });
-          svg._fire = function () { lines.forEach(function (p) { p.style.strokeDashoffset = 0; }); var a = svg.querySelector('#garea'); a.style.transition = 'opacity 1.2s ease .3s'; a.style.opacity = 1; };
-          if (reduce) svg._fire();
+          wrap._fire = function () { lines.forEach(function (p) { p.style.strokeDashoffset = 0; }); var a = svg.querySelector('#garea'); if (a) { a.style.transition = 'opacity 1.2s ease .3s'; a.style.opacity = 1; } };
+          if (reduce) wrap._fire();
           // scrubber
           var tip = document.getElementById('growth-tip'), cur = svg.querySelector('#gcur'), d1 = svg.querySelector('#gd1'), d2 = svg.querySelector('#gd2');
           svg.addEventListener('mousemove', function (ev) {
@@ -319,7 +321,7 @@
             [].slice.call(el.querySelectorAll('[data-to]')).forEach(function (c) { if (!c._d) { c._d = 1; countUp(c); } });
             [].slice.call(el.querySelectorAll('.fill[data-w]')).forEach(function (f) { f.style.width = f.getAttribute('data-w') + '%'; });
             if (el.classList.contains('dial') && el._fire && !el._df) { el._df = 1; el._fire(); }
-            if (el.querySelector && el.querySelector('#growth')) { drawGrowth(); var g = document.getElementById('growth'); if (g && g._fire && !g._gf) { g._gf = 1; setTimeout(g._fire, 150); } }
+            if (el.querySelector && el.querySelector('#growth-wrap')) { drawGrowth(); var g = document.getElementById('growth-wrap'); if (g && g._fire && !g._gf) { g._gf = 1; setTimeout(g._fire, 150); } }
             if (el.querySelector && el.querySelector('#map') && !el._map) { el._map = 1; drawMap(D.countryMap); }
             io.unobserve(el);
           });
@@ -341,7 +343,7 @@
 
         + sec('scale', 'The scale', 'dark', '<p class="eyebrow rv">The scale</p><h2 class="rv d1">A global classroom for surgical care.</h2><div class="kpis">' + scaleCards + '</div>')
 
-        + sec('growth', 'Growth', '', '<p class="eyebrow rv">Adoption that compounds</p><h2 class="rv d1">From a launch to a movement.</h2><p class="lead rv d2" style="margin-bottom:24px">Month after month, more clinicians arrive — and more finish what they start. Hover the chart to read any month.</p><div class="chartcard rv d2"><div class="legend"><span><i class="sw" style="background:#2f86c9"></i>Registered learners</span><span><i class="sw" style="background:#3FB984"></i>Certificates earned</span></div><div id="growth-tip" class="tip"></div><svg id="growth" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Cumulative registered learners and certificates over time"></svg></div>')
+        + sec('growth', 'Growth', '', '<p class="eyebrow rv">Adoption that compounds</p><h2 class="rv d1">From a launch to a movement.</h2><p class="lead rv d2" style="margin-bottom:24px">Month after month, more clinicians arrive — and more finish what they start. Hover the chart to read any month.</p><div class="chartcard rv d2"><div class="legend"><span><i class="sw" style="background:#2f86c9"></i>Registered learners</span><span><i class="sw" style="background:#3FB984"></i>Certificates earned</span></div><div id="growth-tip" class="tip"></div><div id="growth-wrap" class="growthbox"></div></div>')
 
         + sec('reach', 'Reach', 'dark', '<p class="eyebrow rv">World reach</p><div class="cols"><div><h2 class="rv">Where surgical care is hardest to reach.</h2><div class="bignum num rv d1" data-to="' + (D.countries || 0) + '" data-suffix="+">0</div><p class="statline rv d2">countries' + (D.lmicShare ? ' — with ' + D.lmicShare + '% of located learners in low- and lower-middle-income settings' : '') + '.</p>'
         + (D.conflict ? '<div class="conflict rv d3"><div class="v num" data-to="' + D.conflict + '" data-suffix="+">0</div><div class="l">learners in conflict-affected settings — Sudan, Yemen, Ukraine, Gaza and beyond.</div></div>' : '')
@@ -374,7 +376,7 @@
         + '.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:18px;margin-top:34px}.kpi{background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:16px;padding:26px 24px}.kpi.lite{background:var(--paper2);border-color:#dce8f1}'
         + '.kpi .v{font-size:clamp(34px,5vw,54px);font-weight:800;line-height:1;letter-spacing:-.02em;color:#fff}.kpi.lite .v{color:var(--ink)}.kpi .v.green{color:var(--green)}.kpi .v.boston{color:var(--boston-soft)}.kpi.lite .v.boston{color:var(--boston)}'
         + '.kpi .l{margin-top:10px;font-size:15px;color:#a9c3d6}.kpi.lite .l{color:#5b7488}.kpi .s{margin-top:6px;font-size:13px;color:#7f9bb1}.pill{display:inline-block;margin-top:10px;font-size:12px;font-weight:600;background:rgba(63,185,132,.16);color:#8fe3bf;border-radius:999px;padding:3px 11px}'
-        + '.chartcard{background:#fff;border:1px solid #e4edf4;border-radius:18px;padding:24px 22px 12px;position:relative}.legend{display:flex;gap:20px;flex-wrap:wrap;font-size:13px;color:#5b7488;margin-bottom:8px}.legend span{display:inline-flex;align-items:center;gap:7px}.sw{width:12px;height:12px;border-radius:3px;display:inline-block}.gline{fill:none;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}.ann{font-size:13px;font-weight:700}#growth{display:block;width:100%;height:340px;cursor:crosshair}.tip{position:absolute;top:14px;right:22px;font-size:13px;background:#04263d;color:#eaf2f8;padding:6px 11px;border-radius:8px;opacity:0;transition:opacity .15s;pointer-events:none}'
+        + '.chartcard{background:#fff;border:1px solid #e4edf4;border-radius:18px;padding:24px 22px 12px;position:relative}.legend{display:flex;gap:20px;flex-wrap:wrap;font-size:13px;color:#5b7488;margin-bottom:8px}.legend span{display:inline-flex;align-items:center;gap:7px}.sw{width:12px;height:12px;border-radius:3px;display:inline-block}.gline{fill:none;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}.ann{font-size:13px;font-weight:700}.growthbox{width:100%;height:340px}#growth{display:block;width:100%;height:340px;cursor:crosshair}.tip{position:absolute;top:14px;right:22px;font-size:13px;background:#04263d;color:#eaf2f8;padding:6px 11px;border-radius:8px;opacity:0;transition:opacity .15s;pointer-events:none}'
         + '.bars{display:flex;flex-direction:column;gap:13px;margin-top:8px}.bar{display:grid;grid-template-columns:170px 1fr 70px;align-items:center;gap:14px}.bar .lab{font-size:15px}.track{height:18px;background:rgba(255,255,255,.1);border-radius:999px;overflow:hidden}body .track{background:rgba(120,140,160,.16)}.dark .track{background:rgba(255,255,255,.1)}.fill{height:100%;width:0;border-radius:999px;background:var(--boston);transition:width 1.1s cubic-bezier(.2,.7,.2,1)}.fill.slate{background:#7d96a8}.bar .val{text-align:right;font-weight:700;font-variant-numeric:tabular-nums}'
         + '.cols{display:grid;grid-template-columns:1fr 1fr;gap:40px;align-items:center}@media(max-width:820px){.cols{grid-template-columns:1fr;gap:28px}}.bignum{font-size:clamp(56px,11vw,118px);font-weight:800;letter-spacing:-.03em;line-height:.95;color:#fff}.statline{font-size:18px;color:#bdd3e4;margin-top:8px}'
         + '.conflict{margin-top:22px;background:rgba(229,115,115,.12);border:1px solid rgba(229,115,115,.35);border-radius:14px;padding:18px 20px}.conflict .v{font-size:34px;font-weight:800;color:#ffb4b4}.conflict .l{color:#e7c3c3;font-size:14px}'
