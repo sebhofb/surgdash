@@ -1080,21 +1080,51 @@ Object.assign(window.App, {
                             return lk.includes('date') || lk.includes('submitted') || lk.includes('created') || lk.includes('timestamp') ||
                                 lk.includes('fecha') || lk.includes('soumis');
                         });
-                        const textCols = cols.filter(k => {
+                        // 1–5 scale questions, detected up-front so the open-ended detector can exclude
+                        // them (also reused below for QuestionStats).
+                        const scaleCols = cols.filter(k => {
                             const lk = k.toLowerCase();
-                            return (
-                                // English
-                                lk.includes('comment') || lk.includes('feedback') || lk.includes('improve') ||
-                                lk.includes('suggest') || lk.includes('additional') || lk.includes('tell us') || lk.includes('open') ||
-                                // Spanish
-                                lk.includes('comentario') || lk.includes('sugerencia') || lk.includes('mejores aspectos') ||
-                                lk.includes('peores aspectos') || lk.includes('problemas técnicos') || lk.includes('problemas tecnicos') ||
-                                // French
-                                lk.includes('commentaire') || lk.includes('intéressants') || lk.includes('interessants') ||
-                                lk.includes('amélioré') || lk.includes('ameliore') || lk.includes('problèmes techniques') ||
-                                lk.includes('problemes techniques') || lk.includes("d'autres commentaires") ||
-                                lk.includes('autres commentaires')
-                            );
+                            return lk.includes('scale from 1 to 5') || lk.includes('escala del 1 al 5') ||
+                                lk.includes('échelle de 1') || lk.includes('echelle de 1') ||
+                                lk.includes('how strongly do you agree') || lk.includes('how important') ||
+                                lk.includes('qué tan de acuerdo') || lk.includes('que tan de acuerdo') ||
+                                lk.includes('dans quelle mesure') || (rCol && k === rCol);
+                        });
+                        const userCol = cols.find(k => k.toLowerCase() === 'user' || k.toLowerCase() === 'usuario' || k.toLowerCase() === 'utilisateur');
+
+                        // Open-ended (free-text) questions. We capture EVERY free-text column so no
+                        // open-ended question is dropped just because its header lacks a keyword — a
+                        // column qualifies if its header matches a known feedback-prompt keyword OR its
+                        // answers read as prose. Date / rating / 1–5-scale / user / id / demographic
+                        // columns are excluded. Keyword hits still drive colType (below).
+                        const fbKeywords = [
+                            // English
+                            'comment', 'feedback', 'improve', 'suggest', 'additional', 'tell us', 'open',
+                            'anything else', 'other', 'technical', 'problem', 'difficult',
+                            // Spanish
+                            'comentario', 'sugerencia', 'mejores aspectos', 'peores aspectos', 'problemas técnicos', 'problemas tecnicos',
+                            // French
+                            'commentaire', 'intéressants', 'interessants', 'amélioré', 'ameliore', 'problèmes techniques',
+                            'problemes techniques', "d'autres commentaires", 'autres commentaires'
+                        ];
+                        const metaCol = /^\s*(id|user|usuario|utilisateur|e-?mail|correo|name|full name|nombre|nom|country|pa[ií]s|pays|profession|profesi|cadre|gender|sex|sexo|genre|organi|institution|date|time|fecha|hora|soumis|submitted|created|timestamp|score|grade|status|course|curso|cours)\b/;
+                        const looksProse = (k) => {
+                            let prose = 0, nonEmpty = 0;
+                            for (let i = 0; i < json.length; i++) {
+                                const v = String(json[i][k] == null ? '' : json[i][k]).trim();
+                                if (!v || ['nan', 'n/a', 'na', 'none', '-'].indexOf(v.toLowerCase()) !== -1) continue;
+                                nonEmpty++;
+                                if (v.length > 20 || (v.length > 8 && /\s/.test(v) && !/^[\d.,%\s/+-]+$/.test(v))) prose++;
+                            }
+                            return nonEmpty >= 3 && (prose / nonEmpty) >= 0.4;
+                        };
+                        const textCols = cols.filter(k => {
+                            if (k === dateCol || k === rCol || k === rColFinal || k === userCol) return false;
+                            if (scaleCols.indexOf(k) !== -1) return false;
+                            const lk = k.toLowerCase();
+                            if (fbKeywords.some(w => lk.includes(w))) return true;   // recognised feedback prompt
+                            if (metaCol.test(lk)) return false;                       // id / demographic / meta
+                            return looksProse(k);                                     // any other genuinely free-text column
                         });
 
                         if (rColFinal) {
@@ -1124,20 +1154,9 @@ Object.assign(window.App, {
                         });
                         course.RatingHistory = JSON.stringify(ratingHistory);
 
-                        // ── Capture ALL 1–5 scale questions (not just overall satisfaction).
-                        // The course survey carries Likert items like "the information was
-                        // new to me" and "it is likely that I will use the information
-                        // acquired" — key transformative-change indicators. Stats per
-                        // question: avg + distribution of 1–5 answers; '0' = N/A (the two
-                        // job questions allow it for unemployed learners); 'NO DATA' skipped.
-                        const scaleCols = cols.filter(k => {
-                            const lk = k.toLowerCase();
-                            return lk.includes('scale from 1 to 5') || lk.includes('escala del 1 al 5') ||
-                                lk.includes('échelle de 1') || lk.includes('echelle de 1') ||
-                                lk.includes('how strongly do you agree') || lk.includes('how important') ||
-                                lk.includes('qué tan de acuerdo') || lk.includes('que tan de acuerdo') ||
-                                lk.includes('dans quelle mesure') || (rCol && k === rCol);
-                        });
+                        // QuestionStats: avg + 1–5 distribution per scale question (scaleCols detected
+                        // above, alongside the open-ended columns). '0' = N/A (the two job questions
+                        // allow it for unemployed learners); 'NO DATA' is skipped.
                         const qStats = [];
                         scaleCols.forEach(qc => {
                             let sum = 0, n = 0, na = 0; const dist = {};
@@ -1152,10 +1171,8 @@ Object.assign(window.App, {
                         });
                         if (qStats.length > 0) course.QuestionStats = JSON.stringify(qStats);
 
-                        // Build FeedbackBank: text comments with dates and sentiment
-                        // Tag each entry with source column type for platform-level filtering
-                        // Find User column for initials extraction
-                        const userCol = cols.find(k => k.toLowerCase() === 'user' || k.toLowerCase() === 'usuario' || k.toLowerCase() === 'utilisateur');
+                        // Build FeedbackBank: text comments with dates and sentiment, one entry per
+                        // (response × open-ended column). Tagged with colType for downstream weighting.
                         let feedbackBank = [];
                         json.forEach(row => {
                             // Use the actual submission date (full YYYY-MM-DD) when available.
