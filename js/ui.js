@@ -2147,23 +2147,6 @@ Object.assign(window.App, {
                                 <button onclick="App.autoSelectTestimonials(null)" class="px-4 py-2 bg-gsf-boston/10 text-gsf-boston border border-gsf-boston/20 font-bold rounded-lg text-sm hover:bg-gsf-boston/20 transition-colors" title="Pick the top X comments per course (score ≥ Y) across every provider — fine-tune with the checkboxes on any provider's Feedback tab">⭐ Auto-select for all providers…</button>
                                 <button onclick="App.summarizeFeedbackWithAI(null)" class="px-4 py-2 bg-gsf-boston/10 text-gsf-boston border border-gsf-boston/20 font-bold rounded-lg text-sm hover:bg-gsf-boston/20 transition-colors" title="Per-course + per-provider summaries of what learners are saying — shown in the app and in reports">📝 Summarize all…</button>
                             </div>
-                            <p class="text-xs font-bold text-slate-400 uppercase mb-3">SURGhub Impact Showcase</p>
-                            <p class="text-xs text-slate-500 mb-3 max-w-2xl">A self-contained, shareable scrollytelling page of SURGhub's overall impact (scale, growth, world reach, the workforce, learning outcomes, ambassadors, voices) — aggregates only, no personal data. Pick the AI scoring source, then choose exactly which testimonials feed the “Voices” section.</p>
-                            <div class="flex flex-wrap items-end gap-3 mb-6">
-                                <label class="text-xs font-semibold text-slate-500 flex flex-col gap-1">Testimonials source
-                                    <select id="showcase-tsource" class="text-xs border rounded-lg px-2 py-1.5 outline-none focus:ring-2 focus:ring-gsf-boston/30 bg-white">
-                                        <option value="marketing">AI marketing quotes (public-tuned)</option>
-                                        <option value="feedback">AI top-rated feedback</option>
-                                        <option value="curated">Curated selections</option>
-                                    </select>
-                                </label>
-                                <label class="text-xs font-semibold text-slate-500 flex flex-col gap-1">Min AI score
-                                    <input id="showcase-minscore" type="number" min="0" max="10" value="7" class="w-16 text-xs border rounded-lg px-2 py-1.5 outline-none focus:ring-2 focus:ring-gsf-boston/30" />
-                                </label>
-                                <button onclick="ImpactShowcase.openPicker({ source: (document.getElementById('showcase-tsource')||{}).value, minScore: parseInt((document.getElementById('showcase-minscore')||{}).value, 10) })" class="flex items-center gap-2 py-2.5 px-4 bg-gsf-prussian text-white font-bold rounded-lg text-sm hover:bg-slate-900 transition-all shadow-sm">
-                                    <i data-lucide="sparkles" width="16"></i> Choose testimonials & build…
-                                </button>
-                            </div>
                             <p class="text-xs font-bold text-slate-400 uppercase mb-3">Report Cover & Back Pages</p>
                             <div class="flex flex-wrap gap-3 text-sm">
                                 <div class="flex items-center gap-2">
@@ -2179,6 +2162,27 @@ Object.assign(window.App, {
                                         : '<button onclick="App.pickBackPdf()" class="text-gsf-boston underline cursor-pointer hover:text-gsf-prussian">Select PDF</button>'}
                                 </div>
                             </div>
+                        </div>
+                    </div>
+
+                    <!-- ── SURGhub Impact Showcase ── -->
+                    <div class="bg-white rounded-2xl shadow-sm border p-8 mb-8">
+                        <h2 class="text-xl font-bold mb-2 text-gsf-prussian"><i data-lucide="sparkles" class="inline mb-1 text-gsf-boston"></i> SURGhub Impact Showcase</h2>
+                        <p class="text-slate-600 text-sm mb-5 max-w-3xl">A self-contained, shareable scrollytelling page of SURGhub's overall impact — the global-surgery gap, scale, growth, the reach gap, the whole surgical team, learning outcomes, ambassadors and learner voices. Aggregates only, no personal data. Pick the AI scoring source, then choose exactly which testimonials feed the “Voices” section.</p>
+                        <div class="flex flex-wrap items-end gap-3">
+                            <label class="text-xs font-semibold text-slate-500 flex flex-col gap-1">Testimonials source
+                                <select id="showcase-tsource" class="text-xs border rounded-lg px-2 py-1.5 outline-none focus:ring-2 focus:ring-gsf-boston/30 bg-white">
+                                    <option value="marketing">AI marketing quotes (public-tuned)</option>
+                                    <option value="feedback">AI top-rated feedback</option>
+                                    <option value="curated">Curated selections</option>
+                                </select>
+                            </label>
+                            <label class="text-xs font-semibold text-slate-500 flex flex-col gap-1">Min AI score
+                                <input id="showcase-minscore" type="number" min="0" max="10" value="7" class="w-16 text-xs border rounded-lg px-2 py-1.5 outline-none focus:ring-2 focus:ring-gsf-boston/30" />
+                            </label>
+                            <button onclick="ImpactShowcase.openPicker({ source: (document.getElementById('showcase-tsource')||{}).value, minScore: parseInt((document.getElementById('showcase-minscore')||{}).value, 10) })" class="flex items-center gap-2 py-2.5 px-4 bg-gsf-prussian text-white font-bold rounded-lg text-sm hover:bg-slate-900 transition-all shadow-sm">
+                                <i data-lucide="sparkles" width="16"></i> Choose testimonials & build…
+                            </button>
                         </div>
                     </div>
 
