@@ -12552,15 +12552,11 @@ function doGet(e) {
     // app can detect new cloud data without downloading every sheet. (?meta=1)
     if (e && e.parameter && e.parameter.meta) {
       var _lm = '';
-      // Primary: the push timestamp (no extra permission). Bonus: the Drive file's
-      // last-modified time, if the Drive scope happens to be granted (also catches
-      // manual sheet edits). Return whichever is newer.
+      // Real changes only: lastSync (a push) or lastEdit (a manual cell edit, onEdit).
+      // We deliberately DON'T fold in DriveApp.getLastUpdated() — Google advances the
+      // Drive modified-time on its own (overnight), causing false "new data" nudges.
       try { _lm = PropertiesService.getScriptProperties().getProperty('lastSync') || ''; } catch (_p) {}
-      // Manual edits typed into the Sheet (caught by the onEdit trigger below).
       try { var _le = PropertiesService.getScriptProperties().getProperty('lastEdit') || ''; if (_le > _lm) _lm = _le; } catch (_q) {}
-      // Bonus, only if the Drive scope happens to be granted (also catches edits
-      // made before the trigger existed).
-      try { var _d = DriveApp.getFileById(ss.getId()).getLastUpdated(); if (_d) { var _di = _d.toISOString(); if (_di > _lm) _lm = _di; } } catch (_e) {}
       return _json({ ok: true, meta: true, lastModified: _lm });
     }
     const SKIP = new Set(['📊 Organisation', '__SURGdash__', '📋 SURGdash Backup']);
@@ -13563,8 +13559,12 @@ function _writeProject(ss, d) {
                 surghubRestored = true;
             }
 
-            // Internal write — must not re-trigger auto-sync (would create a loop)
-            await Projects.saveAppSettings({ googleSheetsLastPull: new Date().toISOString() }, { internal: true });
+            // Internal write — must not re-trigger auto-sync (would create a loop).
+            // Use the SERVER's last-change time (same clock the freshness check uses) so a
+            // device clock behind the server doesn't make the next check see false "new data".
+            let _pullStamp2 = new Date().toISOString();
+            try { const _pm2 = await App._fetchCloudMeta(); if (_pm2 && _pm2.ok && _pm2.lastModified) _pullStamp2 = _pm2.lastModified; } catch (_) {}
+            await Projects.saveAppSettings({ googleSheetsLastPull: _pullStamp2 }, { internal: true });
             // Local data now matches the cloud — clear the dirty flag
             if (App.markClean) App.markClean();
 
@@ -14181,7 +14181,13 @@ function _writeProject(ss, d) {
             // user pushes (which advances googleSheetsLastSync and clears the dirty state).
             const _fullyReconciled = !surghubSkipped && skippedDirty.length === 0;
             if (_fullyReconciled) {
-                await Projects.saveAppSettings({ googleSheetsLastPull: new Date().toISOString() }, { internal: true });
+                // Stamp the pull baseline with the SERVER's last-change time (same clock the
+                // freshness check compares against), not the local device clock — otherwise a
+                // device clock that's behind the server makes the next check read the cloud as
+                // "newer" even though we're fully in sync. Fall back to local time on error.
+                let _pullStamp = new Date().toISOString();
+                try { const _pm = await App._fetchCloudMeta(); if (_pm && _pm.ok && _pm.lastModified) _pullStamp = _pm.lastModified; } catch (_) {}
+                await Projects.saveAppSettings({ googleSheetsLastPull: _pullStamp }, { internal: true });
             }
             // Local data now matches the cloud — clear the dirty flag, but only if we
             // didn't PRESERVE any local changes that still need pushing (SURGhub blob

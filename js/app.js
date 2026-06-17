@@ -759,10 +759,23 @@ window.App = {
         try {
             // Auto-pull devices refresh themselves — never nag them.
             if (await Storage.getItem('surgdash_autopull_enabled')) return;
+            // Seed the "already-notified" memory from disk once. The in-memory field resets
+            // every launch, so without this a cloud state we already surfaced would re-nag
+            // on each cold start.
+            if (this._cloudBannerDismissedMs == null) {
+                try { const s = await Projects.getAppSettings(); this._cloudBannerDismissedMs = s.cloudBannerAckMs || 0; }
+                catch (_) { this._cloudBannerDismissedMs = 0; }
+            }
             const m = await this._fetchCloudMeta();
             if (!m.ok) return;                          // silent: errors / pre-meta script show nothing
             // 30s grace so this device's own just-finished push/pull doesn't self-trigger.
-            if (m.cloudMs > Math.max(m.seenMs, this._cloudBannerDismissedMs || 0) + 30000) this._showCloudUpdateBanner(m.cloudMs);
+            if (m.cloudMs > Math.max(m.seenMs, this._cloudBannerDismissedMs || 0) + 30000) {
+                this._showCloudUpdateBanner(m.cloudMs);
+                // Remember we've surfaced THIS cloud timestamp (persist it) so it won't re-nag
+                // next launch; a genuinely newer push by a colleague (higher cloudMs) still shows.
+                this._cloudBannerDismissedMs = m.cloudMs;
+                try { await Projects.saveAppSettings({ cloudBannerAckMs: m.cloudMs }, { internal: true }); } catch (_) {}
+            }
         } catch (_) { /* best-effort, never throws into the UI */ }
     },
 
@@ -775,7 +788,7 @@ window.App = {
         if (!m.ok) {
             if (m.reason === 'nourl') return this.showMsg('Add your Google Sheets link first.', true);
             if (m.reason === 'olddeploy') return this.showMsg('The Web App is still serving the OLD script. Pasting the code + Save isn’t enough — in Apps Script go to Deploy → Manage deployments → ✎ Edit → Version: “New version” → Deploy (keeps the same URL).', true);
-            if (m.reason === 'notimestamp') return this.showMsg('Quick-check is live ✓ — it just needs a timestamp source. In the Apps Script editor: open the script, click Run once, and approve the Drive permission it asks for. Then check again. (Or, in edit mode, push once via “Sync to Sheets”.)');
+            if (m.reason === 'notimestamp') return this.showMsg('Quick-check is live ✓ — there’s just no recorded change yet. In edit mode, push once via “Sync to Sheets” (or make any edit in the Sheet), then check again.');
             return this.showMsg('Couldn’t reach the cloud' + (m.error ? (': ' + m.error) : '') + '.', true);
         }
         if (m.cloudMs > m.seenMs + 30000) {
@@ -796,8 +809,10 @@ window.App = {
     },
 
     _dismissCloudBanner() {
-        // Remember the dismissed cloud state so the same data doesn't re-nag.
+        // Remember the dismissed cloud state so the same data doesn't re-nag — persisted to
+        // disk so a restart doesn't forget it.
         this._cloudBannerDismissedMs = Math.max(this._cloudBannerDismissedMs || 0, this._cloudBannerSeenMs || 0);
+        try { Projects.saveAppSettings({ cloudBannerAckMs: this._cloudBannerDismissedMs }, { internal: true }); } catch (_) {}
         const el = document.getElementById('cloud-update-banner');
         if (el) el.style.display = 'none';
     },

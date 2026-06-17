@@ -84,7 +84,12 @@ function migrateDataDirIfNeeded() {
     const tmp = dest + '.migrating';
     try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (_) {}
     fs.mkdirSync(path.dirname(dest), { recursive: true });
-    fs.cpSync(src, tmp, { recursive: true });
+    // preserveTimestamps so migrated files keep their ORIGINAL mtimes. Otherwise the copy
+    // stamps every file at migration-time — newer than the (also-migrated, but old-valued)
+    // last-sync baseline — which makes the "unsynced changes" banner fire on first launch
+    // even though nothing changed. Keeping mtimes means a file only looks unsynced if it
+    // genuinely was edited after the last sync.
+    fs.cpSync(src, tmp, { recursive: true, preserveTimestamps: true });
     fs.renameSync(tmp, dest);                  // atomic: dest appears only if the copy fully succeeded
     console.log('[migrate] data copied', src, '→', dest);
   } catch (e) {

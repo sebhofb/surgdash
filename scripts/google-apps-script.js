@@ -7,13 +7,15 @@ function doGet(e) {
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     // Cheap freshness check (?meta=1): return ONLY the last-change time so the app can
-    // detect new cloud data without downloading everything. lastSync = last push,
-    // lastEdit = manual cell edit (onEdit), plus Drive file modified time if granted.
+    // detect new cloud data without downloading everything. lastModified reflects REAL
+    // changes only: lastSync (a push from the app) or lastEdit (a manual cell edit, via
+    // onEdit). We deliberately do NOT fold in DriveApp.getLastUpdated() — Google advances
+    // a Spreadsheet's Drive modified-time on its own (overnight re-index / background
+    // re-save), which produced false "new data available" nudges on a quiet morning.
     if (e && e.parameter && e.parameter.meta) {
       var _lm = '';
       try { _lm = PropertiesService.getScriptProperties().getProperty('lastSync') || ''; } catch (_p) {}
       try { var _le = PropertiesService.getScriptProperties().getProperty('lastEdit') || ''; if (_le > _lm) _lm = _le; } catch (_q) {}
-      try { var _d = DriveApp.getFileById(ss.getId()).getLastUpdated(); if (_d) { var _di = _d.toISOString(); if (_di > _lm) _lm = _di; } } catch (_e2) {}
       return _json({ ok: true, meta: true, lastModified: _lm });
     }
     var SKIP = {'📊 Organisation':1, '__SURGdash__':1, '📋 SURGdash Backup':1, '📋 SURGhub':1};
