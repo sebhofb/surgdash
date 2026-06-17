@@ -11,7 +11,8 @@
   const ImpactShowcase = {
 
     // ---- assemble the PII-free data object from live app state -------------------
-    async _assemble() {
+    async _assemble(opts) {
+      opts = opts || {};
       const snap = (ROOT.App && App.getAnalyticsSnap) ? (App.getAnalyticsSnap() || []) : [];
       const aud = ((ROOT.App && App.userHistory) || []).slice()
         .sort((a, b) => String(b.Timestamp || '').localeCompare(String(a.Timestamp || '')))[0] || null;
@@ -98,15 +99,53 @@
       });
       const rating = rTotal >= 10 ? { avg: +(rSum / rTotal).toFixed(1), pct45: Math.round(r45 / rTotal * 100), n: rTotal } : null;
 
-      // curated learner voices — TEXT ONLY (no attribution beyond a generic label). '@'-bearing dropped.
-      // Each quote carries its own star rating when we can match it back to a FeedbackBank entry.
+      // Learner voices — pick the AI scoring source (mirrors the Course-Page Testimonials export):
+      //   'marketing' (default) → surghub_marketing_ai {s,u,c}: usable, public-tuned, name-stripped edited quote
+      //   'feedback'            → surghub_feedback_ai  {s,q,c}: quotable, cleaned quote
+      //   'curated'             → surghub_selected_testimonials: manual/auto picks (text only)
+      // For the AI sources we attach the learner's star rating (FeedbackBank .r) and cadre+country,
+      // looked up from the email→demographics map but emitting ONLY cadre+country — never email/name.
+      const tSource = (opts.source === 'feedback' || opts.source === 'curated') ? opts.source : 'marketing';
+      const minScore = (opts.minScore != null && !isNaN(opts.minScore)) ? Number(opts.minScore) : 7;
+      const djb2 = (ROOT.App && App._djb2Hash) ? function (s) { return App._djb2Hash(s); } : null;
+      const demo = (ROOT.App && App._emailDemoMap) ? App._emailDemoMap : ((ROOT.Storage ? (await Storage.getItem('surghub_email_demo')) : null) || {});
+      const tcase = (s) => String(s || '').toLowerCase().replace(/\b[a-z]/g, function (c) { return c.toUpperCase(); });
       let quotes = [];
       try {
-        const sel = (ROOT.Storage ? (await Storage.getItem('surghub_selected_testimonials')) : null) || {};
-        Object.keys(sel).forEach(prov => { const courses = sel[prov] || {}; Object.keys(courses).forEach(cn => { (courses[cn] || []).forEach(t => {
-          if (typeof t === 'string') { const txt = t.trim(); if (txt.length >= 45 && txt.length <= 320 && txt.indexOf('@') === -1) quotes.push({ text: txt, course: cn, r: ratingMap[normT(txt)] || null }); }
-        }); }); });
-        quotes = quotes.slice(0, 9);
+        if (tSource === 'curated' || !djb2) {
+          const sel = (ROOT.Storage ? (await Storage.getItem('surghub_selected_testimonials')) : null) || {};
+          Object.keys(sel).forEach(prov => { const courses = sel[prov] || {}; Object.keys(courses).forEach(cn => { (courses[cn] || []).forEach(t => {
+            if (typeof t === 'string') { const txt = t.trim(); if (txt.length >= 45 && txt.length <= 320 && txt.indexOf('@') === -1) quotes.push({ text: txt, course: cn, r: ratingMap[normT(txt)] || null, cadre: '', country: '' }); }
+          }); }); });
+          quotes = quotes.slice(0, 9);
+        } else {
+          const aiMap = (ROOT.Storage ? (await Storage.getItem(tSource === 'feedback' ? 'surghub_feedback_ai' : 'surghub_marketing_ai')) : null) || {};
+          const seen = {};
+          snap.forEach(d => {
+            if (!d || !d.FeedbackBank) return;
+            let fb; try { fb = JSON.parse(d.FeedbackBank); } catch (e) { return; }
+            (Array.isArray(fb) ? fb : []).forEach(f => {
+              const txt = String((f && f.t) || '').trim(); if (!txt) return;
+              const h = djb2(txt); if (seen[h]) return;
+              const a = aiMap[h]; if (!a) return;
+              const usable = (tSource === 'feedback') ? (a.q && Number(a.s) >= minScore) : (a.u && Number(a.s) >= minScore);
+              if (!usable) return;
+              const quote = String(a.c || '').trim();
+              if (quote.length < 25 || quote.indexOf('@') !== -1) return;
+              seen[h] = 1;
+              const dm = f.e ? demo[String(f.e).trim().toLowerCase()] : null;
+              quotes.push({
+                text: quote, score: Number(a.s) || 0,
+                r: (f.r !== undefined && f.r !== null && f.r !== '') ? (Number(f.r) || null) : null,
+                cadre: (dm && dm.profession) ? tcase(dm.profession) : '',
+                country: (dm && dm.country) ? String(dm.country) : '',
+                course: d.Course || ''
+              });
+            });
+          });
+          quotes.sort((x, y) => y.score - x.score);
+          quotes = quotes.slice(0, 9);
+        }
       } catch (e) { quotes = []; }
 
       // logos (base64-inlined; optional)
@@ -134,11 +173,11 @@
       };
     },
 
-    async export() {
+    async export(opts) {
       try {
         if (!ROOT.App || !App.getAnalyticsSnap) { App.showMsg && App.showMsg('SURGhub data isn’t loaded yet.', true); return; }
         App.showMsg && App.showMsg('Building the impact showcase…');
-        const D = await this._assemble();
+        const D = await this._assemble(opts || {});
         if (!D || !(D.learners || D.enrolments || D.certificates)) { App.showMsg('No SURGhub data to show — sync SURGhub first.', true); return; }
 
         // PII firewall: the public artifact must contain ZERO email-like values in its data.
@@ -199,9 +238,10 @@
 
       const stars = (r) => { r = Math.round(Number(r) || 0); if (r < 1) return ''; let s = '<span class="stars">'; for (let i = 1; i <= 5; i++) s += '<span class="' + (i <= r ? 'on' : '') + '">★</span>'; return s + '</span>'; };
 
-      const quoteCards = (D.quotes || []).map((q) =>
-        '<div class="quote rv"><span class="mark">“</span><p class="q">' + esc(q.text) + '</p>' + (q.r ? stars(q.r) : '') + (q.course ? '<p class="by">— ' + esc(q.course) + '</p>' : '<p class="by">— A SURGhub learner</p>') + '</div>'
-      ).join('');
+      const quoteCards = (D.quotes || []).map((q) => {
+        const by = [q.cadre, q.country].filter(Boolean).join(', ') || q.course || 'A SURGhub learner';
+        return '<div class="quote rv"><span class="mark">“</span><p class="q">' + esc(q.text) + '</p>' + (q.r ? stars(q.r) : '') + '<p class="by">— ' + esc(by) + '</p></div>';
+      }).join('');
 
       // Overall platform rating band (shown atop the voices section)
       const ratingBand = D.rating ? (
