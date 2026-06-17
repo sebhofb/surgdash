@@ -1813,14 +1813,22 @@ Object.assign(window.App, {
                         const aiChip = _ai ? (_ai.s > 0
                             ? '<span class="text-[10px] font-bold px-1.5 py-0.5 rounded-full border ' + (_ai.s >= 7 ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-slate-50 text-slate-500 border-slate-200') + '" title="AI testimonial score' + (_ai.t && _ai.t.length ? ' · ' + _ai.t.join(', ') : '') + '">AI ' + _ai.s + '/10</span>'
                             : '<span class="text-[10px] font-medium px-1.5 py-0.5 rounded-full border bg-slate-50 text-slate-400 border-slate-200" title="Filtered as junk/generic">junk</span>') : '';
+                        // AI-edited quote (the version that feeds reports/testimonials). Show it here so
+                        // edits can be spot-checked in the app, with the original underneath when changed.
+                        const _origPolished = this._polishQuote ? this._polishQuote(f.t) : f.t;
+                        const _edited = (_ai && _ai.c && String(_ai.c).trim()) ? (this._polishQuote ? this._polishQuote(_ai.c) : String(_ai.c).trim()) : '';
+                        const _normQ = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+                        const _isEdited = !!_edited && _normQ(_edited) !== _normQ(_origPolished);
+                        const editedChip = _isEdited ? '<span class="text-[10px] font-bold px-1.5 py-0.5 rounded-full border bg-sky-50 text-sky-700 border-sky-200" title="AI-edited quote used in reports & testimonials — original shown below">✎ edited</span>' : '';
 
                         return `
                             <div class="feedback-card bg-white border border-slate-200 rounded-lg p-4 shadow-sm flex flex-col gap-2 hover:border-slate-300 transition-colors">
                                 <div class="flex justify-between items-center">
-                                    <div class="flex items-center gap-2">${ratingStr}${aiChip}${f._course ? '<span class="text-[10px] font-medium text-slate-400">' + this.escapeHtml(f._course) + '</span>' : ''}</div>
+                                    <div class="flex items-center gap-2">${ratingStr}${aiChip}${editedChip}${f._course ? '<span class="text-[10px] font-medium text-slate-400">' + this.escapeHtml(f._course) + '</span>' : ''}</div>
                                     <span class="text-[11px] text-slate-400">${this.formatDate(f.d)}</span>
                                 </div>
-                                <p class="text-sm text-slate-700 leading-relaxed">"${this.escapeHtml(this._polishQuote ? this._polishQuote(f.t) : f.t)}"</p>
+                                <p class="text-sm text-slate-700 leading-relaxed">"${this.escapeHtml(_edited || _origPolished)}"</p>
+                                ${_isEdited ? '<p class="text-[11px] text-slate-400 italic">Original: &ldquo;' + this.escapeHtml(_origPolished) + '&rdquo;</p>' : ''}
                                 ${allTags.length > 0 || showCb ? `
                                     <div class="flex flex-wrap items-center gap-1 mt-1 pt-2 border-t border-slate-100">
                                         ${allTags.map(tag => tagPill(tag, false)).join(' ')}
