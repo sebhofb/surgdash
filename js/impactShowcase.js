@@ -99,54 +99,11 @@
       });
       const rating = rTotal >= 10 ? { avg: +(rSum / rTotal).toFixed(1), pct45: Math.round(r45 / rTotal * 100), n: rTotal } : null;
 
-      // Learner voices — pick the AI scoring source (mirrors the Course-Page Testimonials export):
-      //   'marketing' (default) → surghub_marketing_ai {s,u,c}: usable, public-tuned, name-stripped edited quote
-      //   'feedback'            → surghub_feedback_ai  {s,q,c}: quotable, cleaned quote
-      //   'curated'             → surghub_selected_testimonials: manual/auto picks (text only)
-      // For the AI sources we attach the learner's star rating (FeedbackBank .r) and cadre+country,
-      // looked up from the email→demographics map but emitting ONLY cadre+country — never email/name.
-      const tSource = (opts.source === 'feedback' || opts.source === 'curated') ? opts.source : 'marketing';
-      const minScore = (opts.minScore != null && !isNaN(opts.minScore)) ? Number(opts.minScore) : 7;
-      const djb2 = (ROOT.App && App._djb2Hash) ? function (s) { return App._djb2Hash(s); } : null;
-      const demo = (ROOT.App && App._emailDemoMap) ? App._emailDemoMap : ((ROOT.Storage ? (await Storage.getItem('surghub_email_demo')) : null) || {});
-      const tcase = (s) => String(s || '').toLowerCase().replace(/\b[a-z]/g, function (c) { return c.toUpperCase(); });
-      let quotes = [];
-      try {
-        if (tSource === 'curated' || !djb2) {
-          const sel = (ROOT.Storage ? (await Storage.getItem('surghub_selected_testimonials')) : null) || {};
-          Object.keys(sel).forEach(prov => { const courses = sel[prov] || {}; Object.keys(courses).forEach(cn => { (courses[cn] || []).forEach(t => {
-            if (typeof t === 'string') { const txt = t.trim(); if (txt.length >= 45 && txt.length <= 320 && txt.indexOf('@') === -1) quotes.push({ text: txt, course: cn, r: ratingMap[normT(txt)] || null, cadre: '', country: '' }); }
-          }); }); });
-          quotes = quotes.slice(0, 9);
-        } else {
-          const aiMap = (ROOT.Storage ? (await Storage.getItem(tSource === 'feedback' ? 'surghub_feedback_ai' : 'surghub_marketing_ai')) : null) || {};
-          const seen = {};
-          snap.forEach(d => {
-            if (!d || !d.FeedbackBank) return;
-            let fb; try { fb = JSON.parse(d.FeedbackBank); } catch (e) { return; }
-            (Array.isArray(fb) ? fb : []).forEach(f => {
-              const txt = String((f && f.t) || '').trim(); if (!txt) return;
-              const h = djb2(txt); if (seen[h]) return;
-              const a = aiMap[h]; if (!a) return;
-              const usable = (tSource === 'feedback') ? (a.q && Number(a.s) >= minScore) : (a.u && Number(a.s) >= minScore);
-              if (!usable) return;
-              const quote = String(a.c || '').trim();
-              if (quote.length < 25 || quote.indexOf('@') !== -1) return;
-              seen[h] = 1;
-              const dm = f.e ? demo[String(f.e).trim().toLowerCase()] : null;
-              quotes.push({
-                text: quote, score: Number(a.s) || 0,
-                r: (f.r !== undefined && f.r !== null && f.r !== '') ? (Number(f.r) || null) : null,
-                cadre: (dm && dm.profession) ? tcase(dm.profession) : '',
-                country: (dm && dm.country) ? String(dm.country) : '',
-                course: d.Course || ''
-              });
-            });
-          });
-          quotes.sort((x, y) => y.score - x.score);
-          quotes = quotes.slice(0, 9);
-        }
-      } catch (e) { quotes = []; }
+      // Learner voices — built by _collectCandidates so the in-app picker and the export share the
+      // exact same selection logic. If the caller pre-selected a set (from the picker), honour it.
+      let quotes;
+      if (Array.isArray(opts.quotes)) quotes = opts.quotes.slice(0, 12);
+      else { try { quotes = (await this._collectCandidates(opts)).slice(0, 9); } catch (e) { quotes = []; } }
 
       // logos (base64-inlined; optional)
       let gsf = '', surghub = '';
@@ -193,6 +150,118 @@
         console.error('[ImpactShowcase] export failed', e);
         App.showMsg && App.showMsg('Showcase export failed: ' + ((e && e.message) || e), true);
       }
+    },
+
+    // Collect the candidate testimonials for the chosen AI scoring source (sorted best-first).
+    // Shared by the export and the in-app picker. Aggregates only; cadre+country looked up from
+    // the email→demo map but never the email/name itself.
+    async _collectCandidates(opts) {
+      opts = opts || {};
+      const snap = (ROOT.App && App.getAnalyticsSnap) ? (App.getAnalyticsSnap() || []) : [];
+      const tSource = (opts.source === 'feedback' || opts.source === 'curated') ? opts.source : 'marketing';
+      const minScore = (opts.minScore != null && !isNaN(opts.minScore)) ? Number(opts.minScore) : 7;
+      const normT = (t) => String(t || '').toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 140);
+      const djb2 = (ROOT.App && App._djb2Hash) ? function (s) { return App._djb2Hash(s); } : null;
+      const demo = (ROOT.App && App._emailDemoMap) ? App._emailDemoMap : ((ROOT.Storage ? (await Storage.getItem('surghub_email_demo')) : null) || {});
+      const tcase = (s) => String(s || '').toLowerCase().replace(/\b[a-z]/g, function (c) { return c.toUpperCase(); });
+      const out = [];
+      try {
+        if (tSource === 'curated' || !djb2) {
+          const ratingMap = {};
+          snap.forEach(d => { if (!d || !d.FeedbackBank) return; let fb; try { fb = JSON.parse(d.FeedbackBank); } catch (e) { return; } (Array.isArray(fb) ? fb : []).forEach(f => { const r = Number(f && f.r) || 0; if (r >= 1 && r <= 5 && f.t) ratingMap[normT(f.t)] = r; }); });
+          const sel = (ROOT.Storage ? (await Storage.getItem('surghub_selected_testimonials')) : null) || {};
+          Object.keys(sel).forEach(prov => { const courses = sel[prov] || {}; Object.keys(courses).forEach(cn => { (courses[cn] || []).forEach(t => {
+            if (typeof t === 'string') { const txt = t.trim(); if (txt.length >= 45 && txt.length <= 320 && txt.indexOf('@') === -1) out.push({ text: txt, course: cn, r: ratingMap[normT(txt)] || null, cadre: '', country: '', score: 0 }); }
+          }); }); });
+        } else {
+          const aiMap = (ROOT.Storage ? (await Storage.getItem(tSource === 'feedback' ? 'surghub_feedback_ai' : 'surghub_marketing_ai')) : null) || {};
+          const seen = {};
+          snap.forEach(d => {
+            if (!d || !d.FeedbackBank) return;
+            let fb; try { fb = JSON.parse(d.FeedbackBank); } catch (e) { return; }
+            (Array.isArray(fb) ? fb : []).forEach(f => {
+              const txt = String((f && f.t) || '').trim(); if (!txt) return;
+              const h = djb2(txt); if (seen[h]) return;
+              const a = aiMap[h]; if (!a) return;
+              const usable = (tSource === 'feedback') ? (a.q && Number(a.s) >= minScore) : (a.u && Number(a.s) >= minScore);
+              if (!usable) return;
+              const quote = String(a.c || '').trim();
+              if (quote.length < 25 || quote.indexOf('@') !== -1) return;
+              seen[h] = 1;
+              const dm = f.e ? demo[String(f.e).trim().toLowerCase()] : null;
+              out.push({
+                text: quote, score: Number(a.s) || 0,
+                r: (f.r !== undefined && f.r !== null && f.r !== '') ? (Number(f.r) || null) : null,
+                cadre: (dm && dm.profession) ? tcase(dm.profession) : '',
+                country: (dm && dm.country) ? String(dm.country) : '',
+                course: d.Course || ''
+              });
+            });
+          });
+          out.sort((x, y) => y.score - x.score);
+        }
+      } catch (e) { /* return what we have */ }
+      return out;
+    },
+
+    // Entry point from the Reports tab: gather candidates and let the user pick which (and how
+    // many) to feature, then export with that exact selection.
+    async openPicker(opts) {
+      opts = opts || {};
+      try {
+        if (!ROOT.App || !App.getAnalyticsSnap) { App.showMsg && App.showMsg('SURGhub data isn’t loaded yet.', true); return; }
+        App.showMsg && App.showMsg('Finding the best testimonials…');
+        const cands = await this._collectCandidates(opts);
+        if (!cands.length) {
+          App.showMsg && App.showMsg('No testimonials matched “' + (opts.source || 'marketing') + '” at score ≥ ' + (opts.minScore != null ? opts.minScore : 7) + '. Building without quotes — tip: run “Score all feedback” first, or lower the score / change the source.', 'warn');
+          return this.export(Object.assign({}, opts, { quotes: [] }));
+        }
+        this._showPicker(cands.slice(0, 14), opts);
+      } catch (e) { console.error('[ImpactShowcase] picker', e); App.showMsg && App.showMsg('Could not open the testimonial picker: ' + ((e && e.message) || e), true); }
+    },
+
+    _showPicker(cands, opts) {
+      const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      const defN = Math.min(6, cands.length);
+      const srcLabel = opts.source === 'curated' ? 'curated picks' : (opts.source === 'feedback' ? 'AI top-rated feedback' : 'AI marketing quotes');
+      const star = (r) => { r = Math.round(Number(r) || 0); if (r < 1) return ''; let s = ''; for (let i = 1; i <= 5; i++) s += (i <= r ? '★' : '☆'); return '<span style="color:#f5b301;letter-spacing:1px">' + s + '</span>'; };
+      const rows = cands.map((q, i) => {
+        const by = [q.cadre, q.country].filter(Boolean).join(', ') || q.course || 'SURGhub learner';
+        return '<label style="display:flex;align-items:flex-start;gap:12px;padding:11px 13px;border:1px solid #e2e8f0;border-radius:10px;cursor:pointer">'
+          + '<input type="checkbox" class="shub-pick" data-idx="' + i + '"' + (i < defN ? ' checked' : '') + ' style="margin-top:3px;width:16px;height:16px;accent-color:#206095;flex:none">'
+          + '<div style="min-width:0"><div style="font-size:12px;color:#64748b;margin-bottom:2px">' + star(q.r) + ' <span style="color:#94a3b8">— ' + esc(by) + (q.score ? ' · score ' + q.score : '') + '</span></div>'
+          + '<div style="font-size:14px;color:#334155;line-height:1.45">' + esc(q.text) + '</div></div></label>';
+      }).join('');
+      const html = '<div id="shub-picker" style="position:fixed;inset:0;z-index:2000;background:rgba(2,20,35,.55);display:flex;align-items:center;justify-content:center;padding:24px;font-family:system-ui,-apple-system,sans-serif">'
+        + '<div style="background:#fff;border-radius:16px;max-width:740px;width:100%;max-height:86vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 70px rgba(0,0,0,.35)">'
+        + '<div style="padding:20px 24px;border-bottom:1px solid #eef2f6">'
+          + '<h3 style="margin:0;font-size:18px;font-weight:700;color:#04263d">Choose testimonials for the showcase</h3>'
+          + '<p style="margin:5px 0 0;font-size:13px;color:#64748b">' + cands.length + ' candidates · ' + esc(srcLabel) + '. The top ' + defN + ' are pre-selected — tick/untick any, or set a number.</p>'
+          + '<div style="margin-top:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">'
+            + '<label style="font-size:13px;color:#475569;font-weight:600">Select top <input id="shub-topn" type="number" min="0" max="' + cands.length + '" value="' + defN + '" style="width:56px;margin-left:6px;border:1px solid #cbd5e1;border-radius:6px;padding:5px 7px;font-size:13px"></label>'
+            + '<span id="shub-count" style="font-size:13px;color:#64748b"></span>'
+          + '</div>'
+        + '</div>'
+        + '<div style="padding:14px 24px;overflow:auto;display:flex;flex-direction:column;gap:8px">' + rows + '</div>'
+        + '<div style="padding:14px 24px;border-top:1px solid #eef2f6;display:flex;justify-content:flex-end;gap:10px">'
+          + '<button id="shub-cancel" style="padding:10px 18px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;font-weight:600;color:#475569;cursor:pointer">Cancel</button>'
+          + '<button id="shub-build" style="padding:10px 22px;border:none;border-radius:8px;background:#04263d;color:#fff;font-weight:700;cursor:pointer">Build showcase →</button>'
+        + '</div></div></div>';
+      const holder = document.createElement('div'); holder.innerHTML = html;
+      const root = holder.firstChild; document.body.appendChild(root);
+      const self = this;
+      const picks = () => [].slice.call(root.querySelectorAll('.shub-pick'));
+      const cnt = () => { document.getElementById('shub-count').textContent = picks().filter(c => c.checked).length + ' selected'; };
+      cnt();
+      picks().forEach(c => c.addEventListener('change', cnt));
+      document.getElementById('shub-topn').addEventListener('input', function () { const n = parseInt(this.value, 10) || 0; picks().forEach((c, i) => { c.checked = i < n; }); cnt(); });
+      document.getElementById('shub-cancel').addEventListener('click', () => root.remove());
+      root.addEventListener('click', (e) => { if (e.target === root) root.remove(); });
+      document.getElementById('shub-build').addEventListener('click', () => {
+        const chosen = picks().filter(c => c.checked).map(c => cands[+c.getAttribute('data-idx')]);
+        root.remove();
+        self.export(Object.assign({}, opts, { quotes: chosen }));
+      });
     },
 
     _html(D) {
