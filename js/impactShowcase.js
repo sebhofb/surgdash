@@ -73,7 +73,16 @@
 
       // cadres (authoritative ActivityStats) — counts only
       let cadres = [];
-      try { const a = parse(aud && aud.ActivityStats); cadres = Object.keys(a).map(k => ({ name: k, v: Number(a[k]) || 0 })).filter(x => x.v > 0 && x.name && x.name.toLowerCase() !== 'unknown').sort((a, b) => b.v - a.v).slice(0, 6); } catch (e) { cadres = []; }
+      // Route the platform's ActivityStats labels through the canonical profession taxonomy so the
+      // showcase shows the SAME summarised cadre categories as the Learners tab (e.g. nurse→Nursing),
+      // re-aggregating counts per bucket. Falls back to raw labels if the taxonomy isn't loaded.
+      try {
+        const a = parse(aud && aud.ActivityStats);
+        const canon = (ROOT.Taxonomy && Taxonomy.canonProf) ? Taxonomy.canonProf : null;
+        const agg = {};
+        Object.keys(a).forEach(k => { const v = Number(a[k]) || 0; if (v <= 0) return; const cat = canon ? canon(k) : k; if (!cat || String(cat).toLowerCase() === 'unknown' || cat === 'Other') return; agg[cat] = (agg[cat] || 0) + v; });
+        cadres = Object.keys(agg).map(k => ({ name: k, v: agg[k] })).sort((a, b) => b.v - a.v).slice(0, 6);
+      } catch (e) { cadres = []; }
 
       let survey = null;
       try { survey = App._surveyImpactStats ? App._surveyImpactStats(snap) : null; } catch (e) { survey = null; }
@@ -270,6 +279,8 @@
       const fmt = (n) => (Number(n) || 0) >= 1000 ? (Number(n) || 0).toLocaleString('en-US') : String(Number(n) || 0);
       const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
       const json = JSON.stringify(D).replace(/<\//g, '<\\/').replace(/<!--/g, '<\\!--');
+      // country name → flag emoji (regional-indicator pair), baked in at build time so it stays offline.
+      const flag = (country) => { try { const iso = ROOT.countryToISO ? ROOT.countryToISO(country) : null; if (!iso || String(iso).length !== 2) return ''; return String.fromCodePoint.apply(null, String(iso).toUpperCase().split('').map(function (c) { return 0x1F1E6 + c.charCodeAt(0) - 65; })) + ' '; } catch (e) { return ''; } };
 
       const kpi = (val, suf, cls, label, sub, pill, dly) =>
         '<div class="kpi rv' + (dly ? ' ' + dly : '') + '"><div class="v ' + (cls || '') + ' num" data-to="' + (val || 0) + '"' + (suf ? ' data-suffix="' + suf + '"' : '') + '>0</div>'
@@ -277,13 +288,12 @@
 
       // Each scale card carries its own .rv + staggered delay class so the numbers reveal & count up
       // one-by-one as the section scrolls into view (rather than a wall of six numbers at once).
+      // Just the three headline numbers — registered learners, courses, countries. (Enrolments,
+      // certificates and learning-hours live in the growth / other sections, not this opening grid.)
       const scaleCards = [
         kpi(D.learners, '', '', 'Registered learners', 'healthcare workers worldwide', '', 'd1'),
-        kpi(D.enrolments, '', 'boston', 'Course enrolments', 'across all providers', '', 'd2'),
-        kpi(D.certificates, '', 'green', 'Certificates earned', '', (D.certRate != null ? (D.certRate + '% completion rate') : ''), 'd3'),
-        kpi(D.learningHours, '+', '', 'Hours of learning', (D.learningYears >= 1 ? ('≈ ' + D.learningYears + ' years, back to back') : ''), '', 'd4'),
-        kpi(D.courses, '', '', 'Courses', (D.providers ? ('from ' + D.providers + ' expert providers') : ''), '', 'd5'),
-        kpi(D.countries, '+', 'boston', 'Countries reached', 'on every continent', '', 'd6')
+        kpi(D.courses, '', 'boston', 'Courses', (D.providers ? ('from ' + D.providers + ' expert providers') : ''), '', 'd2'),
+        kpi(D.countries, '+', 'green', 'Countries reached', 'on every continent', '', 'd3')
       ].join('');
 
       const incomeBars = (D.income || []).map(r =>
@@ -313,7 +323,7 @@
 
       const quoteCards = (D.quotes || []).map((q, i) => {
         const by = [q.cadre, q.country].filter(Boolean).join(', ') || q.course || 'A SURGhub learner';
-        return '<div class="quote rv" style="transition-delay:' + (Math.min(i, 8) * 0.06) + 's"><span class="mark">“</span><p class="q">' + esc(q.text) + '</p>' + (q.r ? stars(q.r) : '') + '<p class="by">— ' + esc(by) + '</p></div>';
+        return '<div class="quote rv" style="transition-delay:' + (Math.min(i, 8) * 0.06) + 's"><span class="mark">“</span><p class="q">' + esc(q.text) + '</p>' + (q.r ? stars(q.r) : '') + '<p class="by">' + flag(q.country) + esc(by) + '</p></div>';
       }).join('');
 
       // Overall platform rating band (shown atop the voices section)
@@ -322,6 +332,16 @@
         + '<div class="rb-meta"><div class="rb-stars">★★★★★ <b>' + D.rating.avg + '</b><span> / 5 average</span></div>'
         + '<div class="rb-sub">of ' + fmt(D.rating.n) + ' learner ratings give SURGhub 4 or 5 stars</div></div></div>'
       ) : '';
+
+      // Cert-rate highlight for the growth section — framed against typical online-course completion.
+      const certHi = (D.certRate != null ? '<div class="certhi rv d2"><div class="certhi-num num" data-to="' + D.certRate + '" data-suffix="%">0</div><div class="certhi-lab">of learners finish and certify — <b>2–3× the typical completion rate</b> for online courses, where most never reach the end.</div></div>' : '');
+
+      // Editorial deep-links to the public surghub.org blog — two learner stories + a featured ambassador piece.
+      const storyCards = '<div class="stories">'
+        + '<a class="story rv d1" href="https://www.surghub.org/blog/impact-stories-dennis-nyangau-kenya" target="_blank" rel="noopener"><span class="story-k">Impact story</span><div class="story-av">DN</div><div class="story-nm">Dennis Nyangau</div><div class="story-loc">🇰🇪 Kenya</div><span class="story-go">Read the full story →</span></a>'
+        + '<a class="story rv d2" href="https://www.surghub.org/blog/impact-stories-william-baraka-congo" target="_blank" rel="noopener"><span class="story-k">Impact story</span><div class="story-av">WB</div><div class="story-nm">William Baraka</div><div class="story-loc">🇨🇩 DR Congo</div><span class="story-go">Read the full story →</span></a>'
+        + '</div>';
+      const ambFeature = '<a class="feature rv d3" href="https://www.surghub.org/blog/driven-by-the-community-surghub-surpasses-50000-users" target="_blank" rel="noopener"><span class="feature-k">From the community</span><span class="feature-t">Driven by the community: passing 50,000 learners</span><span class="feature-s">Three ambassadors on what keeps them growing SURGhub — read the story →</span></a>';
 
       const sec = (id, dot, cls, inner) => '<section id="' + id + '" class="' + (cls || '') + '" data-dot="' + dot + '"><div class="wrap">' + inner + '</div></section>';
 
@@ -486,24 +506,24 @@
         + '<div class="growthgrid">'
         + '<div class="chartcard rv d2"><div class="legend"><span><i class="sw" style="background:#2f86c9"></i>Registered learners</span></div><div id="tip-learners" class="tip"></div><div id="growth-wrap-learners" class="growthbox"></div></div>'
         + '<div class="chartcard rv d3"><div class="legend"><span><i class="sw" style="background:#3FB984"></i>Certificates earned</span></div><div id="tip-certs" class="tip"></div><div id="growth-wrap-certs" class="growthbox"></div></div>'
-        + '</div>')
+        + '</div>' + certHi)
 
         + sec('reach', 'Reach', 'dark', '<p class="eyebrow rv"><span class="chap">02</span>Where it matters most</p><div class="cols"><div><h2 class="rv">Where surgical care is hardest to reach.</h2><p class="lead rv" style="margin:0 0 16px;font-size:18px">Reach is easy to claim. The real test is the places where the gap is widest.</p><div class="bignum num rv d1" data-to="' + (D.countries || 0) + '" data-suffix="+">0</div><p class="statline rv d2">countries reached on every continent.</p>'
         + (D.lmicShare ? '<div class="reach-hi rv d2"><div class="reach-hi-num num" data-to="' + D.lmicShare + '" data-suffix="%">0</div><div class="reach-hi-lab">of located learners are in <b>low- and lower-middle-income</b> settings — exactly where surgical care is scarcest.</div></div>' : '')
         + (D.conflict ? '<div class="conflict rv d3"><div class="v num" data-to="' + D.conflict + '" data-suffix="+">0</div><div class="l">learners in conflict-affected settings — Sudan, Yemen, Ukraine, Gaza and beyond.</div></div>' : '')
         + '<p class="muted rv d4" style="margin-top:18px">Country known for the majority of learners; the rest extrapolated.</p></div>'
         + '<div class="rv d2"><p class="muted" style="margin-bottom:14px">Located learners by World Bank income group</p><div class="bars">' + incomeBars + '</div></div></div>'
-        + '<div class="rv d2" style="margin-top:34px"><div id="map" style="width:100%;height:460px"></div><div id="map-legend"></div><div style="text-align:center;margin-top:14px"><button id="lmic-toggle" class="toggle">Focus: low- &amp; lower-middle income</button></div></div>')
+        + '<div class="rv d2" style="margin-top:34px"><div id="map" style="width:100%;height:460px"></div><div id="map-legend"></div><div style="text-align:center;margin-top:14px"><button id="lmic-toggle" class="toggle">See only the hardest places</button></div></div>')
 
         + (cadreBars ? sec('who', 'Who', '', '<p class="eyebrow rv">The whole team — not just surgeons</p><h2 class="rv d1">The whole surgical team.</h2><p class="lead rv d2" style="margin-bottom:22px">Safe surgery is a team sport — it fails at its weakest link. So the classroom is built for all of it: surgeons, nurses, anaesthesia providers, midwives, and the students who will follow them.</p><div class="bars">' + cadreBars + '</div>') : '')
 
-        + (dials ? sec('impact', 'Impact', 'dark', '<p class="eyebrow rv"><span class="chap">03</span>Reach is not the point — practice is</p><h2 class="rv d1">Learning that changes practice.</h2><p class="lead rv d2" style="margin-bottom:8px">A course only counts if it changes what happens at the bedside.</p><div class="dials">' + dials + '</div>' + (surveyN ? '<p class="muted rv d4" style="text-align:center;margin-top:26px">Based on ' + fmt(surveyN) + ' post-course survey responses.</p>' : '')) : '')
+        + (dials ? sec('impact', 'Impact', 'dark', '<p class="eyebrow rv"><span class="chap">03</span>Reach is not the point — practice is</p><h2 class="rv d1">Learning that changes practice.</h2><p class="lead rv d2" style="margin-bottom:8px">A course only counts if it changes what happens at the bedside.</p><div class="dials">' + dials + '</div>' + (surveyN ? '<p class="muted rv d4" style="text-align:center;margin-top:26px">Based on ' + fmt(surveyN) + ' post-course survey responses.</p>' : '') + '<p class="lead rv" style="text-align:center;margin:30px auto 0">And behind the numbers, individual clinicians — here are two of them.</p>' + storyCards) : '')
 
-        + (ambCards ? sec('network', 'Network', '', '<p class="eyebrow rv"><span class="chap">04</span>Now it spreads itself</p><h2 class="rv d1">A community that spreads itself.</h2><p class="lead rv d2" style="margin-bottom:24px">The surest sign of a movement is when its own members start doing the inviting. Volunteer ambassadors carry SURGhub into their networks — and those learners go on to certify.</p><div class="kpis">' + ambCards + '</div>') : '')
+        + (ambCards ? sec('network', 'Network', '', '<p class="eyebrow rv"><span class="chap">04</span>Now it spreads itself</p><h2 class="rv d1">A community that spreads itself.</h2><p class="lead rv d2" style="margin-bottom:24px">The surest sign of a movement is when its own members start doing the inviting. Volunteer ambassadors carry SURGhub into their networks — and those learners go on to certify.</p><div class="kpis">' + ambCards + '</div>' + ambFeature) : '')
 
         + ((quoteCards || ratingBand) ? sec('voices', 'Voices', 'dark', '<p class="eyebrow rv">In their own words</p><h2 class="rv d1">Trusted by the people who use it.</h2><p class="lead rv d2" style="margin-bottom:20px">Behind the percentages are real clinicians — here, anonymised, in their own words.</p>' + ratingBand + (quoteCards ? '<div class="quotes">' + quoteCards + '</div>' : '') + (quoteCards ? '<p class="muted rv" style="margin-top:20px">Curated, anonymised learner feedback — no names or personal details.</p>' : '')) : '')
 
-        + sec('join', 'Join', 'darker', '<div class="aurora aurora-join"></div><div class="joinwrap"><div class="joinmain"><p class="eyebrow rv">Open · free · global</p><h1 class="kin" style="font-size:clamp(30px,5vw,58px)">Surgical education<br>for everyone, everywhere.</h1><p class="lead rv d2">We started with five billion people on the wrong side of a gap. Over ' + fmt(D.learners) + ' healthcare workers in ' + fmt(D.countries) + '+ countries are now on the right side of it — learning, certifying, and teaching the next. Help us widen the door.</p><a class="btn rv d3" href="https://surghub.org" target="_blank" rel="noopener">Explore SURGhub →</a></div>'
+        + sec('join', 'Join', 'darker', '<div class="aurora aurora-join"></div><div class="joinwrap"><div class="joinmain"><p class="eyebrow rv">Open · free · global</p><h1 class="kin" style="font-size:clamp(30px,5vw,58px)">Surgical education<br>for everyone, everywhere.</h1><p class="lead rv d2">This is how the gap closes — not all at once, but one clinician at a time. ' + fmt(D.learners) + ' healthcare workers across ' + fmt(D.countries) + '+ countries are already learning, certifying, and teaching the next. Help us widen the door.</p><a class="btn rv d3" href="https://surghub.org" target="_blank" rel="noopener">Explore SURGhub →</a></div>'
         + (D.logos.surghub ? '<div class="joinlogo rv d2"><img src="' + D.logos.surghub + '" alt="SURGhub"></div>' : '')
         + '</div>'
         + '<div class="foot rv d4"><p class="joint">SURGhub is a joint initiative of the Global Surgery Foundation (GSF) and UNITAR (United Nations Institute for Training and Research), supported by the Royal College of Surgeons in Ireland (RCSI), and implemented in association with the Johnson &amp; Johnson Foundation.</p><p class="footmeta">Aggregated, anonymised platform data — counts only, no personal information. Data as of ' + esc(D.snapshotDate) + '. Built with SURGdash · © Global Surgery Foundation.</p></div>');
@@ -535,10 +555,13 @@
         + '.conflict{margin-top:22px;background:rgba(229,115,115,.12);border:1px solid rgba(229,115,115,.35);border-radius:14px;padding:18px 20px}.conflict .v{font-size:34px;font-weight:800;color:#ffb4b4}.conflict .l{color:#e7c3c3;font-size:14px}.reach-hi{margin-top:20px;display:flex;align-items:center;gap:20px;background:rgba(63,185,132,.10);border:1px solid rgba(63,185,132,.34);border-radius:16px;padding:18px 22px}.reach-hi-num{font-size:clamp(46px,7.5vw,76px);font-weight:800;line-height:.88;color:var(--green);letter-spacing:-.02em;flex:none}.reach-hi-lab{font-size:15px;color:#cfe6da}.reach-hi-lab b{color:#eaf7f0;font-weight:700}'
         + '#map .mapoff{text-align:center;color:#6d8ba3;font-size:13px;padding:200px 0}.toggle{background:rgba(255,255,255,.06);border:1px solid var(--line);color:#cfe2f1;font-weight:600;font-size:14px;padding:11px 20px;border-radius:10px;cursor:pointer;transition:all .2s}.toggle:hover,.toggle.on{background:var(--boston);border-color:var(--boston);color:#fff}'
         + '.dials{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:26px;margin-top:30px}.dial{text-align:center}.dial svg{transform:rotate(-90deg)}.dial .pc{font-size:30px;font-weight:800;fill:#fff}.dial .cap{margin-top:12px;font-size:15px;color:#b9cede;max-width:24ch;margin-left:auto;margin-right:auto}'
-        + '.quotes{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:30px;margin-top:32px}.quote{background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:16px;padding:28px 28px 24px;transition:transform .25s ease,border-color .25s ease,background .25s ease}.quote:hover{transform:translateY(-4px);border-color:rgba(127,182,227,.5);background:rgba(255,255,255,.08)}.quote .q{font-family:Georgia,serif;font-size:19px;line-height:1.5;color:#eaf2f8;margin:0}.quote .mark{font-family:Georgia,serif;font-size:46px;line-height:0;color:var(--boston-soft);height:18px;display:block}.quote .by{margin:18px 0 0;font-size:13px;color:#9fc1dc;font-weight:600}'
+        + '.quotes{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:30px;margin-top:32px}.quote{display:flex;flex-direction:column;align-items:center;text-align:center;background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:16px;padding:34px 30px 30px;transition:transform .25s ease,border-color .25s ease,background .25s ease}.quote:hover{transform:translateY(-4px);border-color:rgba(127,182,227,.5);background:rgba(255,255,255,.08)}.quote .q{font-family:Georgia,serif;font-size:19px;line-height:1.5;color:#eaf2f8;margin:0}.quote .mark{font-family:Georgia,serif;font-size:52px;line-height:1;color:var(--boston-soft);margin:0 0 4px;display:block}.quote .by{margin:18px 0 0;font-size:13px;color:#9fc1dc;font-weight:600}'
         + '.stars{display:inline-flex;gap:2px;font-size:15px;color:rgba(255,255,255,.22);margin:6px 0 2px}.stars .on{color:#f5b301}'
         + '.ratingband{display:flex;align-items:center;gap:28px;background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:18px;padding:26px 30px;margin:6px 0 30px;flex-wrap:wrap}.rb-pct{font-size:clamp(48px,8vw,76px);font-weight:800;color:var(--green);line-height:1}.rb-stars{font-size:22px;color:#f5b301;letter-spacing:2px}.rb-stars b{color:#fff;margin-left:10px;font-size:24px;letter-spacing:0}.rb-stars span{color:#9fc1dc;font-weight:400;font-size:16px;letter-spacing:0}.rb-sub{color:#b9cede;font-size:15px;margin-top:8px}'
         + '.btn{display:inline-block;margin-top:26px;background:var(--boston);color:#fff;font-weight:700;text-decoration:none;padding:15px 30px;border-radius:12px;font-size:16px;transition:transform .2s,background .2s}.btn:hover{transform:translateY(-2px);background:#3f97da}.joinwrap{display:flex;align-items:center;justify-content:space-between;gap:48px;flex-wrap:wrap}.joinmain{flex:1;min-width:300px}.joinlogo{flex:none}.joinlogo img{height:130px;width:auto;opacity:.96;filter:drop-shadow(0 10px 26px rgba(0,0,0,.4))}@media(max-width:820px){.joinlogo img{height:80px}}.foot{margin-top:48px;font-size:13px;color:#7f9bb1;border-top:1px solid var(--line);padding-top:22px}.foot .joint{margin:0 0 10px;color:#9fb6c9;max-width:82ch}.foot .footmeta{margin:0;color:#6d8ba3}'
+        + '.certhi{margin-top:24px;display:flex;align-items:center;gap:22px;background:#fff;border:1px solid #d7ead9;border-left:5px solid var(--green);border-radius:16px;padding:22px 26px}.certhi-num{font-size:clamp(40px,6vw,64px);font-weight:800;line-height:.9;color:#1f9c63;letter-spacing:-.02em;flex:none}.certhi-lab{font-size:16px;color:#3d5567}.certhi-lab b{color:var(--ink)}'
+        + '.stories{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:24px}@media(max-width:680px){.stories{grid-template-columns:1fr}}.story{display:block;text-decoration:none;background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:16px;padding:24px 24px 22px;transition:transform .25s ease,border-color .25s ease,background .25s ease}.story:hover{transform:translateY(-4px);border-color:rgba(127,182,227,.5);background:rgba(255,255,255,.08)}.story-k{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--boston-soft);font-weight:700}.story-av{width:46px;height:46px;border-radius:50%;background:linear-gradient(135deg,var(--boston),#1f9c63);color:#fff;font-weight:800;font-size:15px;display:flex;align-items:center;justify-content:center;margin:14px 0 12px}.story-nm{font-size:20px;font-weight:700;color:#eaf2f8}.story-loc{font-size:14px;color:#9fc1dc;margin-top:2px}.story-go{display:inline-block;margin-top:14px;font-size:14px;font-weight:700;color:var(--boston-soft)}.story:hover .story-go{color:#fff}'
+        + '.feature{display:block;text-decoration:none;margin-top:26px;background:linear-gradient(120deg,rgba(47,134,201,.10),rgba(63,185,132,.10));border:1px solid #dce8f1;border-radius:16px;padding:24px 28px;transition:transform .25s ease,border-color .25s ease}.feature:hover{transform:translateY(-3px);border-color:var(--boston)}.feature-k{display:block;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--boston);font-weight:700}.feature-t{display:block;font-size:21px;font-weight:700;color:var(--ink);margin-top:8px}.feature-s{display:block;font-size:15px;color:#5b7488;margin-top:8px}'
         + '@media(prefers-reduced-motion:reduce){.rv{transition:none;opacity:1;transform:none}.fill{transition:none}.cue{animation:none}.kin .w{opacity:1;transform:none;transition:none}.aurora{animation:none}.num.pop{animation:none}.stars .on{transition:none}.quote.rv{transform:none}}';
 
       return '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
