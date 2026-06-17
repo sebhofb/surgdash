@@ -63,7 +63,9 @@
         if (code) { iso[code] = (iso[code] || 0) + n; if (tier === 'LMIC' || tier === 'LIC') isoLMIC[code] = (isoLMIC[code] || 0) + n; }
       });
       const incTotal = inc.HIC + inc.UMIC + inc.LMIC + inc.LIC + inc.Unknown;
-      const incomeOrder = [['LIC', 'Low income'], ['LMIC', 'Lower-middle'], ['UMIC', 'Upper-middle'], ['HIC', 'High income']];
+      // High income (HIC) bar intentionally omitted from the chart — the story is reach into lower-income
+      // settings. incTotal still includes HIC so the shown bars read as a share of ALL located learners.
+      const incomeOrder = [['LIC', 'Low income'], ['LMIC', 'Lower-middle'], ['UMIC', 'Upper-middle']];
       const income = incTotal > 0 ? incomeOrder.map(([t, label]) => ({ tier: t, label: label, count: inc[t], pct: Math.round(inc[t] / incTotal * 100) })) : [];
       const lmicShare = incTotal > 0 ? Math.round((inc.LMIC + inc.LIC) / incTotal * 100) : 0;
 
@@ -108,9 +110,9 @@
       // logos (base64-inlined; optional)
       let gsf = '', surghub = '';
       try {
-        const read = (f) => { const lp = electronAPI.path.join(electronAPI.appPath, 'build', f); return electronAPI.fs.existsSync(lp) ? ('data:image/png;base64,' + electronAPI.fs.readFileBase64(lp)) : ''; };
-        ['gsf_logo_white.png', 'gsf_logo_dark_bg.png', 'gsf_logo_full.png'].some(f => (gsf = read(f)));
-        ['surghub_logo_white.png', 'SURGhub_app_square_white.png', 'surghub_logo.png', 'surghub_white.png'].some(f => (surghub = read(f)));
+        const read = (f) => { const lp = electronAPI.path.join(electronAPI.appPath, 'build', f); if (!electronAPI.fs.existsSync(lp)) return ''; const mime = /\.jpe?g$/i.test(f) ? 'image/jpeg' : 'image/png'; return 'data:' + mime + ';base64,' + electronAPI.fs.readFileBase64(lp); };
+        ['gsf_logo_white.png', 'gsf_logo_symbol.png', 'Global Surgery Foundation_logo_symbol.png', 'gsf_logo_full.png'].some(f => (gsf = read(f)));
+        ['surghub_logo_white.png', 'SURGhub_app_square_white.png', 'surghub_logo_color.png', 'surghub_logo.png', 'surghub_white.png'].some(f => (surghub = read(f)));
       } catch (e) {}
 
       const minutesToHours = Math.round(minutes / 60);
@@ -269,17 +271,19 @@
       const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
       const json = JSON.stringify(D).replace(/<\//g, '<\\/').replace(/<!--/g, '<\\!--');
 
-      const kpi = (val, suf, cls, label, sub, pill) =>
-        '<div class="kpi rv"><div class="v ' + (cls || '') + ' num" data-to="' + (val || 0) + '"' + (suf ? ' data-suffix="' + suf + '"' : '') + '>0</div>'
+      const kpi = (val, suf, cls, label, sub, pill, dly) =>
+        '<div class="kpi rv' + (dly ? ' ' + dly : '') + '"><div class="v ' + (cls || '') + ' num" data-to="' + (val || 0) + '"' + (suf ? ' data-suffix="' + suf + '"' : '') + '>0</div>'
         + '<div class="l">' + label + '</div>' + (sub ? '<div class="s">' + sub + '</div>' : '') + (pill ? '<span class="pill">' + pill + '</span>' : '') + '</div>';
 
+      // Each scale card carries its own .rv + staggered delay class so the numbers reveal & count up
+      // one-by-one as the section scrolls into view (rather than a wall of six numbers at once).
       const scaleCards = [
-        kpi(D.learners, '', '', 'Registered learners', 'healthcare workers worldwide', ''),
-        kpi(D.enrolments, '', 'boston', 'Course enrolments', 'across all providers', ''),
-        kpi(D.certificates, '', 'green', 'Certificates earned', '', (D.certRate != null ? (D.certRate + '% completion rate') : '')),
-        kpi(D.learningHours, '+', '', 'Hours of learning', (D.learningYears >= 1 ? ('≈ ' + D.learningYears + ' years, back to back') : ''), ''),
-        kpi(D.courses, '', '', 'Courses', (D.providers ? ('from ' + D.providers + ' expert providers') : ''), ''),
-        kpi(D.countries, '+', 'boston', 'Countries reached', 'on every continent', '')
+        kpi(D.learners, '', '', 'Registered learners', 'healthcare workers worldwide', '', 'd1'),
+        kpi(D.enrolments, '', 'boston', 'Course enrolments', 'across all providers', '', 'd2'),
+        kpi(D.certificates, '', 'green', 'Certificates earned', '', (D.certRate != null ? (D.certRate + '% completion rate') : ''), 'd3'),
+        kpi(D.learningHours, '+', '', 'Hours of learning', (D.learningYears >= 1 ? ('≈ ' + D.learningYears + ' years, back to back') : ''), '', 'd4'),
+        kpi(D.courses, '', '', 'Courses', (D.providers ? ('from ' + D.providers + ' expert providers') : ''), '', 'd5'),
+        kpi(D.countries, '+', 'boston', 'Countries reached', 'on every continent', '', 'd6')
       ].join('');
 
       const incomeBars = (D.income || []).map(r =>
@@ -343,17 +347,16 @@
         }
         [].slice.call(document.querySelectorAll('.dial')).forEach(buildDial);
 
-        // growth chart (inline SVG) with a hover scrubber
-        function drawGrowth() {
-          var wrap = document.getElementById('growth-wrap'); if (!wrap || wrap._done) return;
-          var A = D.learnersSeries || [], B = D.certsSeries || []; if (!A.length) { wrap.style.display = 'none'; wrap._done = 1; return; }
-          // Build the chart as a COMPLETE <svg> string set on a DIV wrapper's innerHTML — the HTML
-          // parser then creates real SVG-namespaced nodes. (Setting innerHTML directly on an <svg>
-          // element makes some browsers parse <text>/<path> as HTML, so x/y are ignored and the
-          // labels collapse into plain inline text — that was the bug.) Fixed 340px box; pixel coords.
+        // growth charts — learners + certificates, each drawn separately into its own box, each with
+        // its own y-scale and hover scrubber. The SVG is built as a COMPLETE <svg> string set on a DIV
+        // wrapper's innerHTML so the HTML parser creates real SVG-namespaced nodes (setting innerHTML
+        // directly on an <svg> makes some browsers parse <text>/<path> as HTML and collapse the labels).
+        function drawOneSeries(wrapId, tipId, series, stroke, areaFill, unit) {
+          var wrap = document.getElementById(wrapId); if (!wrap || wrap._done) return;
+          var A = series || []; if (!A.length) { wrap.style.display = 'none'; wrap._done = 1; return; }
           var W = wrap.clientWidth || (wrap.getBoundingClientRect ? wrap.getBoundingClientRect().width : 0) || 0;
-          var H = 340;
-          if (W < 50) { requestAnimationFrame(drawGrowth); return; }
+          var H = 300;
+          if (W < 50) { requestAnimationFrame(function () { drawOneSeries(wrapId, tipId, series, stroke, areaFill, unit); }); return; }
           wrap._done = 1;
           var padL = 10, padR = 12, padT = 22, padB = 30, n = A.length;
           var maxY = 1; A.forEach(function (p) { maxY = Math.max(maxY, p.v); });
@@ -361,35 +364,31 @@
           function Y(v) { return padT + (H - padT - padB) * (1 - v / maxY); }
           function path(arr) { var d = ''; for (var i = 0; i < arr.length; i++) { d += (i ? 'L' : 'M') + X(i).toFixed(1) + ' ' + Y(arr[i].v).toFixed(1) + ' '; } return d.trim(); }
           var area = 'M' + X(0) + ' ' + Y(0) + ' ' + path(A).slice(1) + ' L' + X(n - 1) + ' ' + Y(0) + ' Z';
-          var lab0 = A[0].m, lab1 = A[n - 1].m;
+          var lab0 = A[0].m, lab1 = A[n - 1].m, cid = wrapId + '-svg';
           var inner = '<line x1="' + padL + '" y1="' + Y(0) + '" x2="' + (W - padR) + '" y2="' + Y(0) + '" stroke="#e4edf4"\/>'
             + '<line x1="' + padL + '" y1="' + Y(maxY * 0.5) + '" x2="' + (W - padR) + '" y2="' + Y(maxY * 0.5) + '" stroke="#eef4f9"\/>'
-            + '<path d="' + area + '" fill="rgba(47,134,201,.10)" id="garea"\/>'
-            + '<path class="gline" d="' + (B.length ? path(B) : '') + '" stroke="#3FB984" id="gcert"\/>'
-            + '<path class="gline" d="' + path(A) + '" stroke="#2f86c9" id="genr"\/>'
-            + '<text x="' + (W - padR) + '" y="' + (Y(A[n - 1].v) - 10) + '" text-anchor="end" class="ann" fill="#1d6fb0">' + fmt(A[n - 1].v) + '<\/text>'
-            + (B.length ? '<text x="' + (W - padR) + '" y="' + (Y(B[n - 1].v) - 8) + '" text-anchor="end" class="ann" fill="#2c9a72">' + fmt(B[n - 1].v) + '<\/text>' : '')
+            + '<path d="' + area + '" fill="' + areaFill + '"\/>'
+            + '<path class="gline" d="' + path(A) + '" stroke="' + stroke + '"\/>'
+            + '<text x="' + (W - padR) + '" y="' + (Y(A[n - 1].v) - 10) + '" text-anchor="end" class="ann" fill="' + stroke + '">' + fmt(A[n - 1].v) + '<\/text>'
             + '<text x="' + padL + '" y="' + (H - 9) + '" font-size="12" fill="#90a6b8">' + lab0 + '<\/text>'
             + '<text x="' + (W - padR) + '" y="' + (H - 9) + '" text-anchor="end" font-size="12" fill="#90a6b8">' + lab1 + '<\/text>'
-            + '<line id="gcur" x1="0" y1="' + padT + '" x2="0" y2="' + Y(0) + '" stroke="#9fc1dc" stroke-width="1" opacity="0"\/>'
-            + '<circle id="gd1" r="4.5" fill="#2f86c9" opacity="0"\/><circle id="gd2" r="4.5" fill="#3FB984" opacity="0"\/>';
-          wrap.innerHTML = '<svg id="growthchart" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Cumulative registered learners and certificates over time" style="display:block;width:100%;height:' + H + 'px">' + inner + '<\/svg>';
-          var svg = document.getElementById('growthchart');
-          // Lines + area render solid and visible immediately. No stroke-dashoffset "draw-in" —
-          // that animation repeatedly left the chart invisible whenever its trigger didn't fire
-          // (orphaned observer callback / unrun rAF). The card's own fade-up is the entrance.
-          // (svg is grabbed here for the hover scrubber below.)
-          // scrubber
-          var tip = document.getElementById('growth-tip'), cur = svg.querySelector('#gcur'), d1 = svg.querySelector('#gd1'), d2 = svg.querySelector('#gd2');
+            + '<line class="gcur" x1="0" y1="' + padT + '" x2="0" y2="' + Y(0) + '" stroke="#9fc1dc" stroke-width="1" opacity="0"\/>'
+            + '<circle class="gdot" r="4.5" fill="' + stroke + '" opacity="0"\/>';
+          wrap.innerHTML = '<svg id="' + cid + '" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Cumulative ' + unit + ' over time" style="display:block;width:100%;height:' + H + 'px">' + inner + '<\/svg>';
+          var svg = document.getElementById(cid);
+          var tip = document.getElementById(tipId), cur = svg.querySelector('.gcur'), dot = svg.querySelector('.gdot');
           svg.addEventListener('mousemove', function (ev) {
             var r = svg.getBoundingClientRect(), x = (ev.clientX - r.left) / r.width * W;
             var i = Math.round((x - padL) / ((W - padL - padR) / Math.max(1, n - 1))); i = Math.max(0, Math.min(n - 1, i));
             cur.setAttribute('x1', X(i)); cur.setAttribute('x2', X(i)); cur.setAttribute('opacity', '.8');
-            d1.setAttribute('cx', X(i)); d1.setAttribute('cy', Y(A[i].v)); d1.setAttribute('opacity', '1');
-            if (B[i]) { d2.setAttribute('cx', X(i)); d2.setAttribute('cy', Y(B[i].v)); d2.setAttribute('opacity', '1'); }
-            if (tip) { tip.style.opacity = 1; tip.innerHTML = '<b>' + A[i].m + '<\/b> &nbsp; <span style="color:#7fb6e3">' + fmt(A[i].v) + ' learners<\/span>' + (B[i] ? ' &nbsp; <span style="color:#3FB984">' + fmt(B[i].v) + ' certs<\/span>' : ''); }
+            dot.setAttribute('cx', X(i)); dot.setAttribute('cy', Y(A[i].v)); dot.setAttribute('opacity', '1');
+            if (tip) { tip.style.opacity = 1; tip.innerHTML = '<b>' + A[i].m + '<\/b> &nbsp; <span style="color:' + stroke + '">' + fmt(A[i].v) + ' ' + unit + '<\/span>'; }
           });
-          svg.addEventListener('mouseleave', function () { cur.setAttribute('opacity', '0'); d1.setAttribute('opacity', '0'); d2.setAttribute('opacity', '0'); if (tip) tip.style.opacity = 0; });
+          svg.addEventListener('mouseleave', function () { cur.setAttribute('opacity', '0'); dot.setAttribute('opacity', '0'); if (tip) tip.style.opacity = 0; });
+        }
+        function drawGrowth() {
+          drawOneSeries('growth-wrap-learners', 'tip-learners', D.learnersSeries || [], '#2f86c9', 'rgba(47,134,201,.12)', 'learners');
+          drawOneSeries('growth-wrap-certs', 'tip-certs', D.certsSeries || [], '#3FB984', 'rgba(63,185,132,.13)', 'certificates');
         }
 
         // world map (Google GeoChart, ISO alpha-2 keyed, log colour ramp). Hover = native.
@@ -430,7 +429,7 @@
             [].slice.call(el.querySelectorAll('[data-to]')).forEach(function (c) { if (!c._d) { c._d = 1; countUp(c); } });
             [].slice.call(el.querySelectorAll('.fill[data-w]')).forEach(function (f) { f.style.width = f.getAttribute('data-w') + '%'; });
             if (el.classList.contains('dial') && el._fire && !el._df) { el._df = 1; el._fire(); }
-            if (el.querySelector && el.querySelector('#growth-wrap')) drawGrowth();
+            if (el.querySelector && (el.querySelector('#growth-wrap-learners') || el.querySelector('#growth-wrap-certs'))) drawGrowth();
             if (el.querySelector && el.querySelector('#map') && !el._map) { el._map = 1; drawMap(D.countryMap); }
             io.unobserve(el);
           });
@@ -452,9 +451,14 @@
 
         + sec('scale', 'The scale', 'dark', '<p class="eyebrow rv">The scale</p><h2 class="rv d1">A global classroom for surgical care.</h2><div class="kpis">' + scaleCards + '</div>')
 
-        + sec('growth', 'Growth', '', '<p class="eyebrow rv">Adoption that compounds</p><h2 class="rv d1">From a launch to a movement.</h2><p class="lead rv d2" style="margin-bottom:24px">Month after month, more clinicians arrive — and more finish what they start. Hover the chart to read any month.</p><div class="chartcard rv d2"><div class="legend"><span><i class="sw" style="background:#2f86c9"></i>Registered learners</span><span><i class="sw" style="background:#3FB984"></i>Certificates earned</span></div><div id="growth-tip" class="tip"></div><div id="growth-wrap" class="growthbox"></div></div>')
+        + sec('growth', 'Growth', '', '<p class="eyebrow rv">Adoption that compounds</p><h2 class="rv d1">From a launch to a movement.</h2><p class="lead rv d2" style="margin-bottom:24px">Month after month, more clinicians arrive — and more finish what they start. Hover either chart to read any month.</p>'
+        + '<div class="growthgrid">'
+        + '<div class="chartcard rv d2"><div class="legend"><span><i class="sw" style="background:#2f86c9"></i>Registered learners</span></div><div id="tip-learners" class="tip"></div><div id="growth-wrap-learners" class="growthbox"></div></div>'
+        + '<div class="chartcard rv d3"><div class="legend"><span><i class="sw" style="background:#3FB984"></i>Certificates earned</span></div><div id="tip-certs" class="tip"></div><div id="growth-wrap-certs" class="growthbox"></div></div>'
+        + '</div>')
 
-        + sec('reach', 'Reach', 'dark', '<p class="eyebrow rv">World reach</p><div class="cols"><div><h2 class="rv">Where surgical care is hardest to reach.</h2><div class="bignum num rv d1" data-to="' + (D.countries || 0) + '" data-suffix="+">0</div><p class="statline rv d2">countries' + (D.lmicShare ? ' — with ' + D.lmicShare + '% of located learners in low- and lower-middle-income settings' : '') + '.</p>'
+        + sec('reach', 'Reach', 'dark', '<p class="eyebrow rv">World reach</p><div class="cols"><div><h2 class="rv">Where surgical care is hardest to reach.</h2><div class="bignum num rv d1" data-to="' + (D.countries || 0) + '" data-suffix="+">0</div><p class="statline rv d2">countries reached on every continent.</p>'
+        + (D.lmicShare ? '<div class="reach-hi rv d2"><div class="reach-hi-num num" data-to="' + D.lmicShare + '" data-suffix="%">0</div><div class="reach-hi-lab">of located learners are in <b>low- and lower-middle-income</b> settings — exactly where surgical care is scarcest.</div></div>' : '')
         + (D.conflict ? '<div class="conflict rv d3"><div class="v num" data-to="' + D.conflict + '" data-suffix="+">0</div><div class="l">learners in conflict-affected settings — Sudan, Yemen, Ukraine, Gaza and beyond.</div></div>' : '')
         + '<p class="muted rv d4" style="margin-top:18px">Country known for the majority of learners; the rest extrapolated.</p></div>'
         + '<div class="rv d2"><p class="muted" style="margin-bottom:14px">Located learners by World Bank income group</p><div class="bars">' + incomeBars + '</div></div></div>'
@@ -468,7 +472,10 @@
 
         + ((quoteCards || ratingBand) ? sec('voices', 'Voices', 'dark', '<p class="eyebrow rv">Rated by learners</p><h2 class="rv d1">Trusted by the people who use it.</h2>' + ratingBand + (quoteCards ? '<div class="quotes">' + quoteCards + '</div>' : '') + (quoteCards ? '<p class="muted rv" style="margin-top:20px">Curated, anonymised learner feedback — no names or personal details.</p>' : '')) : '')
 
-        + sec('join', 'Join', 'darker', '<p class="eyebrow rv">Open · free · global</p><h1 class="rv d1" style="font-size:clamp(30px,5vw,58px)">Surgical education<br>for everyone, everywhere.</h1><p class="lead rv d2">Over ' + fmt(D.learners) + ' healthcare workers in ' + fmt(D.countries) + '+ countries are already learning on SURGhub. Join them — or partner with the Global Surgery Foundation to reach more.</p><a class="btn rv d3" href="https://surghub.org" target="_blank" rel="noopener">Explore SURGhub →</a><p class="foot rv d4">Aggregated, anonymised platform data — counts only, no personal information. Data as of ' + esc(D.snapshotDate) + '. Built with SURGdash.</p>');
+        + sec('join', 'Join', 'darker', '<div class="joinwrap"><div class="joinmain"><p class="eyebrow rv">Open · free · global</p><h1 class="rv d1" style="font-size:clamp(30px,5vw,58px)">Surgical education<br>for everyone, everywhere.</h1><p class="lead rv d2">Over ' + fmt(D.learners) + ' healthcare workers in ' + fmt(D.countries) + '+ countries are already learning on SURGhub. Join them — or partner with the Global Surgery Foundation to reach more.</p><a class="btn rv d3" href="https://surghub.org" target="_blank" rel="noopener">Explore SURGhub →</a></div>'
+        + (D.logos.surghub ? '<div class="joinlogo rv d2"><img src="' + D.logos.surghub + '" alt="SURGhub"></div>' : '')
+        + '</div>'
+        + '<div class="foot rv d4"><p class="joint">SURGhub is a joint initiative of the Global Surgery Foundation (GSF) and UNITAR (United Nations Institute for Training and Research), supported by the Royal College of Surgeons in Ireland (RCSI), and implemented in association with the Johnson &amp; Johnson Foundation.</p><p class="footmeta">Aggregated, anonymised platform data — counts only, no personal information. Data as of ' + esc(D.snapshotDate) + '. Built with SURGdash · © Global Surgery Foundation.</p></div>');
 
       const CSS = ':root{--prussian:#04263d;--prussian-deep:#021a2c;--boston:#2f86c9;--boston-soft:#7fb6e3;--green:#3FB984;--slate:#94a3b8;--red:#e57373;--ink:#0f2330;--paper:#f6f9fc;--paper2:#eef4f9;--line:rgba(255,255,255,.12)}'
         + '*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--ink);background:var(--paper);line-height:1.6;-webkit-font-smoothing:antialiased}'
@@ -479,22 +486,22 @@
         + '.eyebrow{font-size:13px;letter-spacing:.18em;text-transform:uppercase;color:var(--boston);font-weight:600;margin:0 0 14px}.dark .eyebrow,.darker .eyebrow{color:var(--boston-soft)}'
         + 'h1{font-size:clamp(34px,6vw,76px);line-height:1.04;margin:.1em 0 .35em;font-weight:700;letter-spacing:-.02em}h2{font-size:clamp(26px,3.6vw,44px);line-height:1.1;margin:0 0 .5em;font-weight:700;letter-spacing:-.015em}'
         + '.lead{font-size:clamp(17px,2vw,21px);max-width:60ch;color:#3d5567}.dark .lead,.darker .lead{color:#b9cede}.muted{color:var(--slate);font-size:14px}.dark .muted,.darker .muted{color:#7f9bb1}'
-        + '.rv{opacity:0;transform:translateY(26px);transition:opacity .7s ease,transform .7s cubic-bezier(.2,.7,.2,1)}.rv.in{opacity:1;transform:none}.rv.d1{transition-delay:.08s}.rv.d2{transition-delay:.16s}.rv.d3{transition-delay:.24s}.rv.d4{transition-delay:.32s}'
+        + '.rv{opacity:0;transform:translateY(26px);transition:opacity .7s ease,transform .7s cubic-bezier(.2,.7,.2,1)}.rv.in{opacity:1;transform:none}.rv.d1{transition-delay:.08s}.rv.d2{transition-delay:.16s}.rv.d3{transition-delay:.24s}.rv.d4{transition-delay:.32s}.rv.d5{transition-delay:.40s}.rv.d6{transition-delay:.48s}.rv.d7{transition-delay:.56s}.rv.d8{transition-delay:.64s}'
         + '#hero{min-height:100vh;display:flex;align-items:center;overflow:hidden}#dotsbg{position:absolute;inset:0;z-index:1;opacity:.55}.brandtag{font-weight:700;letter-spacing:.04em;color:#cfe2f1}.brandtag b{color:#fff}'
         + '.cue{position:absolute;bottom:34px;left:50%;transform:translateX(-50%);color:#9fc1dc;font-size:13px;letter-spacing:.14em;text-transform:uppercase;animation:bob 2s ease-in-out infinite;z-index:2}@keyframes bob{0%,100%{transform:translate(-50%,0)}50%{transform:translate(-50%,8px)}}'
-        + '.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:18px;margin-top:34px}.kpi{background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:16px;padding:26px 24px}.kpi.lite{background:var(--paper2);border-color:#dce8f1}'
+        + '.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:18px;margin-top:34px}.kpi{background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:16px;padding:26px 24px;transition:transform .25s ease,border-color .25s ease,background .25s ease}.kpi:hover{transform:translateY(-4px);border-color:rgba(127,182,227,.45);background:rgba(255,255,255,.08)}.kpi.lite{background:var(--paper2);border-color:#dce8f1}.kpi.lite:hover{border-color:var(--boston);background:#fff}'
         + '.kpi .v{font-size:clamp(34px,5vw,54px);font-weight:800;line-height:1;letter-spacing:-.02em;color:#fff}.kpi.lite .v{color:var(--ink)}.kpi .v.green{color:var(--green)}.kpi .v.boston{color:var(--boston-soft)}.kpi.lite .v.boston{color:var(--boston)}'
         + '.kpi .l{margin-top:10px;font-size:15px;color:#a9c3d6}.kpi.lite .l{color:#5b7488}.kpi .s{margin-top:6px;font-size:13px;color:#7f9bb1}.pill{display:inline-block;margin-top:10px;font-size:12px;font-weight:600;background:rgba(63,185,132,.16);color:#8fe3bf;border-radius:999px;padding:3px 11px}'
-        + '.chartcard{background:#fff;border:1px solid #e4edf4;border-radius:18px;padding:24px 22px 12px;position:relative}.legend{display:flex;gap:20px;flex-wrap:wrap;font-size:13px;color:#5b7488;margin-bottom:8px}.legend span{display:inline-flex;align-items:center;gap:7px}.sw{width:12px;height:12px;border-radius:3px;display:inline-block}.gline{fill:none;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}.ann{font-size:13px;font-weight:700}.growthbox{width:100%;height:340px}#growthchart{display:block;width:100%;height:340px;cursor:crosshair}.tip{position:absolute;top:14px;right:22px;font-size:13px;background:#04263d;color:#eaf2f8;padding:6px 11px;border-radius:8px;opacity:0;transition:opacity .15s;pointer-events:none}'
+        + '.chartcard{background:#fff;border:1px solid #e4edf4;border-radius:18px;padding:24px 22px 16px;position:relative;transition:transform .25s ease,box-shadow .25s ease}.chartcard:hover{transform:translateY(-3px);box-shadow:0 18px 44px rgba(4,38,61,.14)}.growthgrid{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-top:8px}@media(max-width:820px){.growthgrid{grid-template-columns:1fr}}.legend{display:flex;gap:20px;flex-wrap:wrap;font-size:13px;color:#5b7488;margin-bottom:8px}.legend span{display:inline-flex;align-items:center;gap:7px}.sw{width:12px;height:12px;border-radius:3px;display:inline-block}.gline{fill:none;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}.ann{font-size:13px;font-weight:700}.growthbox{width:100%;height:300px;cursor:crosshair}.growthbox svg{display:block;width:100%;height:300px}.tip{position:absolute;top:14px;right:22px;font-size:13px;background:#04263d;color:#eaf2f8;padding:6px 11px;border-radius:8px;opacity:0;transition:opacity .15s;pointer-events:none}'
         + '.bars{display:flex;flex-direction:column;gap:13px;margin-top:8px}.bar{display:grid;grid-template-columns:170px 1fr 70px;align-items:center;gap:14px}.bar .lab{font-size:15px}.track{height:18px;background:rgba(255,255,255,.1);border-radius:999px;overflow:hidden}body .track{background:rgba(120,140,160,.16)}.dark .track{background:rgba(255,255,255,.1)}.fill{height:100%;width:0;border-radius:999px;background:var(--boston);transition:width 1.1s cubic-bezier(.2,.7,.2,1)}.fill.slate{background:#7d96a8}.bar .val{text-align:right;font-weight:700;font-variant-numeric:tabular-nums}'
         + '.cols{display:grid;grid-template-columns:1fr 1fr;gap:40px;align-items:center}@media(max-width:820px){.cols{grid-template-columns:1fr;gap:28px}}.bignum{font-size:clamp(56px,11vw,118px);font-weight:800;letter-spacing:-.03em;line-height:.95;color:#fff}.statline{font-size:18px;color:#bdd3e4;margin-top:8px}'
-        + '.conflict{margin-top:22px;background:rgba(229,115,115,.12);border:1px solid rgba(229,115,115,.35);border-radius:14px;padding:18px 20px}.conflict .v{font-size:34px;font-weight:800;color:#ffb4b4}.conflict .l{color:#e7c3c3;font-size:14px}'
+        + '.conflict{margin-top:22px;background:rgba(229,115,115,.12);border:1px solid rgba(229,115,115,.35);border-radius:14px;padding:18px 20px}.conflict .v{font-size:34px;font-weight:800;color:#ffb4b4}.conflict .l{color:#e7c3c3;font-size:14px}.reach-hi{margin-top:20px;display:flex;align-items:center;gap:20px;background:rgba(63,185,132,.10);border:1px solid rgba(63,185,132,.34);border-radius:16px;padding:18px 22px}.reach-hi-num{font-size:clamp(46px,7.5vw,76px);font-weight:800;line-height:.88;color:var(--green);letter-spacing:-.02em;flex:none}.reach-hi-lab{font-size:15px;color:#cfe6da}.reach-hi-lab b{color:#eaf7f0;font-weight:700}'
         + '#map .mapoff{text-align:center;color:#6d8ba3;font-size:13px;padding:200px 0}.toggle{background:rgba(255,255,255,.06);border:1px solid var(--line);color:#cfe2f1;font-weight:600;font-size:14px;padding:11px 20px;border-radius:10px;cursor:pointer;transition:all .2s}.toggle:hover,.toggle.on{background:var(--boston);border-color:var(--boston);color:#fff}'
         + '.dials{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:26px;margin-top:30px}.dial{text-align:center}.dial svg{transform:rotate(-90deg)}.dial .pc{font-size:30px;font-weight:800;fill:#fff}.dial .cap{margin-top:12px;font-size:15px;color:#b9cede;max-width:24ch;margin-left:auto;margin-right:auto}'
-        + '.quotes{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px;margin-top:26px}.quote{background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:16px;padding:22px 24px 20px}.quote .q{font-family:Georgia,serif;font-size:19px;line-height:1.5;color:#eaf2f8;margin:0}.quote .mark{font-family:Georgia,serif;font-size:46px;line-height:0;color:var(--boston-soft);height:18px;display:block}.quote .by{margin:16px 0 0;font-size:13px;color:#9fc1dc;font-weight:600}'
+        + '.quotes{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:30px;margin-top:32px}.quote{background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:16px;padding:28px 28px 24px;transition:transform .25s ease,border-color .25s ease,background .25s ease}.quote:hover{transform:translateY(-4px);border-color:rgba(127,182,227,.5);background:rgba(255,255,255,.08)}.quote .q{font-family:Georgia,serif;font-size:19px;line-height:1.5;color:#eaf2f8;margin:0}.quote .mark{font-family:Georgia,serif;font-size:46px;line-height:0;color:var(--boston-soft);height:18px;display:block}.quote .by{margin:18px 0 0;font-size:13px;color:#9fc1dc;font-weight:600}'
         + '.stars{display:inline-flex;gap:2px;font-size:15px;color:rgba(255,255,255,.22);margin:6px 0 2px}.stars .on{color:#f5b301}'
         + '.ratingband{display:flex;align-items:center;gap:28px;background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:18px;padding:26px 30px;margin:6px 0 30px;flex-wrap:wrap}.rb-pct{font-size:clamp(48px,8vw,76px);font-weight:800;color:var(--green);line-height:1}.rb-stars{font-size:22px;color:#f5b301;letter-spacing:2px}.rb-stars b{color:#fff;margin-left:10px;font-size:24px;letter-spacing:0}.rb-stars span{color:#9fc1dc;font-weight:400;font-size:16px;letter-spacing:0}.rb-sub{color:#b9cede;font-size:15px;margin-top:8px}'
-        + '.btn{display:inline-block;margin-top:26px;background:var(--boston);color:#fff;font-weight:700;text-decoration:none;padding:15px 30px;border-radius:12px;font-size:16px;transition:transform .2s,background .2s}.btn:hover{transform:translateY(-2px);background:#3f97da}.foot{margin-top:42px;font-size:13px;color:#7f9bb1;border-top:1px solid var(--line);padding-top:20px}'
+        + '.btn{display:inline-block;margin-top:26px;background:var(--boston);color:#fff;font-weight:700;text-decoration:none;padding:15px 30px;border-radius:12px;font-size:16px;transition:transform .2s,background .2s}.btn:hover{transform:translateY(-2px);background:#3f97da}.joinwrap{display:flex;align-items:center;justify-content:space-between;gap:48px;flex-wrap:wrap}.joinmain{flex:1;min-width:300px}.joinlogo{flex:none}.joinlogo img{height:130px;width:auto;opacity:.96;filter:drop-shadow(0 10px 26px rgba(0,0,0,.4))}@media(max-width:820px){.joinlogo img{height:80px}}.foot{margin-top:48px;font-size:13px;color:#7f9bb1;border-top:1px solid var(--line);padding-top:22px}.foot .joint{margin:0 0 10px;color:#9fb6c9;max-width:82ch}.foot .footmeta{margin:0;color:#6d8ba3}'
         + '@media(prefers-reduced-motion:reduce){.rv{transition:none;opacity:1;transform:none}.fill{transition:none}.cue{animation:none}}';
 
       return '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
