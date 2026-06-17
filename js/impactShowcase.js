@@ -295,7 +295,7 @@
           var lab0 = A[0].m, lab1 = A[n - 1].m;
           var inner = '<line x1="' + padL + '" y1="' + Y(0) + '" x2="' + (W - padR) + '" y2="' + Y(0) + '" stroke="#e4edf4"\/>'
             + '<line x1="' + padL + '" y1="' + Y(maxY * 0.5) + '" x2="' + (W - padR) + '" y2="' + Y(maxY * 0.5) + '" stroke="#eef4f9"\/>'
-            + '<path d="' + area + '" fill="rgba(47,134,201,.10)" opacity="0" id="garea"\/>'
+            + '<path d="' + area + '" fill="rgba(47,134,201,.10)" id="garea"\/>'
             + '<path class="gline" d="' + (B.length ? path(B) : '') + '" stroke="#3FB984" id="gcert"\/>'
             + '<path class="gline" d="' + path(A) + '" stroke="#2f86c9" id="genr"\/>'
             + '<text x="' + (W - padR) + '" y="' + (Y(A[n - 1].v) - 10) + '" text-anchor="end" class="ann" fill="#1d6fb0">' + fmt(A[n - 1].v) + '<\/text>'
@@ -304,12 +304,12 @@
             + '<text x="' + (W - padR) + '" y="' + (H - 9) + '" text-anchor="end" font-size="12" fill="#90a6b8">' + lab1 + '<\/text>'
             + '<line id="gcur" x1="0" y1="' + padT + '" x2="0" y2="' + Y(0) + '" stroke="#9fc1dc" stroke-width="1" opacity="0"\/>'
             + '<circle id="gd1" r="4.5" fill="#2f86c9" opacity="0"\/><circle id="gd2" r="4.5" fill="#3FB984" opacity="0"\/>';
-          wrap.innerHTML = '<svg id="growth" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Cumulative registered learners and certificates over time" style="display:block;width:100%;height:' + H + 'px">' + inner + '<\/svg>';
-          var svg = document.getElementById('growth');
-          var lines = [svg.querySelector('#genr'), svg.querySelector('#gcert')].filter(Boolean);
-          lines.forEach(function (p) { var len = p.getTotalLength(); p.style.strokeDasharray = len; p.style.strokeDashoffset = len; if (!reduce) p.style.transition = 'stroke-dashoffset 1.5s ease'; });
-          wrap._fire = function () { lines.forEach(function (p) { p.style.strokeDashoffset = 0; }); var a = svg.querySelector('#garea'); if (a) { a.style.transition = 'opacity 1.2s ease .3s'; a.style.opacity = 1; } };
-          if (reduce) wrap._fire();
+          wrap.innerHTML = '<svg id="growthchart" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Cumulative registered learners and certificates over time" style="display:block;width:100%;height:' + H + 'px">' + inner + '<\/svg>';
+          var svg = document.getElementById('growthchart');
+          // Lines + area render solid and visible immediately. No stroke-dashoffset "draw-in" —
+          // that animation repeatedly left the chart invisible whenever its trigger didn't fire
+          // (orphaned observer callback / unrun rAF). The card's own fade-up is the entrance.
+          // (svg is grabbed here for the hover scrubber below.)
           // scrubber
           var tip = document.getElementById('growth-tip'), cur = svg.querySelector('#gcur'), d1 = svg.querySelector('#gd1'), d2 = svg.querySelector('#gd2');
           svg.addEventListener('mousemove', function (ev) {
@@ -361,7 +361,7 @@
             [].slice.call(el.querySelectorAll('[data-to]')).forEach(function (c) { if (!c._d) { c._d = 1; countUp(c); } });
             [].slice.call(el.querySelectorAll('.fill[data-w]')).forEach(function (f) { f.style.width = f.getAttribute('data-w') + '%'; });
             if (el.classList.contains('dial') && el._fire && !el._df) { el._df = 1; el._fire(); }
-            if (el.querySelector && el.querySelector('#growth-wrap')) { drawGrowth(); var g = document.getElementById('growth-wrap'); if (g && g._fire && !g._gf) { g._gf = 1; setTimeout(g._fire, 150); } }
+            if (el.querySelector && el.querySelector('#growth-wrap')) drawGrowth();
             if (el.querySelector && el.querySelector('#map') && !el._map) { el._map = 1; drawMap(D.countryMap); }
             io.unobserve(el);
           });
@@ -416,7 +416,7 @@
         + '.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:18px;margin-top:34px}.kpi{background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:16px;padding:26px 24px}.kpi.lite{background:var(--paper2);border-color:#dce8f1}'
         + '.kpi .v{font-size:clamp(34px,5vw,54px);font-weight:800;line-height:1;letter-spacing:-.02em;color:#fff}.kpi.lite .v{color:var(--ink)}.kpi .v.green{color:var(--green)}.kpi .v.boston{color:var(--boston-soft)}.kpi.lite .v.boston{color:var(--boston)}'
         + '.kpi .l{margin-top:10px;font-size:15px;color:#a9c3d6}.kpi.lite .l{color:#5b7488}.kpi .s{margin-top:6px;font-size:13px;color:#7f9bb1}.pill{display:inline-block;margin-top:10px;font-size:12px;font-weight:600;background:rgba(63,185,132,.16);color:#8fe3bf;border-radius:999px;padding:3px 11px}'
-        + '.chartcard{background:#fff;border:1px solid #e4edf4;border-radius:18px;padding:24px 22px 12px;position:relative}.legend{display:flex;gap:20px;flex-wrap:wrap;font-size:13px;color:#5b7488;margin-bottom:8px}.legend span{display:inline-flex;align-items:center;gap:7px}.sw{width:12px;height:12px;border-radius:3px;display:inline-block}.gline{fill:none;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}.ann{font-size:13px;font-weight:700}.growthbox{width:100%;height:340px}#growth{display:block;width:100%;height:340px;cursor:crosshair}.tip{position:absolute;top:14px;right:22px;font-size:13px;background:#04263d;color:#eaf2f8;padding:6px 11px;border-radius:8px;opacity:0;transition:opacity .15s;pointer-events:none}'
+        + '.chartcard{background:#fff;border:1px solid #e4edf4;border-radius:18px;padding:24px 22px 12px;position:relative}.legend{display:flex;gap:20px;flex-wrap:wrap;font-size:13px;color:#5b7488;margin-bottom:8px}.legend span{display:inline-flex;align-items:center;gap:7px}.sw{width:12px;height:12px;border-radius:3px;display:inline-block}.gline{fill:none;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}.ann{font-size:13px;font-weight:700}.growthbox{width:100%;height:340px}#growthchart{display:block;width:100%;height:340px;cursor:crosshair}.tip{position:absolute;top:14px;right:22px;font-size:13px;background:#04263d;color:#eaf2f8;padding:6px 11px;border-radius:8px;opacity:0;transition:opacity .15s;pointer-events:none}'
         + '.bars{display:flex;flex-direction:column;gap:13px;margin-top:8px}.bar{display:grid;grid-template-columns:170px 1fr 70px;align-items:center;gap:14px}.bar .lab{font-size:15px}.track{height:18px;background:rgba(255,255,255,.1);border-radius:999px;overflow:hidden}body .track{background:rgba(120,140,160,.16)}.dark .track{background:rgba(255,255,255,.1)}.fill{height:100%;width:0;border-radius:999px;background:var(--boston);transition:width 1.1s cubic-bezier(.2,.7,.2,1)}.fill.slate{background:#7d96a8}.bar .val{text-align:right;font-weight:700;font-variant-numeric:tabular-nums}'
         + '.cols{display:grid;grid-template-columns:1fr 1fr;gap:40px;align-items:center}@media(max-width:820px){.cols{grid-template-columns:1fr;gap:28px}}.bignum{font-size:clamp(56px,11vw,118px);font-weight:800;letter-spacing:-.03em;line-height:.95;color:#fff}.statline{font-size:18px;color:#bdd3e4;margin-top:8px}'
         + '.conflict{margin-top:22px;background:rgba(229,115,115,.12);border:1px solid rgba(229,115,115,.35);border-radius:14px;padding:18px 20px}.conflict .v{font-size:34px;font-weight:800;color:#ffb4b4}.conflict .l{color:#e7c3c3;font-size:14px}'
