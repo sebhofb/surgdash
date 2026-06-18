@@ -1661,6 +1661,7 @@ Object.assign(window.App, {
         if (project.type === 'org') {
             contextLabel = 'Organisation';
             tabs = tab('org-dashboard',  'layout-dashboard', 'Overview')
+                 + tab('org-breakdown',  'table-2',          'Breakdown')
                  + tab('org-calendar',   'calendar',         'Calendar')
                  + tab('org-activities', 'pencil-line',      'Activities')
                  + tab('org-map',        'map-pin',          'Map')
@@ -2022,6 +2023,7 @@ Object.assign(window.App, {
         if (project.type === 'org') {
             if (window.GenericViews) {
                 if      (this.view === 'org-calendar')     GenericViews.renderOrgCalendar(body);
+                else if (this.view === 'org-breakdown')    GenericViews.renderOrgBreakdown(body);
                 else if (this.view === 'org-table')        GenericViews.renderOrgTable(body);
                 else if (this.view === 'org-activities')   GenericViews.renderOrgActivities(body);
                 else if (this.view === 'org-settings')     GenericViews.renderOrgSettings(body);

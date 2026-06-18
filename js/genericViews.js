@@ -5347,32 +5347,6 @@ window.GenericViews = {
                 ` : `<p class="text-[10px] text-slate-400 italic">${isAllYear ? 'No targets set' : 'No target set for ' + year}</p>`)}
             </div>`; }).join('');
 
-        // Per-project breakdown rows
-        const projectRows = projectKpis.map(d => {
-            const lastActivity = d.events[0]?.date || d.updates[0]?.date || '—';
-            return `
-            <tr class="border-b border-slate-100 hover:bg-slate-50 cursor-pointer" onclick="App.switchProject('${d.project.id}')">
-                <td class="px-4 py-3">
-                    <div class="flex items-center gap-2">
-                        <div class="w-6 h-6 rounded-md flex items-center justify-center shrink-0" style="background:${d.project.color}20">
-                            <i data-lucide="${d.project.icon || 'folder'}" width="12" style="color:${d.project.color}"></i>
-                        </div>
-                        <span class="text-sm font-semibold text-slate-800">${App.escapeHtml(d.project.name)}</span>
-                    </div>
-                </td>
-                ${Projects.STANDARD_KPIS.map(kpi => {
-                    const v   = d.actual[kpi.id] || 0;
-                    const tgt = d.target[kpi.id] || 0;
-                    const pct = tgt > 0 ? Math.min(100, Math.round((v / tgt) * 100)) : null;
-                    return `<td class="px-4 py-3">
-                        <span class="text-sm font-bold text-slate-800">${this._fmt(v)}</span>
-                        ${tgt > 0 ? `<p class="text-[10px] text-slate-400 mt-0.5">of ${this._fmt(tgt)} · <span class="font-bold" style="color:${kpi.color}">${pct}%</span></p>` : '<p class="text-[10px] text-slate-300 mt-0.5">no target</p>'}
-                    </td>`;
-                }).join('')}
-                <td class="px-4 py-3 text-xs text-slate-400">${lastActivity}</td>
-            </tr>`;
-        }).join('');
-
         // Recent activities across all projects — events + milestones, last 10
         const recentAll = allActivities
             .filter(a => a.date)
@@ -5440,23 +5414,6 @@ window.GenericViews = {
                         </div>`).join('')}
                 </div>
             </div>` : '';
-
-        const totalsFooter = `
-            <tfoot>
-                <tr class="bg-slate-50 border-t-2 border-slate-200">
-                    <td class="px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide">Total</td>
-                    ${Projects.STANDARD_KPIS.map(kpi => {
-                        const v   = orgActuals[kpi.id] || 0;
-                        const tgt = orgTargets[kpi.id] || 0;
-                        const pct = tgt > 0 ? Math.min(100, Math.round((v / tgt) * 100)) : null;
-                        return `<td class="px-4 py-3">
-                            <span class="text-sm font-black" style="color:${kpi.color}">${this._fmt(v)}</span>
-                            ${tgt > 0 ? `<p class="text-[10px] text-slate-400 mt-0.5">of ${this._fmt(tgt)} · <span class="font-bold" style="color:${kpi.color}">${pct}%</span></p>` : ''}
-                        </td>`;
-                    }).join('')}
-                    <td></td>
-                </tr>
-            </tfoot>`;
 
         main.innerHTML = `
             <div class="p-6 md:p-10 fade-in w-full max-w-6xl mx-auto">
@@ -5528,24 +5485,7 @@ window.GenericViews = {
 
                 ${surghubSection}
 
-                <div class="bg-white rounded-xl border border-slate-200 shadow-sm mb-6 overflow-hidden mt-8">
-                    <div class="bg-slate-50 border-b px-5 py-3">
-                        <h2 class="text-sm font-bold text-gsf-prussian uppercase tracking-wide">Project Breakdown — ${isAllYear ? 'All Time' : year}</h2>
-                    </div>
-                    <div class="overflow-x-auto">
-                        <table class="w-full">
-                            <thead><tr class="border-b border-slate-200">
-                                <th class="px-4 py-2 text-left text-xs font-bold text-slate-500 uppercase">Project</th>
-                                ${Projects.STANDARD_KPIS.map(kpi => `<th class="px-4 py-2 text-left text-xs font-bold text-slate-500 uppercase">${kpi.nameBig || kpi.name.split(' ').slice(0, 2).join(' ')}</th>`).join('')}
-                                <th class="px-4 py-2 text-left text-xs font-bold text-slate-500 uppercase">Last Activity</th>
-                            </tr></thead>
-                            <tbody>${projectRows}</tbody>
-                            ${totalsFooter}
-                        </table>
-                    </div>
-                </div>
-
-                <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+                <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-6 mt-8">
                     <h2 class="text-sm font-bold text-gsf-prussian uppercase tracking-wide mb-4">Recent Activity</h2>
                     ${recentAll || '<p class="text-slate-400 text-sm italic">No activities logged yet across any project.</p>'}
                 </div>
@@ -5562,6 +5502,161 @@ window.GenericViews = {
                 GenericCharts.drawOrgYearlyProgress(multiYearData, year, 'org-chart-', GenericViews._getChartFilters());
             }, 80);
         }
+    },
+
+    // ===== ORG BREAKDOWN (own tab + independent year selector) =====
+    // The per-project KPI table that used to sit at the bottom of the Overview now
+    // lives on its own tab with its OWN year control (App.breakdownYear), decoupled
+    // from the Overview's KPI-card year (App.kpiYear) so the two can be read side by side.
+    async renderOrgBreakdown(main) {
+        const now       = new Date();
+        const year      = App.breakdownYear === 'all' ? 'all' : (App.breakdownYear || now.getFullYear());
+        const isAllYear = year === 'all';
+
+        const hasSampleProject = Projects.registry.some(p => p.type === 'generic' && p.isSample);
+        const genericProjects  = Projects.registry.filter(p => p.type === 'generic' && (App.includeSample || !p.isSample));
+
+        // Year selector — writes App.breakdownYear (independent of the Overview's App.kpiYear).
+        // The available-years range (+ / − controls) is still shared via App.kpiYearMax.
+        const years = [];
+        const yearMax = App.kpiYearMax != null ? Math.max(App.kpiYearMax, now.getFullYear() + 1) : now.getFullYear() + 1;
+        for (let y = 2022; y <= yearMax; y++) years.push(y);
+        const yearSelector = years.map(y =>
+            `<button onclick="App.breakdownYear=${y}; App.renderView()" class="px-3 py-1.5 rounded-lg text-sm font-semibold transition-all ${y === year ? 'bg-gsf-boston text-white' : 'text-slate-500 hover:bg-slate-100'}">${y}</button>`
+        ).join('') +
+        `<span class="w-px h-5 bg-slate-300 mx-1 inline-block align-middle"></span>` +
+        `<button onclick="App.breakdownYear='all'; App.renderView()" class="ml-0.5 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${isAllYear ? 'bg-gsf-prussian text-white shadow-sm' : 'text-gsf-prussian bg-gsf-prussian/10 hover:bg-gsf-prussian/20'}" title="All-time cumulative totals"><span class="text-[10px] ${isAllYear ? 'opacity-90' : 'opacity-70'}">★</span> All time</button>` +
+        `<button onclick="App.kpiYearMax=${yearMax + 1}; App.renderView()" class="px-2.5 py-1.5 rounded-lg text-sm font-semibold text-slate-400 hover:bg-slate-100" title="Add future year">+</button><button onclick="GenericViews._removeLastYear()" class="px-2.5 py-1.5 rounded-lg text-sm font-semibold text-slate-400 hover:bg-red-50 hover:text-red-500" title="Remove the topmost year (only allowed if it has no data)">−</button>`;
+
+        if (genericProjects.length === 0) {
+            main.innerHTML = `
+                <div class="p-6 md:p-10 fade-in w-full max-w-6xl mx-auto">
+                    <h1 class="text-xl font-bold text-gsf-prussian mb-2">Project Breakdown</h1>
+                    <p class="text-sm text-slate-400 italic">No projects yet.</p>
+                </div>`;
+            if (window.lucide) lucide.createIcons();
+            return;
+        }
+
+        // Load per-project data (events + updates power the Last Activity column)
+        const projectData = await Promise.all(genericProjects.map(async p => {
+            const [events, allTargets, allActuals, updates] = await Promise.all([
+                Projects.getEvents(p.id),
+                Projects.getTargets(p.id),
+                Projects.getActuals(p.id),
+                Projects.getUpdates(p.id)
+            ]);
+            return { project: p, events, updates, allTargets, allActuals };
+        }));
+
+        // Per-project actual + target for the selected year (stock-aware for all-time)
+        const hiddenYrsForAll = new Set(App._chartHiddenYears || []);
+        const projectKpis = projectData.map(d => {
+            let actual, target;
+            if (isAllYear) {
+                actual = Projects.rollupAllYears(d.allActuals, hiddenYrsForAll);
+                target = Projects.rollupAllYears(d.allTargets, hiddenYrsForAll);
+            } else {
+                actual = Projects.getActualsForYear(d.allActuals, year);
+                target = Projects.getTargetsForYear(d.allTargets, year);
+            }
+            return { ...d, actual, target };
+        });
+
+        // Column totals — only projects active in the selected year (all projects for all-time)
+        const orgActuals = { hcw_strengthened: 0, patients_reached: 0, facilities_strengthened: 0, population_access: 0 };
+        const orgTargets = { hcw_strengthened: 0, patients_reached: 0, facilities_strengthened: 0, population_access: 0 };
+        projectKpis.forEach(d => {
+            if (!isAllYear && !this._isProjectActiveForYear(d.project, year)) return;
+            Projects.STANDARD_KPIS.forEach(kpi => {
+                orgActuals[kpi.id] += d.actual[kpi.id] || 0;
+                orgTargets[kpi.id] += d.target[kpi.id] || 0;
+            });
+        });
+
+        const projectRows = projectKpis.map(d => {
+            const lastActivity = d.events[0]?.date || d.updates[0]?.date || '—';
+            return `
+            <tr class="border-b border-slate-100 hover:bg-slate-50 cursor-pointer" onclick="App.switchProject('${d.project.id}')">
+                <td class="px-4 py-3">
+                    <div class="flex items-center gap-2">
+                        <div class="w-6 h-6 rounded-md flex items-center justify-center shrink-0" style="background:${d.project.color}20">
+                            <i data-lucide="${d.project.icon || 'folder'}" width="12" style="color:${d.project.color}"></i>
+                        </div>
+                        <span class="text-sm font-semibold text-slate-800">${App.escapeHtml(d.project.name)}</span>
+                    </div>
+                </td>
+                ${Projects.STANDARD_KPIS.map(kpi => {
+                    const v   = d.actual[kpi.id] || 0;
+                    const tgt = d.target[kpi.id] || 0;
+                    const pct = tgt > 0 ? Math.min(100, Math.round((v / tgt) * 100)) : null;
+                    return `<td class="px-4 py-3">
+                        <span class="text-sm font-bold text-slate-800">${this._fmt(v)}</span>
+                        ${tgt > 0 ? `<p class="text-[10px] text-slate-400 mt-0.5">of ${this._fmt(tgt)} · <span class="font-bold" style="color:${kpi.color}">${pct}%</span></p>` : '<p class="text-[10px] text-slate-300 mt-0.5">no target</p>'}
+                    </td>`;
+                }).join('')}
+                <td class="px-4 py-3 text-xs text-slate-400">${lastActivity}</td>
+            </tr>`;
+        }).join('');
+
+        const totalsFooter = `
+            <tfoot>
+                <tr class="bg-slate-50 border-t-2 border-slate-200">
+                    <td class="px-4 py-3 text-xs font-bold text-slate-500 uppercase tracking-wide">Total</td>
+                    ${Projects.STANDARD_KPIS.map(kpi => {
+                        const v   = orgActuals[kpi.id] || 0;
+                        const tgt = orgTargets[kpi.id] || 0;
+                        const pct = tgt > 0 ? Math.min(100, Math.round((v / tgt) * 100)) : null;
+                        return `<td class="px-4 py-3">
+                            <span class="text-sm font-black" style="color:${kpi.color}">${this._fmt(v)}</span>
+                            ${tgt > 0 ? `<p class="text-[10px] text-slate-400 mt-0.5">of ${this._fmt(tgt)} · <span class="font-bold" style="color:${kpi.color}">${pct}%</span></p>` : ''}
+                        </td>`;
+                    }).join('')}
+                    <td></td>
+                </tr>
+            </tfoot>`;
+
+        main.innerHTML = `
+            <div class="p-6 md:p-10 fade-in w-full max-w-6xl mx-auto">
+                <header class="mb-6 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                    <div class="px-5 py-4 flex items-start justify-between gap-4 flex-wrap" style="background:linear-gradient(135deg, #1B3A5708 0%, transparent 60%)">
+                        <div class="flex items-center gap-3 min-w-0 flex-1">
+                            <div class="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 shadow-sm bg-gsf-prussian" style="box-shadow:0 2px 8px rgba(27,58,87,0.25)">
+                                <i data-lucide="table-2" width="22" style="color:white"></i>
+                            </div>
+                            <div class="min-w-0">
+                                <h1 class="text-xl font-bold text-gsf-prussian">Project Breakdown</h1>
+                                <p class="text-xs text-slate-500 mt-0.5">${genericProjects.length} project${genericProjects.length !== 1 ? 's' : ''} · ${isAllYear ? 'All-time totals' : year}</p>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2 shrink-0 flex-wrap">
+                            ${hasSampleProject ? `<label class="flex items-center gap-1.5 px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-600 cursor-pointer select-none" title="Blend the demonstration (sample) project in or out of the totals">
+                                <input type="checkbox" data-viewer-allowed ${App.includeSample ? 'checked' : ''} onchange="App.toggleSampleInclude(this.checked)" class="accent-purple-600 cursor-pointer">
+                                <i data-lucide="flask-conical" width="12" class="text-purple-500"></i> Sample
+                            </label>` : ''}
+                            <div class="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-1">${yearSelector}</div>
+                        </div>
+                    </div>
+                </header>
+
+                <div class="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                    <div class="overflow-x-auto">
+                        <table class="w-full">
+                            <thead><tr class="border-b border-slate-200 bg-slate-50">
+                                <th class="px-4 py-2.5 text-left text-xs font-bold text-slate-500 uppercase">Project</th>
+                                ${Projects.STANDARD_KPIS.map(kpi => `<th class="px-4 py-2.5 text-left text-xs font-bold text-slate-500 uppercase">${kpi.nameBig || kpi.name.split(' ').slice(0, 2).join(' ')}</th>`).join('')}
+                                <th class="px-4 py-2.5 text-left text-xs font-bold text-slate-500 uppercase">Last Activity</th>
+                            </tr></thead>
+                            <tbody>${projectRows}</tbody>
+                            ${totalsFooter}
+                        </table>
+                    </div>
+                </div>
+
+                <p class="text-[11px] text-slate-400 mt-3">Totals count only projects active in the selected year. Population &amp; facilities are point-in-time (the peak year), not summed across years.</p>
+            </div>`;
+
+        if (window.lucide) lucide.createIcons();
     },
 
     // ===== ORG TABLE =====
