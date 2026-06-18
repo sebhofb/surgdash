@@ -252,24 +252,36 @@ window.GenericViews = {
         const kpiCards = Projects.STANDARD_KPIS.map(kpi => {
             const current = yearTotals[kpi.id] || 0;
             const target  = targets[kpi.id] || 0;
-            const pct     = target > 0 ? Math.min(100, Math.round((current / target) * 100)) : null;
+            // Current + future years lead with the GOAL (clearly flagged); past/closed years and
+            // 'all time' show the ACTUAL with a progress bar. Mirrors the dark export.
+            const goalYear = !isAllYear && Number(year) >= now.getFullYear();
+            const big = goalYear ? target : current;
+            const pct = (!goalYear && target > 0) ? Math.min(100, Math.round((current / target) * 100)) : null;
             const evField = KPI_EVENT_FIELD[kpi.id];
             const contribPool = isAllYear ? events : yearEvents;
             const contribCount = evField ? contribPool.filter(e => Number(e[evField]) > 0).length : 0;
             // Use hex alpha suffixes for tinted shades of the KPI's own colour.
             // 0D ≈ 5% opacity (gradient wash) · 1A ≈ 10% (icon bg, track) · 33 ≈ 20% (border, divider)
+            const cardStyle = goalYear
+                ? `background: linear-gradient(135deg, ${kpi.color}08, #ffffff 72%); border: 1.5px dashed ${kpi.color}66`
+                : `background: linear-gradient(135deg, ${kpi.color}0D, #ffffff 65%); border-color: ${kpi.color}33`;
+            const corner = goalYear
+                ? `<span class="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full whitespace-nowrap" style="color:${kpi.color}; background:${kpi.color}14; border:1px dashed ${kpi.color}80">Goal · ${year}</span>`
+                : `<span class="text-[11px] font-medium" style="color:${kpi.color}; opacity:0.55">${isAllYear ? 'all time' : 'in ' + year}</span>`;
             return `
             <div class="rounded-xl p-5 border cursor-pointer hover:shadow-lg transition-shadow group relative overflow-hidden"
-                 style="background: linear-gradient(135deg, ${kpi.color}0D, #ffffff 65%); border-color: ${kpi.color}33"
+                 style="${cardStyle}"
                  onclick="GenericViews._showKpiDetail('${kpi.id}', ${isAllYear ? now.getFullYear() : year})">
-                <div class="absolute top-0 left-0 right-0 h-1" style="background: ${kpi.color}"></div>
+                <div class="absolute top-0 left-0 right-0 h-1" style="background: ${kpi.color}${goalYear ? '; opacity:0.55' : ''}"></div>
                 <p class="text-[10px] font-black uppercase tracking-wider leading-tight mb-0.5" style="color:${kpi.color}">${kpi.nameBig || kpi.name}</p>
                 ${kpi.nameSub ? `<p class="text-[10px] text-slate-500 font-medium leading-tight mb-3">${kpi.nameSub}</p>` : '<div class="mb-3"></div>'}
-                <div class="flex items-baseline gap-2 mb-3">
-                    <span class="text-4xl font-black tabular-nums" style="color:${kpi.color}">${this._fmt(current)}</span>
-                    <span class="text-[11px] font-medium" style="color:${kpi.color}; opacity:0.55">${isAllYear ? 'all time' : 'in ' + year}</span>
+                <div class="flex items-baseline gap-2 mb-3 flex-wrap">
+                    <span class="text-4xl font-black tabular-nums" style="color:${kpi.color}${goalYear ? '; font-style:italic; opacity:0.85' : ''}">${big ? this._fmt(big) : '—'}</span>
+                    ${corner}
                 </div>
-                ${target > 0 ? `
+                ${goalYear
+                    ? `<p class="text-[10px] text-slate-400">${big ? (current ? this._fmt(current) + ' recorded so far' : 'Reporting in progress') : 'No goal set for ' + year}</p>`
+                    : (pct !== null ? `
                     <div>
                         <div class="flex justify-between items-baseline text-[10px] mb-1.5">
                             <span class="text-slate-500">Target: <strong class="text-slate-700 tabular-nums">${this._fmt(target)}</strong></span>
@@ -279,7 +291,7 @@ window.GenericViews = {
                             <div class="h-full rounded-full transition-all" style="width:${pct}%; background:${kpi.color}"></div>
                         </div>
                     </div>
-                ` : `<p class="text-[10px] text-slate-400 italic">${isAllYear ? 'No targets set' : 'No target set for ' + year}</p>`}
+                ` : `<p class="text-[10px] text-slate-400 italic">${isAllYear ? 'No targets set' : 'No target set for ' + year}</p>`)}
                 <p class="text-[10px] font-medium mt-3 pt-2.5 border-t" style="border-color: ${kpi.color}26; color: ${kpi.color}; opacity: 0.75">
                     ${contribCount} contributing event${contribCount !== 1 ? 's' : ''}${isAllYear ? ' total' : ' this year'}
                 </p>
@@ -3943,8 +3955,12 @@ window.GenericViews = {
             const yr = allActuals.find(t => t.year === y);
             return (yr && yr.kpis[kpi.id] != null) ? yr.kpis[kpi.id] : 0;
         };
-        const rowTotalTarget = (kpi) => visibleYears.reduce((s, y) => s + (Number(targetVal(kpi, y)) || 0), 0);
-        const rowTotalActual = (kpi) => visibleYears.reduce((s, y) => s + (Number(yearTotalActual(kpi, y)) || 0), 0);
+        // Across-years total mirrors Projects.rollupAllYears: STOCK KPIs (population,
+        // facilities) are point-in-time — take the MAX across years, never the sum (summing
+        // would multiply the same catchment/facilities by the number of years). FLOW KPIs
+        // (HCWs, patients) accumulate, so they sum.
+        const rowTotalTarget = (kpi) => visibleYears.reduce((s, y) => { const v = Number(targetVal(kpi, y)) || 0; return kpi.stock ? Math.max(s, v) : s + v; }, 0);
+        const rowTotalActual = (kpi) => visibleYears.reduce((s, y) => { const v = Number(yearTotalActual(kpi, y)) || 0; return kpi.stock ? Math.max(s, v) : s + v; }, 0);
 
         const targetCell = (kpi, y) => {
             const range = this._cellRange(project, y, null);
@@ -4026,12 +4042,12 @@ window.GenericViews = {
                     </td>
                     <td class="px-3 py-1.5 text-[10px] font-bold uppercase text-amber-700 bg-amber-50/30 border-b border-slate-100" style="min-width:60px">Target</td>
                     ${targetCells}
-                    <td class="px-3 py-1.5 text-right text-xs font-bold text-amber-700 bg-amber-50/40 border-b border-slate-100">${tTotal ? this._fmt(tTotal) : '—'}</td>
+                    <td class="px-3 py-1.5 text-right text-xs font-bold text-amber-700 bg-amber-50/40 border-b border-slate-100"${kpi.stock ? ' title="Point-in-time total — the peak year, not summed across years"' : ''}>${tTotal ? this._fmt(tTotal) : '—'}</td>
                 </tr>
                 <tr>
                     <td class="px-3 py-1.5 text-[10px] font-bold uppercase text-emerald-700 bg-emerald-50/30" style="min-width:60px">Actual</td>
                     ${actualCells}
-                    <td class="px-3 py-1.5 text-right text-xs font-bold text-emerald-700 bg-emerald-50/40">${aTotal ? this._fmt(aTotal) : '—'}</td>
+                    <td class="px-3 py-1.5 text-right text-xs font-bold text-emerald-700 bg-emerald-50/40"${kpi.stock ? ' title="Point-in-time total — the peak year, not summed across years"' : ''}>${aTotal ? this._fmt(aTotal) : '—'}</td>
                 </tr>
             `;
         }).join('');
@@ -5294,18 +5310,31 @@ window.GenericViews = {
         const kpiCards = Projects.STANDARD_KPIS.map(kpi => {
             const v   = orgActuals[kpi.id] || 0;
             const tgt = orgTargets[kpi.id] || 0;
-            const pct = tgt > 0 ? Math.min(100, Math.round((v / tgt) * 100)) : null;
+            // Mirror the dark export: the current year and any future year lead with the GOAL
+            // (results aren't in yet), clearly flagged; past/closed years and 'all time' show the
+            // ACTUAL with a progress bar against target.
+            const goalYear = !isAllYear && Number(year) >= now.getFullYear();
+            const big = goalYear ? tgt : v;
+            const pct = (!goalYear && tgt > 0) ? Math.min(100, Math.round((v / tgt) * 100)) : null;
+            const cardStyle = goalYear
+                ? `background: linear-gradient(135deg, ${kpi.color}08, #ffffff 72%); border: 1.5px dashed ${kpi.color}66`
+                : `background: linear-gradient(135deg, ${kpi.color}0D, #ffffff 65%); border-color: ${kpi.color}33`;
+            const corner = goalYear
+                ? `<span class="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full whitespace-nowrap" style="color:${kpi.color}; background:${kpi.color}14; border:1px dashed ${kpi.color}80">Goal · ${year}</span>`
+                : `<span class="text-[11px] font-medium" style="color:${kpi.color}; opacity:0.55">${isAllYear ? 'all time' : 'in ' + year}</span>`;
             return `
             <div class="rounded-xl p-5 border group relative overflow-hidden"
-                 style="background: linear-gradient(135deg, ${kpi.color}0D, #ffffff 65%); border-color: ${kpi.color}33">
-                <div class="absolute top-0 left-0 right-0 h-1" style="background: ${kpi.color}"></div>
+                 style="${cardStyle}">
+                <div class="absolute top-0 left-0 right-0 h-1" style="background: ${kpi.color}${goalYear ? '; opacity:0.55' : ''}"></div>
                 <p class="text-[10px] font-black uppercase tracking-wider leading-tight mb-0.5" style="color:${kpi.color}">${kpi.nameBig || kpi.name}</p>
                 ${kpi.nameSub ? `<p class="text-[10px] text-slate-500 font-medium leading-tight mb-3">${kpi.nameSub}</p>` : '<div class="mb-3"></div>'}
-                <div class="flex items-baseline gap-2 mb-3">
-                    <span class="text-4xl font-black tabular-nums" style="color:${kpi.color}">${this._fmt(v)}</span>
-                    <span class="text-[11px] font-medium" style="color:${kpi.color}; opacity:0.55">${isAllYear ? 'all time' : 'in ' + year}</span>
+                <div class="flex items-baseline gap-2 mb-3 flex-wrap">
+                    <span class="text-4xl font-black tabular-nums" style="color:${kpi.color}${goalYear ? '; font-style:italic; opacity:0.85' : ''}">${big ? this._fmt(big) : '—'}</span>
+                    ${corner}
                 </div>
-                ${pct !== null ? `
+                ${goalYear
+                    ? `<p class="text-[10px] text-slate-400">${big ? (v ? this._fmt(v) + ' recorded so far' : 'Reporting in progress') : 'No goal set for ' + year}</p>`
+                    : (pct !== null ? `
                     <div>
                         <div class="flex justify-between items-baseline text-[10px] mb-1.5">
                             <span class="text-slate-500">Target: <strong class="text-slate-700 tabular-nums">${this._fmt(tgt)}</strong></span>
@@ -5315,7 +5344,7 @@ window.GenericViews = {
                             <div class="h-full rounded-full transition-all" style="width:${pct}%; background:${kpi.color}"></div>
                         </div>
                     </div>
-                ` : `<p class="text-[10px] text-slate-400 italic">${isAllYear ? 'No targets set' : 'No target set for ' + year}</p>`}
+                ` : `<p class="text-[10px] text-slate-400 italic">${isAllYear ? 'No targets set' : 'No target set for ' + year}</p>`)}
             </div>`; }).join('');
 
         // Per-project breakdown rows
