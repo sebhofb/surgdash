@@ -5621,7 +5621,7 @@ window.GenericViews = {
                     </div>
                 </div>
 
-                <p class="text-[11px] text-slate-400 mt-3">Click a year, or <strong>shift-click</strong> a second year to total a range (e.g. 2023–2025). Totals count only projects active in the selected period; population &amp; facilities are point-in-time (the peak year), not summed across years.</p>
+                <p class="text-[11px] text-slate-400 mt-3">Click a year, or <strong>shift-click</strong> a second year to total a range (e.g. 2023–2025) — shift-click an end again to shrink or clear it. Totals count only projects active in the selected period; population &amp; facilities are point-in-time (the peak year), not summed across years.</p>
             </div>`;
 
         if (window.lucide) lucide.createIcons();
@@ -5711,12 +5711,23 @@ window.GenericViews = {
         return { sel, genericProjects, rows, orgActuals, orgTargets, hasSampleProject };
     },
 
-    // Year-button click for the Breakdown tab. Plain click = single year (resets the
-    // range anchor); shift-click = extend the selection from the existing anchor to the
-    // clicked year (an inclusive range).
+    // Year-button click for the Breakdown tab. Plain click = single year (and sets the
+    // range anchor). Shift-click = set the OTHER end of the range from the anchor; shift-
+    // clicking an existing endpoint DESELECTS that year (collapses the range to the other
+    // one), so a range can be undone or shrunk without a plain click.
     _breakdownYearClick(ev, y) {
         if (ev && ev.shiftKey && App.breakdownYear !== 'all' && App.breakdownYear != null) {
-            App.breakdownYearTo = y;
+            const anchor = Number(App.breakdownYear);
+            const end    = App.breakdownYearTo == null ? anchor : Number(App.breakdownYearTo);
+            if (end !== anchor && (y === anchor || y === end)) {
+                // shift-click an endpoint of the current range → drop that year, keep the other
+                App.breakdownYear   = (y === end) ? anchor : end;
+                App.breakdownYearTo = null;
+            } else if (y !== anchor) {
+                // shift-click any other year → set / move the far end of the range
+                App.breakdownYearTo = y;
+            }
+            // shift-clicking the only selected year is a no-op — there must always be a period
         } else {
             App.breakdownYear = y;
             App.breakdownYearTo = null;
@@ -5739,12 +5750,13 @@ window.GenericViews = {
             const X = GenericViews._XL;
             const KPIS = Projects.STANDARD_KPIS;
 
-            const aoa = [], merges = [], numFmt = [], styles = [];
+            const aoa = [], merges = [], numFmt = [];
+            const styleMap = {};   // "r:c" -> merged style object, so borders compose with fills/fonts
             let r = 0;
             const push = vals => { aoa.push(vals ? vals.slice() : []); r++; };
             const mrg = (r1, c1, r2, c2) => merges.push({ s: { r: r1, c: c1 }, e: { r: r2, c: c2 } });
-            const sty = (rr, c, s) => styles.push({ r: rr, c, s });
-            const styRow = (rr, c0, c1, s) => { for (let c = c0; c <= c1; c++) styles.push({ r: rr, c, s }); };
+            const sty = (rr, c, s) => { const a = rr + ':' + c; styleMap[a] = Object.assign({}, styleMap[a], s); };
+            const styRow = (rr, c0, c1, s) => { for (let c = c0; c <= c1; c++) sty(rr, c, s); };
             const numRow = (rr) => KPIS.forEach((kpi, i) => { const c = 1 + i * 3; numFmt.push({ r: rr, c, z: '#,##0' }); numFmt.push({ r: rr, c: c + 1, z: '#,##0' }); numFmt.push({ r: rr, c: c + 2, z: '0%' }); });
 
             const ncols = 1 + KPIS.length * 3 + 2;   // Project + (Actual,Target,%)×KPIs + Last Activity + Status
@@ -5805,11 +5817,19 @@ window.GenericViews = {
             push(['Totals count only projects active in the selected period. Population & facilities are point-in-time (the peak year within the period), not summed across years. Percentages are capped at 100%.']);
             mrg(r - 1, 0, r - 1, lastCol); sty(r - 1, 0, X.subtitle);
 
+            // Stronger vertical separators between KPI groups: a medium left border drawn
+            // down the whole table at each group boundary (Project │ HCW │ Patients │ … │ meta).
+            const SEP = { border: { left: { style: 'medium', color: { rgb: 'FF94A3B8' } } } };
+            const sepCols = [];
+            for (let i = 0; i <= KPIS.length; i++) sepCols.push(1 + i * 3);   // [1,4,7,10,13]
+            for (let rr = ghRow; rr <= trr; rr++) sepCols.forEach(c => sty(rr, c, SEP));
+
             // Column widths
             const cols = [{ wch: 42 }];
             KPIS.forEach(() => cols.push({ wch: 12 }, { wch: 12 }, { wch: 7 }));
             cols.push({ wch: 16 }, { wch: 10 });
 
+            const styles = Object.keys(styleMap).map(k => { const ix = k.indexOf(':'); return { r: Number(k.slice(0, ix)), c: Number(k.slice(ix + 1)), s: styleMap[k] }; });
             const ws = this._aoaToSheet(SS, { rows: aoa, merges, numFmt, styles, cols });
             const wb = SS.utils.book_new();
             SS.utils.book_append_sheet(wb, ws, this._xlsxSheetName('Project Breakdown', new Set()));
