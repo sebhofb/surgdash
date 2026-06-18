@@ -5504,31 +5504,29 @@ window.GenericViews = {
         }
     },
 
-    // ===== ORG BREAKDOWN (own tab + independent year selector) =====
+    // ===== ORG BREAKDOWN (own tab + independent year selector / range) =====
     // The per-project KPI table that used to sit at the bottom of the Overview now
-    // lives on its own tab with its OWN year control (App.breakdownYear), decoupled
-    // from the Overview's KPI-card year (App.kpiYear) so the two can be read side by side.
+    // lives on its own tab with its OWN period control (App.breakdownYear [+ optional
+    // App.breakdownYearTo for a range]), decoupled from the Overview's KPI-card year.
     async renderOrgBreakdown(main) {
-        const now       = new Date();
-        const year      = App.breakdownYear === 'all' ? 'all' : (App.breakdownYear || now.getFullYear());
-        const isAllYear = year === 'all';
+        const now = new Date();
+        const { sel, genericProjects, rows, orgActuals, orgTargets, hasSampleProject } = await this._computeBreakdown();
 
-        const hasSampleProject = Projects.registry.some(p => p.type === 'generic' && p.isSample);
-        const genericProjects  = Projects.registry.filter(p => p.type === 'generic' && (App.includeSample || !p.isSample));
-
-        // Year selector — writes App.breakdownYear (independent of the Overview's App.kpiYear).
+        // Year selector — single click = one year; SHIFT-click a second year = range.
+        // Writes App.breakdownYear / App.breakdownYearTo (independent of App.kpiYear).
         // The available-years range (+ / − controls) is still shared via App.kpiYearMax.
         const years = [];
         const yearMax = App.kpiYearMax != null ? Math.max(App.kpiYearMax, now.getFullYear() + 1) : now.getFullYear() + 1;
         for (let y = 2022; y <= yearMax; y++) years.push(y);
+        const inSel = (y) => !sel.isAll && y >= sel.from && y <= sel.to;
         const yearSelector = years.map(y =>
-            `<button onclick="App.breakdownYear=${y}; App.renderView()" class="px-3 py-1.5 rounded-lg text-sm font-semibold transition-all ${y === year ? 'bg-gsf-boston text-white' : 'text-slate-500 hover:bg-slate-100'}">${y}</button>`
+            `<button onclick="GenericViews._breakdownYearClick(event, ${y})" class="px-3 py-1.5 rounded-lg text-sm font-semibold transition-all ${inSel(y) ? 'bg-gsf-boston text-white' : 'text-slate-500 hover:bg-slate-100'}">${y}</button>`
         ).join('') +
         `<span class="w-px h-5 bg-slate-300 mx-1 inline-block align-middle"></span>` +
-        `<button onclick="App.breakdownYear='all'; App.renderView()" class="ml-0.5 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${isAllYear ? 'bg-gsf-prussian text-white shadow-sm' : 'text-gsf-prussian bg-gsf-prussian/10 hover:bg-gsf-prussian/20'}" title="All-time cumulative totals"><span class="text-[10px] ${isAllYear ? 'opacity-90' : 'opacity-70'}">★</span> All time</button>` +
+        `<button onclick="App.breakdownYear='all'; App.breakdownYearTo=null; App.renderView()" class="ml-0.5 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${sel.isAll ? 'bg-gsf-prussian text-white shadow-sm' : 'text-gsf-prussian bg-gsf-prussian/10 hover:bg-gsf-prussian/20'}" title="All-time cumulative totals"><span class="text-[10px] ${sel.isAll ? 'opacity-90' : 'opacity-70'}">★</span> All time</button>` +
         `<button onclick="App.kpiYearMax=${yearMax + 1}; App.renderView()" class="px-2.5 py-1.5 rounded-lg text-sm font-semibold text-slate-400 hover:bg-slate-100" title="Add future year">+</button><button onclick="GenericViews._removeLastYear()" class="px-2.5 py-1.5 rounded-lg text-sm font-semibold text-slate-400 hover:bg-red-50 hover:text-red-500" title="Remove the topmost year (only allowed if it has no data)">−</button>`;
 
-        if (genericProjects.length === 0) {
+        if (!genericProjects.length) {
             main.innerHTML = `
                 <div class="p-6 md:p-10 fade-in w-full max-w-6xl mx-auto">
                     <h1 class="text-xl font-bold text-gsf-prussian mb-2">Project Breakdown</h1>
@@ -5538,52 +5536,19 @@ window.GenericViews = {
             return;
         }
 
-        // Load per-project data (events + updates power the Last Activity column)
-        const projectData = await Promise.all(genericProjects.map(async p => {
-            const [events, allTargets, allActuals, updates] = await Promise.all([
-                Projects.getEvents(p.id),
-                Projects.getTargets(p.id),
-                Projects.getActuals(p.id),
-                Projects.getUpdates(p.id)
-            ]);
-            return { project: p, events, updates, allTargets, allActuals };
-        }));
+        const periodLabel = sel.isAll ? 'All-time totals' : sel.label;
 
-        // Per-project actual + target for the selected year (stock-aware for all-time)
-        const hiddenYrsForAll = new Set(App._chartHiddenYears || []);
-        const projectKpis = projectData.map(d => {
-            let actual, target;
-            if (isAllYear) {
-                actual = Projects.rollupAllYears(d.allActuals, hiddenYrsForAll);
-                target = Projects.rollupAllYears(d.allTargets, hiddenYrsForAll);
-            } else {
-                actual = Projects.getActualsForYear(d.allActuals, year);
-                target = Projects.getTargetsForYear(d.allTargets, year);
-            }
-            return { ...d, actual, target };
-        });
-
-        // Column totals — only projects active in the selected year (all projects for all-time)
-        const orgActuals = { hcw_strengthened: 0, patients_reached: 0, facilities_strengthened: 0, population_access: 0 };
-        const orgTargets = { hcw_strengthened: 0, patients_reached: 0, facilities_strengthened: 0, population_access: 0 };
-        projectKpis.forEach(d => {
-            if (!isAllYear && !this._isProjectActiveForYear(d.project, year)) return;
-            Projects.STANDARD_KPIS.forEach(kpi => {
-                orgActuals[kpi.id] += d.actual[kpi.id] || 0;
-                orgTargets[kpi.id] += d.target[kpi.id] || 0;
-            });
-        });
-
-        const projectRows = projectKpis.map(d => {
-            const lastActivity = d.events[0]?.date || d.updates[0]?.date || '—';
+        const projectRows = rows.map(d => {
+            const active    = d.active;
+            const iconColor = active ? d.project.color : '#94a3b8';
             return `
-            <tr class="border-b border-slate-100 hover:bg-slate-50 cursor-pointer" onclick="App.switchProject('${d.project.id}')">
+            <tr class="border-b border-slate-100 hover:bg-slate-50 cursor-pointer ${active ? '' : 'opacity-50'}" onclick="App.switchProject('${d.project.id}')" title="${active ? '' : 'Not active in ' + sel.label}">
                 <td class="px-4 py-3">
                     <div class="flex items-center gap-2">
-                        <div class="w-6 h-6 rounded-md flex items-center justify-center shrink-0" style="background:${d.project.color}20">
-                            <i data-lucide="${d.project.icon || 'folder'}" width="12" style="color:${d.project.color}"></i>
+                        <div class="w-6 h-6 rounded-md flex items-center justify-center shrink-0" style="background:${iconColor}20">
+                            <i data-lucide="${d.project.icon || 'folder'}" width="12" style="color:${iconColor}"></i>
                         </div>
-                        <span class="text-sm font-semibold text-slate-800">${App.escapeHtml(d.project.name)}</span>
+                        <span class="text-sm font-semibold ${active ? 'text-slate-800' : 'text-slate-400'}">${App.escapeHtml(d.project.name)}${active ? '' : ' <span class="text-[10px] font-normal text-slate-400">(inactive)</span>'}</span>
                     </div>
                 </td>
                 ${Projects.STANDARD_KPIS.map(kpi => {
@@ -5591,11 +5556,11 @@ window.GenericViews = {
                     const tgt = d.target[kpi.id] || 0;
                     const pct = tgt > 0 ? Math.min(100, Math.round((v / tgt) * 100)) : null;
                     return `<td class="px-4 py-3">
-                        <span class="text-sm font-bold text-slate-800">${this._fmt(v)}</span>
-                        ${tgt > 0 ? `<p class="text-[10px] text-slate-400 mt-0.5">of ${this._fmt(tgt)} · <span class="font-bold" style="color:${kpi.color}">${pct}%</span></p>` : '<p class="text-[10px] text-slate-300 mt-0.5">no target</p>'}
+                        <span class="text-sm font-bold ${active ? 'text-slate-800' : 'text-slate-400'}">${this._fmt(v)}</span>
+                        ${tgt > 0 ? `<p class="text-[10px] text-slate-400 mt-0.5">of ${this._fmt(tgt)} · <span class="font-bold" style="color:${active ? kpi.color : '#94a3b8'}">${pct}%</span></p>` : '<p class="text-[10px] text-slate-300 mt-0.5">no target</p>'}
                     </td>`;
                 }).join('')}
-                <td class="px-4 py-3 text-xs text-slate-400">${lastActivity}</td>
+                <td class="px-4 py-3 text-xs text-slate-400">${active ? d.lastActivity : '—'}</td>
             </tr>`;
         }).join('');
 
@@ -5626,7 +5591,7 @@ window.GenericViews = {
                             </div>
                             <div class="min-w-0">
                                 <h1 class="text-xl font-bold text-gsf-prussian">Project Breakdown</h1>
-                                <p class="text-xs text-slate-500 mt-0.5">${genericProjects.length} project${genericProjects.length !== 1 ? 's' : ''} · ${isAllYear ? 'All-time totals' : year}</p>
+                                <p class="text-xs text-slate-500 mt-0.5">${genericProjects.length} project${genericProjects.length !== 1 ? 's' : ''} · ${periodLabel}</p>
                             </div>
                         </div>
                         <div class="flex items-center gap-2 shrink-0 flex-wrap">
@@ -5634,7 +5599,10 @@ window.GenericViews = {
                                 <input type="checkbox" data-viewer-allowed ${App.includeSample ? 'checked' : ''} onchange="App.toggleSampleInclude(this.checked)" class="accent-purple-600 cursor-pointer">
                                 <i data-lucide="flask-conical" width="12" class="text-purple-500"></i> Sample
                             </label>` : ''}
-                            <div class="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-1">${yearSelector}</div>
+                            <button data-edit-only onclick="GenericViews._exportBreakdownExcel()" class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-emerald-700 hover:bg-emerald-600 hover:text-white transition-all" title="Export this breakdown as a formatted Excel table">
+                                <i data-lucide="file-spreadsheet" width="13"></i> Excel
+                            </button>
+                            <div class="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-1" title="Click a year — or shift-click a second year to select a range">${yearSelector}</div>
                         </div>
                     </div>
                 </header>
@@ -5653,10 +5621,209 @@ window.GenericViews = {
                     </div>
                 </div>
 
-                <p class="text-[11px] text-slate-400 mt-3">Totals count only projects active in the selected year. Population &amp; facilities are point-in-time (the peak year), not summed across years.</p>
+                <p class="text-[11px] text-slate-400 mt-3">Click a year, or <strong>shift-click</strong> a second year to total a range (e.g. 2023–2025). Totals count only projects active in the selected period; population &amp; facilities are point-in-time (the peak year), not summed across years.</p>
             </div>`;
 
         if (window.lucide) lucide.createIcons();
+    },
+
+    // Resolve the current Breakdown selection from App state into a normalised shape.
+    // App.breakdownYear: a year number or 'all'. App.breakdownYearTo: optional second
+    // year that turns the selection into an inclusive range [min, max].
+    _breakdownSelection() {
+        const now = new Date();
+        if (App.breakdownYear === 'all') return { isAll: true, mode: 'all', label: 'All Time' };
+        const anchor = (App.breakdownYear == null) ? now.getFullYear() : Number(App.breakdownYear);
+        const other  = (App.breakdownYearTo == null) ? anchor : Number(App.breakdownYearTo);
+        const from = Math.min(anchor, other), to = Math.max(anchor, other);
+        if (from === to) return { isAll: false, mode: 'year', from, to, year: from, label: String(from) };
+        return { isAll: false, mode: 'range', from, to, label: `${from}–${to}` };
+    },
+
+    // Aggregate ONE project's actuals/targets rows across an inclusive [from, to] year
+    // range — flow KPIs sum, stock KPIs take the peak (max). Mirrors Projects.rollupAllYears
+    // but bounded to the range. `perYear` is getActualsForYear or getTargetsForYear.
+    _rollupRange(rows, from, to, perYear) {
+        const out = {};
+        Projects.STANDARD_KPIS.forEach(kpi => { out[kpi.id] = 0; });
+        for (let y = from; y <= to; y++) {
+            const k = perYear(rows, y) || {};
+            Projects.STANDARD_KPIS.forEach(kpi => {
+                const v = Number(k[kpi.id]) || 0;
+                if (kpi.stock) { if (v > out[kpi.id]) out[kpi.id] = v; }
+                else { out[kpi.id] += v; }
+            });
+        }
+        return out;
+    },
+
+    // A project is "active" across a year range if it is active for ANY year in it.
+    _isProjectActiveInRange(project, from, to) {
+        for (let y = from; y <= to; y++) if (this._isProjectActiveForYear(project, y)) return true;
+        return false;
+    },
+
+    // Shared data builder for the Breakdown tab + its Excel export, so the on-screen
+    // table and the workbook always agree. Returns per-project rows (with an `active`
+    // flag + last activity) and the active-only org totals for the current selection.
+    async _computeBreakdown() {
+        const sel = this._breakdownSelection();
+        const hasSampleProject = Projects.registry.some(p => p.type === 'generic' && p.isSample);
+        const genericProjects  = Projects.registry.filter(p => p.type === 'generic' && (App.includeSample || !p.isSample));
+        if (!genericProjects.length) return { sel, genericProjects, rows: [], orgActuals: {}, orgTargets: {}, hasSampleProject };
+
+        const projectData = await Promise.all(genericProjects.map(async p => {
+            const [events, allTargets, allActuals, updates] = await Promise.all([
+                Projects.getEvents(p.id), Projects.getTargets(p.id), Projects.getActuals(p.id), Projects.getUpdates(p.id)
+            ]);
+            return { project: p, events, updates, allTargets, allActuals };
+        }));
+
+        const hiddenYrsForAll = new Set(App._chartHiddenYears || []);
+        const getA = (rws, y) => Projects.getActualsForYear(rws, y);
+        const getT = (rws, y) => Projects.getTargetsForYear(rws, y);
+        const rows = projectData.map(d => {
+            let actual, target, active;
+            if (sel.isAll) {
+                actual = Projects.rollupAllYears(d.allActuals, hiddenYrsForAll);
+                target = Projects.rollupAllYears(d.allTargets, hiddenYrsForAll);
+                active = true;
+            } else if (sel.mode === 'year') {
+                actual = getA(d.allActuals, sel.year);
+                target = getT(d.allTargets, sel.year);
+                active = this._isProjectActiveForYear(d.project, sel.year);
+            } else {
+                actual = this._rollupRange(d.allActuals, sel.from, sel.to, getA);
+                target = this._rollupRange(d.allTargets, sel.from, sel.to, getT);
+                active = this._isProjectActiveInRange(d.project, sel.from, sel.to);
+            }
+            const lastActivity = (d.events[0] && d.events[0].date) || (d.updates[0] && d.updates[0].date) || '—';
+            return { project: d.project, actual, target, active, lastActivity };
+        });
+
+        const orgActuals = { hcw_strengthened: 0, patients_reached: 0, facilities_strengthened: 0, population_access: 0 };
+        const orgTargets = { hcw_strengthened: 0, patients_reached: 0, facilities_strengthened: 0, population_access: 0 };
+        rows.forEach(d => {
+            if (!sel.isAll && !d.active) return;   // active-only totals (all projects count for all-time)
+            Projects.STANDARD_KPIS.forEach(kpi => { orgActuals[kpi.id] += d.actual[kpi.id] || 0; orgTargets[kpi.id] += d.target[kpi.id] || 0; });
+        });
+
+        return { sel, genericProjects, rows, orgActuals, orgTargets, hasSampleProject };
+    },
+
+    // Year-button click for the Breakdown tab. Plain click = single year (resets the
+    // range anchor); shift-click = extend the selection from the existing anchor to the
+    // clicked year (an inclusive range).
+    _breakdownYearClick(ev, y) {
+        if (ev && ev.shiftKey && App.breakdownYear !== 'all' && App.breakdownYear != null) {
+            App.breakdownYearTo = y;
+        } else {
+            App.breakdownYear = y;
+            App.breakdownYearTo = null;
+        }
+        App.renderView();
+    },
+
+    // Export the current Breakdown table (single year, range, or all-time) as a
+    // formatted .xlsx — styled header band, grouped KPI columns (Actual / Target / %),
+    // number formats, greyed inactive rows, and a totals row. Uses the styling-capable
+    // SheetJS fork (window.XLSXStyle) when present; degrades to plain XLSX otherwise.
+    async _exportBreakdownExcel() {
+        try {
+            const { sel, genericProjects, rows, orgActuals, orgTargets } = await this._computeBreakdown();
+            if (!genericProjects.length) { App.showMsg('No SURGfund projects to export.', true); return; }
+            App.showMsg('Building Excel…');
+
+            const SS = (window.XLSXStyle && window.XLSXStyle.utils) ? window.XLSXStyle : XLSX;
+            const styled = SS !== XLSX;
+            const X = GenericViews._XL;
+            const KPIS = Projects.STANDARD_KPIS;
+
+            const aoa = [], merges = [], numFmt = [], styles = [];
+            let r = 0;
+            const push = vals => { aoa.push(vals ? vals.slice() : []); r++; };
+            const mrg = (r1, c1, r2, c2) => merges.push({ s: { r: r1, c: c1 }, e: { r: r2, c: c2 } });
+            const sty = (rr, c, s) => styles.push({ r: rr, c, s });
+            const styRow = (rr, c0, c1, s) => { for (let c = c0; c <= c1; c++) styles.push({ r: rr, c, s }); };
+            const numRow = (rr) => KPIS.forEach((kpi, i) => { const c = 1 + i * 3; numFmt.push({ r: rr, c, z: '#,##0' }); numFmt.push({ r: rr, c: c + 1, z: '#,##0' }); numFmt.push({ r: rr, c: c + 2, z: '0%' }); });
+
+            const ncols = 1 + KPIS.length * 3 + 2;   // Project + (Actual,Target,%)×KPIs + Last Activity + Status
+            const lastCol = ncols - 1, laCol = lastCol - 1, statusCol = lastCol;
+
+            // Title + subtitle
+            push(['Project Breakdown — ' + sel.label]); mrg(r - 1, 0, r - 1, lastCol); sty(r - 1, 0, X.title);
+            push(['Generated ' + new Date().toLocaleString() + '   ·   ' + genericProjects.length + ' project' + (genericProjects.length === 1 ? '' : 's')]); mrg(r - 1, 0, r - 1, lastCol); sty(r - 1, 0, X.subtitle);
+            push([]);
+
+            // Grouped header (two rows): KPI name spans Actual/Target/%
+            const gh = ['Project'];
+            KPIS.forEach(kpi => { gh.push(kpi.nameBig || kpi.name, '', ''); });
+            gh.push('Last Activity', 'Status');
+            push(gh); const ghRow = r - 1;
+            const sh = [''];
+            KPIS.forEach(() => { sh.push('Actual', 'Target', '%'); });
+            sh.push('', '');
+            push(sh); const shRow = r - 1;
+            mrg(ghRow, 0, shRow, 0);                       // Project across both header rows
+            mrg(ghRow, laCol, shRow, laCol);               // Last Activity
+            mrg(ghRow, statusCol, shRow, statusCol);       // Status
+            KPIS.forEach((kpi, i) => { const c = 1 + i * 3; mrg(ghRow, c, ghRow, c + 2); });
+            sty(ghRow, 0, X.groupLeft);
+            KPIS.forEach((kpi, i) => sty(ghRow, 1 + i * 3, X.group));
+            sty(ghRow, laCol, X.groupLeft); sty(ghRow, statusCol, X.group);
+            styRow(shRow, 1, statusCol, X.colHead);
+
+            // Data rows
+            rows.forEach(d => {
+                const row = [d.project.name + (d.active ? '' : ' (inactive)')];
+                KPIS.forEach(kpi => {
+                    const v = d.actual[kpi.id] || 0, t = d.target[kpi.id] || 0;
+                    row.push(v);
+                    row.push(t > 0 ? t : '');
+                    row.push(t > 0 ? Math.min(1, v / t) : '');   // capped at 100%, matching the on-screen table
+                });
+                row.push(d.active ? (d.lastActivity || '—') : '—');
+                row.push(d.active ? 'Active' : 'Inactive');
+                push(row); const rr = r - 1;
+                numRow(rr);
+                if (!d.active) styRow(rr, 0, statusCol, X.sampleRow);   // grey italic
+            });
+
+            // Totals (active-only, stock-aware — matches the on-screen footer)
+            const totRow = ['TOTAL'];
+            KPIS.forEach(kpi => {
+                const v = orgActuals[kpi.id] || 0, t = orgTargets[kpi.id] || 0;
+                totRow.push(v);
+                totRow.push(t > 0 ? t : '');
+                totRow.push(t > 0 ? Math.min(1, v / t) : '');
+            });
+            totRow.push('', ''); push(totRow); const trr = r - 1;
+            styRow(trr, 0, statusCol, X.total); numRow(trr);
+
+            // Methodology note
+            push([]);
+            push(['Totals count only projects active in the selected period. Population & facilities are point-in-time (the peak year within the period), not summed across years. Percentages are capped at 100%.']);
+            mrg(r - 1, 0, r - 1, lastCol); sty(r - 1, 0, X.subtitle);
+
+            // Column widths
+            const cols = [{ wch: 42 }];
+            KPIS.forEach(() => cols.push({ wch: 12 }, { wch: 12 }, { wch: 7 }));
+            cols.push({ wch: 16 }, { wch: 10 });
+
+            const ws = this._aoaToSheet(SS, { rows: aoa, merges, numFmt, styles, cols });
+            const wb = SS.utils.book_new();
+            SS.utils.book_append_sheet(wb, ws, this._xlsxSheetName('Project Breakdown', new Set()));
+
+            const stamp = new Date().toISOString().substring(0, 10);
+            const safeLabel = sel.label.replace(/[^0-9A-Za-z–-]+/g, ' ').trim();
+            const savePath = await electronAPI.invoke('pick-save-path', `SURGfund Project Breakdown ${safeLabel} ${stamp}.xlsx`);
+            if (!savePath) { App.showMsg('Export cancelled.'); return; }
+            electronAPI.fs.writeFileSync(savePath, new Uint8Array(SS.write(wb, { bookType: 'xlsx', type: 'array' })));
+            App.showMsg(`Excel saved — Project Breakdown (${sel.label}).${styled ? '' : ' (plain — styling lib unavailable)'}`);
+        } catch (err) {
+            console.error('[Breakdown Excel] failed', err);
+            App.showMsg('Excel export failed: ' + (err && err.message || err), true);
+        }
     },
 
     // ===== ORG TABLE =====
