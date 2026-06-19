@@ -408,30 +408,38 @@
       // Geographic-reach journey — real learners, ordered A–Z by country. Text is baked in (offline-safe);
       // each hero photo loads from the article when online and falls back to a branded gradient + initials.
       const STORIES = [
-        { fl: '🇧🇩', country: 'Bangladesh', city: 'Comilla', name: 'Dr Sourov Das', role: 'Surgical trainee', init: 'SD', grad: 'linear-gradient(135deg,#2f86c9,#1f9c63)', img: SI.bangladesh, url: 'https://www.surghub.org/blog/impact-stories-dr-sourov-das-surgical-training-bangladesh',
+        { fl: '🇧🇩', country: 'Bangladesh', city: 'Comilla', lon: 91.18, lat: 23.46, name: 'Dr Sourov Das', role: 'Surgical trainee', init: 'SD', grad: 'linear-gradient(135deg,#2f86c9,#1f9c63)', img: SI.bangladesh, url: 'https://www.surghub.org/blog/impact-stories-dr-sourov-das-surgical-training-bangladesh',
           sum: 'A general-surgery trainee at Comilla Medical College Hospital, Dr Das used SURGhub’s burn-care courses to supplement his training — then drew on them to confidently treat a young girl with severe thermal injuries.' },
-        { fl: '🇨🇩', country: 'DR Congo', city: 'Bukavu', name: 'William Baraka', role: 'Anaesthesia & critical care', init: 'WB', grad: 'linear-gradient(135deg,#9b8cff,#2f86c9)', img: SI.drc, url: 'https://www.surghub.org/blog/impact-stories-william-baraka-congo',
+        { fl: '🇨🇩', country: 'DR Congo', city: 'Bukavu', lon: 28.85, lat: -2.51, name: 'William Baraka', role: 'Anaesthesia & critical care', init: 'WB', grad: 'linear-gradient(135deg,#9b8cff,#2f86c9)', img: SI.drc, url: 'https://www.surghub.org/blog/impact-stories-william-baraka-congo',
           sum: 'After losing his sister to a preventable anaesthesia complication, William turned that loss into a mission. In conflict-affected eastern DRC he draws on SURGhub’s perioperative resources to strengthen patient safety and train colleagues across Francophone Africa.' },
-        { fl: '🇪🇬', country: 'Egypt', city: 'Giza', name: 'Dr Sanderene Abdelnor', role: 'Reconstructive surgery', init: 'SA', grad: 'linear-gradient(135deg,#f5b301,#e57373)', img: SI.egypt, url: 'https://www.surghub.org/blog/impact-stories-dr-sanderene-abdelnor-reconstructive-surgery-egypt',
+        { fl: '🇪🇬', country: 'Egypt', city: 'Giza', lon: 31.21, lat: 30.01, name: 'Dr Sanderene Abdelnor', role: 'Reconstructive surgery', init: 'SA', grad: 'linear-gradient(135deg,#f5b301,#e57373)', img: SI.egypt, url: 'https://www.surghub.org/blog/impact-stories-dr-sanderene-abdelnor-reconstructive-surgery-egypt',
           sum: 'A plastic & reconstructive surgeon in a high-volume Giza hospital, Dr Abdelnor used SURGhub’s guidance to introduce structured distraction techniques while treating a child with burn trauma — reshaping how she supports patients through recovery.' },
-        { fl: '🇮🇳', country: 'India', city: 'Belagavi', name: 'Dr Shubhangi Patil', role: 'Surgeon & mentor', init: 'SP', grad: 'linear-gradient(135deg,#3FB984,#2f86c9)', img: SI.india, url: 'https://www.surghub.org/blog/impact-stories-dr-shubhangi-patil-surgical-art-belagavi',
+        { fl: '🇮🇳', country: 'India', city: 'Belagavi', lon: 74.50, lat: 15.85, name: 'Dr Shubhangi Patil', role: 'Surgeon & mentor', init: 'SP', grad: 'linear-gradient(135deg,#3FB984,#2f86c9)', img: SI.india, url: 'https://www.surghub.org/blog/impact-stories-dr-shubhangi-patil-surgical-art-belagavi',
           sum: 'An experienced surgeon who calls her craft “a work of art,” Dr Patil uses SURGhub to keep her skills current and to reach globally recognised surgical standards — and to mentor the next generation of surgeons in smaller towns.' },
-        { fl: '🇰🇪', country: 'Kenya', city: 'Nakuru', name: 'Dennis Nyang’au', role: 'Emergency & critical care', init: 'DN', grad: 'linear-gradient(135deg,#2f86c9,#1f9c63)', img: SI.kenya, url: 'https://www.surghub.org/blog/impact-stories-dennis-nyangau-kenya',
+        { fl: '🇰🇪', country: 'Kenya', city: 'Nakuru', lon: 36.07, lat: -0.30, name: 'Dennis Nyang’au', role: 'Emergency & critical care', init: 'DN', grad: 'linear-gradient(135deg,#2f86c9,#1f9c63)', img: SI.kenya, url: 'https://www.surghub.org/blog/impact-stories-dennis-nyangau-kenya',
           sum: 'A Kenya Red Cross emergency responder, Dennis completed SURGhub’s Essential Emergency & Critical Care course — then used it to stabilise a hit-and-run victim in the field, proving the principles work well beyond the hospital.' },
-        { fl: '🇸🇱', country: 'Sierra Leone', city: 'Freetown', name: 'Dr Sheku Massaquoi', role: 'General surgeon', init: 'SM', grad: 'linear-gradient(135deg,#9b8cff,#3FB984)', img: SI.sierraleone, url: 'https://www.surghub.org/blog/impact-stories-dr-sheku-dennis-massaquoi-resilient-care',
+        { fl: '🇸🇱', country: 'Sierra Leone', city: 'Freetown', lon: -13.23, lat: 8.48, name: 'Dr Sheku Massaquoi', role: 'General surgeon', init: 'SM', grad: 'linear-gradient(135deg,#9b8cff,#3FB984)', img: SI.sierraleone, url: 'https://www.surghub.org/blog/impact-stories-dr-sheku-dennis-massaquoi-resilient-care',
           sum: 'A general surgeon at 34 Military Hospital in Freetown, Dr Massaquoi sets aside 90 minutes each morning to learn on SURGhub — training that directly shaped a palliative mastectomy he performed under regional anaesthesia for a patient unfit for general anaesthesia.' }
       ];
-      const geoStops = '<div class="groute">' + STORIES.map(function (s) {
-        return '<article class="gstop rv">'
-          + '<div class="gstop-media" style="background:' + s.grad + '">' + (s.img ? '<img src="' + esc(s.img) + '" alt="' + esc(s.name) + ' — ' + esc(s.country) + '" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">' : '') + '<span class="gstop-init">' + s.init + '</span></div>'
-          + '<div class="gstop-text">'
-            + '<div class="gstop-loc"><span class="gstop-flag">' + s.fl + '</span>' + esc(s.country) + (s.city ? ' · ' + esc(s.city) : '') + '</div>'
-            + '<h3 class="gstop-nm">' + esc(s.name) + '</h3>'
-            + '<div class="gstop-role">' + esc(s.role) + '</div>'
-            + '<p class="gstop-sum">' + esc(s.sum) + '</p>'
-            + '<a class="gstop-go" href="' + esc(s.url) + '" target="_blank" rel="noopener">Read the full story →</a>'
+      // Scroll-driven globe: a sticky canvas globe that rotates to centre each learner's country
+      // as their card scrolls into view (the active marker glows). Steps carry lon/lat in data-*.
+      const geoSteps = STORIES.map(function (s, i) {
+        return '<article class="gstep rv" data-lon="' + s.lon + '" data-lat="' + s.lat + '" data-country="' + esc(s.country) + '" data-flag="' + s.fl + '" data-i="' + i + '">'
+          + '<div class="gstep-card">'
+            + '<div class="gstep-media" style="background:' + s.grad + '">' + (s.img ? '<img src="' + esc(s.img) + '" alt="' + esc(s.name) + ' — ' + esc(s.country) + '" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">' : '') + '<span class="gstep-init">' + s.init + '</span></div>'
+            + '<div class="gstep-body">'
+              + '<div class="gstep-loc"><span class="gstep-flag">' + s.fl + '</span>' + esc(s.country) + (s.city ? ' · ' + esc(s.city) : '') + '</div>'
+              + '<h3 class="gstep-nm">' + esc(s.name) + '</h3>'
+              + '<div class="gstep-role">' + esc(s.role) + '</div>'
+              + '<p class="gstep-sum">' + esc(s.sum) + '</p>'
+              + '<a class="gstep-go" href="' + esc(s.url) + '" target="_blank" rel="noopener">Read the full story →</a>'
+            + '</div>'
           + '</div></article>';
-      }).join('') + '</div>';
+      }).join('');
+      const geoScrolly = '<div class="globe-scrolly">'
+        + '<div class="globe-stage"><canvas id="globe"></canvas><div id="globe-cap" class="globe-cap" aria-hidden="true"></div></div>'
+        + '<div class="globe-steps">' + geoSteps + '</div>'
+        + '</div>';
       const ambFeature = '<a class="feature rv d3" href="https://www.surghub.org/blog/driven-by-the-community-surghub-surpasses-50000-users" target="_blank" rel="noopener">' + (SI.amb ? '<div class="feature-img"><img src="' + esc(SI.amb) + '" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.parentNode.remove()"></div>' : '') + '<div class="feature-body"><span class="feature-k">From the community</span><span class="feature-t">Driven by the community: passing 50,000 learners</span><span class="feature-s">Three ambassadors on what keeps them growing SURGhub — read the story →</span></div></a>';
 
       // Subtle network-globe backdrop for the "spreads itself" section (meridians + a few nodes).
@@ -615,6 +623,51 @@
           // (init race / odd environments). Below-the-fold stays untouched so the scroll story is intact.
           setTimeout(function () { var vh = window.innerHeight || document.documentElement.clientHeight || 0; revItems.forEach(function (el) { if (!el.classList.contains('in')) { var r = el.getBoundingClientRect(); if (r.top < vh * 0.92) revealEl(el); } }); }, 1800);
         }
+
+        // ---- scroll-driven globe (geographic-reach section): a sticky orthographic canvas
+        // globe that rotates to centre each learner's country as their card scrolls into view.
+        // Self-contained (no libs); degrades to the plain story cards if canvas is unavailable.
+        initGlobe();
+        function initGlobe() {
+          var cv = document.getElementById('globe'); if (!cv || !cv.getContext) return;
+          var ctx; try { ctx = cv.getContext('2d'); } catch (e) { return; } if (!ctx) return;
+          var steps = [].slice.call(document.querySelectorAll('#faces .gstep'));
+          if (!steps.length) { var st = cv.parentNode; if (st) st.style.display = 'none'; return; }
+          var pts = steps.map(function (s) { return { lon: +s.getAttribute('data-lon'), lat: +s.getAttribute('data-lat'), country: s.getAttribute('data-country'), flag: s.getAttribute('data-flag') }; });
+          var cap = document.getElementById('globe-cap');
+          var dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+          var W = 0, H = 0, R = 0, cx = 0, cy = 0;
+          function size() { var r = cv.getBoundingClientRect(); W = Math.max(40, r.width); H = Math.max(40, r.height); cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); R = Math.min(W, H) * 0.42; cx = W / 2; cy = H / 2; }
+          size();
+          var d2r = Math.PI / 180;
+          // graticule dot grid (even-ish spacing per latitude ring)
+          var grid = []; for (var la = -78; la <= 78; la += 8) { var rr = Math.cos(la * d2r); var n = Math.max(1, Math.round(rr * 40)); for (var k = 0; k < n; k++) grid.push([-180 + 360 * k / n, la]); }
+          function proj(lon, lat, l0, a0) { var dl = (lon - l0) * d2r, a = lat * d2r, b = a0 * d2r; var cc = Math.sin(b) * Math.sin(a) + Math.cos(b) * Math.cos(a) * Math.cos(dl); var x = Math.cos(a) * Math.sin(dl); var y = Math.cos(b) * Math.sin(a) - Math.sin(b) * Math.cos(a) * Math.cos(dl); return { x: cx + R * x, y: cy - R * y, c: cc }; }
+          function vec(lon, lat) { var a = lat * d2r, o = lon * d2r; return [Math.cos(a) * Math.cos(o), Math.cos(a) * Math.sin(o), Math.sin(a)]; }
+          function ll(x, y, z) { var r = Math.sqrt(x * x + y * y + z * z) || 1; return { lon: Math.atan2(y, x) / d2r, lat: Math.asin(z / r) / d2r }; }
+          function arcPts(p0, p1) { var v0 = vec(p0.lon, p0.lat), v1 = vec(p1.lon, p1.lat); var dot = Math.max(-1, Math.min(1, v0[0] * v1[0] + v0[1] * v1[1] + v0[2] * v1[2])); var om = Math.acos(dot); var out = []; if (om < 1e-3) { out.push(p0); return out; } var so = Math.sin(om); for (var t = 0; t <= 1.0001; t += 1 / 28) { var s0 = Math.sin((1 - t) * om) / so, s1 = Math.sin(t * om) / so; out.push(ll(s0 * v0[0] + s1 * v1[0], s0 * v0[1] + s1 * v1[1], s0 * v0[2] + s1 * v1[2])); } return out; }
+          var arcs = []; for (var ai = 0; ai < pts.length - 1; ai++) arcs.push(arcPts(pts[ai], pts[ai + 1]));
+          var cur = { lon: pts[0].lon, lat: pts[0].lat }, tgt = { lon: pts[0].lon, lat: pts[0].lat }, active = -1;
+          function draw(now) {
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
+            var atm = ctx.createRadialGradient(cx, cy, R * 0.62, cx, cy, R * 1.24); atm.addColorStop(0, 'rgba(47,134,201,0)'); atm.addColorStop(0.74, 'rgba(47,134,201,0.12)'); atm.addColorStop(1, 'rgba(47,134,201,0)'); ctx.fillStyle = atm; ctx.beginPath(); ctx.arc(cx, cy, R * 1.24, 0, 7); ctx.fill();
+            var oc = ctx.createRadialGradient(cx - R * 0.32, cy - R * 0.36, R * 0.15, cx, cy, R); oc.addColorStop(0, '#0e3f63'); oc.addColorStop(1, '#04263d'); ctx.fillStyle = oc; ctx.beginPath(); ctx.arc(cx, cy, R, 0, 7); ctx.fill();
+            for (var i = 0; i < grid.length; i++) { var p = proj(grid[i][0], grid[i][1], cur.lon, cur.lat); if (p.c < 0.02) continue; ctx.fillStyle = 'rgba(127,182,227,' + (0.1 + 0.5 * p.c).toFixed(3) + ')'; ctx.beginPath(); ctx.arc(p.x, p.y, 0.7 + 0.9 * p.c, 0, 7); ctx.fill(); }
+            for (var aj = 0; aj < arcs.length; aj++) { var near = (aj === active || aj + 1 === active); ctx.strokeStyle = near ? 'rgba(63,185,132,0.6)' : 'rgba(127,182,227,0.16)'; ctx.lineWidth = near ? 1.8 : 1.1; ctx.beginPath(); var seg = arcs[aj], on = false; for (var t2 = 0; t2 < seg.length; t2++) { var q = proj(seg[t2].lon, seg[t2].lat, cur.lon, cur.lat); if (q.c < 0) { on = false; continue; } if (!on) { ctx.moveTo(q.x, q.y); on = true; } else ctx.lineTo(q.x, q.y); } ctx.stroke(); }
+            var pulse = reduce ? 1 : (0.5 + 0.5 * Math.sin((now || 0) / 520));
+            for (var m = 0; m < pts.length; m++) { var pm = proj(pts[m].lon, pts[m].lat, cur.lon, cur.lat); if (pm.c < 0) continue; if (m === active) { ctx.fillStyle = 'rgba(63,185,132,' + (0.16 + 0.16 * pulse).toFixed(3) + ')'; ctx.beginPath(); ctx.arc(pm.x, pm.y, 10 + 6 * pulse, 0, 7); ctx.fill(); ctx.fillStyle = '#3FB984'; ctx.beginPath(); ctx.arc(pm.x, pm.y, 5.5, 0, 7); ctx.fill(); ctx.lineWidth = 1.6; ctx.strokeStyle = 'rgba(255,255,255,.92)'; ctx.stroke(); } else { ctx.fillStyle = 'rgba(127,182,227,' + (0.45 + 0.45 * pm.c).toFixed(3) + ')'; ctx.beginPath(); ctx.arc(pm.x, pm.y, 3.1, 0, 7); ctx.fill(); } }
+          }
+          function shortest(d) { d = (d + 540) % 360 - 180; return d; }
+          var raf = 0, vis = false;
+          function loop(now) { var dl = shortest(tgt.lon - cur.lon), da = tgt.lat - cur.lat; if (reduce) { cur.lon = tgt.lon; cur.lat = tgt.lat; } else { cur.lon += dl * 0.085; cur.lat += da * 0.085; } draw(now); if (reduce || !vis) { raf = 0; return; } raf = requestAnimationFrame(loop); }
+          function kick() { if (!raf && !reduce) raf = requestAnimationFrame(loop); }
+          function setActive(i) { i = Math.max(0, Math.min(pts.length - 1, i)); if (i === active) return; active = i; tgt.lon = pts[i].lon; tgt.lat = pts[i].lat; if (cap) { cap.innerHTML = ''; var f = document.createElement('span'); f.className = 'gc-flag'; f.textContent = pts[i].flag || ''; var c = document.createElement('span'); c.textContent = pts[i].country || ''; cap.appendChild(f); cap.appendChild(c); } for (var j = 0; j < steps.length; j++) steps[j].classList.toggle('on', j === i); if (reduce || !vis) draw(0); else kick(); }
+          function pick() { var mid = (window.innerHeight || 0) * 0.5, best = 0, bd = 1e9; for (var i = 0; i < steps.length; i++) { var r = steps[i].getBoundingClientRect(); var ctr = r.top + r.height / 2; var d = Math.abs(ctr - mid); if (d < bd) { bd = d; best = i; } } setActive(best); }
+          if ('IntersectionObserver' in window) { var io2 = new IntersectionObserver(function (es) { es.forEach(function (e) { vis = e.isIntersecting; if (vis) kick(); }); }, { threshold: 0.01 }); io2.observe(cv); } else { vis = true; }
+          addEventListener('scroll', pick, { passive: true });
+          addEventListener('resize', function () { size(); draw(0); });
+          setActive(0); draw(0); pick();
+        }
       }
 
       const heroBrand = D.logos.surghub
@@ -644,7 +697,7 @@
         + '<div class="rv d2"><p class="muted" style="margin-bottom:12px;letter-spacing:.14em;text-transform:uppercase;font-size:12px">Top reached priority countries</p><div class="plist">' + priorityList + '</div></div></div>'
         + '<div class="rv d2" style="margin-top:34px"><div id="map" style="width:100%;height:460px"></div><div id="map-legend"></div><div style="text-align:center;margin-top:14px"><button id="lmic-toggle" class="toggle">See only the hardest places</button></div></div>')
 
-        + sec('faces', 'On the ground', 'darker', '<h2 class="rv">The people behind the map.</h2><p class="lead rv d1" style="margin-bottom:8px">Behind every point on that map is a clinician putting new skills to work. A few of their stories — from Bangladesh to Sierra Leone.</p>' + geoStops + '<p class="muted rv" style="margin-top:30px">More learner stories on the <a href="https://www.surghub.org/blog" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline">SURGhub blog</a>.</p>')
+        + sec('faces', 'On the ground', 'darker', '<h2 class="rv">The people behind the map.</h2><p class="lead rv d1" style="margin-bottom:8px">Behind every point on that map is a clinician putting new skills to work. Scroll to travel the globe — from Bangladesh to Sierra Leone.</p>' + geoScrolly + '<p class="muted rv" style="margin-top:30px">More learner stories on the <a href="https://www.surghub.org/blog" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline">SURGhub blog</a>.</p>')
 
         + (cadreDonut ? sec('who', 'Who', '', '<h2 class="rv">The whole surgical team.</h2><p class="lead rv d1" style="margin-bottom:22px">Safe surgery depends on the whole team. SURGhub serves surgeons, nurses, anaesthesia providers, midwives, and the students training to join them.</p>' + cadreDonut) : '')
 
@@ -696,10 +749,14 @@
         + '.donutbox{display:flex;align-items:center;gap:44px;flex-wrap:wrap;margin-top:24px}.donut-wrap{flex:none;width:220px;height:220px}.donutsvg{width:220px;height:220px;display:block}.donut-legend{flex:1;min-width:260px;display:flex;flex-direction:column;gap:12px}.leg{display:grid;grid-template-columns:16px 1fr auto;align-items:center;gap:14px}.legdot{width:14px;height:14px;border-radius:4px;display:inline-block}.legnm{font-size:15px;color:#334155}.legpct{font-size:16px;color:var(--ink);font-weight:700;text-align:right;font-variant-numeric:tabular-nums}'
         + '#network{overflow:hidden}.netfg{position:relative;z-index:1}.netbg{position:absolute;right:-90px;top:50%;transform:translateY(-50%);width:560px;height:560px;opacity:.14;pointer-events:none;z-index:0}@media(max-width:760px){.netbg{display:none}}'
         + '.plist{display:flex;flex-direction:column}.prow{display:grid;grid-template-columns:26px 26px 1fr;align-items:center;gap:12px;padding:11px 4px;border-bottom:1px solid rgba(255,255,255,.07)}.prank{font-size:13px;font-weight:700;color:#7f9bb1;font-variant-numeric:tabular-nums}.pflag{font-size:18px}.pname{font-size:16px;color:#eaf2f8}'
-        + '.groute{display:flex;flex-direction:column;gap:54px;margin-top:42px}.gstop{display:grid;grid-template-columns:1.05fr .95fr;gap:40px;align-items:center}.gstop:nth-child(even) .gstop-media{order:2}@media(max-width:760px){.gstop{grid-template-columns:1fr;gap:18px}.gstop:nth-child(even) .gstop-media{order:0}}'
-        + '.gstop-media{position:relative;aspect-ratio:16/9;border-radius:18px;overflow:hidden;display:flex;align-items:center;justify-content:center;box-shadow:0 22px 52px rgba(0,0,0,.4)}.gstop-media img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:transform .5s cubic-bezier(.2,.7,.2,1)}.gstop:hover .gstop-media img{transform:scale(1.04)}.gstop-init{font-size:54px;font-weight:800;color:rgba(255,255,255,.9);letter-spacing:.02em}'
-        + '.gstop-loc{display:flex;align-items:center;gap:9px;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--boston-soft);font-weight:700}.gstop-flag{font-size:21px;line-height:1}.gstop-nm{font-size:clamp(22px,2.6vw,29px);font-weight:700;color:#eaf2f8;margin:11px 0 2px;letter-spacing:-.01em}.gstop-role{font-size:14px;color:#9fc1dc;font-weight:600;margin-bottom:13px}.gstop-sum{font-size:16px;line-height:1.62;color:#b9cede;margin:0 0 16px;max-width:54ch}.gstop-go{font-size:14px;font-weight:700;color:var(--boston-soft);text-decoration:none}.gstop:hover .gstop-go{color:#fff}'
-        + '@media(prefers-reduced-motion:reduce){.rv{transition:none;opacity:1;transform:none}.fill{transition:none}.cue{animation:none}.kin .w{opacity:1;transform:none;transition:none}.aurora{animation:none}.num.pop{animation:none}.stars .on{transition:none}.quote.rv{transform:none}}';
+        + '.globe-scrolly{display:grid;grid-template-columns:0.92fr 1.08fr;gap:50px;margin-top:34px}@media(max-width:860px){.globe-scrolly{grid-template-columns:1fr;gap:0}}'
+        + '.globe-stage{position:sticky;top:11vh;height:78vh;display:flex;align-items:center;justify-content:center;background:var(--prussian-deep)}@media(max-width:860px){.globe-stage{top:0;height:46vh;margin:0 -6vw;z-index:2}}#globe{width:100%;height:100%;display:block;touch-action:pan-y}'
+        + '.globe-cap{position:absolute;left:0;right:0;bottom:5%;display:flex;align-items:center;justify-content:center;gap:11px;font-size:18px;font-weight:700;letter-spacing:.01em;color:#eaf2f8;pointer-events:none;text-shadow:0 2px 14px rgba(0,0,0,.6);transition:opacity .4s ease}.globe-cap .gc-flag{font-size:26px;line-height:1}'
+        + '.globe-steps{display:flex;flex-direction:column}.gstep{min-height:64vh;display:flex;align-items:center}@media(max-width:860px){.gstep{min-height:auto;padding:26px 0}}'
+        + '.gstep-card{width:100%;background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:18px;overflow:hidden;opacity:.45;transform:scale(.985);transition:opacity .45s ease,transform .45s cubic-bezier(.2,.7,.2,1),border-color .45s ease,background .45s ease}.gstep.on .gstep-card{opacity:1;transform:none;border-color:rgba(63,185,132,.5);background:rgba(255,255,255,.08)}'
+        + '.gstep-media{position:relative;aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;overflow:hidden}.gstep-media img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}.gstep-init{font-size:48px;font-weight:800;color:rgba(255,255,255,.9);letter-spacing:.02em}'
+        + '.gstep-body{padding:20px 24px 22px}.gstep-loc{display:flex;align-items:center;gap:9px;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--boston-soft);font-weight:700}.gstep-flag{font-size:20px;line-height:1}.gstep-nm{font-size:clamp(20px,2.4vw,26px);font-weight:700;color:#eaf2f8;margin:10px 0 2px;letter-spacing:-.01em}.gstep-role{font-size:14px;color:#9fc1dc;font-weight:600;margin-bottom:11px}.gstep-sum{font-size:15.5px;line-height:1.6;color:#b9cede;margin:0 0 15px}.gstep-go{font-size:14px;font-weight:700;color:var(--boston-soft);text-decoration:none}.gstep-card:hover .gstep-go{color:#fff}'
+        + '@media(prefers-reduced-motion:reduce){.rv{transition:none;opacity:1;transform:none}.gstep-card{opacity:1;transform:none}.fill{transition:none}.cue{animation:none}.kin .w{opacity:1;transform:none;transition:none}.aurora{animation:none}.num.pop{animation:none}.stars .on{transition:none}.quote.rv{transform:none}}';
 
       return '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
         + '<title>SURGhub — Impact Showcase</title>'
