@@ -435,16 +435,15 @@
               + '<a class="gstep-go" href="' + esc(s.url) + '" target="_blank" rel="noopener">Read the full story →</a>'
             + '</div>'
           + '</div></article>';
-      }).join('');
+      }).join('')
+        // Final step: the platform-wide reminder, presented like a story card. When it scrolls
+        // to centre, the same globe spins and lights up with a dot + line for every learner country.
+        + '<article class="gstep gstep-reach rv" data-reach="1" data-i="' + STORIES.length + '">'
+          + '<div class="reach-card"><p class="reach-line">Six stories from a global classroom — and counting. SURGhub now reaches <b class="num" data-to="' + D.learners + '">0</b> health workers across <b class="num" data-to="' + D.countries + '">0</b> countries around the world.</p></div>'
+        + '</article>';
       const geoScrolly = '<div class="globe-scrolly">'
         + '<div class="globe-stage"><canvas id="globe"></canvas><div id="globe-cap" class="globe-cap" aria-hidden="true"></div></div>'
         + '<div class="globe-steps">' + geoSteps + '</div>'
-        + '</div>';
-      // Closing reminder: a finale globe that lights up with a dot + connecting line for
-      // every learner country worldwide, beneath the platform-wide totals.
-      const geoClose = '<div class="geo-close rv">'
-        + '<p class="reach-line">Six stories from a global classroom — and counting. SURGhub now reaches <b class="num" data-to="' + D.learners + '">0</b> health workers across <b class="num" data-to="' + D.countries + '">0</b> countries around the world.</p>'
-        + '<div class="reach-stage"><canvas id="reachglobe"></canvas></div>'
         + '</div>';
       const ambFeature = '<a class="feature rv d3" href="https://www.surghub.org/blog/driven-by-the-community-surghub-surpasses-50000-users" target="_blank" rel="noopener">' + (SI.amb ? '<div class="feature-img"><img src="' + esc(SI.amb) + '" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.parentNode.remove()"></div>' : '') + '<div class="feature-body"><span class="feature-k">From the community</span><span class="feature-t">Driven by the community: passing 50,000 learners</span><span class="feature-s">Three ambassadors on what keeps them growing SURGhub — read the story →</span></div></a>';
 
@@ -630,94 +629,82 @@
           setTimeout(function () { var vh = window.innerHeight || document.documentElement.clientHeight || 0; revItems.forEach(function (el) { if (!el.classList.contains('in')) { var r = el.getBoundingClientRect(); if (r.top < vh * 0.92) revealEl(el); } }); }, 1800);
         }
 
-        // ---- scroll-driven globe (geographic-reach section): a sticky orthographic canvas
-        // globe that rotates to centre each learner's country as their card scrolls into view.
+        // ---- scroll-driven globe (geographic-reach section): a sticky orthographic canvas globe
+        // that rotates to centre each learner's country as their card scrolls in; on the final
+        // "reach" step it spins and lights up with a dot + line for every learner country worldwide.
         // Self-contained (no libs); degrades to the plain story cards if canvas is unavailable.
         initGlobe();
-        initReachGlobe();
         function initGlobe() {
           var cv = document.getElementById('globe'); if (!cv || !cv.getContext) return;
           var ctx; try { ctx = cv.getContext('2d'); } catch (e) { return; } if (!ctx) return;
           var steps = [].slice.call(document.querySelectorAll('#faces .gstep'));
           if (!steps.length) { var st = cv.parentNode; if (st) st.style.display = 'none'; return; }
-          var pts = steps.map(function (s) { return { lon: +s.getAttribute('data-lon'), lat: +s.getAttribute('data-lat'), country: s.getAttribute('data-country'), flag: s.getAttribute('data-flag') }; });
-          var cap = document.getElementById('globe-cap');
-          var dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
-          var W = 0, H = 0, R = 0, cx = 0, cy = 0;
-          function size() { var r = cv.getBoundingClientRect(); W = Math.max(40, r.width); H = Math.max(40, r.height); cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); R = Math.min(W, H) * 0.42; cx = W / 2; cy = H / 2; }
-          size();
           var d2r = Math.PI / 180;
-          // continents: a flat [lon,lat,lon,lat,…] land-dot mask baked in at build time (window.LAND)
           var LP = (typeof LAND !== 'undefined' && LAND) ? LAND : [];
-          function proj(lon, lat, l0, a0) { var dl = (lon - l0) * d2r, a = lat * d2r, b = a0 * d2r; var cc = Math.sin(b) * Math.sin(a) + Math.cos(b) * Math.cos(a) * Math.cos(dl); var x = Math.cos(a) * Math.sin(dl); var y = Math.cos(b) * Math.sin(a) - Math.sin(b) * Math.cos(a) * Math.cos(dl); return { x: cx + R * x, y: cy - R * y, c: cc }; }
+          var cap = document.getElementById('globe-cap');
           function vec(lon, lat) { var a = lat * d2r, o = lon * d2r; return [Math.cos(a) * Math.cos(o), Math.cos(a) * Math.sin(o), Math.sin(a)]; }
           function ll(x, y, z) { var r = Math.sqrt(x * x + y * y + z * z) || 1; return { lon: Math.atan2(y, x) / d2r, lat: Math.asin(z / r) / d2r }; }
-          function arcPts(p0, p1) { var v0 = vec(p0.lon, p0.lat), v1 = vec(p1.lon, p1.lat); var dot = Math.max(-1, Math.min(1, v0[0] * v1[0] + v0[1] * v1[1] + v0[2] * v1[2])); var om = Math.acos(dot); var out = []; if (om < 1e-3) { out.push(p0); return out; } var so = Math.sin(om); for (var t = 0; t <= 1.0001; t += 1 / 28) { var s0 = Math.sin((1 - t) * om) / so, s1 = Math.sin(t * om) / so; out.push(ll(s0 * v0[0] + s1 * v1[0], s0 * v0[1] + s1 * v1[1], s0 * v0[2] + s1 * v1[2])); } return out; }
-          var arcs = []; for (var ai = 0; ai < pts.length - 1; ai++) arcs.push(arcPts(pts[ai], pts[ai + 1]));
-          var cur = { lon: pts[0].lon, lat: pts[0].lat }, tgt = { lon: pts[0].lon, lat: pts[0].lat }, active = -1;
+          function gdist(a, b) { var dl = (a.lon - b.lon) * d2r, p = a.lat * d2r, q = b.lat * d2r; return Math.acos(Math.max(-1, Math.min(1, Math.sin(p) * Math.sin(q) + Math.cos(p) * Math.cos(q) * Math.cos(dl)))); }
+          function arcPts(p0, p1) { var v0 = vec(p0.lon, p0.lat), v1 = vec(p1.lon, p1.lat); var dot = Math.max(-1, Math.min(1, v0[0] * v1[0] + v0[1] * v1[1] + v0[2] * v1[2])); var om = Math.acos(dot); var out = []; if (om < 1e-3) return out; var so = Math.sin(om); for (var t = 0; t <= 1.0001; t += 1 / 24) { var s0 = Math.sin((1 - t) * om) / so, s1 = Math.sin(t * om) / so; out.push(ll(s0 * v0[0] + s1 * v1[0], s0 * v0[1] + s1 * v1[1], s0 * v0[2] + s1 * v1[2])); } return out; }
+          // steps: learner stories carry lon/lat; the finale step (data-reach) lights up the whole world
+          var pts = [], reachIdx = -1;
+          steps.forEach(function (s, i) { if (s.getAttribute('data-reach')) { pts.push(null); reachIdx = i; } else pts.push({ lon: +s.getAttribute('data-lon'), lat: +s.getAttribute('data-lat'), country: s.getAttribute('data-country'), flag: s.getAttribute('data-flag'), idx: i }); });
+          var story = pts.filter(Boolean);
+          var sArcs = []; for (var si = 0; si < story.length - 1; si++) { var ss = arcPts(story[si], story[si + 1]); if (ss.length) sArcs.push(ss); }
+          // reach layer: every learner country (D.countryMap) -> dot; lines fan to nearest hubs (+ hub web)
+          var CZ = (typeof CENTROIDS !== 'undefined' && CENTROIDS) ? CENTROIDS : {};
+          var cm = (D && D.countryMap) ? D.countryMap : {};
+          var rdots = [], maxv = 0;
+          for (var iso in cm) { if (!Object.prototype.hasOwnProperty.call(cm, iso)) continue; var v = Number(cm[iso]) || 0; var c = CZ[iso] || CZ[String(iso).toUpperCase()]; if (v > 0 && c) { rdots.push({ lon: c[0], lat: c[1], v: v }); if (v > maxv) maxv = v; } }
+          rdots.sort(function (a, b) { return b.v - a.v; });
+          rdots.forEach(function (d, i) { d.rank = i / (rdots.length || 1); d.r = Math.sqrt((d.v || 0) / (maxv || 1)); });
+          var hubs = rdots.slice(0, Math.min(6, rdots.length)), rArcs = [];
+          rdots.forEach(function (d) { var cand = []; for (var h = 0; h < hubs.length; h++) { if (hubs[h] === d) continue; cand.push({ h: hubs[h], dd: gdist(d, hubs[h]) }); } cand.sort(function (a, b) { return a.dd - b.dd; }); for (var k = 0; k < Math.min(2, cand.length); k++) { if (cand[k].dd > 0.05) { var seg = arcPts(d, cand[k].h); if (seg.length) rArcs.push({ seg: seg, rank: d.rank }); } } });
+          for (var hi = 0; hi < hubs.length; hi++) for (var hj = hi + 1; hj < hubs.length; hj++) { var hs = arcPts(hubs[hi], hubs[hj]); if (hs.length) rArcs.push({ seg: hs, rank: 0 }); }
+          var dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1)), W = 0, H = 0, R = 0, cx = 0, cy = 0;
+          function size() { var r = cv.getBoundingClientRect(); W = Math.max(40, r.width); H = Math.max(40, r.height); cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); R = Math.min(W, H) * 0.42; cx = W / 2; cy = H / 2; }
+          size();
+          function proj(lon, lat, l0, a0) { var dl = (lon - l0) * d2r, a = lat * d2r, b = a0 * d2r; var cc = Math.sin(b) * Math.sin(a) + Math.cos(b) * Math.cos(a) * Math.cos(dl); var x = Math.cos(a) * Math.sin(dl); var y = Math.cos(b) * Math.sin(a) - Math.sin(b) * Math.cos(a) * Math.cos(dl); return { x: cx + R * x, y: cy - R * y, c: cc }; }
+          var start = story[0] || { lon: 20, lat: 12 };
+          var cur = { lon: start.lon, lat: start.lat }, tgt = { lon: start.lon, lat: start.lat }, active = -1, reachActive = false, reachRev = 0;
           function draw(now) {
             ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
             var atm = ctx.createRadialGradient(cx, cy, R * 0.62, cx, cy, R * 1.24); atm.addColorStop(0, 'rgba(47,134,201,0)'); atm.addColorStop(0.74, 'rgba(47,134,201,0.12)'); atm.addColorStop(1, 'rgba(47,134,201,0)'); ctx.fillStyle = atm; ctx.beginPath(); ctx.arc(cx, cy, R * 1.24, 0, 7); ctx.fill();
             var oc = ctx.createRadialGradient(cx - R * 0.32, cy - R * 0.36, R * 0.15, cx, cy, R); oc.addColorStop(0, '#0e3f63'); oc.addColorStop(1, '#04263d'); ctx.fillStyle = oc; ctx.beginPath(); ctx.arc(cx, cy, R, 0, 7); ctx.fill();
             ctx.strokeStyle = 'rgba(127,182,227,.22)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(cx, cy, R, 0, 7); ctx.stroke();
-            for (var i = 0; i < LP.length; i += 2) { var p = proj(LP[i], LP[i + 1], cur.lon, cur.lat); if (p.c < 0.04) continue; ctx.fillStyle = 'rgba(143,197,235,' + (0.26 + 0.55 * p.c).toFixed(3) + ')'; ctx.beginPath(); ctx.arc(p.x, p.y, 0.85 + 1.05 * p.c, 0, 7); ctx.fill(); }
-            for (var aj = 0; aj < arcs.length; aj++) { var near = (aj === active || aj + 1 === active); ctx.strokeStyle = near ? 'rgba(63,185,132,0.6)' : 'rgba(127,182,227,0.16)'; ctx.lineWidth = near ? 1.8 : 1.1; ctx.beginPath(); var seg = arcs[aj], on = false; for (var t2 = 0; t2 < seg.length; t2++) { var q = proj(seg[t2].lon, seg[t2].lat, cur.lon, cur.lat); if (q.c < 0) { on = false; continue; } if (!on) { ctx.moveTo(q.x, q.y); on = true; } else ctx.lineTo(q.x, q.y); } ctx.stroke(); }
-            var pulse = reduce ? 1 : (0.5 + 0.5 * Math.sin((now || 0) / 520));
-            for (var m = 0; m < pts.length; m++) { var pm = proj(pts[m].lon, pts[m].lat, cur.lon, cur.lat); if (pm.c < 0) continue; if (m === active) { ctx.fillStyle = 'rgba(63,185,132,' + (0.16 + 0.16 * pulse).toFixed(3) + ')'; ctx.beginPath(); ctx.arc(pm.x, pm.y, 10 + 6 * pulse, 0, 7); ctx.fill(); ctx.fillStyle = '#3FB984'; ctx.beginPath(); ctx.arc(pm.x, pm.y, 5.5, 0, 7); ctx.fill(); ctx.lineWidth = 1.6; ctx.strokeStyle = 'rgba(255,255,255,.92)'; ctx.stroke(); } else { ctx.fillStyle = 'rgba(127,182,227,' + (0.45 + 0.45 * pm.c).toFixed(3) + ')'; ctx.beginPath(); ctx.arc(pm.x, pm.y, 3.1, 0, 7); ctx.fill(); } }
+            for (var i = 0; i < LP.length; i += 2) { var p = proj(LP[i], LP[i + 1], cur.lon, cur.lat); if (p.c < 0.04) continue; ctx.fillStyle = 'rgba(143,197,235,' + (0.22 + 0.5 * p.c).toFixed(3) + ')'; ctx.beginPath(); ctx.arc(p.x, p.y, 0.8 + 1.0 * p.c, 0, 7); ctx.fill(); }
+            var sa = 1 - reachRev;
+            if (sa > 0.01) {
+              for (var aj = 0; aj < sArcs.length; aj++) { ctx.strokeStyle = 'rgba(127,182,227,' + (0.16 * sa).toFixed(3) + ')'; ctx.lineWidth = 1.2; ctx.beginPath(); var seg = sArcs[aj], on = false; for (var t2 = 0; t2 < seg.length; t2++) { var q = proj(seg[t2].lon, seg[t2].lat, cur.lon, cur.lat); if (q.c < 0) { on = false; continue; } if (!on) { ctx.moveTo(q.x, q.y); on = true; } else ctx.lineTo(q.x, q.y); } ctx.stroke(); }
+              var pulse = reduce ? 1 : (0.5 + 0.5 * Math.sin((now || 0) / 520));
+              for (var m = 0; m < story.length; m++) { var pm = proj(story[m].lon, story[m].lat, cur.lon, cur.lat); if (pm.c < 0) continue; if (story[m].idx === active) { ctx.fillStyle = 'rgba(63,185,132,' + (sa * (0.16 + 0.16 * pulse)).toFixed(3) + ')'; ctx.beginPath(); ctx.arc(pm.x, pm.y, 10 + 6 * pulse, 0, 7); ctx.fill(); ctx.fillStyle = 'rgba(63,185,132,' + sa.toFixed(3) + ')'; ctx.beginPath(); ctx.arc(pm.x, pm.y, 5.5, 0, 7); ctx.fill(); ctx.lineWidth = 1.6; ctx.strokeStyle = 'rgba(255,255,255,' + (0.92 * sa).toFixed(3) + ')'; ctx.stroke(); } else { ctx.fillStyle = 'rgba(127,182,227,' + (sa * (0.45 + 0.45 * pm.c)).toFixed(3) + ')'; ctx.beginPath(); ctx.arc(pm.x, pm.y, 3.1, 0, 7); ctx.fill(); } }
+            }
+            if (reachRev > 0.01) {
+              for (var ra = 0; ra < rArcs.length; ra++) { var ar = rArcs[ra]; var av = Math.max(0, Math.min(1, (reachRev - ar.rank) / 0.3)); if (av <= 0) continue; ctx.strokeStyle = 'rgba(95,208,197,' + (0.05 + 0.24 * av * reachRev).toFixed(3) + ')'; ctx.lineWidth = 1; ctx.beginPath(); var rseg = ar.seg, ron = false; for (var rt = 0; rt < rseg.length; rt++) { var rq = proj(rseg[rt].lon, rseg[rt].lat, cur.lon, cur.lat); if (rq.c < 0.02) { ron = false; continue; } if (!ron) { ctx.moveTo(rq.x, rq.y); ron = true; } else ctx.lineTo(rq.x, rq.y); } ctx.stroke(); }
+              for (var rd = 0; rd < rdots.length; rd++) { var d = rdots[rd]; var dv = Math.max(0, Math.min(1, (reachRev - d.rank * 0.7) / 0.18)); if (dv <= 0) continue; var dm = proj(d.lon, d.lat, cur.lon, cur.lat); if (dm.c < 0.02) continue; var tw = reduce ? 1 : (0.8 + 0.2 * Math.sin((now || 0) / 540 + rd)); var rad = (1.4 + 2.8 * d.r) * (0.62 + 0.5 * dm.c); var al = dv * reachRev * (0.55 + 0.45 * dm.c) * tw; ctx.fillStyle = 'rgba(63,185,132,' + (al * 0.26).toFixed(3) + ')'; ctx.beginPath(); ctx.arc(dm.x, dm.y, rad * 2.5, 0, 7); ctx.fill(); ctx.fillStyle = 'rgba(126,240,193,' + al.toFixed(3) + ')'; ctx.beginPath(); ctx.arc(dm.x, dm.y, rad, 0, 7); ctx.fill(); }
+            }
           }
           function shortest(d) { d = (d + 540) % 360 - 180; return d; }
           var raf = 0, vis = false;
-          function loop(now) { var dl = shortest(tgt.lon - cur.lon), da = tgt.lat - cur.lat; if (reduce) { cur.lon = tgt.lon; cur.lat = tgt.lat; } else { cur.lon += dl * 0.085; cur.lat += da * 0.085; } draw(now); if (reduce || !vis) { raf = 0; return; } raf = requestAnimationFrame(loop); }
+          function loop(now) {
+            if (reachActive) { if (!reduce) { cur.lon += 0.16; cur.lat += (10 - cur.lat) * 0.05; reachRev += (1 - reachRev) * 0.05; } }
+            else { if (!reduce) { if (pts[active]) { cur.lon += shortest(tgt.lon - cur.lon) * 0.085; cur.lat += (tgt.lat - cur.lat) * 0.085; } reachRev += (0 - reachRev) * 0.08; } }
+            draw(now);
+            if (reduce || !vis) { raf = 0; return; } raf = requestAnimationFrame(loop);
+          }
           function kick() { if (!raf && !reduce) raf = requestAnimationFrame(loop); }
-          function setActive(i) { i = Math.max(0, Math.min(pts.length - 1, i)); if (i === active) return; active = i; tgt.lon = pts[i].lon; tgt.lat = pts[i].lat; if (cap) { cap.innerHTML = ''; var f = document.createElement('span'); f.className = 'gc-flag'; f.textContent = pts[i].flag || ''; var c = document.createElement('span'); c.textContent = pts[i].country || ''; cap.appendChild(f); cap.appendChild(c); } for (var j = 0; j < steps.length; j++) steps[j].classList.toggle('on', j === i); if (reduce || !vis) draw(0); else kick(); }
+          function setActive(i) {
+            i = Math.max(0, Math.min(steps.length - 1, i)); if (i === active) return; active = i; reachActive = (i === reachIdx);
+            if (!reachActive && pts[i]) { tgt.lon = pts[i].lon; tgt.lat = pts[i].lat; }
+            if (cap) { cap.innerHTML = ''; var f = document.createElement('span'); f.className = 'gc-flag'; var c = document.createElement('span'); if (reachActive) { f.textContent = '\u{1F30D}'; c.textContent = (D && D.countries ? fmt(D.countries) + ' countries' : 'Worldwide'); } else { f.textContent = (pts[i] && pts[i].flag) || ''; c.textContent = (pts[i] && pts[i].country) || ''; } cap.appendChild(f); cap.appendChild(c); }
+            for (var j = 0; j < steps.length; j++) steps[j].classList.toggle('on', j === i);
+            if (reduce) { reachRev = reachActive ? 1 : 0; if (reachActive) cur.lat = 10; else if (pts[i]) { cur.lon = pts[i].lon; cur.lat = pts[i].lat; } draw(0); } else kick();
+          }
           function pick() { var mid = (window.innerHeight || 0) * 0.5, best = 0, bd = 1e9; for (var i = 0; i < steps.length; i++) { var r = steps[i].getBoundingClientRect(); var ctr = r.top + r.height / 2; var d = Math.abs(ctr - mid); if (d < bd) { bd = d; best = i; } } setActive(best); }
           if ('IntersectionObserver' in window) { var io2 = new IntersectionObserver(function (es) { es.forEach(function (e) { vis = e.isIntersecting; if (vis) kick(); }); }, { threshold: 0.01 }); io2.observe(cv); } else { vis = true; }
           addEventListener('scroll', pick, { passive: true });
           addEventListener('resize', function () { size(); draw(0); });
           setActive(0); draw(0); pick();
-        }
-
-        // ---- finale "reach" globe: a slowly-spinning globe that lights up with a glowing dot
-        // for every learner country (D.countryMap) and great-circle lines fanning to regional hubs.
-        function initReachGlobe() {
-          var cv = document.getElementById('reachglobe'); if (!cv || !cv.getContext) return;
-          var ctx; try { ctx = cv.getContext('2d'); } catch (e) { return; } if (!ctx) return;
-          var d2r = Math.PI / 180;
-          var LP = (typeof LAND !== 'undefined' && LAND) ? LAND : [];
-          var CZ = (typeof CENTROIDS !== 'undefined' && CENTROIDS) ? CENTROIDS : {};
-          var cm = (D && D.countryMap) ? D.countryMap : {};
-          var dots = [], maxv = 0;
-          for (var iso in cm) { if (!Object.prototype.hasOwnProperty.call(cm, iso)) continue; var v = Number(cm[iso]) || 0; var c = CZ[iso] || CZ[String(iso).toUpperCase()]; if (v > 0 && c) { dots.push({ lon: c[0], lat: c[1], v: v }); if (v > maxv) maxv = v; } }
-          if (!dots.length) { var st = cv.parentNode; if (st) st.style.display = 'none'; return; }
-          dots.sort(function (a, b) { return b.v - a.v; });
-          dots.forEach(function (d, i) { d.rank = i / dots.length; d.r = Math.sqrt((d.v || 0) / (maxv || 1)); });
-          var hubs = dots.slice(0, Math.min(4, dots.length));
-          function vec(lon, lat) { var a = lat * d2r, o = lon * d2r; return [Math.cos(a) * Math.cos(o), Math.cos(a) * Math.sin(o), Math.sin(a)]; }
-          function ll(x, y, z) { var r = Math.sqrt(x * x + y * y + z * z) || 1; return { lon: Math.atan2(y, x) / d2r, lat: Math.asin(z / r) / d2r }; }
-          function gdist(a, b) { var dl = (a.lon - b.lon) * d2r, p = a.lat * d2r, q = b.lat * d2r; return Math.acos(Math.max(-1, Math.min(1, Math.sin(p) * Math.sin(q) + Math.cos(p) * Math.cos(q) * Math.cos(dl)))); }
-          function arcPts(p0, p1) { var v0 = vec(p0.lon, p0.lat), v1 = vec(p1.lon, p1.lat); var dot = Math.max(-1, Math.min(1, v0[0] * v1[0] + v0[1] * v1[1] + v0[2] * v1[2])); var om = Math.acos(dot); var out = []; if (om < 1e-3) return out; var so = Math.sin(om); for (var t = 0; t <= 1.0001; t += 1 / 22) { var s0 = Math.sin((1 - t) * om) / so, s1 = Math.sin(t * om) / so; out.push(ll(s0 * v0[0] + s1 * v1[0], s0 * v0[1] + s1 * v1[1], s0 * v0[2] + s1 * v1[2])); } return out; }
-          var arcs = [];
-          dots.forEach(function (d) { var best = null, bd = 1e9; for (var h = 0; h < hubs.length; h++) { if (hubs[h] === d) continue; var dd = gdist(d, hubs[h]); if (dd < bd) { bd = dd; best = hubs[h]; } } if (best && bd > 0.05) { var seg = arcPts(d, best); if (seg.length) arcs.push({ seg: seg, rank: d.rank }); } });
-          var dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1)), W = 0, H = 0, R = 0, cx = 0, cy = 0;
-          function size() { var r = cv.getBoundingClientRect(); W = Math.max(40, r.width); H = Math.max(40, r.height); cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); R = Math.min(W, H) * 0.46; cx = W / 2; cy = H / 2; }
-          size();
-          function proj(lon, lat, l0, a0) { var dl = (lon - l0) * d2r, a = lat * d2r, b = a0 * d2r; var cc = Math.sin(b) * Math.sin(a) + Math.cos(b) * Math.cos(a) * Math.cos(dl); var x = Math.cos(a) * Math.sin(dl); var y = Math.cos(b) * Math.sin(a) - Math.sin(b) * Math.cos(a) * Math.cos(dl); return { x: cx + R * x, y: cy - R * y, c: cc }; }
-          var lon0 = 20, lat0 = 12, t0 = 0, raf = 0, vis = false;
-          function draw(now) {
-            var rev = reduce ? 1 : (t0 ? Math.max(0, Math.min(1, ((now || 0) - t0) / 2400)) : 0);
-            ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, H);
-            var atm = ctx.createRadialGradient(cx, cy, R * 0.62, cx, cy, R * 1.22); atm.addColorStop(0, 'rgba(47,134,201,0)'); atm.addColorStop(0.74, 'rgba(47,134,201,0.12)'); atm.addColorStop(1, 'rgba(47,134,201,0)'); ctx.fillStyle = atm; ctx.beginPath(); ctx.arc(cx, cy, R * 1.22, 0, 7); ctx.fill();
-            var oc = ctx.createRadialGradient(cx - R * 0.3, cy - R * 0.34, R * 0.15, cx, cy, R); oc.addColorStop(0, '#0e3f63'); oc.addColorStop(1, '#04263d'); ctx.fillStyle = oc; ctx.beginPath(); ctx.arc(cx, cy, R, 0, 7); ctx.fill();
-            ctx.strokeStyle = 'rgba(127,182,227,.2)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(cx, cy, R, 0, 7); ctx.stroke();
-            for (var i = 0; i < LP.length; i += 2) { var p = proj(LP[i], LP[i + 1], lon0, lat0); if (p.c < 0.04) continue; ctx.fillStyle = 'rgba(120,160,195,' + (0.1 + 0.3 * p.c).toFixed(3) + ')'; ctx.beginPath(); ctx.arc(p.x, p.y, 0.65 + 0.8 * p.c, 0, 7); ctx.fill(); }
-            for (var a = 0; a < arcs.length; a++) { var ar = arcs[a]; var av = Math.max(0, Math.min(1, (rev - ar.rank) / 0.14)); if (av <= 0) continue; ctx.strokeStyle = 'rgba(95,208,197,' + (0.05 + 0.26 * av).toFixed(3) + ')'; ctx.lineWidth = 1; ctx.beginPath(); var seg = ar.seg, on = false; for (var t2 = 0; t2 < seg.length; t2++) { var q = proj(seg[t2].lon, seg[t2].lat, lon0, lat0); if (q.c < 0.02) { on = false; continue; } if (!on) { ctx.moveTo(q.x, q.y); on = true; } else ctx.lineTo(q.x, q.y); } ctx.stroke(); }
-            for (var m = 0; m < dots.length; m++) { var d = dots[m]; var dv = Math.max(0, Math.min(1, (rev - d.rank) / 0.1)); if (dv <= 0) continue; var pm = proj(d.lon, d.lat, lon0, lat0); if (pm.c < 0.02) continue; var tw = reduce ? 1 : (0.78 + 0.22 * Math.sin((now || 0) / 540 + m)); var rad = (1.5 + 3 * d.r) * (0.62 + 0.5 * pm.c); var al = dv * (0.55 + 0.45 * pm.c) * tw; ctx.fillStyle = 'rgba(63,185,132,' + (al * 0.26).toFixed(3) + ')'; ctx.beginPath(); ctx.arc(pm.x, pm.y, rad * 2.5, 0, 7); ctx.fill(); ctx.fillStyle = 'rgba(126,240,193,' + al.toFixed(3) + ')'; ctx.beginPath(); ctx.arc(pm.x, pm.y, rad, 0, 7); ctx.fill(); }
-          }
-          function loop(now) { if (!reduce) lon0 += 0.14; draw(now); if (reduce || !vis) { raf = 0; return; } raf = requestAnimationFrame(loop); }
-          function kick() { if (!raf && !reduce) raf = requestAnimationFrame(loop); }
-          if ('IntersectionObserver' in window) { var io3 = new IntersectionObserver(function (es) { es.forEach(function (e) { vis = e.isIntersecting; if (vis) { if (!t0) t0 = (window.performance && performance.now) ? performance.now() : 0; kick(); } }); }, { threshold: 0.08 }); io3.observe(cv); } else { vis = true; t0 = 1; }
-          addEventListener('resize', function () { size(); draw((window.performance && performance.now) ? performance.now() : 0); });
-          draw(0);
         }
       }
 
@@ -748,7 +735,7 @@
         + '<div class="rv d2"><p class="muted" style="margin-bottom:12px;letter-spacing:.14em;text-transform:uppercase;font-size:12px">Top reached priority countries</p><div class="plist">' + priorityList + '</div></div></div>'
         + '<div class="rv d2" style="margin-top:34px"><div id="map" style="width:100%;height:460px"></div><div id="map-legend"></div><div style="text-align:center;margin-top:14px"><button id="lmic-toggle" class="toggle">See only the hardest places</button></div></div>')
 
-        + sec('faces', 'On the ground', 'darker', '<h2 class="rv">The people behind the map.</h2><p class="lead rv d1" style="margin-bottom:8px">Behind every point on that map is a clinician putting new skills to work. Scroll to travel the globe — from Bangladesh to Sierra Leone.</p>' + geoScrolly + geoClose + '<p class="muted rv" style="margin-top:22px;text-align:center">More learner stories on the <a href="https://www.surghub.org/blog" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline">SURGhub blog</a>.</p>')
+        + sec('faces', 'On the ground', 'darker', '<h2 class="rv">The people behind the map.</h2><p class="lead rv d1" style="margin-bottom:8px">Behind every point on that map is a clinician putting new skills to work. Scroll to travel the globe — from Bangladesh to Sierra Leone.</p>' + geoScrolly + '<p class="muted rv" style="margin-top:22px;text-align:center">More learner stories on the <a href="https://www.surghub.org/blog" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline">SURGhub blog</a>.</p>')
 
         + (cadreDonut ? sec('who', 'Who', '', '<h2 class="rv">The whole surgical team.</h2><p class="lead rv d1" style="margin-bottom:22px">Safe surgery depends on the whole team. SURGhub serves surgeons, nurses, anaesthesia providers, midwives, and the students training to join them.</p>' + cadreDonut) : '')
 
@@ -807,7 +794,7 @@
         + '.gstep-card{width:100%;background:rgba(255,255,255,.05);border:1px solid var(--line);border-radius:18px;overflow:hidden;opacity:.45;transform:scale(.985);transition:opacity .45s ease,transform .45s cubic-bezier(.2,.7,.2,1),border-color .45s ease,background .45s ease}.gstep.on .gstep-card{opacity:1;transform:none;border-color:rgba(63,185,132,.5);background:rgba(255,255,255,.08)}'
         + '.gstep-media{position:relative;aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;overflow:hidden}.gstep-media img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}.gstep-init{font-size:48px;font-weight:800;color:rgba(255,255,255,.9);letter-spacing:.02em}'
         + '.gstep-body{padding:20px 24px 22px}.gstep-loc{display:flex;align-items:center;gap:9px;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--boston-soft);font-weight:700}.gstep-flag{font-size:20px;line-height:1}.gstep-nm{font-size:clamp(20px,2.4vw,26px);font-weight:700;color:#eaf2f8;margin:10px 0 2px;letter-spacing:-.01em}.gstep-role{font-size:14px;color:#9fc1dc;font-weight:600;margin-bottom:11px}.gstep-sum{font-size:15.5px;line-height:1.6;color:#b9cede;margin:0 0 15px}.gstep-go{font-size:14px;font-weight:700;color:var(--boston-soft);text-decoration:none}.gstep-card:hover .gstep-go{color:#fff}'
-        + '.geo-close{max-width:820px;margin:58px auto 0;text-align:center}.reach-line{font-size:clamp(20px,2.6vw,28px);font-weight:700;line-height:1.45;color:#eaf2f8;margin:0 auto;max-width:680px}.reach-line b{font-weight:800;font-variant-numeric:tabular-nums}.reach-line b:first-of-type{color:var(--green)}.reach-line b:last-of-type{color:var(--boston-soft)}.reach-stage{position:relative;width:100%;max-width:620px;margin:22px auto 0;aspect-ratio:1/1}#reachglobe{width:100%;height:100%;display:block}'
+        + '.gstep-reach{justify-content:center}.reach-card{width:100%;text-align:center}.reach-line{font-size:clamp(21px,2.6vw,30px);font-weight:700;line-height:1.42;color:#eaf2f8;margin:0 auto;max-width:30ch}.reach-line b{font-weight:800;font-variant-numeric:tabular-nums}.reach-line b:first-of-type{color:var(--green)}.reach-line b:last-of-type{color:var(--boston-soft)}'
         + '@media(prefers-reduced-motion:reduce){.rv{transition:none;opacity:1;transform:none}.gstep-card{opacity:1;transform:none}.fill{transition:none}.cue{animation:none}.kin .w{opacity:1;transform:none;transition:none}.aurora{animation:none}.num.pop{animation:none}.stars .on{transition:none}.quote.rv{transform:none}}';
 
       // Continents for the scroll globe — a flat [lon,lat,…] land-dot mask (Natural Earth 110m,
