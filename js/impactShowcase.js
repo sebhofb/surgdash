@@ -401,6 +401,9 @@
 
       // Cert-rate highlight for the growth section — framed against typical online-course completion.
       const certHi = (D.certRate != null ? '<div class="certhi rv d2"><div class="certhi-num num" data-to="' + D.certRate + '" data-suffix="%">0</div><div class="certhi-lab">of learners finish and certify — <b>2–3× the typical completion rate</b> for online learning platforms.</div></div>' : '');
+      var ghLs = D.learnersSeries || [];
+      var ghRecent = ghLs.length >= 4 ? (ghLs[ghLs.length - 1].v - ghLs[ghLs.length - 4].v) : 0;
+      var ghRecentTxt = ghRecent > 0 ? ('+' + fmt(ghRecent) + ' in the last quarter') : '';
 
       // Editorial deep-links to the public surghub.org blog — two learner stories + a featured ambassador
       // piece. Each shows the article's hero photo when online; otherwise a branded gradient + initials.
@@ -519,59 +522,54 @@
         // its own y-scale and hover scrubber. The SVG is built as a COMPLETE <svg> string set on a DIV
         // wrapper's innerHTML so the HTML parser creates real SVG-namespaced nodes (setting innerHTML
         // directly on an <svg> makes some browsers parse <text>/<path> as HTML and collapse the labels).
-        function drawOneSeries(wrapId, tipId, series, stroke, areaFill, unit) {
-          var wrap = document.getElementById(wrapId); if (!wrap || wrap._done) return;
-          var A = series || []; if (!A.length) { wrap.style.display = 'none'; wrap._done = 1; return; }
+        // One hero chart: cumulative learners (gradient area + line), certificates (line), faint
+        // monthly-intake bars behind, and milestone markers — the whole growth story in one frame.
+        function drawGrowth() {
+          var wrap = document.getElementById('growth-hero'); if (!wrap || wrap._done) return;
+          var A = D.learnersSeries || [], C = D.certsSeries || [];
+          if (!A.length) { var card = wrap.parentNode; if (card) card.style.display = 'none'; wrap._done = 1; return; }
           var W = wrap.clientWidth || (wrap.getBoundingClientRect ? wrap.getBoundingClientRect().width : 0) || 0;
-          var H = 300;
-          if (W < 50) { requestAnimationFrame(function () { drawOneSeries(wrapId, tipId, series, stroke, areaFill, unit); }); return; }
+          if (W < 50) { requestAnimationFrame(drawGrowth); return; }
           wrap._done = 1;
-          var padL = 10, padR = 12, padT = 22, padB = 30, n = A.length;
+          var H = 360, padL = 14, padR = 16, padT = 30, padB = 40, n = A.length;
           var maxY = 1; A.forEach(function (p) { maxY = Math.max(maxY, p.v); });
-          function X(i) { return padL + (W - padL - padR) * (i / (Math.max(1, n - 1))); }
+          function X(i) { return padL + (W - padL - padR) * (i / Math.max(1, n - 1)); }
           function Y(v) { return padT + (H - padT - padB) * (1 - v / maxY); }
-          function path(arr) { var d = ''; for (var i = 0; i < arr.length; i++) { d += (i ? 'L' : 'M') + X(i).toFixed(1) + ' ' + Y(arr[i].v).toFixed(1) + ' '; } return d.trim(); }
-          var area = 'M' + X(0) + ' ' + Y(0) + ' ' + path(A).slice(1) + ' L' + X(n - 1) + ' ' + Y(0) + ' Z';
-          var lab0 = A[0].m, lab1 = A[n - 1].m, cid = wrapId + '-svg';
-          var inner = '<line x1="' + padL + '" y1="' + Y(0) + '" x2="' + (W - padR) + '" y2="' + Y(0) + '" stroke="#e4edf4"\/>'
-            + '<line x1="' + padL + '" y1="' + Y(maxY * 0.5) + '" x2="' + (W - padR) + '" y2="' + Y(maxY * 0.5) + '" stroke="#eef4f9"\/>'
-            + '<path d="' + area + '" fill="' + areaFill + '"\/>'
-            + '<path class="gline" d="' + path(A) + '" stroke="' + stroke + '"\/>'
-            + '<text x="' + (W - padR) + '" y="' + (Y(A[n - 1].v) - 10) + '" text-anchor="end" class="ann num" fill="' + stroke + '" data-to="' + A[n - 1].v + '">0<\/text>'
-            + '<text x="' + padL + '" y="' + (H - 9) + '" font-size="12" fill="#90a6b8">' + lab0 + '<\/text>'
-            + '<text x="' + (W - padR) + '" y="' + (H - 9) + '" text-anchor="end" font-size="12" fill="#90a6b8">' + lab1 + '<\/text>'
-            + '<line class="gcur" x1="0" y1="' + padT + '" x2="0" y2="' + Y(0) + '" stroke="#9fc1dc" stroke-width="1" opacity="0"\/>'
-            + '<circle class="gdot" r="4.5" fill="' + stroke + '" opacity="0"\/>';
-          wrap.innerHTML = '<svg id="' + cid + '" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Cumulative ' + unit + ' over time" style="display:block;width:100%;height:' + H + 'px">' + inner + '<\/svg>';
-          var svg = document.getElementById(cid);
-          var tip = document.getElementById(tipId), cur = svg.querySelector('.gcur'), dot = svg.querySelector('.gdot');
-          // draw-in: the full path is already painted at offset 0 (fully visible). ONLY if geometry is
-          // valid and motion is allowed do we retract the dash and let the line draw itself back in — so
-          // a thrown getTotalLength / reduced-motion just leaves a solid line. Decoration never gates it.
-          var line = svg.querySelector('.gline'), annEl = svg.querySelector('.ann');
-          try {
-            var len = line.getTotalLength ? line.getTotalLength() : 0;
-            if (len > 0 && !reduce) {
-              line.style.strokeDasharray = len; line.style.strokeDashoffset = len; line.getBoundingClientRect();
-              line.style.transition = 'stroke-dashoffset 1.6s cubic-bezier(.2,.7,.2,1)';
-              requestAnimationFrame(function () { line.style.strokeDashoffset = '0'; });
-              setTimeout(function () { line.style.strokeDashoffset = '0'; }, 1900); // backstop: guarantee the line ends fully drawn
-              if (dot) { dot.setAttribute('opacity', '1'); var t0 = null; (function ride(ts) { t0 = t0 || ts; var p = Math.min((ts - t0) / 1600, 1); try { var pt = line.getPointAtLength(len * p); dot.setAttribute('cx', pt.x); dot.setAttribute('cy', pt.y); } catch (e) {} if (p < 1) requestAnimationFrame(ride); else dot.setAttribute('opacity', '0'); })(); }
-            }
-          } catch (e) {}
-          if (annEl && !annEl._d) { annEl._d = 1; if (reduce) annEl.textContent = fmt(A[n - 1].v); else setTimeout(function () { countUp(annEl); }, 520); }
+          var base = Y(0);
+          // monthly new (deltas) -> faint bars on their own scale
+          var dmax = 1, dA = A.map(function (p, i) { var d = i ? p.v - A[i - 1].v : p.v; if (d > dmax) dmax = d; return d; });
+          var barMaxH = (H - padT - padB) * 0.32, bw = (W - padL - padR) / n * 0.6, bars = '';
+          for (var bi = 0; bi < n; bi++) { var bh = dA[bi] / dmax * barMaxH; if (bh < 0.6) continue; bars += '<rect x="' + (X(bi) - bw / 2).toFixed(1) + '" y="' + (base - bh).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + bh.toFixed(1) + '" rx="1.5" fill="#2f86c9" opacity="0.12"\/>'; }
+          function lpath(arr) { var d = ''; for (var i = 0; i < arr.length; i++) d += (i ? 'L' : 'M') + X(i).toFixed(1) + ' ' + Y((arr[i] && arr[i].v) || 0).toFixed(1) + ' '; return d.trim(); }
+          var aPath = 'M' + X(0).toFixed(1) + ' ' + base.toFixed(1) + ' ' + lpath(A).slice(1) + ' L' + X(n - 1).toFixed(1) + ' ' + base.toFixed(1) + ' Z';
+          var ticks = ''; for (var ti = 0; ti < n; ti++) { var mm = A[ti].m; if ((mm && mm.slice(5) === '01') || ti === 0) ticks += '<text x="' + X(ti).toFixed(1) + '" y="' + (H - 12) + '" text-anchor="middle" font-size="12" fill="#90a6b8">' + mm.slice(0, 4) + '<\/text>'; }
+          var mile = [[10000, '10k'], [25000, '25k'], [50000, '50k'], [100000, '100k']], mks = '';
+          for (var mj = 0; mj < mile.length; mj++) { var thr = mile[mj][0]; if (thr > maxY) break; var idx = -1; for (var k = 0; k < n; k++) { if (A[k].v >= thr) { idx = k; break; } } if (idx < 1) continue; var mx = X(idx), my = Y(A[idx].v); mks += '<line x1="' + mx.toFixed(1) + '" y1="' + my.toFixed(1) + '" x2="' + mx.toFixed(1) + '" y2="' + base.toFixed(1) + '" stroke="#2f86c9" stroke-dasharray="2 4" opacity="0.28"\/><circle cx="' + mx.toFixed(1) + '" cy="' + my.toFixed(1) + '" r="4.5" fill="#fff" stroke="#2f86c9" stroke-width="2.4"\/><text x="' + mx.toFixed(1) + '" y="' + (my - 11).toFixed(1) + '" text-anchor="middle" font-size="12.5" font-weight="800" fill="#1d5e90">' + mile[mj][1] + '<\/text>'; }
+          var inner = '<defs><linearGradient id="ghg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2f86c9" stop-opacity="0.26"\/><stop offset="1" stop-color="#2f86c9" stop-opacity="0.02"\/><\/linearGradient><\/defs>'
+            + '<line x1="' + padL + '" y1="' + base + '" x2="' + (W - padR) + '" y2="' + base + '" stroke="#e4edf4"\/>'
+            + bars + ticks
+            + '<path d="' + aPath + '" fill="url(#ghg)"\/>'
+            + '<path class="gline2" d="' + lpath(C) + '" fill="none" stroke="#3FB984" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"\/>'
+            + '<path class="gline" d="' + lpath(A) + '" stroke="#2f86c9"\/>'
+            + mks
+            + '<line class="gcur" x1="0" y1="' + padT + '" x2="0" y2="' + base + '" stroke="#9fc1dc" stroke-width="1" opacity="0"\/>'
+            + '<circle class="gdotc" r="4" fill="#3FB984" opacity="0"\/>'
+            + '<circle class="gdot" r="5" fill="#2f86c9" stroke="#fff" stroke-width="2" opacity="0"\/>';
+          wrap.innerHTML = '<svg id="growth-hero-svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Cumulative learners and certificates since launch" style="display:block;width:100%;height:' + H + 'px">' + inner + '<\/svg>';
+          var svg = document.getElementById('growth-hero-svg'), tip = document.getElementById('tip-growth');
+          var cur = svg.querySelector('.gcur'), dot = svg.querySelector('.gdot'), dotc = svg.querySelector('.gdotc');
+          var line = svg.querySelector('.gline'), line2 = svg.querySelector('.gline2');
+          [line2, line].forEach(function (ln) { try { var len = ln.getTotalLength ? ln.getTotalLength() : 0; if (len > 0 && !reduce) { ln.style.strokeDasharray = len; ln.style.strokeDashoffset = len; ln.getBoundingClientRect(); ln.style.transition = 'stroke-dashoffset 1.7s cubic-bezier(.2,.7,.2,1)'; requestAnimationFrame(function () { ln.style.strokeDashoffset = '0'; }); setTimeout(function () { ln.style.strokeDashoffset = '0'; }, 2000); } } catch (e) {} });
+          try { var len = line.getTotalLength ? line.getTotalLength() : 0; if (len > 0 && !reduce && dot) { dot.setAttribute('opacity', '1'); var t0 = null; (function ride(ts) { t0 = t0 || ts; var p = Math.min((ts - t0) / 1700, 1); try { var pt = line.getPointAtLength(len * p); dot.setAttribute('cx', pt.x); dot.setAttribute('cy', pt.y); } catch (e) {} if (p < 1) requestAnimationFrame(ride); else dot.setAttribute('opacity', '0'); })(); } } catch (e) {}
           svg.addEventListener('mousemove', function (ev) {
             var r = svg.getBoundingClientRect(), x = (ev.clientX - r.left) / r.width * W;
             var i = Math.round((x - padL) / ((W - padL - padR) / Math.max(1, n - 1))); i = Math.max(0, Math.min(n - 1, i));
             cur.setAttribute('x1', X(i)); cur.setAttribute('x2', X(i)); cur.setAttribute('opacity', '.8');
             dot.setAttribute('cx', X(i)); dot.setAttribute('cy', Y(A[i].v)); dot.setAttribute('opacity', '1');
-            if (tip) { tip.style.opacity = 1; tip.innerHTML = '<b>' + A[i].m + '<\/b> &nbsp; <span style="color:' + stroke + '">' + fmt(A[i].v) + ' ' + unit + '<\/span>'; }
+            var cv = (C[i] && C[i].v) || 0; dotc.setAttribute('cx', X(i)); dotc.setAttribute('cy', Y(cv)); dotc.setAttribute('opacity', '1');
+            if (tip) { tip.style.opacity = 1; tip.innerHTML = '<b>' + A[i].m + '<\/b> &nbsp; <span style="color:#2f86c9">' + fmt(A[i].v) + '<\/span> &nbsp; <span style="color:#3FB984">' + fmt(cv) + '<\/span>'; }
           });
-          svg.addEventListener('mouseleave', function () { cur.setAttribute('opacity', '0'); dot.setAttribute('opacity', '0'); if (tip) tip.style.opacity = 0; });
-        }
-        function drawGrowth() {
-          drawOneSeries('growth-wrap-learners', 'tip-learners', D.learnersSeries || [], '#2f86c9', 'rgba(47,134,201,.12)', 'learners');
-          drawOneSeries('growth-wrap-certs', 'tip-certs', D.certsSeries || [], '#3FB984', 'rgba(63,185,132,.13)', 'certificates');
+          svg.addEventListener('mouseleave', function () { cur.setAttribute('opacity', '0'); dot.setAttribute('opacity', '0'); dotc.setAttribute('opacity', '0'); if (tip) tip.style.opacity = 0; });
         }
 
         // world map (Google GeoChart, ISO alpha-2 keyed, log colour ramp). Hover = native.
@@ -614,7 +612,7 @@
           [].slice.call(el.querySelectorAll('[data-to]')).forEach(function (c) { if (!c._d) { c._d = 1; countUp(c); } });
           [].slice.call(el.querySelectorAll('.fill[data-w]')).forEach(function (f) { f.style.width = f.getAttribute('data-w') + '%'; });
           if (el.classList.contains('dial') && el._fire && !el._df) { el._df = 1; var di = el.parentNode ? [].indexOf.call(el.parentNode.children, el) : 0; setTimeout(el._fire, reduce ? 0 : Math.max(0, di) * 260); }
-          if (el.querySelector && (el.querySelector('#growth-wrap-learners') || el.querySelector('#growth-wrap-certs'))) drawGrowth();
+          if (el.querySelector && (el.querySelector('#growth-hero'))) drawGrowth();
           if (el.querySelector && el.querySelector('#map') && !drewMap) { drewMap = true; el._map = 1; drawMap(D.countryMap); }
         }
         var revItems = [].slice.call(document.querySelectorAll('.rv,.dial,.kin'));
@@ -723,10 +721,13 @@
 
         + sec('scale', 'The scale', 'dark', '<h2 class="rv">A global classroom for surgical care.</h2><p class="lead rv d1" style="margin-bottom:8px">No tuition and no travel: one platform, open to every member of the surgical team.</p><div class="kpis">' + scaleCards + '</div>')
 
-        + sec('growth', 'Growth', '', '<h2 class="rv">Sustained growth since launch.</h2><p class="lead rv d1" style="margin-bottom:24px">Since launching in June 2023, both registrations and course completions have grown steadily. Hover either chart to read any month.</p>'
-        + '<div class="growthgrid">'
-        + '<div class="chartcard rv d2"><div class="legend"><span><i class="sw" style="background:#2f86c9"></i>Registered learners</span></div><div id="tip-learners" class="tip"></div><div id="growth-wrap-learners" class="growthbox"></div></div>'
-        + '<div class="chartcard rv d3"><div class="legend"><span><i class="sw" style="background:#3FB984"></i>Certificates earned</span></div><div id="tip-certs" class="tip"></div><div id="growth-wrap-certs" class="growthbox"></div></div>'
+        + sec('growth', 'Growth', '', '<h2 class="rv">Sustained growth since launch.</h2><p class="lead rv d1" style="margin-bottom:22px">Since launching in June 2023, more of the surgical team join and certify every month. Hover the chart to read any month.</p>'
+        + '<div class="chartcard growthhero rv d2">'
+        + '<div class="gh-top"><div class="gh-stat"><div class="gh-big num" data-to="' + D.learners + '">0</div><div class="gh-lab">registered learners</div></div>'
+        + '<div class="gh-stat"><div class="gh-sub num" data-to="' + D.certificates + '">0</div><div class="gh-lab">certificates earned</div></div>'
+        + (ghRecentTxt ? '<div class="gh-stat gh-pillwrap"><span class="gh-pill">' + ghRecentTxt + '</span></div>' : '') + '</div>'
+        + '<div class="gh-legend"><span><i class="sw" style="background:#2f86c9"></i>Registered learners</span><span><i class="sw" style="background:#3FB984"></i>Certificates</span><span><i class="gh-barsw"></i>New learners / month</span></div>'
+        + '<div id="tip-growth" class="tip"></div><div id="growth-hero" class="gh-box"></div>'
         + '</div>' + certHi)
 
         + sec('reach', 'Reach', 'dark', '<div class="cols"><div><h2 class="rv">Where surgical care is hardest to reach.</h2><p class="lead rv d1" style="margin:0 0 20px;font-size:18px">Most located learners are in the countries with the greatest unmet need for surgical care.</p>'
@@ -772,6 +773,7 @@
         + '.kpi .v{font-size:clamp(34px,5vw,54px);font-weight:800;line-height:1;letter-spacing:-.02em;color:#fff}.kpi.lite .v{color:var(--ink)}.kpi .v.green{color:var(--green)}.kpi .v.boston{color:var(--boston-soft)}.kpi.lite .v.boston{color:var(--boston)}'
         + '.kpi .l{margin-top:10px;font-size:15px;color:#a9c3d6}.kpi.lite .l{color:#5b7488}.kpi .s{margin-top:6px;font-size:13px;color:#7f9bb1}.pill{display:inline-block;margin-top:10px;font-size:12px;font-weight:600;background:rgba(63,185,132,.16);color:#8fe3bf;border-radius:999px;padding:3px 11px}'
         + '.chartcard{background:#fff;border:1px solid #e4edf4;border-radius:18px;padding:24px 22px 16px;position:relative;transition:transform .25s ease,box-shadow .25s ease}.chartcard:hover{transform:translateY(-3px);box-shadow:0 18px 44px rgba(4,38,61,.14)}.growthgrid{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-top:8px}@media(max-width:820px){.growthgrid{grid-template-columns:1fr}}.legend{display:flex;gap:20px;flex-wrap:wrap;font-size:13px;color:#5b7488;margin-bottom:8px}.legend span{display:inline-flex;align-items:center;gap:7px}.sw{width:12px;height:12px;border-radius:3px;display:inline-block}.gline{fill:none;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}.ann{font-size:13px;font-weight:700}.growthbox{width:100%;height:300px;cursor:crosshair}.growthbox svg{display:block;width:100%;height:300px}.tip{position:absolute;top:14px;right:22px;font-size:13px;background:#04263d;color:#eaf2f8;padding:6px 11px;border-radius:8px;opacity:0;transition:opacity .15s;pointer-events:none}'
+        + '.growthhero{margin-top:8px}.gh-top{display:flex;gap:36px;align-items:flex-end;flex-wrap:wrap;margin-bottom:4px}.gh-stat{display:flex;flex-direction:column;justify-content:flex-end}.gh-big{font-size:clamp(40px,6vw,56px);font-weight:800;line-height:.92;letter-spacing:-.02em;color:#2f86c9}.gh-sub{font-size:clamp(26px,3.4vw,34px);font-weight:800;line-height:.92;color:#1f9c63}.gh-lab{font-size:13.5px;color:#5b7488;margin-top:7px;font-weight:600}.gh-pillwrap{padding-bottom:4px}.gh-pill{display:inline-block;font-size:12.5px;font-weight:700;background:rgba(63,185,132,.14);color:#1f7a4d;border-radius:999px;padding:5px 13px}.gh-legend{display:flex;gap:20px;flex-wrap:wrap;font-size:13px;color:#5b7488;margin:8px 0 4px}.gh-legend span{display:inline-flex;align-items:center;gap:7px}.gh-barsw{width:11px;height:11px;border-radius:3px;display:inline-block;background:#2f86c9;opacity:.2}.gh-box{width:100%;min-height:360px}.gh-box svg{display:block;width:100%}'
         + '.bars{display:flex;flex-direction:column;gap:13px;margin-top:8px}.bar{display:grid;grid-template-columns:170px 1fr 70px;align-items:center;gap:14px}.bar .lab{font-size:15px}.track{height:18px;background:rgba(255,255,255,.1);border-radius:999px;overflow:hidden}body .track{background:rgba(120,140,160,.16)}.dark .track{background:rgba(255,255,255,.1)}.fill{height:100%;width:0;border-radius:999px;background:var(--boston);transition:width 1.1s cubic-bezier(.2,.7,.2,1)}.fill.slate{background:#7d96a8}.bar .val{text-align:right;font-weight:700;font-variant-numeric:tabular-nums}'
         + '.cols{display:grid;grid-template-columns:1fr 1fr;gap:40px;align-items:center}@media(max-width:820px){.cols{grid-template-columns:1fr;gap:28px}}.bignum{font-size:clamp(56px,11vw,118px);font-weight:800;letter-spacing:-.03em;line-height:.95;color:#fff}.statline{font-size:18px;color:#bdd3e4;margin-top:8px}'
         + '.conflict{margin-top:22px;background:rgba(229,115,115,.12);border:1px solid rgba(229,115,115,.35);border-radius:14px;padding:18px 20px}.conflict .v{font-size:34px;font-weight:800;color:#ffb4b4}.conflict .l{color:#e7c3c3;font-size:14px}.reach-hi{margin-top:20px;display:flex;align-items:center;gap:20px;background:rgba(63,185,132,.10);border:1px solid rgba(63,185,132,.34);border-radius:16px;padding:18px 22px}.reach-hi-num{font-size:clamp(46px,7.5vw,76px);font-weight:800;line-height:.88;color:var(--green);letter-spacing:-.02em;flex:none}.reach-hi-lab{font-size:15px;color:#cfe6da}.reach-hi-lab b{color:#eaf7f0;font-weight:700}'
