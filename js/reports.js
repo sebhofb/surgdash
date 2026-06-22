@@ -749,7 +749,7 @@
 
   <div class="kpi-grid">
     <div class="kpi"><div class="label">Courses</div><div class="value">${pSnap.length}</div></div>
-    <div class="kpi"><div class="label">Learners</div><div class="value blue">${this.formatNumber(totalLrn)}</div></div>
+    <div class="kpi"><div class="label">Enrolled Learners</div><div class="value blue">${this.formatNumber(totalLrn)}</div></div>
     <div class="kpi"><div class="label">Certificates</div><div class="value">${this.formatNumber(totalCert)}</div></div>
     <div class="kpi"><div class="label">Learning Time</div><div class="value green">${this.formatLearningTime(totalMin)}</div></div>
     <div class="kpi"><div class="label">Countries</div><div class="value">${Object.keys(providerCountryData).length || '-'}</div></div>
@@ -768,7 +768,7 @@
   ${hasPeriod ? `<div class="section-block">
     <div class="section-title">Reporting Period &mdash; ${esc(periodLabel)}</div>
     <div class="kpi-grid" style="grid-template-columns:repeat(4,1fr)">
-      <div class="kpi" style="background:#f0f9ff;border-color:#bae6fd"><div class="label">New Learners</div><div class="value blue">+${this.formatNumber(perEnrol)}</div></div>
+      <div class="kpi" style="background:#f0f9ff;border-color:#bae6fd"><div class="label">New Enrolments</div><div class="value blue">+${this.formatNumber(perEnrol)}</div></div>
       <div class="kpi" style="background:#f0f9ff;border-color:#bae6fd"><div class="label">New Certificates</div><div class="value">+${this.formatNumber(perCert)}</div></div>
       <div class="kpi" style="background:#f0f9ff;border-color:#bae6fd"><div class="label">Survey Responses</div><div class="value">${this.formatNumber(perResp)}</div></div>
       <div class="kpi" style="background:#f0f9ff;border-color:#bae6fd"><div class="label">Avg Rating (Period)</div><div class="value red">${perAvgRating !== null ? perAvgRating + ' / 5' : '&ndash;'}</div></div>
@@ -802,7 +802,7 @@
 
   <div class="section-block">
   <div class="section-title">Course Summary</div>
-  <table><thead><tr><th>Course</th><th class="r">Learners</th><th class="r">Certificates</th><th class="r">Rating</th><th class="r">Responses</th></tr></thead>
+  <table><thead><tr><th>Course</th><th class="r">Enrolled Learners</th><th class="r">Certificates</th><th class="r">Rating</th><th class="r">Responses</th></tr></thead>
   <tbody>${courseRows}</tbody></table>
   </div>
 
@@ -811,7 +811,7 @@
     if (provTop10.length === 0) return '';
     const totalCountryUsers = Object.values(providerCountryData).reduce((a, b) => a + b, 0);
     return '<div class="section-block"><div class="section-title">Top 10 Countries</div>' +
-      '<table><thead><tr><th>Country</th><th class="r">Learners</th><th class="r">%</th></tr></thead><tbody>' +
+      '<table><thead><tr><th>Country</th><th class="r">Enrolled Learners</th><th class="r">%</th></tr></thead><tbody>' +
       provTop10.map(([c, v]) => '<tr><td class="td-l">' + esc(c) + '</td><td class="td-r">' + this.formatNumber(v) + '</td><td class="td-r">' + (totalCountryUsers > 0 ? ((v / totalCountryUsers) * 100).toFixed(1) : '0') + '%</td></tr>').join('') +
       '</tbody></table>' +
       '<div style="font-size:10px;color:#94a3b8;margin-top:4px">' + Object.keys(providerCountryData).length + ' countries total \u2022 ' + this.formatNumber(totalCountryUsers) + ' users with country data</div></div>';
@@ -871,7 +871,7 @@ function drawCharts() {
   if (geoEl && Object.keys(geoData).length > 0) {
     var gdt = new google.visualization.DataTable();
     gdt.addColumn('string','Country');
-    gdt.addColumn('number','Learners');
+    gdt.addColumn('number','Enrolled Learners');
     Object.keys(geoData).forEach(function(c){ gdt.addRow([c, geoData[c]]); });
     new google.visualization.GeoChart(geoEl).draw(gdt, {
       colorAxis:{colors:['#dbeafe','#4389C8','#002F4C']}, backgroundColor:'#ffffff',
@@ -1175,7 +1175,7 @@ function drawCharts() {
                 if (courseChartMap[c.Course]) dlTitles[courseChartMap[c.Course]] = c.Course + ' — Growth';
                 if (courseRatingMap[c.Course]) dlTitles[courseRatingMap[c.Course]] = c.Course + ' — Ratings';
                 courseShare.push({ n: c.Course, k: [
-                    { l: 'Learners', v: fmt(c.Learners), c: '#4389C8' },
+                    { l: 'Enrolled Learners', v: fmt(c.Learners), c: '#4389C8' },
                     { l: 'Certificates', v: fmt(c.Certificates), c: '#FFC145' },
                     { l: 'Avg Rating', v: Number(c.Rating) > 0 ? Number(c.Rating).toFixed(2) + ' / 5' : '-', c: '#E28743' },
                     { l: 'Responses', v: fmt(c.Responses), c: '#5AA9E6' }
@@ -1185,7 +1185,7 @@ function drawCharts() {
             // Headline figures for the downloadable, share-ready results card
             const kpiShare = [
                 { l: 'Courses', v: fmt(D.pSnap.length), c: '#A78BFA' },
-                { l: 'Learners', v: fmt(D.totalLrn), c: '#4389C8' },
+                { l: 'Enrolled Learners', v: fmt(D.totalLrn), c: '#4389C8' },
                 { l: 'Courses Completed', v: fmt(D.totalCert), c: '#FFC145' },
                 { l: 'Certification Rate', v: (D.certRate != null ? D.certRate + '%' : '-'), c: '#3FB984' },
                 { l: 'Countries/Territories', v: String(Object.keys(D.providerCountryData).length || '-'), c: '#5AA9E6' },
@@ -1235,7 +1235,7 @@ function drawCharts() {
                 + '<span id="p-note" style="font-family:var(--mono);font-size:9px;color:#6d8ba3;margin-left:auto"></span>'
                 + '</div>'
                 + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px">'
-                + card('New Learners', 'In period', '&ndash;', '#4389C8', { noBar: true, valueId: 'pv-enrol' })
+                + card('New Enrolments', 'In period', '&ndash;', '#4389C8', { noBar: true, valueId: 'pv-enrol' })
                 + card('New Certificates', 'In period', '&ndash;', '#FFC145', { noBar: true, valueId: 'pv-cert' })
                 + card('Survey Responses', 'In period', '&ndash;', '#5AA9E6', { noBar: true, valueId: 'pv-resp' })
                 + card('Avg Rating', 'In period', '&ndash;', '#E28743', { noBar: true, valueId: 'pv-rating' })
@@ -1320,7 +1320,7 @@ a.shl:hover{color:var(--accent);border-bottom-color:var(--accent);}
 
   <div class="kgrid">
     ${card('Courses', 'Live on platform', fmt(D.pSnap.length), '#A78BFA', { info: 'The number of this provider’s courses published on SURGhub and included in this report.' })}
-    ${card('Learners', 'Course learners', fmt(D.totalLrn), '#4389C8', { info: 'Total course learners across the provider’s courses, all time. A learner taking three courses counts three times.' })}
+    ${card('Enrolled Learners', 'Across all courses', fmt(D.totalLrn), '#4389C8', { info: 'Total course learners across the provider’s courses, all time. A learner taking three courses counts three times.' })}
     ${card('Courses Completed', 'Certificates awarded', fmt(D.totalCert), '#FFC145', { info: 'Certificates awarded across the provider’s courses — each one represents a learner finishing a course.' })}
     ${card('Certification Rate', 'Certificates ÷ learners', (D.certRate != null ? D.certRate + '%' : '&ndash;'), '#3FB984', { info: 'Share of learners who earned a certificate — certificates divided by total learners, across the provider’s courses, all time. Learning time is shown in the Learning Impact section below.' })}
     ${card('Countries/Territories', 'Reached', Object.keys(D.providerCountryData).length || '&ndash;', '#5AA9E6', { info: 'Distinct countries and territories of learners enrolled in the provider’s courses, where the learner’s country is known.' })}
@@ -1398,7 +1398,7 @@ a.shl:hover{color:var(--accent);border-bottom-color:var(--accent);}
 
   ${secEyebrow('Growth')}
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;margin-bottom:14px">
-    <div class="chart-card"><p style="margin:0 0 12px;font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#4389C8;display:flex;align-items:center;justify-content:space-between">Learners <button class="dlb" onclick="dlChart('growth-enrol','Learners')">&#8595; PNG</button></p><div style="height:230px;position:relative"><canvas id="growth-enrol"></canvas></div></div>
+    <div class="chart-card"><p style="margin:0 0 12px;font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#4389C8;display:flex;align-items:center;justify-content:space-between">Enrolled Learners <button class="dlb" onclick="dlChart('growth-enrol','Enrolled Learners')">&#8595; PNG</button></p><div style="height:230px;position:relative"><canvas id="growth-enrol"></canvas></div></div>
     <div class="chart-card"><p style="margin:0 0 12px;font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);display:flex;align-items:center;justify-content:space-between">Courses Completed <button class="dlb" onclick="dlChart('growth-cert','Courses Completed')">&#8595; PNG</button></p><div style="height:230px;position:relative"><canvas id="growth-cert"></canvas></div></div>
   </div>
   <div class="chart-card" style="margin-bottom:28px"><p style="margin:0 0 12px;font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#9fb3c8;display:flex;align-items:center;justify-content:space-between">Survey Responses &amp; Average Rating <button class="dlb" onclick="dlChart('feedback-chart','Survey Responses and Average Rating')">&#8595; PNG</button></p><div style="height:240px;position:relative"><canvas id="feedback-chart"></canvas></div></div>
@@ -1410,7 +1410,7 @@ a.shl:hover{color:var(--accent);border-bottom-color:var(--accent);}
         + '<div style="display:flex;align-items:center;gap:10px;margin-top:10px"><span style="font-family:var(--mono);font-size:9px;color:#6d8ba3">0%</span><div style="flex:1;max-width:220px;height:8px;border-radius:99px;background:linear-gradient(90deg,#123a5c,#1a5485,#2474b3,#3f97d6,#74bce9,#bce3fb)"></div><span id="geo-max" style="font-family:var(--mono);font-size:9px;color:#6d8ba3"></span><span style="font-family:var(--mono);font-size:9px;color:#6d8ba3;margin-left:8px">Share of total learners</span></div>'
         + '</div>'
         + '<div class="chart-card" style="margin-bottom:28px"><p style="margin:0 0 10px;font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#9fb3c8">Top 10 Countries</p>'
-        + '<table style="width:100%;border-collapse:collapse;font-size:12.5px">' + tHead([{ t: 'Country' }, { t: 'Learners', r: 1 }, { t: '%', r: 1 }]) + '<tbody>'
+        + '<table style="width:100%;border-collapse:collapse;font-size:12.5px">' + tHead([{ t: 'Country' }, { t: 'Enrolled Learners', r: 1 }, { t: '%', r: 1 }]) + '<tbody>'
         + provTop10.map(([c, v]) => '<tr>' + tdL(esc(c)) + tdR(fmt(v)) + tdR(totalCountryUsers > 0 ? ((v / totalCountryUsers) * 100).toFixed(1) + '%' : '0%') + '</tr>').join('')
         + '</tbody></table><p style="margin:6px 0 0;font-family:var(--mono);font-size:9px;color:#6d8ba3">' + Object.keys(D.providerCountryData).length + ' countries/territories total &middot; ' + fmt(totalCountryUsers) + ' learners with country data</p></div>') : ''}
 
@@ -1420,7 +1420,7 @@ a.shl:hover{color:var(--accent);border-bottom-color:var(--accent);}
   <div class="chart-card" style="margin-bottom:28px">
     <p style="margin:0 0 10px;font-family:var(--mono);font-size:9px;letter-spacing:.06em;color:#6d8ba3">Click a column to sort &middot; click a course to jump to its details</p>
     <table id="cs-table" style="width:100%;border-collapse:collapse;font-size:12.5px">
-      <thead><tr>${[{ t: 'Course' }, { t: 'Learners', r: 1 }, { t: 'Certificates', r: 1 }, { t: 'Cert. rate', r: 1 }, { t: 'Rating', r: 1 }, { t: 'Responses', r: 1 }].map((c, i) =>
+      <thead><tr>${[{ t: 'Course' }, { t: 'Enrolled Learners', r: 1 }, { t: 'Certificates', r: 1 }, { t: 'Cert. rate', r: 1 }, { t: 'Rating', r: 1 }, { t: 'Responses', r: 1 }].map((c, i) =>
                 '<th class="sortable" onclick="sortCS(' + i + ',' + (i === 0 ? "'s'" : "'n'") + ')" style="padding:8px 10px;text-align:' + (c.r ? 'right' : 'left') + ';font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#6d8ba3;border-bottom:1px solid var(--border)">' + c.t + '<span id="cs-arr-' + i + '"></span></th>').join('')}</tr></thead>
       <tbody>${D.coursesSorted.map((d, idx) =>
                 '<tr class="cs-row" onclick="goCourse(' + idx + ')">'
@@ -1608,7 +1608,7 @@ function redrawAllCharts(){
   Object.keys(CMAP).forEach(function(c){ids.push(CMAP[c]);});
   Object.keys(RMAP).forEach(function(c){ids.push(RMAP[c]);});
   ids.forEach(function(id){var ch=Chart.getChart(id);if(ch)ch.destroy();});
-  drawGrowth('growth-enrol','Learners',TL,'e','#4389C8');
+  drawGrowth('growth-enrol','Enrolled Learners',TL,'e','#4389C8');
   drawGrowth('growth-cert','Courses completed',TL,'c','#FFC145');
   if(Object.keys(RD).length) drawRating('feedback-chart',RD);
   Object.keys(CMAP).forEach(function(c){ if(CTL[c]) drawCourse(CMAP[c],CTL[c]); });
@@ -1892,7 +1892,7 @@ function drawCourse(id,tl){
   var e=cumSeries(tl,'e'),c=cumSeries(tl,'c');
   el.__months=e.map(function(p){return p.m;});
   new Chart(el.getContext('2d'),{type:'line',data:{labels:e.map(function(p){return mLab(p.m);}),datasets:[
-    {label:'Learners',data:e.map(function(p){return p.v;}),borderColor:'#4389C8',borderWidth:2,backgroundColor:'#4389C81c',fill:true,tension:0.32,pointRadius:0,pointHoverRadius:3},
+    {label:'Enrolled Learners',data:e.map(function(p){return p.v;}),borderColor:'#4389C8',borderWidth:2,backgroundColor:'#4389C81c',fill:true,tension:0.32,pointRadius:0,pointHoverRadius:3},
     {label:'Certificates',data:c.map(function(p){return p.v;}),borderColor:'#FFC145',borderWidth:2,backgroundColor:'#FFC14514',fill:true,tension:0.32,pointRadius:0,pointHoverRadius:3}]},
     options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
       plugins:{legend:{labels:{color:TICK,font:{size:10},boxWidth:14}},tooltip:Object.assign(ttCfg(),{callbacks:{label:function(c){return ' '+c.dataset.label+': '+fmtN(c.parsed.y);}}})},
@@ -1911,7 +1911,7 @@ function drawRating(id,rd){
 }
 document.addEventListener('DOMContentLoaded',function(){
   // Charts show the full timeline; the prefilled period is drawn as a marker band
-  drawGrowth('growth-enrol','Learners',TL,'e','#4389C8');
+  drawGrowth('growth-enrol','Enrolled Learners',TL,'e','#4389C8');
   drawGrowth('growth-cert','Courses completed',TL,'c','#FFC145');
   if(Object.keys(RD).length) drawRating('feedback-chart',RD);
   Object.keys(CMAP).forEach(function(c){ if(CTL[c]) drawCourse(CMAP[c],CTL[c]); });
@@ -1946,7 +1946,7 @@ if(Object.keys(GEO).length){
     var lo=Math.max(minPct||0.001,maxPct/316);
     var vals=ramp.map(function(_,i){return lo*Math.pow(maxPct/lo,i/(ramp.length-1));});
     var dt=new google.visualization.DataTable();
-    dt.addColumn('string','Country'); dt.addColumn('number','Learners');
+    dt.addColumn('string','Country'); dt.addColumn('number','Enrolled Learners');
     rows.forEach(function(r){dt.addRow([r[0],{v:Math.max(r[1],lo),f:fmtN(r[2])+' learners \u00b7 '+r[1].toFixed(r[1]<1?2:1)+'% of total'}]);});
     new google.visualization.GeoChart(document.getElementById('geo-map')).draw(dt,{
       colorAxis:{values:vals,colors:ramp},legend:'none',backgroundColor:'transparent',datalessRegionColor:'#0b2c46',defaultColor:'#0b2c46'});

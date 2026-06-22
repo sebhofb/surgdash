@@ -3129,7 +3129,7 @@ Object.assign(window.App, {
                     <div class="bg-white p-6 rounded-xl shadow-sm border mb-8">
                         <h3 class="text-lg font-bold mb-4 flex items-center gap-2 text-gsf-prussian"><i data-lucide="trending-up" class="text-gsf-boston"></i> Provider Growth ${this._chartWidthBtns('chart_growth')} ${this._resetChartBtn('chart_growth')} ${this._chartBtns('chart_growth', 'Provider_Growth')}</h3>
                         <div class="mb-3 flex flex-wrap gap-4">
-                            <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed checked onchange="if(window.Charts) window.Charts.redrawProviderGrowth(App.getAnalyticsHistory(), App.selectedProvider)" data-series="prov-enroll"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#1a5276"></span> Learners</label>
+                            <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed checked onchange="if(window.Charts) window.Charts.redrawProviderGrowth(App.getAnalyticsHistory(), App.selectedProvider)" data-series="prov-enroll"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#1a5276"></span> Enrolled Learners</label>
                             <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed checked onchange="if(window.Charts) window.Charts.redrawProviderGrowth(App.getAnalyticsHistory(), App.selectedProvider)" data-series="prov-cert"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#4389C8"></span> Certificates</label>
                             <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed id="toggle-prov-growth-bars" onchange="if(window.Charts) window.Charts.redrawProviderGrowth(App.getAnalyticsHistory(), App.selectedProvider)"> Show monthly bars</label>
                         </div>
@@ -3245,7 +3245,7 @@ Object.assign(window.App, {
                     <div class="bg-white p-6 rounded-xl shadow-sm border mb-8">
                         <h3 class="text-lg font-bold mb-4 flex items-center gap-2 text-gsf-prussian"><i data-lucide="trending-up" class="text-gsf-boston"></i> Course Growth ${this._chartWidthBtns('chart_growth')} ${this._resetChartBtn('chart_growth')} ${this._chartBtns('chart_growth', 'Course_Growth')}</h3>
                         <div class="mb-3 flex flex-wrap gap-4">
-                            <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed checked onchange="if(window.Charts) window.Charts.drawCourse(App.getAnalyticsHistory(), App.selectedCourse)" data-series="crs-enroll"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#1a5276"></span> Learners</label>
+                            <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed checked onchange="if(window.Charts) window.Charts.drawCourse(App.getAnalyticsHistory(), App.selectedCourse)" data-series="crs-enroll"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#1a5276"></span> Enrolled Learners</label>
                             <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed checked onchange="if(window.Charts) window.Charts.drawCourse(App.getAnalyticsHistory(), App.selectedCourse)" data-series="crs-cert"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#4389C8"></span> Certificates</label>
                             <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed id="toggle-crs-growth-bars" onchange="if(window.Charts) window.Charts.drawCourse(App.getAnalyticsHistory(), App.selectedCourse)"> Show monthly bars</label>
                         </div>
@@ -4207,7 +4207,7 @@ Object.assign(window.App, {
                     <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-100 mb-8">
                         <h3 class="text-lg font-bold mb-4 flex items-center gap-2 text-gsf-prussian"><i data-lucide="trending-up" class="text-gsf-boston"></i> Platform Growth ${this._chartWidthBtns('chart_growth')} ${this._resetChartBtn('chart_growth')} ${this._chartBtns('chart_growth', 'Platform_Growth')}</h3>
                         <div class="mb-3 flex flex-wrap gap-4 items-center">
-                            <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed checked onchange="if(window.Charts) window.Charts.redrawPlatformGrowth(App.getPlatformHistory())" data-series="plat-enroll"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#1a5276"></span> Learners</label>
+                            <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed checked onchange="if(window.Charts) window.Charts.redrawPlatformGrowth(App.getPlatformHistory())" data-series="plat-enroll"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#1a5276"></span> Enrolled Learners</label>
                             <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed checked onchange="if(window.Charts) window.Charts.redrawPlatformGrowth(App.getPlatformHistory())" data-series="plat-cert"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#4389C8"></span> Certificates</label>
                             <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed id="toggle-plat-growth-bars" onchange="if(window.Charts) window.Charts.redrawPlatformGrowth(App.getPlatformHistory())"> Show monthly bars</label>
                             ${this._partialMonthToggle()}
@@ -4516,7 +4516,7 @@ Object.assign(window.App, {
                     ${this._renderDailyCertsPanel()}
 
                     <div class="bg-white p-6 rounded-xl border mb-8">
-                        <div class="flex items-center mb-4"><h4 class="font-bold text-xs uppercase text-gsf-prussian">Learners by Provider</h4>${this._chartBtns('chart_prov_learners', 'Enrollments_by_Provider')}</div>
+                        <div class="flex items-center mb-4"><h4 class="font-bold text-xs uppercase text-gsf-prussian">Enrolled Learners by Provider</h4>${this._chartBtns('chart_prov_learners', 'Enrollments_by_Provider')}</div>
                         <div id="chart_prov_learners" style="width: 100%; height: 450px;"></div>
                     </div>
                     <div class="bg-white p-6 rounded-xl border mb-8">

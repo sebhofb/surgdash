@@ -355,7 +355,7 @@
       // Just the three headline numbers — registered learners, courses, countries. (Enrolments,
       // certificates and learning-hours live in the growth / other sections, not this opening grid.)
       const scaleCards = [
-        kpi(D.learners, '', '', 'Registered learners', 'healthcare workers worldwide', '', 'd1'),
+        kpi(D.learners, '', '', 'Registered Users', 'healthcare workers worldwide', '', 'd1'),
         kpi(D.courses, '', 'boston', 'Courses', (D.providers ? ('from ' + D.providers + ' expert providers') : ''), '', 'd2'),
         kpi(D.countries, '+', 'green', 'Countries reached', 'on every continent', '', 'd3')
       ].join('');
@@ -414,10 +414,10 @@
       var growthSteps = gSteps.map(function (st) { return '<article class="gr-step" data-idx="' + st.idx + '"><div class="gr-card"><div class="gr-kicker">' + esc(st.k) + '</div><div class="gr-title">' + esc(st.t) + '</div><div class="gr-body">' + esc(st.b) + '</div></div></article>'; }).join('');
       var growthScrolly = '<div class="gr-scrolly">'
         + '<div class="gr-stage"><div class="chartcard growthhero">'
-        + '<div class="gh-top"><div class="gh-stat"><div id="gh-learn" class="gh-big">0</div><div class="gh-lab">registered learners</div></div>'
+        + '<div class="gh-top"><div class="gh-stat"><div id="gh-learn" class="gh-big">0</div><div class="gh-lab">registered users</div></div>'
         + '<div class="gh-stat"><div id="gh-cert" class="gh-sub">0</div><div class="gh-lab">certificates earned</div></div>'
         + '<div class="gh-stat gh-pillwrap"><span id="gh-asof" class="gh-asof"></span></div></div>'
-        + '<div class="gh-legend"><span><i class="sw" style="background:#2f86c9"></i>Registered learners</span><span><i class="sw" style="background:#3FB984"></i>Certificates</span><span><i class="gh-barsw"></i>New learners / month</span></div>'
+        + '<div class="gh-legend"><span><i class="sw" style="background:#2f86c9"></i>Registered Users</span><span><i class="sw" style="background:#3FB984"></i>Certificates</span><span><i class="gh-barsw"></i>New users / month</span></div>'
         + '<div id="growth-hero" class="gh-box"></div>'
         + '</div></div>'
         + '<div class="gr-steps">' + growthSteps + '</div>'

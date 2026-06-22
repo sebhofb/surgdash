@@ -5392,7 +5392,7 @@ window.GenericViews = {
                 </h2>
                 <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     ${[
-                        { label: 'Learners on SURGhub', yearVal: surghubYear.learners, yearEndVal: surghubYearEnd.learners, totalVal: surghubTotal.learners, color: '#4389C8', icon: 'users' },
+                        { label: 'Registered Users', yearVal: surghubYear.learners, yearEndVal: surghubYearEnd.learners, totalVal: surghubTotal.learners, color: '#4389C8', icon: 'users' },
                         { label: 'Certificates Issued',  yearVal: surghubYear.certificates, yearEndVal: surghubYearEnd.certificates, totalVal: surghubTotal.certificates, color: '#002F4C', icon: 'award' },
                         { label: 'Countries',            yearVal: surghubYear_countries, yearEndVal: surghubYearEnd_countries, totalVal: surghubTotal_countries, color: '#10B981', icon: 'globe' }
                     ].map(k => `
@@ -8640,8 +8640,8 @@ updateDirtyCount();
             if (data.surghub) _mSec.push({ t: 'SURGhub — Learning Platform', b:
                 `<p class="text-sm text-slate-600 leading-relaxed mb-2">SURGhub figures come from the platform's own records (LearnWorlds) and are shown as all-time totals on the SURGhub page of this snapshot.</p>
     <ul class="text-sm text-slate-600 leading-relaxed list-disc pl-5 space-y-1.5 mb-3">
-        <li><strong>Learners</strong> — unique registered accounts on the platform.</li>
-        <li><strong>Learners</strong> — total course learners; a learner taking three courses counts three times.</li>
+        <li><strong>Registered Users</strong> — unique registered accounts on the platform.</li>
+        <li><strong>Enrolled Learners</strong> — total course enrolments; a learner taking three courses counts three times.</li>
         <li><strong>Courses completed</strong> — certificates issued on completion of a course.</li>
         <li><strong>Growth timing</strong> — learner curves use learner signup dates clamped to each course's launch month, so monthly timing is approximate (totals are exact); certificates use actual issue dates.</li>
         <li><strong>Countries/Territories</strong> — distinct countries or territories identified from learner profiles.</li>
@@ -9349,7 +9349,7 @@ function renderSurghub(){
         ):'')
         +'<div class="reveal" style="margin-bottom:10px"><h2 style="margin:0;font-family:var(--mono);font-size:10px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.2em">Growth Over Time<\/h2><\/div>'
         +'<div class="reveal" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px">'
-            +'<div class="chart-card"><p style="margin:0 0 14px;font-family:var(--mono);font-size:10px;font-weight:700;color:#6d8ba3;text-transform:uppercase;letter-spacing:.14em">Learners<\/p><div id="shub-learners" style="position:relative;height:280px"><\/div><\/div>'
+            +'<div class="chart-card"><p style="margin:0 0 14px;font-family:var(--mono);font-size:10px;font-weight:700;color:#6d8ba3;text-transform:uppercase;letter-spacing:.14em">Registered Users<\/p><div id="shub-learners" style="position:relative;height:280px"><\/div><\/div>'
             +'<div class="chart-card"><p style="margin:0 0 14px;font-family:var(--mono);font-size:10px;font-weight:700;color:#6d8ba3;text-transform:uppercase;letter-spacing:.14em">Courses Completed<\/p><div id="shub-certs" style="position:relative;height:280px"><\/div><\/div>'
         +'<\/div>'
         +(s.countryMap?(
@@ -9358,7 +9358,7 @@ function renderSurghub(){
         ):'')
         +'<p style="margin:22px 0 0;font-family:var(--mono);font-size:9.5px;letter-spacing:.04em;color:#6d8ba3;text-transform:uppercase">Cumulative totals · SURGhub platform data<\/p>'
         +'<\/div>';
-    _drawGrowthLine(document.getElementById('shub-learners'),'Learners',s.learnersSeries,'#4389C8');
+    _drawGrowthLine(document.getElementById('shub-learners'),'Registered Users',s.learnersSeries,'#4389C8');
     _drawGrowthLine(document.getElementById('shub-certs'),'Courses completed',s.certsSeries,'#FFC145');
     if(s.countryMap) _drawCountryMap('shub-map',s.countryMap);
 }
