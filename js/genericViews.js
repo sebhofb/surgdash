@@ -9296,7 +9296,7 @@ function renderSurghub(){
     var cards=[
         card('Registered Users','Unique people',s.learners,'#4389C8'),
         card('Courses Completed','Certificates awarded',s.certificates,'#FFC145'),
-        card('Learners','Across all courses',s.enrolments,'#5AA9E6'),
+        card('Enrolled Learners','Across all courses',s.enrolments,'#5AA9E6'),
         card('Countries/Territories','Reached',s.countries,'#3FB984'),
         card('Courses','Live on platform',s.courses,'#A78BFA')
     ].join('');
