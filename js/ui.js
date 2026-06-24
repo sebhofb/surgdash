@@ -2177,8 +2177,8 @@ Object.assign(window.App, {
 
                     <!-- ── SURGhub Impact Showcase ── -->
                     <div class="bg-white rounded-2xl shadow-sm border p-8 mb-8">
-                        <h2 class="text-xl font-bold mb-2 text-gsf-prussian"><i data-lucide="sparkles" class="inline mb-1 text-gsf-boston"></i> SURGhub Impact Showcase</h2>
-                        <p class="text-slate-600 text-sm mb-5 max-w-3xl">A self-contained, shareable scrollytelling page of SURGhub's overall impact — the global-surgery gap, scale, growth, the reach gap, the whole surgical team, learning outcomes, ambassadors and learner voices. Aggregates only, no personal data. Pick the AI scoring source, then choose exactly which testimonials feed the “Voices” section.</p>
+                        <h2 class="text-xl font-bold mb-2 text-gsf-prussian"><i data-lucide="sparkles" class="inline mb-1 text-gsf-boston"></i> SURGhub Impact Showcase <span class="ml-1 align-middle text-[10px] font-bold uppercase tracking-wide bg-amber-100 text-amber-700 rounded-full px-2 py-0.5">Beta</span></h2>
+                        <p class="text-slate-600 text-sm mb-5 max-w-3xl">A self-contained, shareable scrollytelling page of SURGhub's overall impact — the global-surgery gap, scale, growth, course completion and certification, the reach gap, learner stories from around the world, learning outcomes, the community behind the platform and learner voices. Aggregates only, no personal data. Pick the AI scoring source, then choose exactly which testimonials feed the “Voices” section.</p>
                         <div class="flex flex-wrap items-end gap-3">
                             <label class="text-xs font-semibold text-slate-500 flex flex-col gap-1">Testimonials source
                                 <select id="showcase-tsource" class="text-xs border rounded-lg px-2 py-1.5 outline-none focus:ring-2 focus:ring-gsf-boston/30 bg-white">

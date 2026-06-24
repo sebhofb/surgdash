@@ -376,11 +376,12 @@
       ].join('') : '';
       const surveyN = D.survey ? Math.max((D.survey.willApply || {}).n || 0, (D.survey.contentNew || {}).n || 0, (D.survey.careerValue || {}).n || 0) : 0;
 
+      // The community behind SURGhub — broader than ambassadors alone: volunteer ambassadors,
+      // the expert organisations who contribute courses, and the specialists on our committees/panels.
       const ambCards = D.amb ? (
         '<div class="kpi rv lite d1"><div class="v boston num" data-to="' + D.amb.referrers + '">0</div><div class="l">Active ambassadors</div></div>'
-        + '<div class="kpi rv lite d2"><div class="v num" data-to="' + D.amb.bridged + '">0</div><div class="l">Learners they brought in</div></div>'
-        + (D.amb.hasOutcomes ? '<div class="kpi rv lite d3"><div class="v num" data-to="' + D.amb.active + '">0</div><div class="l">Became active learners</div></div>' : '')
-        + (D.amb.hasOutcomes ? '<div class="kpi rv lite d4"><div class="v green num" data-to="' + D.amb.certs + '">0</div><div class="l">Certificates earned</div></div>' : '')
+        + (D.providers ? '<div class="kpi rv lite d2"><div class="v num" data-to="' + D.providers + '">0</div><div class="l">Content providers</div></div>' : '')
+        + '<div class="kpi rv lite d3"><div class="v green num" data-to="100" data-suffix="+">0</div><div class="l">Experts on our three committees &amp; review panels</div></div>'
       ) : '';
 
       const stars = (r) => { r = Math.round(Number(r) || 0); if (r < 1) return ''; let s = '<span class="stars">'; for (let i = 1; i <= 5; i++) s += '<span class="' + (i <= r ? 'on' : '') + '">★</span>'; return s + '</span>'; };
@@ -399,8 +400,33 @@
         + '<div class="rb-foot">Based on ' + fmt(D.rating.n) + ' learner ratings</div></div>'
       ) : '';
 
-      // Cert-rate highlight for the growth section — framed against typical online-course completion.
-      const certHi = (D.certRate != null ? '<div class="certhi rv d2"><div class="certhi-num num" data-to="' + D.certRate + '" data-suffix="%">0</div><div class="certhi-lab">of learners finish and certify — <b>2–3× the typical completion rate</b> for online learning platforms.</div></div>' : '');
+      // "The payoff" certification showcase (its own dark section after the growth chart). A two-bar
+      // "completion gap" duel: SURGhub's certification rate fills the whole track; an illustrative
+      // typical-online-course benchmark fills only the 12/rate ratio, so the 2–3× gap reveals itself
+      // as motion. Both numbers still COUNT UP to their true values (the ratio only scales bar WIDTH).
+      // Honesty: the benchmark is a labelled, illustrative midpoint of the widely-cited 10–15% range —
+      // shown for scale, never as a measured figure — and the footnote must stay attached.
+      const certBench = 12;                                                  // illustrative typical-course completion %
+      const certBenchW = (D.certRate ? Math.max(4, Math.min(100, Math.round(certBench / D.certRate * 100))) : 0); // ratio, NOT the literal 12 (edit D.certRate → recomputes)
+      const certHasApply = !!(D.survey && D.survey.willApply);
+      const certKpis = kpi(D.certificates, '', '', 'Certificates earned', 'and counting', '', 'd1')
+        + (certHasApply ? kpi(D.survey.willApply.pct, '%', 'green', 'Intend to apply what they learned', 'in post-course surveys', '', 'd2') : '');
+      const certNote = 'Completion benchmark is illustrative of typical open online-course platforms (widely cited around 10–15%) and is shown for scale, not measured here.'
+        + ((D.survey && D.survey.willApply && D.survey.willApply.n) ? ' Survey results based on ' + fmt(D.survey.willApply.n) + ' post-course responses.' : '');
+      // Inner HTML only — the section wrapper (sec()) is applied at the assembly point below, because
+      // sec is a const declared later in this method and referencing it here would hit the TDZ.
+      const certifyInner = (D.certRate != null) ? (
+        '<p class="eyebrow rv">The payoff</p>'
+        + '<h2 class="rv">Most learners don’t just start. They finish.</h2>'
+        + '<p class="lead rv d1" style="margin-bottom:8px">Across online learning, the hard part isn’t signing up — it’s seeing a course through. On SURGhub, roughly one in three enrolments runs the full course and earns a certificate — 2–3× what open online platforms typically see.</p>'
+        + '<div class="duel">'
+          + '<div class="duel-row rv d1"><div class="duel-head"><span class="duel-lab">SURGhub certification rate</span><span class="duel-val num" data-to="' + D.certRate + '" data-suffix="%">0</span></div><div class="track tall"><div class="fill green" data-w="100"></div></div></div>'
+          + '<div class="duel-row muted-row rv d2"><div class="duel-head"><span class="duel-lab">Typical online course (illustrative)</span><span class="duel-val muted-val num" data-to="' + certBench + '" data-suffix="%">0</span></div><div class="track tall"><div class="fill slate" data-w="' + certBenchW + '"></div></div></div>'
+        + '</div>'
+        + '<span class="gappill rv d2">2–3× the typical completion rate for online learning</span>'
+        + '<div class="kpis' + (certHasApply ? ' duo' : '') + '">' + certKpis + '</div>'
+        + '<p class="muted rv d3" style="margin-top:22px;font-size:13px">' + certNote + '</p>'
+      ) : '';
       // Scroll-driven growth story: sticky chart + steps (launch -> milestones -> today), like the globe.
       var gMon = function (m) { var p = String(m || '').split('-'); var mn = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']; return (mn[+p[1]] || '') + ' ' + (p[0] || ''); };
       var gLs = D.learnersSeries || [], gN = gLs.length;
@@ -408,16 +434,15 @@
       var gSteps = [];
       if (gN) {
         gSteps.push({ idx: Math.min(3, gN - 1), k: gMon(gLs[0].m), t: 'It began with a few.', b: 'SURGhub opened to the whole surgical team — free, online, from anywhere.' });
-        [[10000, 'A first milestone — adoption beyond the early few.'], [25000, 'Word spreads, country by country.'], [50000, 'From a launch to a movement.'], [100000, 'Still climbing.']].forEach(function (p) { var ci = gCross(p[0]); if (ci > 0) gSteps.push({ idx: ci, k: gMon(gLs[ci].m), t: fmt(p[0]) + ' learners', b: p[1] }); });
-        gSteps.push({ idx: gN - 1, k: 'Today', t: fmt(D.learners) + ' learners', b: 'across ' + fmt(D.countries) + '+ countries — and ' + fmt(D.certificates) + ' have earned a certificate.' });
+        [[10000, 'A first milestone — adoption beyond the early few.'], [25000, 'Word spreads, country by country.'], [50000, 'From a launch to a movement.'], [100000, 'Still climbing.']].forEach(function (p) { var ci = gCross(p[0]); if (ci > 0) gSteps.push({ idx: ci, k: gMon(gLs[ci].m), t: fmt(p[0]) + ' registered users', b: p[1] }); });
+        gSteps.push({ idx: gN - 1, k: 'Today', t: fmt(D.learners) + ' registered users', b: 'across ' + fmt(D.countries) + '+ countries — and still growing every month.' });
       }
       var growthSteps = gSteps.map(function (st) { return '<article class="gr-step" data-idx="' + st.idx + '"><div class="gr-card"><div class="gr-kicker">' + esc(st.k) + '</div><div class="gr-title">' + esc(st.t) + '</div><div class="gr-body">' + esc(st.b) + '</div></div></article>'; }).join('');
       var growthScrolly = '<div class="gr-scrolly">'
         + '<div class="gr-stage"><div class="chartcard growthhero">'
         + '<div class="gh-top"><div class="gh-stat"><div id="gh-learn" class="gh-big">0</div><div class="gh-lab">registered users</div></div>'
-        + '<div class="gh-stat"><div id="gh-cert" class="gh-sub">0</div><div class="gh-lab">certificates earned</div></div>'
         + '<div class="gh-stat gh-pillwrap"><span id="gh-asof" class="gh-asof"></span></div></div>'
-        + '<div class="gh-legend"><span><i class="sw" style="background:#2f86c9"></i>Registered Users</span><span><i class="sw" style="background:#3FB984"></i>Certificates</span><span><i class="gh-barsw"></i>New users / month</span></div>'
+        + '<div class="gh-legend"><span><i class="sw" style="background:#2f86c9"></i>Registered Users</span><span><i class="gh-barsw"></i>New users / month</span></div>'
         + '<div id="growth-hero" class="gh-box"></div>'
         + '</div></div>'
         + '<div class="gr-steps">' + growthSteps + '</div>'
@@ -546,7 +571,7 @@
         // milestones light up and the totals count up as you go (the globe pattern, for growth).
         function initGrowth() {
           var wrap = document.getElementById('growth-hero'); if (!wrap) return;
-          var A = D.learnersSeries || [], C = D.certsSeries || [], n = A.length;
+          var A = D.learnersSeries || [], n = A.length;
           var steps = [].slice.call(document.querySelectorAll('#growth .gr-step'));
           if (!n || !steps.length) return;
           var W = wrap.clientWidth || (wrap.getBoundingClientRect ? wrap.getBoundingClientRect().width : 0) || 0;
@@ -568,13 +593,12 @@
           var inner = '<defs><linearGradient id="ghg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2f86c9" stop-opacity="0.26"\/><stop offset="1" stop-color="#2f86c9" stop-opacity="0.02"\/><\/linearGradient><clipPath id="ghclip"><rect class="ghcr" x="0" y="0" width="0" height="' + H + '"\/><\/clipPath><\/defs>'
             + '<line x1="' + padL + '" y1="' + base + '" x2="' + (W - padR) + '" y2="' + base + '" stroke="#e4edf4"\/>' + ticks
             + '<g clip-path="url(#ghclip)">' + bars + '<path d="' + aPath + '" fill="url(#ghg)"\/>'
-            + '<path d="' + lpath(C) + '" fill="none" stroke="#3FB984" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"\/>'
             + '<path class="gline" d="' + lpath(A) + '" stroke="#2f86c9"\/><\/g>'
             + mksvg
             + '<circle class="ghhead" r="5" fill="#2f86c9" stroke="#fff" stroke-width="2" opacity="0"\/>';
-          wrap.innerHTML = '<svg id="growth-hero-svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Cumulative learners and certificates since launch" style="display:block;width:100%;height:' + H + 'px">' + inner + '<\/svg>';
+          wrap.innerHTML = '<svg id="growth-hero-svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Cumulative registered users since launch" style="display:block;width:100%;height:' + H + 'px">' + inner + '<\/svg>';
           var cr = wrap.querySelector('.ghcr'), head = wrap.querySelector('.ghhead'), msEls = wrap.querySelectorAll('.ghms');
-          var learnEl = document.getElementById('gh-learn'), certEl = document.getElementById('gh-cert'), asofEl = document.getElementById('gh-asof');
+          var learnEl = document.getElementById('gh-learn'), asofEl = document.getElementById('gh-asof');
           var MN = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
           function valAt(f, S) { var t = f * (n - 1), i0 = Math.floor(t), i1 = Math.min(n - 1, i0 + 1), fr = t - i0; var a = (S[i0] && S[i0].v) || 0, b = (S[i1] && S[i1].v) || 0; return a + (b - a) * fr; }
           var cur = 0, tgt = 0, active = -1, raf = 0, vis = false;
@@ -584,7 +608,6 @@
             var lv = valAt(cur, A); head.setAttribute('cx', px.toFixed(1)); head.setAttribute('cy', Y(lv).toFixed(1)); head.setAttribute('opacity', cur > 0.002 ? '1' : '0');
             for (var i = 0; i < msEls.length; i++) { msEls[i].setAttribute('opacity', Math.max(0, Math.min(1, (px - MK[i].x + 4) / 9)).toFixed(3)); }
             if (learnEl) learnEl.textContent = fmt(Math.round(lv));
-            if (certEl) certEl.textContent = fmt(Math.round(valAt(cur, C)));
             if (asofEl) { var mm = A[Math.max(0, Math.min(n - 1, Math.round(cur * (n - 1))))].m.split('-'); asofEl.textContent = 'as of ' + (MN[+mm[1]] || '') + ' ' + mm[0]; }
           }
           function loop() { cur += (tgt - cur) * 0.09; if (Math.abs(tgt - cur) < 0.0008) cur = tgt; render(); if (!vis || reduce) { raf = 0; return; } raf = requestAnimationFrame(loop); }
@@ -745,10 +768,12 @@
 
         + sec('scale', 'The scale', 'dark', '<h2 class="rv">A global classroom for surgical care.</h2><p class="lead rv d1" style="margin-bottom:8px">No tuition and no travel: one platform, open to every member of the surgical team.</p><div class="kpis">' + scaleCards + '</div>')
 
-        + sec('growth', 'Growth', '', '<h2 class="rv">Sustained growth since launch.</h2><p class="lead rv d1" style="margin-bottom:8px">Since launching in June 2023, more of the surgical team join and certify every month. Scroll the story — the chart fills in as you go.</p>'
-        + growthScrolly + certHi)
+        + sec('growth', 'Growth', '', '<h2 class="rv">Sustained growth since launch.</h2><p class="lead rv d1" style="margin-bottom:8px">Since launching in June 2023, more of the surgical team join every month. Scroll the story — the chart fills in as you go.</p>'
+        + growthScrolly)
 
-        + sec('reach', 'Reach', 'dark', '<div class="cols"><div><h2 class="rv">Where surgical care is hardest to reach.</h2><p class="lead rv d1" style="margin:0 0 20px;font-size:18px">Most located learners are in the countries with the greatest unmet need for surgical care.</p>'
+        + (certifyInner ? sec('certify', 'The payoff', 'dark', certifyInner) : '')
+
+        + sec('reach', 'Reach', 'dark','<div class="cols"><div><h2 class="rv">Where surgical care is hardest to reach.</h2><p class="lead rv d1" style="margin:0 0 20px;font-size:18px">Most located learners are in the countries with the greatest unmet need for surgical care.</p>'
         + '<div class="reach-hi rv d1"><div class="reach-hi-num num" data-to="' + (D.priorityShare || 0) + '" data-suffix="%">0</div><div class="reach-hi-lab"><b>Priority learner share</b><br>of located learners are in Lancet Commission priority countries.</div></div>'
         + '<p class="muted rv d3" style="margin-top:16px">Priority countries are the low- and lower-middle-income settings the Lancet Commission on Global Surgery identifies as carrying the largest unmet need for safe, timely surgical care.</p></div>'
         + '<div class="rv d2"><p class="muted" style="margin-bottom:12px;letter-spacing:.14em;text-transform:uppercase;font-size:12px">Top reached priority countries</p><div class="plist">' + priorityList + '</div></div></div>'
@@ -756,11 +781,9 @@
 
         + sec('faces', 'On the ground', 'darker', '<h2 class="rv">The people behind the map.</h2><p class="lead rv d1" style="margin-bottom:8px">Behind every point on that map is a clinician putting new skills to work. Scroll to travel the globe — from Bangladesh to Sierra Leone.</p>' + geoScrolly + '<p class="muted rv" style="margin-top:22px;text-align:center">More learner stories on the <a href="https://www.surghub.org/blog" target="_blank" rel="noopener" style="color:inherit;text-decoration:underline">SURGhub blog</a>.</p>')
 
-        + (cadreDonut ? sec('who', 'Who', '', '<h2 class="rv">The whole surgical team.</h2><p class="lead rv d1" style="margin-bottom:22px">Safe surgery depends on the whole team. SURGhub serves surgeons, nurses, anaesthesia providers, midwives, and the students training to join them.</p>' + cadreDonut) : '')
+        + (dials ? sec('impact', 'Impact', 'dark','<h2 class="rv">Learning that changes practice.</h2><p class="lead rv d1" style="margin-bottom:8px">In post-course surveys, learners report applying what they have learned:</p><div class="dials">' + dials + '</div>' + (surveyN ? '<p class="muted rv d4" style="text-align:center;margin-top:26px">Based on ' + fmt(surveyN) + ' post-course survey responses.</p>' : '')) : '')
 
-        + (dials ? sec('impact', 'Impact', 'dark', '<h2 class="rv">Learning that changes practice.</h2><p class="lead rv d1" style="margin-bottom:8px">In post-course surveys, learners report applying what they have learned:</p><div class="dials">' + dials + '</div>' + (surveyN ? '<p class="muted rv d4" style="text-align:center;margin-top:26px">Based on ' + fmt(surveyN) + ' post-course survey responses.</p>' : '')) : '')
-
-        + (ambCards ? sec('network', 'Network', '', netGlobe + '<div class="netfg"><h2 class="rv">Growth driven by its community.</h2><p class="lead rv d1" style="margin-bottom:24px">Volunteer ambassadors introduce SURGhub to their professional networks. The learners they bring go on to complete courses and certify.</p><div class="kpis">' + ambCards + '</div>' + ambFeature + ambCTA + '</div>') : '')
+        + (ambCards ? sec('network', 'Network', '', netGlobe + '<div class="netfg"><h2 class="rv">Growth driven by its community.</h2><p class="lead rv d1" style="margin-bottom:24px">SURGhub is built and sustained by a global community — volunteer ambassadors who spread the word, the expert organisations who contribute the courses, and the specialists who safeguard quality on our three committees and review panels.</p><div class="kpis">' + ambCards + '</div>' + ambFeature + ambCTA + '</div>') : '')
 
         + ((quoteCards || ratingBand) ? sec('voices', 'Voices', 'dark', '<h2 class="rv">Trusted by the people who use it.</h2><p class="lead rv d1" style="margin-bottom:20px">Anonymised feedback from learners.</p>' + ratingBand + (quoteCards ? '<div class="quotes">' + quoteCards + '</div>' : '') + (quoteCards ? '<p class="muted rv" style="margin-top:20px">Anonymised learner feedback. No names or personal details.</p>' : '')) : '')
 
@@ -793,7 +816,9 @@
         + '.chartcard{background:#fff;border:1px solid #e4edf4;border-radius:18px;padding:24px 22px 16px;position:relative;transition:transform .25s ease,box-shadow .25s ease}.chartcard:hover{transform:translateY(-3px);box-shadow:0 18px 44px rgba(4,38,61,.14)}.growthgrid{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-top:8px}@media(max-width:820px){.growthgrid{grid-template-columns:1fr}}.legend{display:flex;gap:20px;flex-wrap:wrap;font-size:13px;color:#5b7488;margin-bottom:8px}.legend span{display:inline-flex;align-items:center;gap:7px}.sw{width:12px;height:12px;border-radius:3px;display:inline-block}.gline{fill:none;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}.ann{font-size:13px;font-weight:700}.growthbox{width:100%;height:300px;cursor:crosshair}.growthbox svg{display:block;width:100%;height:300px}.tip{position:absolute;top:14px;right:22px;font-size:13px;background:#04263d;color:#eaf2f8;padding:6px 11px;border-radius:8px;opacity:0;transition:opacity .15s;pointer-events:none}'
         + '.growthhero{margin-top:8px}.gh-top{display:flex;gap:36px;align-items:flex-end;flex-wrap:wrap;margin-bottom:4px}.gh-stat{display:flex;flex-direction:column;justify-content:flex-end}.gh-big{font-size:clamp(40px,6vw,56px);font-weight:800;line-height:.92;letter-spacing:-.02em;color:#2f86c9}.gh-sub{font-size:clamp(26px,3.4vw,34px);font-weight:800;line-height:.92;color:#1f9c63}.gh-lab{font-size:13.5px;color:#5b7488;margin-top:7px;font-weight:600}.gh-pillwrap{padding-bottom:4px}.gh-pill{display:inline-block;font-size:12.5px;font-weight:700;background:rgba(63,185,132,.14);color:#1f7a4d;border-radius:999px;padding:5px 13px}.gh-legend{display:flex;gap:20px;flex-wrap:wrap;font-size:13px;color:#5b7488;margin:8px 0 4px}.gh-legend span{display:inline-flex;align-items:center;gap:7px}.gh-barsw{width:11px;height:11px;border-radius:3px;display:inline-block;background:#2f86c9;opacity:.2}.gh-box{width:100%;min-height:360px}.gh-box svg{display:block;width:100%}'
         + '.gr-scrolly{display:grid;grid-template-columns:1.05fr .95fr;gap:48px;margin-top:18px}@media(max-width:860px){.gr-scrolly{grid-template-columns:1fr;gap:0}}.gr-stage{position:sticky;top:11vh;align-self:start;background:var(--paper)}@media(max-width:860px){.gr-stage{top:6px;z-index:2;padding:6px 0}}.gr-steps{display:flex;flex-direction:column}.gr-step{min-height:72vh;display:flex;align-items:center}@media(max-width:860px){.gr-step{min-height:auto;padding:26px 0}}.gr-card{opacity:.38;transform:translateY(8px);transition:opacity .45s ease,transform .45s cubic-bezier(.2,.7,.2,1)}.gr-step.on .gr-card{opacity:1;transform:none}.gr-kicker{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--boston);font-weight:700}.gr-title{font-size:clamp(24px,3vw,34px);font-weight:800;letter-spacing:-.015em;color:#04263d;margin:9px 0 7px;line-height:1.1}.gr-body{font-size:17px;color:#3d5567;line-height:1.6;max-width:42ch;margin:0}.gh-asof{font-size:12.5px;font-weight:700;color:#5b7488;background:#eef4f9;border-radius:999px;padding:5px 12px;white-space:nowrap}'
-        + '.bars{display:flex;flex-direction:column;gap:13px;margin-top:8px}.bar{display:grid;grid-template-columns:170px 1fr 70px;align-items:center;gap:14px}.bar .lab{font-size:15px}.track{height:18px;background:rgba(255,255,255,.1);border-radius:999px;overflow:hidden}body .track{background:rgba(120,140,160,.16)}.dark .track{background:rgba(255,255,255,.1)}.fill{height:100%;width:0;border-radius:999px;background:var(--boston);transition:width 1.1s cubic-bezier(.2,.7,.2,1)}.fill.slate{background:#7d96a8}.bar .val{text-align:right;font-weight:700;font-variant-numeric:tabular-nums}'
+        + '.bars{display:flex;flex-direction:column;gap:13px;margin-top:8px}.bar{display:grid;grid-template-columns:170px 1fr 70px;align-items:center;gap:14px}.bar .lab{font-size:15px}.track{height:18px;background:rgba(255,255,255,.1);border-radius:999px;overflow:hidden}body .track{background:rgba(120,140,160,.16)}.dark .track{background:rgba(255,255,255,.1)}.fill{height:100%;width:0;border-radius:999px;background:var(--boston);transition:width 1.1s cubic-bezier(.2,.7,.2,1)}.fill.slate{background:#7d96a8}.fill.green{background:var(--green)}.bar .val{text-align:right;font-weight:700;font-variant-numeric:tabular-nums}'
+        + '.duel{max-width:720px;margin-top:30px;display:flex;flex-direction:column;gap:22px}.duel-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px}.duel-lab{font-weight:600;color:#eaf2f8;font-size:16px}.duel-row.muted-row .duel-lab{color:#9fb6c9;font-weight:400}.duel-val{font-size:clamp(28px,4vw,36px);font-weight:800;color:var(--green);letter-spacing:-.01em;font-variant-numeric:tabular-nums}.duel-val.muted-val{font-size:clamp(20px,2.6vw,24px);color:#9fb6c9;font-weight:700}.track.tall{height:30px}'
+        + '.gappill{display:inline-block;margin-top:24px;font-size:13px;font-weight:600;background:rgba(63,185,132,.16);color:#8fe3bf;border-radius:999px;padding:6px 15px}.kpis.duo{grid-template-columns:repeat(2,1fr);max-width:720px}@media(max-width:560px){.kpis.duo{grid-template-columns:1fr}}'
         + '.cols{display:grid;grid-template-columns:1fr 1fr;gap:40px;align-items:center}@media(max-width:820px){.cols{grid-template-columns:1fr;gap:28px}}.bignum{font-size:clamp(56px,11vw,118px);font-weight:800;letter-spacing:-.03em;line-height:.95;color:#fff}.statline{font-size:18px;color:#bdd3e4;margin-top:8px}'
         + '.conflict{margin-top:22px;background:rgba(229,115,115,.12);border:1px solid rgba(229,115,115,.35);border-radius:14px;padding:18px 20px}.conflict .v{font-size:34px;font-weight:800;color:#ffb4b4}.conflict .l{color:#e7c3c3;font-size:14px}.reach-hi{margin-top:20px;display:flex;align-items:center;gap:20px;background:rgba(63,185,132,.10);border:1px solid rgba(63,185,132,.34);border-radius:16px;padding:18px 22px}.reach-hi-num{font-size:clamp(46px,7.5vw,76px);font-weight:800;line-height:.88;color:var(--green);letter-spacing:-.02em;flex:none}.reach-hi-lab{font-size:15px;color:#cfe6da}.reach-hi-lab b{color:#eaf7f0;font-weight:700}'
         + '#map .mapoff{text-align:center;color:#6d8ba3;font-size:13px;padding:200px 0}.toggle{background:rgba(255,255,255,.06);border:1px solid var(--line);color:#cfe2f1;font-weight:600;font-size:14px;padding:11px 20px;border-radius:10px;cursor:pointer;transition:all .2s}.toggle:hover,.toggle.on{background:var(--boston);border-color:var(--boston);color:#fff}'
