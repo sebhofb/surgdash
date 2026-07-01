@@ -94,7 +94,9 @@
             return { e, c };
         },
 
-        async _assembleReportData(providerName) {
+        async _assembleReportData(providerName, opts) {
+            opts = opts || {};
+            const platform = !!opts.platform;   // platform mode: aggregate ALL providers (no filter)
             // Reports read the lazy-loaded anon + completion blobs (per-course top
             // countries, real learning-time/completion in the users sheet) — ensure
             // they're in before assembling, in case no engagement tab was opened first.
@@ -102,7 +104,7 @@
             if (this.ensureCompletionLoaded) await this.ensureCompletionLoaded();
             const feedbackCutoff = this.reportFeedbackFromDate || '';
             const snapData = this.getAnalyticsSnap();
-            const pSnap = snapData.filter(d => d.Provider === providerName);
+            const pSnap = platform ? snapData.slice() : snapData.filter(d => d.Provider === providerName);
             if (pSnap.length === 0) return null;
 
             const courseMins = this.getCourseLearningMinutes ? this.getCourseLearningMinutes() : {}; // anon fallback — matches the dashboard provider total
@@ -133,7 +135,7 @@
 
             // Build provider-level timeline data
             let provTimeline = {};
-            const historyData = this.getAnalyticsHistory().filter(d => d.Provider === providerName);
+            const historyData = platform ? this.getAnalyticsHistory() : this.getAnalyticsHistory().filter(d => d.Provider === providerName);
             historyData.forEach(d => {
                 if (d.CourseTimeline) {
                     let parsed = window.Charts.safeParse(d.CourseTimeline);
@@ -538,7 +540,7 @@
             // this only comes from a manual "Provider URL" column added to the
             // persisted Provider Map file (on any row naming this provider).
             let providerUrl = '';
-            try {
+            if (!platform) try {
                 const provMapRows = (await Storage.getItem('surgdash_provider_map')) || [];
                 const normName = (s) => String(s || '').trim().toLowerCase();
                 const urlOf = (r) => String(r['Provider URL'] || r['Provider Page'] || r['Provider Link'] || '').trim();
@@ -592,8 +594,27 @@
             } catch (e) {}
             const awardsAsOf = this._currentQuarterLabel ? this._currentQuarterLabel() : '';
 
+            // Platform mode: per-provider roll-up (Top Providers section) + provider count.
+            let topProviders = [], providerCount = 0;
+            if (platform) {
+                const pm = {};
+                pSnap.forEach(d => {
+                    const p = String(d.Provider || 'Unknown').trim() || 'Unknown';
+                    const m = pm[p] || (pm[p] = { name: p, courses: 0, lrn: 0, cert: 0, rSum: 0, rCnt: 0 });
+                    m.courses++; m.lrn += Number(d.Learners) || 0; m.cert += Number(d.Certificates) || 0;
+                    const r = Number(d.Rating) || 0; if (r > 0) { m.rSum += r; m.rCnt++; }
+                });
+                providerCount = Object.keys(pm).length;
+                topProviders = Object.values(pm).map(m => ({
+                    name: m.name, courses: m.courses, lrn: m.lrn, cert: m.cert,
+                    certRate: m.lrn > 0 ? (m.cert / m.lrn * 100) : null,
+                    avg: m.rCnt > 0 ? (m.rSum / m.rCnt) : null
+                })).sort((a, b) => b.lrn - a.lrn);
+            }
+
             return {
-                providerName, feedbackCutoff, reportDate, providerUrl, providerAwards, providerCountryAwards, courseAwardMap, awardsAsOf,
+                providerName, isPlatform: platform, topProviders, providerCount,
+                feedbackCutoff, reportDate, providerUrl, providerAwards, providerCountryAwards, courseAwardMap, awardsAsOf,
                 pSnap, coursesSorted, courseRows,
                 totalLrn, totalCert, totalResp, totalMin, avgRating, certRate,
                 provTimeline, courseTimelines, courseRatings, ratingData,
@@ -1021,8 +1042,9 @@ function drawCharts() {
         // web snapshot (navy editorial theme, gold accents, Chart.js + GeoChart).
         // Self-contained single file: logos inlined as data URIs; chart libraries
         // load from CDN, so charts need an internet connection to render.
-        async _buildDarkReportHtml(providerName) {
-            const D = await this._assembleReportData(providerName);
+        async _buildDarkReportHtml(providerName, platform) {
+            platform = !!platform;
+            const D = await this._assembleReportData(providerName, { platform });
             if (!D) return null;
             const esc = (s) => this.escapeHtml(s);
             const fmt = (n) => this.formatNumber(n);
@@ -1041,8 +1063,8 @@ function drawCharts() {
                 for (const f of ['surghub_logo_color.png', 'surghub_logo_colour.png', 'SURGhub_app_square.png', 'surghub_logo.png']) { shLogoColor = read(f); if (shLogoColor) break; }
                 for (const f of ['surghub_logo_white.png', 'SURGhub_app_square_white.png']) { shLogo = read(f); if (shLogo) break; }
                 const norm = (s) => String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
-                const provNorm = norm(providerName);
-                try {
+                const provNorm = platform ? '' : norm(providerName);
+                if (!platform) try {
                     const dir = path.join(electronAPI.appPath, 'build', 'provider_logos');
                     const files = electronAPI.fs.readdirSync ? electronAPI.fs.readdirSync(dir) : [];
                     const hit = files.find(f => /\.(png|jpe?g)$/i.test(f) && norm(f.replace(/\.[^.]+$/, '')) === provNorm)
@@ -1251,9 +1273,42 @@ function drawCharts() {
             const suggestionsBlock = ''; // Learner Suggestions removed from the dark export per request
             const criticalBlock = D.critical.length ? (secEyebrow('Areas for Improvement') + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:10px;margin-bottom:28px">' + D.critical.map(quoteCard).join('') + '</div>') : '';
 
+            // Platform-only: a Top Providers table (the platform's defining extra dimension).
+            const topProvidersBlock = (platform && D.topProviders && D.topProviders.length) ? (
+                secEyebrow('Top Providers')
+                + '<div class="chart-card" style="margin-bottom:8px;padding:0;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px">'
+                + '<thead><tr style="color:#6d8ba3;font-family:var(--mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase">'
+                + '<th style="padding:11px 16px;text-align:left">Provider</th><th style="padding:11px 16px;text-align:right">Courses</th><th style="padding:11px 16px;text-align:right">Enrolled learners</th><th style="padding:11px 16px;text-align:right">Certificates</th><th style="padding:11px 16px;text-align:right">Cert. rate</th><th style="padding:11px 16px;text-align:right">Avg rating</th></tr></thead><tbody>'
+                + D.topProviders.map(p => '<tr style="border-top:1px solid var(--border)">'
+                    + '<td style="padding:10px 16px;color:#eef4f9;font-weight:600">' + esc(p.name) + '</td>'
+                    + '<td style="padding:10px 16px;text-align:right;color:#9fb3c8">' + fmt(p.courses) + '</td>'
+                    + '<td style="padding:10px 16px;text-align:right;color:#d4dde7;font-weight:600">' + fmt(p.lrn) + '</td>'
+                    + '<td style="padding:10px 16px;text-align:right;color:#9fb3c8">' + fmt(p.cert) + '</td>'
+                    + '<td style="padding:10px 16px;text-align:right;color:#9fb3c8">' + (p.certRate != null ? p.certRate.toFixed(1) + '%' : '-') + '</td>'
+                    + '<td style="padding:10px 16px;text-align:right;color:#9fb3c8">' + (p.avg != null ? p.avg.toFixed(2) : '-') + '</td></tr>').join('')
+                + '</tbody></table></div>'
+                + '<p style="margin:0 0 28px;font-size:10.5px;color:#6d8ba3">' + fmt(D.providerCount) + ' content partners contributing courses to SURGhub, ranked by enrolled learners.</p>'
+            ) : '';
+
+            // Platform-only closing (replaces the provider-partner "What's Next" CTA).
+            const platformClosingBlock = `<div style="margin:18px 0 28px;border:1px solid #FFC14559;border-left:4px solid var(--accent);border-radius:8px;padding:24px 28px 22px;background:linear-gradient(135deg,#FFC14522,#001a2b 82%)">
+    <p style="margin:0 0 5px;font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--accent)">What&rsquo;s Next</p>
+    <h3 style="margin:0 0 7px;font-size:21px;font-weight:700;color:#eef4f9;line-height:1.2">${D.totalLrn > 0 ? 'Together we&rsquo;ve reached <span style="color:var(--accent)">' + fmt(D.totalLrn) + ' learners</span> &mdash; and counting' : 'Growing surgical education, together'}</h3>
+    <p style="margin:0 0 18px;font-size:13px;color:#9fb3c8;line-height:1.6;max-width:820px">SURGhub is a free, open platform built with <strong style="color:#eef4f9">${fmt(D.providerCount)} content partners</strong>${D.providerCountryData ? ' reaching learners in <strong style="color:#eef4f9">' + fmt(Object.keys(D.providerCountryData).length) + ' countries</strong>' : ''}. Every course here is an organisation choosing to share its expertise openly &mdash; thank you to every partner, ambassador and learner who makes it possible.</p>
+    <ul style="margin:0 0 18px;padding:0;list-style:none;display:grid;gap:9px">
+      <li style="display:flex;gap:10px;font-size:12.5px;color:#9fb3c8;line-height:1.55"><span style="color:var(--accent);flex-shrink:0;font-weight:700">&#9656;</span><span><strong style="color:#d4dde7">Onboard new partners.</strong> Any organisation with surgical, anaesthesia or perioperative expertise can publish here &mdash; widening the catalogue and the reach.</span></li>
+      <li style="display:flex;gap:10px;font-size:12.5px;color:#9fb3c8;line-height:1.55"><span style="color:var(--accent);flex-shrink:0;font-weight:700">&#9656;</span><span><strong style="color:#d4dde7">Deepen reach where the need is greatest.</strong> Outreach with partners and ambassadors in low- and lower-middle-income countries closes the surgical-training gap fastest.</span></li>
+      <li style="display:flex;gap:10px;font-size:12.5px;color:#9fb3c8;line-height:1.55"><span style="color:var(--accent);flex-shrink:0;font-weight:700">&#9656;</span><span><strong style="color:#d4dde7">Share these results.</strong> Every chart and table in this report downloads as a branded image &mdash; ready for partners, funders and boards.</span></li>
+    </ul>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:24px;flex-wrap:wrap;border-top:1px solid #FFC14524;padding-top:16px">
+      <p style="margin:0;font-size:12.5px;color:#d4dde7;line-height:1.5">A joint initiative of the Global Surgery Foundation and UNITAR. &nbsp;<a href="https://www.surghub.org" target="_blank" rel="noopener" style="font-family:var(--mono);font-size:11px;letter-spacing:.04em;color:var(--accent);text-decoration:none;white-space:nowrap">Visit surghub.org &#8599;</a></p>
+      ${shLogoColor ? '<div style="display:flex;align-items:center;background:#fff;border-radius:8px;padding:10px 14px;flex-shrink:0"><img src="' + shLogoColor + '" alt="SURGhub" style="height:42px;width:auto;max-width:130px;object-fit:contain;display:block"></div>' : (shLogo ? '<img src="' + shLogo + '" alt="SURGhub" style="height:46px;width:auto;filter:brightness(0) invert(1);flex-shrink:0">' : '')}
+    </div>
+  </div>`;
+
             return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${esc(providerName)} — SURGhub Provider Report</title>
+<title>${esc(providerName)} — SURGhub ${platform ? 'Platform' : 'Provider'} Report</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"><\/script>
 <script src="https://www.gstatic.com/charts/loader.js"><\/script>
 <style>
@@ -1299,9 +1354,11 @@ a.shl:hover{color:var(--accent);border-bottom-color:var(--accent);}
     <div style="min-width:0;flex:1">
       <p style="margin:0 0 5px;font-family:var(--mono);font-size:9px;font-weight:500;letter-spacing:.22em;text-transform:uppercase;color:var(--accent)">United Nations Global Surgery Learning Hub</p>
       <h1 style="margin:0;font-size:30px;font-weight:700;color:#eef4f9;line-height:1.12;letter-spacing:-0.01em">${D.providerUrl ? '<a class="shl" href="' + esc(D.providerUrl) + '" target="_blank" rel="noopener">' + esc(providerName) + ' <span style="font-size:15px;color:#6d8ba3">&#8599;</span></a>' : esc(providerName)}</h1>
-      <p style="margin:12px 0 0;font-family:var(--mono);font-size:10.5px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;color:#6d8ba3;display:inline-flex;align-items:center;gap:7px"><span style="display:inline-block;width:5px;height:5px;border-radius:50%;background:#4389C8"></span>Provider Performance Report &middot; ${esc(D.reportDate)}<span id="hdr-period"></span></p>
-      <p style="margin:14px 0 0;font-size:13px;color:#9fb3c8;line-height:1.6;font-weight:300">${esc(providerName)} has <strong style="color:#eef4f9">${D.pSnap.length} course${D.pSnap.length !== 1 ? 's' : ''}</strong> live on SURGhub, reaching <strong style="color:#eef4f9">${fmt(D.totalLrn)} learners</strong>${D.certRate != null ? ' with a <strong style="color:#eef4f9">' + D.certRate + '% certification rate</strong>' : ''}.${D.totalResp > 0 ? ' Across ' + fmt(D.totalResp) + ' survey responses, the average rating is <strong style="color:#eef4f9">' + D.avgRating + ' / 5</strong>.' : ''}</p>
-      <p style="margin:12px 0 0;font-size:12.5px;color:var(--accent);line-height:1.6">Thank you for training the world seamlessly with SURGhub.</p>
+      <p style="margin:12px 0 0;font-family:var(--mono);font-size:10.5px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;color:#6d8ba3;display:inline-flex;align-items:center;gap:7px"><span style="display:inline-block;width:5px;height:5px;border-radius:50%;background:#4389C8"></span>${platform ? 'Platform' : 'Provider'} Performance Report &middot; ${esc(D.reportDate)}<span id="hdr-period"></span></p>
+      <p style="margin:14px 0 0;font-size:13px;color:#9fb3c8;line-height:1.6;font-weight:300">${platform
+        ? 'SURGhub hosts <strong style="color:#eef4f9">' + fmt(D.pSnap.length) + ' course' + (D.pSnap.length !== 1 ? 's' : '') + '</strong> from <strong style="color:#eef4f9">' + fmt(D.providerCount) + ' content partners</strong>, reaching <strong style="color:#eef4f9">' + fmt(D.totalLrn) + ' enrolled learners</strong>' + (D.certRate != null ? ' at a <strong style="color:#eef4f9">' + D.certRate + '% certification rate</strong>' : '') + '.' + (D.totalResp > 0 ? ' Across ' + fmt(D.totalResp) + ' survey responses, the average rating is <strong style="color:#eef4f9">' + D.avgRating + ' / 5</strong>.' : '')
+        : esc(providerName) + ' has <strong style="color:#eef4f9">' + D.pSnap.length + ' course' + (D.pSnap.length !== 1 ? 's' : '') + '</strong> live on SURGhub, reaching <strong style="color:#eef4f9">' + fmt(D.totalLrn) + ' learners</strong>' + (D.certRate != null ? ' with a <strong style="color:#eef4f9">' + D.certRate + '% certification rate</strong>' : '') + '.' + (D.totalResp > 0 ? ' Across ' + fmt(D.totalResp) + ' survey responses, the average rating is <strong style="color:#eef4f9">' + D.avgRating + ' / 5</strong>.' : '')}</p>
+      <p style="margin:12px 0 0;font-size:12.5px;color:var(--accent);line-height:1.6">${platform ? 'Open surgical education for every member of the surgical team, everywhere.' : 'Thank you for training the world seamlessly with SURGhub.'}</p>
     </div>
     <div style="flex-shrink:0">
       ${(provLogo || shLogoColor)
@@ -1416,6 +1473,7 @@ a.shl:hover{color:var(--accent);border-bottom-color:var(--accent);}
 
   ${surveyTable}
 
+  ${topProvidersBlock}
   <div id="course-summary">${secEyebrow('Course Summary')}</div>
   <div class="chart-card" style="margin-bottom:28px">
     <p style="margin:0 0 10px;font-family:var(--mono);font-size:9px;letter-spacing:.06em;color:#6d8ba3">Click a column to sort &middot; click a course to jump to its details</p>
@@ -1441,7 +1499,7 @@ a.shl:hover{color:var(--accent);border-bottom-color:var(--accent);}
   ${secEyebrow('Course Details')}
   ${courseSections}
 
-  <div style="margin:18px 0 28px;border:1px solid #FFC14559;border-left:4px solid var(--accent);border-radius:8px;padding:24px 28px 22px;background:linear-gradient(135deg,#FFC14522,#001a2b 82%)">
+  ${platform ? platformClosingBlock : `<div style="margin:18px 0 28px;border:1px solid #FFC14559;border-left:4px solid var(--accent);border-radius:8px;padding:24px 28px 22px;background:linear-gradient(135deg,#FFC14522,#001a2b 82%)">
     <p style="margin:0 0 5px;font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--accent)">What's Next</p>
     <h3 style="margin:0 0 7px;font-size:21px;font-weight:700;color:#eef4f9;line-height:1.2">${D.totalLrn > 0 ? 'Congratulations &mdash; together we&rsquo;ve reached <span style="color:var(--accent)">' + fmt(D.totalLrn) + ' learners</span>' : 'A few ways we can reach more learners &mdash; together'}</h3>
     <p style="margin:0 0 20px;font-size:13px;color:#9fb3c8;line-height:1.6;max-width:780px">${D.totalLrn > 0 ? 'And we can reach even more &mdash; together. ' : ''}These numbers grow fastest when we promote your course side by side. The SURGhub team will actively support every option below &mdash; just tell us which one and we'll set it up with you.</p>
@@ -1474,11 +1532,11 @@ a.shl:hover{color:var(--accent);border-bottom-color:var(--accent);}
             + '</div>'
         : (shLogo ? '<img src="' + shLogo + '" alt="SURGhub" style="height:46px;width:auto;filter:brightness(0) invert(1);flex-shrink:0">' : '')}
     </div>
-  </div>
+  </div>`}
 </div>
 
 <div id="page-meth" style="display:none">
-  <p style="margin:0 0 5px;font-family:var(--mono);font-size:9px;font-weight:500;letter-spacing:.22em;text-transform:uppercase;color:var(--accent)">${esc(providerName)} &middot; Provider Performance Report</p>
+  <p style="margin:0 0 5px;font-family:var(--mono);font-size:9px;font-weight:500;letter-spacing:.22em;text-transform:uppercase;color:var(--accent)">${esc(providerName)} &middot; ${platform ? 'Platform' : 'Provider'} Performance Report</p>
   <h2 style="margin:0 0 18px;font-size:26px;font-weight:700;color:#eef4f9">Methodology &amp; Notes</h2>
   <div class="chart-card" style="margin-bottom:28px;font-size:12.5px;color:#9fb3c8;line-height:1.65">
     <p style="margin:0 0 10px"><strong style="color:#d4dde7">Data sources:</strong> Learner, certificate, and survey data is sourced from the LearnWorlds platform. Demographic data (country, profession, gender) comes from the user profile survey, which was voluntary until late 2024 and is now mandatory for new registrations. Country data is supplemented with automatic browser geolocation where survey data is unavailable. Learner growth curves are based on learner signup dates clamped to each course's launch month: where a course launched after its learners first joined SURGhub, those learners are counted in the launch month, so monthly timing is approximate while totals are exact. Certificates use their actual issue dates. For courses where a per-learner progress export has been imported, exact course start dates are used instead.</p>
@@ -2007,6 +2065,16 @@ if(Object.keys(GEO).length){
             if (!savePath) return;
             electronAPI.fs.writeFileSync(savePath, html);
             alert('Web report saved: ' + savePath + '\n\nSelf-contained file — open in any browser (charts need an internet connection).');
+        },
+
+        // Save the dark HTML report for the ENTIRE SURGhub platform (all providers combined).
+        async exportPlatformHtmlReport() {
+            const html = await this._buildDarkReportHtml('SURGhub', true);
+            if (!html) return alert('No SURGhub course data to report yet — sync courses first.');
+            const savePath = await electronAPI.invoke('pick-save-path', 'surghub_platform_report' + this._periodFileSuffix() + '.html');
+            if (!savePath) return;
+            electronAPI.fs.writeFileSync(savePath, html);
+            alert('Platform web report saved: ' + savePath + '\n\nSelf-contained file — open in any browser (charts need an internet connection).');
         },
 
         _reportCancelled: false,
