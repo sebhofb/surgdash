@@ -2272,6 +2272,13 @@ Object.assign(window.App, {
                                 ? '<span class="text-xs text-gsf-boston font-semibold">' + this.escapeHtml(this._periodLabel()) + '</span><button onclick="App.clearReportPeriod()" class="text-xs text-red-400 hover:text-red-600 font-bold" title="Clear period (back to all-time)">✕</button>'
                                 : '<span class="text-xs text-slate-400">all time</span>'}
                         </div>
+                        <div class="flex items-center gap-2 flex-wrap mb-6 bg-slate-50 border rounded-lg px-3 py-2 w-fit">
+                            <span class="text-[10px] font-bold uppercase tracking-wide text-slate-400" title="Drops months after this from every report's growth/rating charts and period totals — use it to exclude the current incomplete month (e.g. set June to drop a partial July).">Data through</span>
+                            <input type="month" data-report-ok value="${this.reportDataThrough || ''}" onchange="App.setReportDataThrough(this.value)" class="text-xs border rounded px-2 py-1.5 outline-none focus:ring-2 focus:ring-gsf-boston/30" />
+                            ${this.reportDataThrough
+                                ? '<span class="text-xs text-gsf-boston font-semibold">to ' + this.escapeHtml(this.reportDataThrough) + '</span><button onclick="App.setReportDataThrough(\'\')" class="text-xs text-red-400 hover:text-red-600 font-bold" title="Clear (charts run to the latest data)">✕</button>'
+                                : '<span class="text-xs text-slate-400">latest available</span>'}
+                        </div>
                         <div class="border border-gsf-boston/30 rounded-xl p-4 mb-4 bg-gsf-boston/5 max-w-4xl">
                             <p class="text-xs font-bold text-gsf-boston uppercase tracking-wide mb-1">Whole platform</p>
                             <p class="text-xs text-slate-500 mb-3">One combined dark report for all of SURGhub — every provider and course together, with a Top Providers ranking. Single self-contained .html file.</p>

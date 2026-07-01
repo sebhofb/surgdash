@@ -195,6 +195,8 @@ window.App = {
                     this.reportPeriodFrom = storedPeriod.from || '';
                     this.reportPeriodTo = storedPeriod.to || '';
                 }
+                const storedThrough = await Storage.getItem('report_data_through');
+                if (typeof storedThrough === 'string') this.reportDataThrough = storedThrough;
             } catch (e) { /* ignore */ }
 
             const storedEmailDemo = await Storage.getItem('surghub_email_demo');

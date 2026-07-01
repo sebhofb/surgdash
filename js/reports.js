@@ -59,6 +59,12 @@
         // and RatingHistory data. Shared by single and batch report generation.
         reportPeriodFrom: '',
         reportPeriodTo: '',
+        reportDataThrough: '',   // 'YYYY-MM' — clip all report timelines at/after this month (exclude incomplete recent months)
+        async setReportDataThrough(value) {
+            this.reportDataThrough = value || '';
+            try { await Storage.setItem('report_data_through', this.reportDataThrough); } catch (e) {}
+            this.renderView();
+        },
         async setReportPeriod(which, value) {
             if (which === 'from') this.reportPeriodFrom = value || '';
             else this.reportPeriodTo = value || '';
@@ -206,6 +212,17 @@
                     }
                 });
             });
+
+            // Data cutoff: drop any month AFTER the "data through" setting from every
+            // timeline, so incomplete recent months (e.g. the current partial month) don't
+            // appear in the growth/rating charts or the period totals. Applies to ALL reports.
+            const dataThrough = this.reportDataThrough || '';
+            if (dataThrough) {
+                const clip = (obj) => { Object.keys(obj).forEach(m => { if (m > dataThrough) delete obj[m]; }); };
+                clip(provTimeline); clip(ratingData);
+                Object.keys(courseTimelines).forEach(c => clip(courseTimelines[c]));
+                Object.keys(courseRatings).forEach(c => clip(courseRatings[c]));
+            }
 
             // Reporting-period stats: filter the monthly provider timeline + rating
             // history to the selected window. All-time totals above stay untouched.
@@ -1272,22 +1289,77 @@ function drawCharts() {
 
             const suggestionsBlock = ''; // Learner Suggestions removed from the dark export per request
             const criticalBlock = D.critical.length ? (secEyebrow('Areas for Improvement') + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:10px;margin-bottom:28px">' + D.critical.map(quoteCard).join('') + '</div>') : '';
+            // Platform: a standalone Learner Voices section (the per-course testimonials in
+            // Course Details are dropped in platform mode, so surface the best quotes here).
+            const voicesBlock = (platform && D.testimonials && D.testimonials.length) ? (
+                secEyebrow('Learner Voices')
+                + '<p style="margin:0 0 14px;font-size:12.5px;color:#9fb3c8;line-height:1.6">In their own words — a selection of what learners say about SURGhub courses.</p>'
+                + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:10px;margin-bottom:28px">' + D.testimonials.map(quoteCard).join('') + '</div>'
+            ) : '';
+
+            // Platform-only: the scroll-driven learner-story globe (ported from the Impact Showcase).
+            // A sticky orthographic canvas globe rotates to centre each learner's country as their
+            // card scrolls into view; the finale card spins and lights up every learner country.
+            // Six real learners (A–Z by country), text baked in; hero photos load from the blog and
+            // fall back to a branded gradient + initials when offline. See initGlobe() in the script.
+            const globeCountryCount = Object.keys(D.providerCountryData || {}).length;
+            // Baked-in Natural Earth land mask + centroids (shared, from js/globeData.js).
+            const _globeGeo = (typeof window !== 'undefined' && window.SURGGlobeData) ? window.SURGGlobeData : { LAND: '[]', CENT: '{}' };
+            const GLOBE_STORIES = [
+                { fl: '🇧🇩', country: 'Bangladesh', city: 'Comilla', lon: 91.18, lat: 23.46, name: 'Dr Sourov Das', role: 'Surgical trainee', init: 'SD', grad: 'linear-gradient(135deg,#2f86c9,#1f9c63)', img: 'https://lwfiles.mycourse.app/globalsurgery-public/133c0c57043cd551669e7b61c010247a.png', url: 'https://www.surghub.org/blog/impact-stories-dr-sourov-das-surgical-training-bangladesh',
+                    sum: 'A general-surgery trainee at Comilla Medical College Hospital, Dr Das used SURGhub’s burn-care courses to supplement his training — then drew on them to confidently treat a young girl with severe thermal injuries.' },
+                { fl: '🇨🇩', country: 'DR Congo', city: 'Bukavu', lon: 28.85, lat: -2.51, name: 'William Baraka', role: 'Anaesthesia & critical care', init: 'WB', grad: 'linear-gradient(135deg,#9b8cff,#2f86c9)', img: 'https://lwfiles.mycourse.app/globalsurgery-public/cba96310c64045a6a853b14597f262b3.png', url: 'https://www.surghub.org/blog/impact-stories-william-baraka-congo',
+                    sum: 'After losing his sister to a preventable anaesthesia complication, William turned that loss into a mission. In conflict-affected eastern DRC he draws on SURGhub’s perioperative resources to strengthen patient safety and train colleagues across Francophone Africa.' },
+                { fl: '🇪🇬', country: 'Egypt', city: 'Giza', lon: 31.21, lat: 30.01, name: 'Dr Sanderene Abdelnor', role: 'Reconstructive surgery', init: 'SA', grad: 'linear-gradient(135deg,#f5b301,#e57373)', img: 'https://lwfiles.mycourse.app/globalsurgery-public/7553fc0356907fb5c04093a75d8fed2d.png', url: 'https://www.surghub.org/blog/impact-stories-dr-sanderene-abdelnor-reconstructive-surgery-egypt',
+                    sum: 'A plastic & reconstructive surgeon in a high-volume Giza hospital, Dr Abdelnor used SURGhub’s guidance to introduce structured distraction techniques while treating a child with burn trauma — reshaping how she supports patients through recovery.' },
+                { fl: '🇮🇳', country: 'India', city: 'Belagavi', lon: 74.50, lat: 15.85, name: 'Dr Shubhangi Patil', role: 'Surgeon & mentor', init: 'SP', grad: 'linear-gradient(135deg,#3FB984,#2f86c9)', img: 'https://lwfiles.mycourse.app/globalsurgery-public/b9a80dd453cb04045740bb8d41765904.png', url: 'https://www.surghub.org/blog/impact-stories-dr-shubhangi-patil-surgical-art-belagavi',
+                    sum: 'An experienced surgeon who calls her craft “a work of art,” Dr Patil uses SURGhub to keep her skills current and to reach globally recognised surgical standards — and to mentor the next generation of surgeons in smaller towns.' },
+                { fl: '🇰🇪', country: 'Kenya', city: 'Nakuru', lon: 36.07, lat: -0.30, name: 'Dennis Nyang’au', role: 'Emergency & critical care', init: 'DN', grad: 'linear-gradient(135deg,#2f86c9,#1f9c63)', img: 'https://lwfiles.mycourse.app/globalsurgery-public/e8ec75ddced4d332f133aae56cab6c5c.png', url: 'https://www.surghub.org/blog/impact-stories-dennis-nyangau-kenya',
+                    sum: 'A Kenya Red Cross emergency responder, Dennis completed SURGhub’s Essential Emergency & Critical Care course — then used it to stabilise a hit-and-run victim in the field, proving the principles work well beyond the hospital.' },
+                { fl: '🇸🇱', country: 'Sierra Leone', city: 'Freetown', lon: -13.23, lat: 8.48, name: 'Dr Sheku Massaquoi', role: 'General surgeon', init: 'SM', grad: 'linear-gradient(135deg,#9b8cff,#3FB984)', img: 'https://lwfiles.mycourse.app/globalsurgery-public/2c455e1bbf586dbf235aed0014d53a76.png', url: 'https://www.surghub.org/blog/impact-stories-dr-sheku-dennis-massaquoi-resilient-care',
+                    sum: 'A general surgeon at 34 Military Hospital in Freetown, Dr Massaquoi sets aside 90 minutes each morning to learn on SURGhub — training that directly shaped a palliative mastectomy he performed under regional anaesthesia for a patient unfit for general anaesthesia.' }
+            ];
+            const globeSteps = GLOBE_STORIES.map(function (s) {
+                return '<article class="gstep" data-lon="' + s.lon + '" data-lat="' + s.lat + '" data-country="' + esc(s.country) + '" data-flag="' + s.fl + '">'
+                    + '<div class="gstep-card">'
+                    + '<div class="gstep-media" style="background:' + s.grad + '">' + (s.img ? '<img src="' + esc(s.img) + '" alt="' + esc(s.name) + ' — ' + esc(s.country) + '" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">' : '') + '<span class="gstep-init">' + s.init + '</span></div>'
+                    + '<div class="gstep-body">'
+                    + '<div class="gstep-loc"><span class="gstep-flag">' + s.fl + '</span>' + esc(s.country) + (s.city ? ' · ' + esc(s.city) : '') + '</div>'
+                    + '<h3 class="gstep-nm">' + esc(s.name) + '</h3>'
+                    + '<div class="gstep-role">' + esc(s.role) + '</div>'
+                    + '<p class="gstep-sum">' + esc(s.sum) + '</p>'
+                    + '<a class="gstep-go" href="' + esc(s.url) + '" target="_blank" rel="noopener">Read the full story &rarr;</a>'
+                    + '</div></div></article>';
+            }).join('')
+                // Finale: the platform-wide reach, presented like a story card. When it scrolls to
+                // centre, the globe spins and lights up a dot + line for every learner country.
+                + '<article class="gstep gstep-reach" data-reach="1">'
+                + '<div class="reach-card"><p class="reach-line">Six stories from a global classroom — and counting. SURGhub now reaches <b>' + fmt(D.totalLrn) + '</b> health workers across <b>' + fmt(globeCountryCount) + '</b> countries around the world.</p></div>'
+                + '</article>';
+            const globeBlock = (platform && globeCountryCount > 0) ? (
+                secEyebrow('On the Ground')
+                + '<p style="margin:0 0 8px;font-size:13px;color:#9fb3c8;line-height:1.6;max-width:760px">Behind every point on the map is a clinician putting new skills to work. Scroll to travel the globe — from Bangladesh to Sierra Leone.</p>'
+                + '<div class="globe-scrolly"><div class="globe-stage"><canvas id="globe"></canvas><div id="globe-cap" class="globe-cap" aria-hidden="true"></div></div><div class="globe-steps">' + globeSteps + '</div></div>'
+                + '<p style="margin:22px 0 28px;text-align:center;font-family:var(--mono);font-size:10px;color:#6d8ba3">More learner stories on the <a href="https://www.surghub.org/blog" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none">SURGhub blog</a>.</p>'
+            ) : '';
 
             // Platform-only: a Top Providers table (the platform's defining extra dimension).
             const topProvidersBlock = (platform && D.topProviders && D.topProviders.length) ? (
-                secEyebrow('Top Providers')
-                + '<div class="chart-card" style="margin-bottom:8px;padding:0;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12.5px">'
-                + '<thead><tr style="color:#6d8ba3;font-family:var(--mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase">'
-                + '<th style="padding:11px 16px;text-align:left">Provider</th><th style="padding:11px 16px;text-align:right">Courses</th><th style="padding:11px 16px;text-align:right">Enrolled learners</th><th style="padding:11px 16px;text-align:right">Certificates</th><th style="padding:11px 16px;text-align:right">Cert. rate</th><th style="padding:11px 16px;text-align:right">Avg rating</th></tr></thead><tbody>'
+                secEyebrow('Providers')
+                + '<div class="chart-card" style="margin-bottom:8px;padding:0;overflow-x:auto"><table id="prov-table" style="width:100%;border-collapse:collapse;font-size:12.5px">'
+                + '<thead><tr>'
+                + ['Provider', 'Courses', 'Enrolled learners', 'Certificates', 'Cert. rate', 'Avg rating'].map((h, i) =>
+                    '<th class="sortable" onclick="sortPV(' + i + ',' + (i === 0 ? "'s'" : "'n'") + ')" style="padding:11px 16px;text-align:' + (i === 0 ? 'left' : 'right') + ';font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#6d8ba3;border-bottom:1px solid var(--border)">' + h + '<span id="pv-arr-' + i + '"></span></th>').join('')
+                + '</tr></thead><tbody>'
                 + D.topProviders.map(p => '<tr style="border-top:1px solid var(--border)">'
-                    + '<td style="padding:10px 16px;color:#eef4f9;font-weight:600">' + esc(p.name) + '</td>'
-                    + '<td style="padding:10px 16px;text-align:right;color:#9fb3c8">' + fmt(p.courses) + '</td>'
-                    + '<td style="padding:10px 16px;text-align:right;color:#d4dde7;font-weight:600">' + fmt(p.lrn) + '</td>'
-                    + '<td style="padding:10px 16px;text-align:right;color:#9fb3c8">' + fmt(p.cert) + '</td>'
-                    + '<td style="padding:10px 16px;text-align:right;color:#9fb3c8">' + (p.certRate != null ? p.certRate.toFixed(1) + '%' : '-') + '</td>'
-                    + '<td style="padding:10px 16px;text-align:right;color:#9fb3c8">' + (p.avg != null ? p.avg.toFixed(2) : '-') + '</td></tr>').join('')
+                    + '<td data-v="' + esc(p.name) + '" style="padding:10px 16px;color:#eef4f9;font-weight:600">' + esc(p.name) + '</td>'
+                    + '<td data-v="' + p.courses + '" style="padding:10px 16px;text-align:right;color:#9fb3c8">' + fmt(p.courses) + '</td>'
+                    + '<td data-v="' + p.lrn + '" style="padding:10px 16px;text-align:right;color:#d4dde7;font-weight:600">' + fmt(p.lrn) + '</td>'
+                    + '<td data-v="' + p.cert + '" style="padding:10px 16px;text-align:right;color:#9fb3c8">' + fmt(p.cert) + '</td>'
+                    + '<td data-v="' + (p.certRate != null ? p.certRate.toFixed(2) : -1) + '" style="padding:10px 16px;text-align:right;color:#9fb3c8">' + (p.certRate != null ? p.certRate.toFixed(1) + '%' : '-') + '</td>'
+                    + '<td data-v="' + (p.avg != null ? p.avg.toFixed(3) : -1) + '" style="padding:10px 16px;text-align:right;color:#9fb3c8">' + (p.avg != null ? p.avg.toFixed(2) : '-') + '</td></tr>').join('')
                 + '</tbody></table></div>'
-                + '<p style="margin:0 0 28px;font-size:10.5px;color:#6d8ba3">' + fmt(D.providerCount) + ' content partners contributing courses to SURGhub, ranked by enrolled learners.</p>'
+                + '<p style="margin:0 0 28px;font-size:10.5px;color:#6d8ba3">' + fmt(D.providerCount) + ' content partners contributing courses to SURGhub. Click a column to sort.</p>'
             ) : '';
 
             // Platform-only closing (replaces the provider-partner "What's Next" CTA).
@@ -1340,6 +1412,37 @@ a.shl:hover{color:var(--accent);border-bottom-color:var(--accent);}
 .kpi-modal{display:none;position:fixed;inset:0;background:rgba(0,8,16,0.74);z-index:2000;align-items:center;justify-content:center;padding:24px;}
 .kpi-modal-box{position:relative;background:var(--surface);border:1px solid var(--border);border-radius:8px;max-width:440px;width:100%;padding:28px 30px;box-shadow:0 24px 64px rgba(0,0,0,.6);}
 @media print{body{background:#001523!important;-webkit-print-color-adjust:exact;}}
+/* Scroll-driven learner-story globe (platform report) */
+.globe-scrolly{display:grid;grid-template-columns:0.92fr 1.08fr;gap:50px;margin:6px 0 8px;}
+@media(max-width:860px){.globe-scrolly{grid-template-columns:1fr;gap:0;}}
+.globe-stage{position:sticky;top:8vh;height:80vh;display:flex;align-items:center;justify-content:center;background:#00101b;border:1px solid var(--border);border-radius:8px;overflow:hidden;}
+@media(max-width:860px){.globe-stage{top:0;height:46vh;margin:0;z-index:2;}}
+#globe{width:100%;height:100%;display:block;touch-action:pan-y;}
+.globe-cap{position:absolute;left:0;right:0;bottom:5%;display:flex;align-items:center;justify-content:center;gap:11px;font-family:var(--serif);font-size:18px;font-weight:700;letter-spacing:.01em;color:#eaf2f8;pointer-events:none;text-shadow:0 2px 14px rgba(0,0,0,.6);transition:opacity .4s ease;}
+.globe-cap .gc-flag{font-size:26px;line-height:1;}
+.globe-steps{display:flex;flex-direction:column;}
+.gstep{min-height:64vh;display:flex;align-items:center;}
+@media(max-width:860px){.gstep{min-height:auto;padding:26px 0;}}
+.gstep-card{width:100%;background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;opacity:.42;transform:scale(.985);transition:opacity .45s ease,transform .45s cubic-bezier(.2,.7,.2,1),border-color .45s ease,background .45s ease;}
+.gstep.on .gstep-card{opacity:1;transform:none;border-color:rgba(63,185,132,.5);background:var(--surface2);}
+.gstep-media{position:relative;aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;overflow:hidden;}
+.gstep-media img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;}
+.gstep-init{font-family:var(--serif);font-size:48px;font-weight:800;color:rgba(255,255,255,.9);letter-spacing:.02em;}
+.gstep-body{padding:20px 24px 22px;}
+.gstep-loc{display:flex;align-items:center;gap:9px;font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#74bce9;font-weight:700;}
+.gstep-flag{font-size:20px;line-height:1;}
+.gstep-nm{font-size:23px;font-weight:700;color:#eef4f9;margin:10px 0 2px;letter-spacing:-.01em;}
+.gstep-role{font-size:13px;color:#9fc1dc;font-weight:600;margin-bottom:11px;}
+.gstep-sum{font-size:14px;line-height:1.6;color:#b9cede;margin:0 0 15px;}
+.gstep-go{font-family:var(--mono);font-size:12px;font-weight:700;color:#74bce9;text-decoration:none;letter-spacing:.03em;}
+.gstep-card:hover .gstep-go{color:var(--accent);}
+.gstep-reach{justify-content:center;}
+.reach-card{width:100%;text-align:center;}
+.reach-line{font-family:var(--serif);font-size:26px;font-weight:700;line-height:1.42;color:#eef4f9;margin:0 auto;max-width:30ch;}
+.reach-line b{font-weight:800;}
+.reach-line b:first-of-type{color:#3FB984;}
+.reach-line b:last-of-type{color:#74bce9;}
+@media print{.globe-stage{position:relative;height:60vh;}}
 </style>
 </head><body>
 <div style="max-width:1100px;margin:0 auto;padding:28px 24px">
@@ -1431,7 +1534,30 @@ a.shl:hover{color:var(--accent);border-bottom-color:var(--accent);}
       // Equal-size cards in a grid that fills the full width. Column count is chosen
       // to keep the last row as full as possible (no lone trailing card).
       const acols = allCards.length <= 4 ? Math.max(allCards.length, 1) : [4, 3, 2].reduce((b, c) => ((allCards.length % c) || c) > ((allCards.length % b) || b) ? c : b, 4);
-      const cards = allCards.length ? ('<div style="display:grid;grid-template-columns:repeat(' + acols + ',minmax(0,1fr));grid-auto-rows:1fr;gap:12px;margin-bottom:24px">' + allCards.join('') + '</div>') : '';
+      let cards;
+      if (platform) {
+          // Platform has many course awards → group by CATEGORY into click-to-expand
+          // accordions (summary shows the #1 winner; click reveals the full ranking).
+          const byCat = {};
+          ce.forEach(([cName, arr]) => arr.forEach(a => { (byCat[a.label] = byCat[a.label] || []).push({ who: cName, rank: a.rank, valueFmt: a.valueFmt }); }));
+          const catNames = Object.keys(byCat).sort();
+          cards = catNames.length ? ('<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:10px;margin-bottom:24px">' + catNames.map(cat => {
+              const wins = byCat[cat].slice().sort((a, b) => a.rank - b.rank);
+              const top = wins[0];
+              return '<details class="awd" style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;overflow:hidden">'
+                + '<summary style="cursor:pointer;list-style:none;padding:13px 16px;display:flex;align-items:center;gap:12px">'
+                + '<span style="font-size:22px;line-height:1;flex-shrink:0">' + medal(1) + '</span>'
+                + '<span style="min-width:0;flex:1"><span style="display:block;font-size:13.5px;color:#eef4f9;font-weight:600;line-height:1.2">' + esc(cat) + '</span>'
+                + '<span style="display:block;font-size:11px;color:#9fb3c8;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(top.who) + (top.valueFmt ? ' &middot; ' + esc(top.valueFmt) : '') + '</span></span>'
+                + '<span class="awd-c" style="font-family:var(--mono);font-size:9px;color:#6d8ba3;flex-shrink:0">' + wins.length + ' &#9656;</span>'
+                + '</summary>'
+                + '<div style="border-top:1px solid var(--border);padding:4px 16px 10px">'
+                + wins.map(w => '<div style="display:flex;align-items:center;gap:10px;padding:6px 0;font-size:12.5px;color:#d4dde7"><span style="font-size:15px;width:22px;flex-shrink:0;text-align:center">' + medal(w.rank) + '</span><span style="flex:1;min-width:0">' + esc(w.who) + '</span>' + (w.valueFmt ? '<span style="font-family:var(--mono);font-size:10.5px;color:#9fb3c8;flex-shrink:0">' + esc(w.valueFmt) + '</span>' : '') + '</div>').join('')
+                + '</div></details>';
+          }).join('') + '</div>') : '';
+      } else {
+          cards = allCards.length ? ('<div style="display:grid;grid-template-columns:repeat(' + acols + ',minmax(0,1fr));grid-auto-rows:1fr;gap:12px;margin-bottom:24px">' + allCards.join('') + '</div>') : '';
+      }
       let mile = '';
       if (provBits.length) {
           mile = '<p style="margin:0 0 6px;font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent)">Milestones</p>'
@@ -1476,12 +1602,12 @@ a.shl:hover{color:var(--accent);border-bottom-color:var(--accent);}
   ${topProvidersBlock}
   <div id="course-summary">${secEyebrow('Course Summary')}</div>
   <div class="chart-card" style="margin-bottom:28px">
-    <p style="margin:0 0 10px;font-family:var(--mono);font-size:9px;letter-spacing:.06em;color:#6d8ba3">Click a column to sort &middot; click a course to jump to its details</p>
+    <p style="margin:0 0 10px;font-family:var(--mono);font-size:9px;letter-spacing:.06em;color:#6d8ba3">Click a column to sort${platform ? '' : ' &middot; click a course to jump to its details'}</p>
     <table id="cs-table" style="width:100%;border-collapse:collapse;font-size:12.5px">
       <thead><tr>${[{ t: 'Course' }, { t: 'Enrolled Learners', r: 1 }, { t: 'Certificates', r: 1 }, { t: 'Cert. rate', r: 1 }, { t: 'Rating', r: 1 }, { t: 'Responses', r: 1 }].map((c, i) =>
                 '<th class="sortable" onclick="sortCS(' + i + ',' + (i === 0 ? "'s'" : "'n'") + ')" style="padding:8px 10px;text-align:' + (c.r ? 'right' : 'left') + ';font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#6d8ba3;border-bottom:1px solid var(--border)">' + c.t + '<span id="cs-arr-' + i + '"></span></th>').join('')}</tr></thead>
       <tbody>${D.coursesSorted.map((d, idx) =>
-                '<tr class="cs-row" onclick="goCourse(' + idx + ')">'
+                '<tr' + (platform ? '' : ' class="cs-row" onclick="goCourse(' + idx + ')"') + '>'
                 + tdL('<span style="color:#6d8ba3;font-family:var(--mono);margin-right:8px">' + (idx + 1) + '</span>' + esc(d.Course) + (d.CourseId ? ' ' + courseLink(d, '<span style="font-size:11px;color:#6d8ba3" title="Open on SURGhub">&#8599;</span>') : '')).replace('<td ', '<td data-v="' + esc(d.Course).toLowerCase().replace(/"/g, '') + '" ')
                 + tdR(fmt(d.Learners)).replace('<td ', '<td data-v="' + (Number(d.Learners) || 0) + '" ')
                 + tdR(fmt(d.Certificates)).replace('<td ', '<td data-v="' + (Number(d.Certificates) || 0) + '" ')
@@ -1493,11 +1619,13 @@ a.shl:hover{color:var(--accent);border-bottom-color:var(--accent);}
   </div>
 
   ${D.feedbackCutoff ? '<p style="margin:0 0 18px;font-family:var(--mono);font-size:10px;color:var(--accent);background:var(--accent-soft);border:1px solid #FFC14538;border-radius:4px;padding:6px 12px;display:inline-block">Written feedback below is filtered to entries from ' + esc(this.formatDate(D.feedbackCutoff)) + ' onwards. Charts and learner data reflect all time.</p>' : ''}
+  ${voicesBlock}
   ${suggestionsBlock}
   ${criticalBlock}
 
-  ${secEyebrow('Course Details')}
-  ${courseSections}
+  ${globeBlock}
+
+  ${platform ? '' : secEyebrow('Course Details') + courseSections}
 
   ${platform ? platformClosingBlock : `<div style="margin:18px 0 28px;border:1px solid #FFC14559;border-left:4px solid var(--accent);border-radius:8px;padding:24px 28px 22px;background:linear-gradient(135deg,#FFC14522,#001a2b 82%)">
     <p style="margin:0 0 5px;font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--accent)">What's Next</p>
@@ -1945,6 +2073,21 @@ function sortCS(col,type){
   for(var i=0;i<5;i++){var ar=document.getElementById('cs-arr-'+i);if(ar)ar.textContent='';}
   var cur=document.getElementById('cs-arr-'+col);if(cur)cur.textContent=dir==='a'?' ↑':' ↓';
 }
+function sortPV(col,type){
+  var tbl=document.getElementById('prov-table');if(!tbl)return;var tb=tbl.tBodies[0];
+  var dir=tbl.getAttribute('data-s')===col+'a'?'d':'a';
+  tbl.setAttribute('data-s',col+dir);
+  var rows=Array.prototype.slice.call(tb.rows);
+  rows.sort(function(a,b){
+    var va,vb;
+    if(type==='s'){va=(a.cells[col].getAttribute('data-v')||a.cells[col].textContent).toLowerCase();vb=(b.cells[col].getAttribute('data-v')||b.cells[col].textContent).toLowerCase();return dir==='a'?va.localeCompare(vb):vb.localeCompare(va);}
+    va=parseFloat(a.cells[col].getAttribute('data-v'))||0;vb=parseFloat(b.cells[col].getAttribute('data-v'))||0;
+    return dir==='a'?va-vb:vb-va;
+  });
+  rows.forEach(function(r){tb.appendChild(r);});
+  for(var i=0;i<6;i++){var ar=document.getElementById('pv-arr-'+i);if(ar)ar.textContent='';}
+  var cur=document.getElementById('pv-arr-'+col);if(cur)cur.textContent=dir==='a'?' ↑':' ↓';
+}
 function drawCourse(id,tl){
   var el=document.getElementById(id); if(!el) return;
   var e=cumSeries(tl,'e'),c=cumSeries(tl,'c');
@@ -1966,6 +2109,82 @@ function drawRating(id,rd){
     options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
       plugins:{legend:{labels:{color:TICK,font:{size:10},boxWidth:14}},tooltip:ttCfg()},
       scales:{x:xAx(),y:{min:0,max:5,position:'left',grid:{color:GRID},ticks:{color:TICK,font:{size:10}},border:{display:false}},y1:{beginAtZero:true,position:'right',grid:{color:'transparent'},ticks:{color:TICK,font:{size:10},callback:function(v){return fmtS(v);}},border:{display:false}}}}});
+}
+// Scroll-driven learner-story globe (platform report only). A sticky orthographic
+// canvas globe rotates to centre each learner's country as their card scrolls in; on
+// the finale "reach" step it spins and lights up a dot + line for every learner country.
+// Self-contained (no libs); degrades to the plain story cards if canvas is unavailable.
+// Ported from js/impactShowcase.js — LAND/CENTROIDS/GLB_CN are injected below when platform.
+function initGlobe(){
+  var reduce=!!(window.matchMedia&&matchMedia('(prefers-reduced-motion:reduce)').matches);
+  var cv=document.getElementById('globe'); if(!cv||!cv.getContext) return;
+  var ctx; try{ctx=cv.getContext('2d');}catch(e){return;} if(!ctx) return;
+  var steps=[].slice.call(document.querySelectorAll('.globe-steps .gstep'));
+  if(!steps.length){var st=cv.parentNode; if(st) st.style.display='none'; return;}
+  var d2r=Math.PI/180;
+  var LP=(typeof LAND!=='undefined'&&LAND)?LAND:[];
+  var cap=document.getElementById('globe-cap');
+  function vec(lon,lat){var a=lat*d2r,o=lon*d2r; return [Math.cos(a)*Math.cos(o),Math.cos(a)*Math.sin(o),Math.sin(a)];}
+  function llf(x,y,z){var r=Math.sqrt(x*x+y*y+z*z)||1; return {lon:Math.atan2(y,x)/d2r,lat:Math.asin(z/r)/d2r};}
+  function gdist(a,b){var dl=(a.lon-b.lon)*d2r,p=a.lat*d2r,q=b.lat*d2r; return Math.acos(Math.max(-1,Math.min(1,Math.sin(p)*Math.sin(q)+Math.cos(p)*Math.cos(q)*Math.cos(dl))));}
+  function arcPts(p0,p1){var v0=vec(p0.lon,p0.lat),v1=vec(p1.lon,p1.lat); var dot=Math.max(-1,Math.min(1,v0[0]*v1[0]+v0[1]*v1[1]+v0[2]*v1[2])); var om=Math.acos(dot); var out=[]; if(om<1e-3) return out; var so=Math.sin(om); for(var t=0;t<=1.0001;t+=1/24){var s0=Math.sin((1-t)*om)/so,s1=Math.sin(t*om)/so; out.push(llf(s0*v0[0]+s1*v1[0],s0*v0[1]+s1*v1[1],s0*v0[2]+s1*v1[2]));} return out;}
+  var pts=[],reachIdx=-1;
+  steps.forEach(function(s,i){if(s.getAttribute('data-reach')){pts.push(null);reachIdx=i;}else pts.push({lon:+s.getAttribute('data-lon'),lat:+s.getAttribute('data-lat'),country:s.getAttribute('data-country'),flag:s.getAttribute('data-flag'),idx:i});});
+  var story=pts.filter(Boolean);
+  var sArcs=[]; for(var si=0;si<story.length-1;si++){var ss=arcPts(story[si],story[si+1]); if(ss.length) sArcs.push(ss);}
+  var CZ=(typeof CENTROIDS!=='undefined'&&CENTROIDS)?CENTROIDS:{};
+  var cm=(typeof GEO!=='undefined'&&GEO)?GEO:{};
+  var rdots=[],maxv=0;
+  for(var iso in cm){if(!Object.prototype.hasOwnProperty.call(cm,iso)) continue; var v=Number(cm[iso])||0; var c=CZ[iso]||CZ[String(iso).toUpperCase()]; if(v>0&&c){rdots.push({lon:c[0],lat:c[1],v:v}); if(v>maxv) maxv=v;}}
+  rdots.sort(function(a,b){return b.v-a.v;});
+  rdots.forEach(function(d,i){d.rank=i/(rdots.length||1); d.r=Math.sqrt((d.v||0)/(maxv||1));});
+  var hubs=rdots.slice(0,Math.min(6,rdots.length)),rArcs=[];
+  rdots.forEach(function(d){var cand=[]; for(var h=0;h<hubs.length;h++){if(hubs[h]===d) continue; cand.push({h:hubs[h],dd:gdist(d,hubs[h])});} cand.sort(function(a,b){return a.dd-b.dd;}); for(var k=0;k<Math.min(2,cand.length);k++){if(cand[k].dd>0.05){var seg=arcPts(d,cand[k].h); if(seg.length) rArcs.push({seg:seg,rank:d.rank});}}});
+  for(var hi=0;hi<hubs.length;hi++) for(var hj=hi+1;hj<hubs.length;hj++){var hs=arcPts(hubs[hi],hubs[hj]); if(hs.length) rArcs.push({seg:hs,rank:0});}
+  var dpr=Math.max(1,Math.min(2,window.devicePixelRatio||1)),W=0,H=0,R=0,cx=0,cy=0;
+  function size(){var r=cv.getBoundingClientRect(); W=Math.max(40,r.width); H=Math.max(40,r.height); cv.width=Math.round(W*dpr); cv.height=Math.round(H*dpr); R=Math.min(W,H)*0.42; cx=W/2; cy=H/2;}
+  size();
+  function proj(lon,lat,l0,a0){var dl=(lon-l0)*d2r,a=lat*d2r,b=a0*d2r; var cc=Math.sin(b)*Math.sin(a)+Math.cos(b)*Math.cos(a)*Math.cos(dl); var x=Math.cos(a)*Math.sin(dl); var y=Math.cos(b)*Math.sin(a)-Math.sin(b)*Math.cos(a)*Math.cos(dl); return {x:cx+R*x,y:cy-R*y,c:cc};}
+  var start=story[0]||{lon:20,lat:12};
+  var cur={lon:start.lon,lat:start.lat},tgt={lon:start.lon,lat:start.lat},active=-1,reachActive=false,reachRev=0;
+  function draw(now){
+    ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,W,H);
+    var atm=ctx.createRadialGradient(cx,cy,R*0.62,cx,cy,R*1.24); atm.addColorStop(0,'rgba(47,134,201,0)'); atm.addColorStop(0.74,'rgba(47,134,201,0.12)'); atm.addColorStop(1,'rgba(47,134,201,0)'); ctx.fillStyle=atm; ctx.beginPath(); ctx.arc(cx,cy,R*1.24,0,7); ctx.fill();
+    var oc=ctx.createRadialGradient(cx-R*0.32,cy-R*0.36,R*0.15,cx,cy,R); oc.addColorStop(0,'#0e3f63'); oc.addColorStop(1,'#04263d'); ctx.fillStyle=oc; ctx.beginPath(); ctx.arc(cx,cy,R,0,7); ctx.fill();
+    ctx.strokeStyle='rgba(127,182,227,.22)'; ctx.lineWidth=1; ctx.beginPath(); ctx.arc(cx,cy,R,0,7); ctx.stroke();
+    for(var i=0;i<LP.length;i+=2){var p=proj(LP[i],LP[i+1],cur.lon,cur.lat); if(p.c<0.04) continue; ctx.fillStyle='rgba(143,197,235,'+(0.22+0.5*p.c).toFixed(3)+')'; ctx.beginPath(); ctx.arc(p.x,p.y,0.8+1.0*p.c,0,7); ctx.fill();}
+    var sa=1-reachRev;
+    if(sa>0.01){
+      for(var aj=0;aj<sArcs.length;aj++){ctx.strokeStyle='rgba(127,182,227,'+(0.16*sa).toFixed(3)+')'; ctx.lineWidth=1.2; ctx.beginPath(); var seg=sArcs[aj],on=false; for(var t2=0;t2<seg.length;t2++){var q=proj(seg[t2].lon,seg[t2].lat,cur.lon,cur.lat); if(q.c<0){on=false;continue;} if(!on){ctx.moveTo(q.x,q.y);on=true;}else ctx.lineTo(q.x,q.y);} ctx.stroke();}
+      var pulse=reduce?1:(0.5+0.5*Math.sin((now||0)/520));
+      for(var m=0;m<story.length;m++){var pm=proj(story[m].lon,story[m].lat,cur.lon,cur.lat); if(pm.c<0) continue; if(story[m].idx===active){ctx.fillStyle='rgba(63,185,132,'+(sa*(0.16+0.16*pulse)).toFixed(3)+')'; ctx.beginPath(); ctx.arc(pm.x,pm.y,10+6*pulse,0,7); ctx.fill(); ctx.fillStyle='rgba(63,185,132,'+sa.toFixed(3)+')'; ctx.beginPath(); ctx.arc(pm.x,pm.y,5.5,0,7); ctx.fill(); ctx.lineWidth=1.6; ctx.strokeStyle='rgba(255,255,255,'+(0.92*sa).toFixed(3)+')'; ctx.stroke();}else{ctx.fillStyle='rgba(127,182,227,'+(sa*(0.45+0.45*pm.c)).toFixed(3)+')'; ctx.beginPath(); ctx.arc(pm.x,pm.y,3.1,0,7); ctx.fill();}}
+    }
+    if(reachRev>0.01){
+      for(var ra=0;ra<rArcs.length;ra++){var ar=rArcs[ra]; var av=Math.max(0,Math.min(1,(reachRev-ar.rank)/0.3)); if(av<=0) continue; ctx.strokeStyle='rgba(95,208,197,'+(0.05+0.24*av*reachRev).toFixed(3)+')'; ctx.lineWidth=1; ctx.beginPath(); var rseg=ar.seg,ron=false; for(var rt=0;rt<rseg.length;rt++){var rq=proj(rseg[rt].lon,rseg[rt].lat,cur.lon,cur.lat); if(rq.c<0.02){ron=false;continue;} if(!ron){ctx.moveTo(rq.x,rq.y);ron=true;}else ctx.lineTo(rq.x,rq.y);} ctx.stroke();}
+      for(var rd=0;rd<rdots.length;rd++){var d=rdots[rd]; var dv=Math.max(0,Math.min(1,(reachRev-d.rank*0.7)/0.18)); if(dv<=0) continue; var dm=proj(d.lon,d.lat,cur.lon,cur.lat); if(dm.c<0.02) continue; var tw=reduce?1:(0.8+0.2*Math.sin((now||0)/540+rd)); var rad=(1.4+2.8*d.r)*(0.62+0.5*dm.c); var al=dv*reachRev*(0.55+0.45*dm.c)*tw; ctx.fillStyle='rgba(63,185,132,'+(al*0.26).toFixed(3)+')'; ctx.beginPath(); ctx.arc(dm.x,dm.y,rad*2.5,0,7); ctx.fill(); ctx.fillStyle='rgba(126,240,193,'+al.toFixed(3)+')'; ctx.beginPath(); ctx.arc(dm.x,dm.y,rad,0,7); ctx.fill();}
+    }
+  }
+  function shortest(d){d=(d+540)%360-180; return d;}
+  var raf=0,vis=false;
+  function loop(now){
+    if(reachActive){if(!reduce){cur.lon+=0.16; cur.lat+=(10-cur.lat)*0.05; reachRev+=(1-reachRev)*0.05;}}
+    else{if(!reduce){if(pts[active]){cur.lon+=shortest(tgt.lon-cur.lon)*0.085; cur.lat+=(tgt.lat-cur.lat)*0.085;} reachRev+=(0-reachRev)*0.08;}}
+    draw(now);
+    if(reduce||!vis){raf=0; return;} raf=requestAnimationFrame(loop);
+  }
+  function kick(){if(!raf&&!reduce) raf=requestAnimationFrame(loop);}
+  function setActive(i){
+    i=Math.max(0,Math.min(steps.length-1,i)); if(i===active) return; active=i; reachActive=(i===reachIdx);
+    if(!reachActive&&pts[i]){tgt.lon=pts[i].lon; tgt.lat=pts[i].lat;}
+    if(cap){cap.innerHTML=''; var f=document.createElement('span'); f.className='gc-flag'; var c=document.createElement('span'); if(reachActive){f.textContent='🌍'; c.textContent=((typeof GLB_CN!=='undefined'&&GLB_CN)?fmtN(GLB_CN)+' countries':'Worldwide');}else{f.textContent=(pts[i]&&pts[i].flag)||''; c.textContent=(pts[i]&&pts[i].country)||'';} cap.appendChild(f); cap.appendChild(c);}
+    for(var j=0;j<steps.length;j++) steps[j].classList.toggle('on',j===i);
+    if(reduce){reachRev=reachActive?1:0; if(reachActive) cur.lat=10; else if(pts[i]){cur.lon=pts[i].lon; cur.lat=pts[i].lat;} draw(0);}else kick();
+  }
+  function pick(){var mid=(window.innerHeight||0)*0.5,best=0,bd=1e9; for(var i=0;i<steps.length;i++){var r=steps[i].getBoundingClientRect(); var ctr=r.top+r.height/2; var d=Math.abs(ctr-mid); if(d<bd){bd=d;best=i;}} setActive(best);}
+  if('IntersectionObserver' in window){var io2=new IntersectionObserver(function(es){es.forEach(function(e){vis=e.isIntersecting; if(vis) kick();});},{threshold:0.01}); io2.observe(cv);}else{vis=true;}
+  addEventListener('scroll',pick,{passive:true});
+  addEventListener('resize',function(){size(); draw(0);});
+  setActive(0); draw(0); pick();
 }
 document.addEventListener('DOMContentLoaded',function(){
   // Charts show the full timeline; the prefilled period is drawn as a marker band
@@ -2012,6 +2231,7 @@ if(Object.keys(GEO).length){
     window._geoLeg={lo:lo,max:maxPct,ramp:ramp};
   });
 }
+${platform && globeCountryCount > 0 ? ('\nvar LAND=' + _globeGeo.LAND + ';var CENTROIDS=' + _globeGeo.CENT + ';var GLB_CN=' + globeCountryCount + ';\nif(document.getElementById(\'globe\')){try{initGlobe();}catch(e){}}\n') : ''}
 <\/script>
 </body></html>`;
         },
