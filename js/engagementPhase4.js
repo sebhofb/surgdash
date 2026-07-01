@@ -69,30 +69,20 @@ Object.assign(window.App, {
         // serialising the array into an HTML attribute (which breaks on quotes).
         this._briefCountryList = knownCountries;
 
-        // Typeahead picker — uses native <datalist> for instant filtering.
-        // The handler reads the country list off App._briefCountryList (set above)
-        // to avoid serialising a JSON array into an HTML attribute.
+        // Country picker — custom combobox (App._comboHtml), NOT a native <datalist>.
+        // A native datalist leaves an orphaned popup floating in the corner when the
+        // input is re-rendered on selection (clicking that stale popup then blanked the
+        // app). The combobox closes its own list before re-rendering, so nothing orphans.
         const picker = `<div class="flex items-center gap-1">
-            <input type="text"
-                list="brief-country-options"
-                value="${this.escapeHtml(sel)}"
-                placeholder="Type a country…"
-                oninput="App._tryPickBriefCountry(this.value)"
-                onchange="App._tryPickBriefCountry(this.value)"
-                class="bg-white border rounded px-3 py-1.5 text-sm font-medium text-gsf-prussian outline-none min-w-[240px] placeholder:text-slate-400 placeholder:font-normal"
-                autocomplete="off"
-            />
-            <datalist id="brief-country-options">
-                ${knownCountries.map(c => `<option value="${this.escapeHtml(c)}"></option>`).join('')}
-            </datalist>
+            ${this._comboHtml('brief-country', knownCountries, sel, 'briefCountry')}
             ${sel ? `<button onclick="App._clearBriefCountry()" title="Clear selection" class="p-1.5 rounded hover:bg-white/20 text-white/80 hover:text-white"><i data-lucide="x" width="14"></i></button>` : ''}
         </div>`;
 
         // ── Empty state ──────────────────────────────────────────────────
         if (!sel) {
             return `
-                <div id="eng-section-brief" class="bg-white rounded-xl shadow-sm border overflow-hidden">
-                    <div class="bg-gradient-to-r from-gsf-prussian to-gsf-boston text-white p-5 flex justify-between items-center gap-4 flex-wrap">
+                <div id="eng-section-brief" class="bg-white rounded-xl shadow-sm border">
+                    <div class="bg-gradient-to-r from-gsf-prussian to-gsf-boston text-white p-5 rounded-t-xl flex justify-between items-center gap-4 flex-wrap">
                         <div>
                             <h2 class="font-bold text-lg flex items-center gap-2"><i data-lucide="file-text"></i> Country Brief</h2>
                             <p class="text-xs text-white/80 mt-1">One-page snapshot for any country — KPIs, top courses, professions, growth. Built for screenshots and funder briefs.</p>
@@ -207,7 +197,7 @@ Object.assign(window.App, {
         };
 
         return `
-            <div id="eng-section-brief" class="bg-white rounded-xl shadow-md border overflow-hidden">
+            <div id="eng-section-brief" class="bg-white rounded-xl shadow-md border">
                 <div class="bg-gradient-to-r from-gsf-prussian to-gsf-boston text-white p-5 flex justify-between items-center gap-4 flex-wrap">
                     <div>
                         <h2 class="font-bold text-lg flex items-center gap-2"><i data-lucide="file-text"></i> Country Brief</h2>

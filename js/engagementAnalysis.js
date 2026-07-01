@@ -53,6 +53,10 @@ Object.assign(window.App, {
     // Render the section to a canvas with capture-mode CSS applied
     async _captureEngagementSection(el) {
         el.classList.add('eng-capture-mode');
+        // Expand any collapsed <details> so their content is in the snapshot, then restore.
+        const dets = [].slice.call(el.querySelectorAll('details'));
+        const wasOpen = dets.map(d => d.open);
+        dets.forEach(d => { d.open = true; });
         // Give the browser a beat to re-layout with the capture styles before snapshotting
         await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
         try {
@@ -67,6 +71,7 @@ Object.assign(window.App, {
             });
         } finally {
             el.classList.remove('eng-capture-mode');
+            dets.forEach((d, i) => { d.open = wasOpen[i]; });
         }
     },
 
@@ -429,6 +434,30 @@ Object.assign(window.App, {
                     });
             });
         }
+        else if (kind === 'physreach') {
+            const WF = window.HEALTH_WORKFORCE, toISO = window.countryToISO;
+            const totalDecl = Object.values(data.byProf || {}).reduce((s, v) => s + (v.users || 0), 0);
+            const allUsers = data.totalUsersPlatform || totalDecl;
+            const xScale = totalDecl > 0 ? allUsers / totalDecl : 1;
+            const respPct = allUsers > 0 ? (totalDecl / allUsers) * 100 : 100;
+            rows.push(['# "Doctors on SURGhub" = doctor-cadre learners (Physician, Surgeon, OB-GYN, Emergency Medicine, Medical Officer, Anaesthesia), extrapolated to the full learner base (x' + xScale.toFixed(2) + '; ~' + respPct.toFixed(0) + '% of learners declared a profession).']);
+            rows.push(['# Physicians = World Bank Physicians per 1,000 (SH.MED.PHYS.ZS) x population (SP.POP.TOTL), latest available year per country.']);
+            rows.push([]);
+            rows.push(['Country', 'Income group', 'Doctors on SURGhub (declared)', 'Doctors on SURGhub (est.)', 'Physicians (est.)', 'Physician density / 1,000', 'Physician data year', 'Reach %']);
+            const out = [];
+            if (WF && toISO) {
+                Object.entries(data.byCountryDoctors || {}).forEach(([country, cnt]) => {
+                    const declared = Number(cnt) || 0;
+                    if (declared <= 0) return;
+                    const wf = WF[toISO(country)];
+                    if (!wf || !wf.physicians) return;
+                    const est = Math.round(declared * xScale);
+                    out.push([country, wf.income, declared, est, wf.physicians, wf.physPer1000, wf.physYear, (est / wf.physicians * 100).toFixed(2)]);
+                });
+            }
+            out.sort((a, b) => parseFloat(b[7]) - parseFloat(a[7]));
+            rows.push(...out);
+        }
 
         this._downloadCsv(rows, name);
     },
@@ -457,6 +486,11 @@ Object.assign(window.App, {
         const segCounts = { ghost: 0, explorer: 0, engaged: 0, power: 0 };
         const segByCountry = {};    // country -> segCounts
         const segByProf = {};
+
+        // Doctor-cadre learners per country (distinct users) — the "Doctors" group
+        // used by the Profession/Cadre section. Numerator for physician-workforce reach.
+        const DOCTOR_CADRES = new Set(['Physician', 'Surgeon', 'Obstetrics & Gynaecology', 'Emergency Medicine', 'Medical Officer', 'Anaesthesia']);
+        const doctorUsersByCountry = {};   // country -> Set(user_uid)
 
         // Track the "unknown country" subset as its own bucket for transparency
         const unknownAgg = { enrolls: 0, active: 0, certs: 0, totalMins: 0 };
@@ -509,6 +543,10 @@ Object.assign(window.App, {
                     if (mins > 0) p.active++;
                     if (certed) p.certs++;
                     profTotals[canon] = (profTotals[canon] || 0) + 1;
+
+                    if (country && r.user_uid && DOCTOR_CADRES.has(canon)) {
+                        (doctorUsersByCountry[country] = doctorUsersByCountry[country] || new Set()).add(r.user_uid);
+                    }
 
                     const ps = segByProf[canon] = segByProf[canon] || { ghost: 0, explorer: 0, engaged: 0, power: 0 };
                     ps[seg]++;
@@ -616,7 +654,10 @@ Object.assign(window.App, {
             } catch (_) { byCadreAuth = null; }
         }
 
-        return { byCountry, byProf, byCadreAuth, activityKnownCount, profByCourse, countryByCourse, segCounts, segByCountry, segByProf, courseTotals, profTotals, countryUsers, unknownAgg, usersWithCountry, usersUnknown, totalUsersPlatform, byGender, byOrg, byIncome, incomeCountryCount, perUser, hasUserFields };
+        const byCountryDoctors = {};
+        Object.keys(doctorUsersByCountry).forEach(c => { byCountryDoctors[c] = doctorUsersByCountry[c].size; });
+
+        return { byCountry, byProf, byCadreAuth, activityKnownCount, profByCourse, countryByCourse, segCounts, segByCountry, segByProf, courseTotals, profTotals, countryUsers, byCountryDoctors, unknownAgg, usersWithCountry, usersUnknown, totalUsersPlatform, byGender, byOrg, byIncome, incomeCountryCount, perUser, hasUserFields };
     },
 
     // ── Render the four sections ──────────────────────────────────────────
@@ -635,6 +676,7 @@ Object.assign(window.App, {
             country:       () => this._renderCountryEngagementTable(data),
             income:        () => this._renderIncomeComparison(data),
             reachgap:      () => this._renderReachGap ? this._renderReachGap(data) : '',
+            physreach:     () => this._renderPhysicianReach ? this._renderPhysicianReach(data) : '',
             forecast:      () => this._renderGrowthForecast ? this._renderGrowthForecast(data) : '',
             gender:        () => this._renderGenderBreakdown(data),
             org:           () => this._renderOrgBreakdown(data),
@@ -646,11 +688,11 @@ Object.assign(window.App, {
         };
         const GROUPS = {
             learners:    ['prof', 'org', 'gender'],
-            geography:   ['brief', 'country', 'income', 'reachgap', 'countrycourse'],
+            geography:   ['brief', 'country', 'income', 'reachgap', 'physreach', 'countrycourse'],
             performance: ['scorecard', 'rating', 'completion'],
             forecast:    ['forecast'],
         };
-        const keys = GROUPS[group] || ['brief', 'country', 'income', 'reachgap', 'forecast', 'gender', 'org', 'scorecard', 'rating', 'completion', 'prof', 'countrycourse'];
+        const keys = GROUPS[group] || ['brief', 'country', 'income', 'reachgap', 'physreach', 'forecast', 'gender', 'org', 'scorecard', 'rating', 'completion', 'prof', 'countrycourse'];
         const inner = keys.map(k => P[k]()).join('\n');
         // Defer Google chart draws until DOM mounted (each drawer no-ops if its
         // container isn't on the current sub-tab)
@@ -662,6 +704,76 @@ Object.assign(window.App, {
         }
         if (innerOnly) return inner;
         return `<div id="engagement-analysis" class="space-y-8">${inner}</div>`;
+    },
+
+    // ── Physician-workforce reach ─────────────────────────────────────────
+    // SURGhub registered users in a country as a % of that country's physician
+    // workforce (World Bank physician density × population, window.HEALTH_WORKFORCE).
+    // NB: the numerator is ALL registered users (not only doctors), so this is an
+    // upper-bound proxy for physician penetration. Default view = LIC + LMIC.
+    _setPhysReachScope(v) { this._physReachScope = v; this._refreshEngagementSection(); },
+    _renderPhysicianReach(data) {
+        const WF = window.HEALTH_WORKFORCE;
+        const toISO = window.countryToISO;
+        if (!WF || !toISO || !data || !data.byCountryDoctors) return '';
+        const scope = this._physReachScope || 'liclmic';   // 'liclmic' | 'all'
+        // Extrapolate declared doctors to the full learner base — the SAME method the
+        // Profession/Cadre cards use (ex = ×totalUsers/declared) — so the numbers reflect
+        // users who never declared a profession (not everyone fills the survey) and
+        // reconcile with those figures. Per-country declared doctors are scaled by xScale.
+        const totalDecl = Object.values(data.byProf || {}).reduce((s, v) => s + (v.users || 0), 0);
+        const allUsers = data.totalUsersPlatform || totalDecl;
+        const xScale = totalDecl > 0 ? allUsers / totalDecl : 1;
+        const respPct = allUsers > 0 ? (totalDecl / allUsers) * 100 : 100;
+        const rows = [];
+        Object.entries(data.byCountryDoctors).forEach(([country, cnt]) => {
+            const declared = Number(cnt) || 0;
+            if (declared <= 0) return;
+            const iso = toISO(country);
+            const wf = iso ? WF[iso] : null;
+            if (!wf || !wf.physicians) return;              // no workforce denominator → skip
+            if (scope === 'liclmic' && wf.income !== 'LIC' && wf.income !== 'LMIC') return;
+            const docs = Math.round(declared * xScale);     // scaled to the full learner base
+            rows.push({ country, income: wf.income, docs, declared, physicians: wf.physicians,
+                        per1000: wf.physPer1000, year: wf.physYear, pct: (docs / wf.physicians) * 100 });
+        });
+        if (!rows.length) return '';
+        rows.sort((a, b) => b.pct - a.pct);
+        const totDocs = rows.reduce((s, r) => s + r.docs, 0);
+        const totPhys = rows.reduce((s, r) => s + r.physicians, 0);
+        const aggPct = totPhys > 0 ? (totDocs / totPhys) * 100 : 0;
+
+        const IC = window.IncomeClassification;
+        const fmt = (n) => this.formatNumber(n);
+        const pctStr = (p) => p >= 100 ? Math.round(p) + '%' : (p >= 10 ? p.toFixed(0) + '%' : p.toFixed(1) + '%');
+        const incBadge = (g) => `<span style="display:inline-block;font-size:10px;font-weight:700;padding:1px 7px;border-radius:999px;background:${(IC ? IC.color(g) : '#94a3b8')}22;color:${IC ? IC.color(g) : '#64748b'}">${IC ? IC.label(g) : g}</span>`;
+        const body = rows.map(r => `<tr class="border-b last:border-0 hover:bg-slate-50">
+            <td class="py-2 px-4 font-medium text-gsf-prussian">${this.escapeHtml(r.country)}</td>
+            <td class="py-2 px-4">${incBadge(r.income)}</td>
+            <td class="py-2 px-4 text-right text-slate-600" title="Scaled to the full learner base from ${fmt(r.declared)} who declared both profession and country">${fmt(r.docs)}<span class="text-slate-300 text-[10px]"> · from ${fmt(r.declared)}</span></td>
+            <td class="py-2 px-4 text-right text-slate-600">${fmt(r.physicians)}<span class="text-slate-300 text-[10px]"> · ${r.per1000.toFixed(2)}/1k · ${r.year}</span></td>
+            <td class="py-2 px-4 text-right font-bold" style="color:${r.pct >= 100 ? '#3FB984' : '#4389C8'}">${pctStr(r.pct)}</td>
+        </tr>`).join('');
+        const tab = (v, l) => `<button onclick="App._setPhysReachScope('${v}')" class="px-3 py-1.5 text-xs font-bold rounded-lg transition-colors ${scope === v ? 'bg-gsf-boston text-white' : 'text-slate-500 hover:bg-slate-100'}">${l}</button>`;
+        return `<div id="eng-section-physreach" class="bg-white rounded-xl shadow-sm border overflow-hidden">
+            <div class="bg-slate-50 border-b p-5 flex justify-between items-start gap-3 flex-wrap">
+                <div><h3 class="text-lg font-bold text-gsf-prussian flex items-center gap-2"><i data-lucide="stethoscope" width="18" class="text-gsf-boston"></i> Physician-workforce reach</h3>
+                <p class="text-xs text-slate-500 mt-1 max-w-3xl">SURGhub <strong>doctor-cadre</strong> learners in each country as a share of that country's physician workforce. An estimated <strong>${fmt(totDocs)}</strong> doctors across <strong>${rows.length}</strong> ${scope === 'liclmic' ? 'LIC/LMIC ' : ''}countries vs an estimated <strong>${fmt(totPhys)}</strong> physicians — an aggregate <strong style="color:#4389C8">${pctStr(aggPct)}</strong>.</p></div>
+                <div class="flex items-center gap-2 shrink-0">
+                    <div class="flex items-center gap-1 bg-white border rounded-lg p-0.5">${tab('liclmic', 'LIC / LMIC')}${tab('all', 'All incomes')}</div>
+                    ${this._engActionBtns('eng-section-physreach', 'physreach', 'Physician_Workforce_Reach')}
+                </div>
+            </div>
+            <div class="overflow-x-auto max-h-[520px] overflow-y-auto custom-scrollbar"><table class="w-full text-left border-collapse text-sm">
+                <thead class="sticky top-0 bg-white shadow-sm z-10"><tr class="border-b text-slate-500 text-xs">
+                    <th class="py-3 px-4 font-medium">Country</th><th class="py-3 px-4 font-medium">Income</th>
+                    <th class="py-3 px-4 font-medium text-right">Doctors on SURGhub (est.)</th>
+                    <th class="py-3 px-4 font-medium text-right">Physicians (est.)</th>
+                    <th class="py-3 px-4 font-medium text-right">Reach %</th>
+                </tr></thead><tbody>${body}</tbody>
+            </table></div>
+            <div class="border-t bg-amber-50/50 px-5 py-3 text-[11px] text-slate-500 leading-relaxed"><strong>Caveats:</strong> "Doctors on SURGhub" counts learners whose self-reported cadre is a <em>doctor</em> (physician, surgeon, OB-GYN, emergency medicine, medical officer, anaesthesia — nurses, students and allied-health excluded), <em>scaled up to the full learner base</em> from the ~${respPct.toFixed(0)}% who declared a profession — the same extrapolation the Profession/Cadre figures use (each row shows the declared count it was scaled from). Doctors who never declared a country can't be placed in one, so per-country figures stay conservative. Physician counts are World Bank estimates (density × population, latest year per row) and lag reality; countries with no World Bank figure are omitted. Source: World Bank <em>Physicians (per 1,000 people)</em> — SH.MED.PHYS.ZS.</div>
+        </div>`;
     },
 
     // ── 1. Country Engagement table ───────────────────────────────────────

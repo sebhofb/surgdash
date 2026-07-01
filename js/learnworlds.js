@@ -547,6 +547,26 @@ window.LearnWorlds = (function () {
             if (c) { const p = _promoterName(a); clicksByPromoter[p] = (clicksByPromoter[p] || 0) + c; }
         }
 
+        // Ambassador certificate-tier tags (Ambassador_Bronze/Silver/Gold/Platinum)
+        // read straight off the affiliate roster IF /affiliates exposes user tags.
+        // Keyed by the SAME promoter name as Promoters, so it's an exact match in
+        // the UI. (Step 4's /users scan is the fallback when affiliates carry no tags.)
+        const _tiersFromTags = (tags) => {
+            const arr = Array.isArray(tags) ? tags : String(tags || '').split(',');
+            const out = [];
+            for (const t of arr) {
+                const m = String(t).trim().toLowerCase().match(/^ambassador[\s_\-]*(bronze|silver|gold|platinum)$/);
+                if (m) out.push(m[1].charAt(0).toUpperCase() + m[1].slice(1));
+            }
+            return Array.from(new Set(out));
+        };
+        const tierTagsByPromoter = {};
+        for (const a of affiliates) {
+            if (!Array.isArray(a.tags) || !a.tags.length) continue;
+            const tiers = _tiersFromTags(a.tags);
+            if (tiers.length) tierTagsByPromoter[_promoterName(a)] = tiers;
+        }
+
         // 2. Find which sub-resource name actually works. Probe an affiliate
         //    with leads > 0 (the metric that matters for SURGhub — courses are
         //    free so sales/customers are always 0; clicks are link views, not
@@ -591,7 +611,7 @@ window.LearnWorlds = (function () {
                     leads.push({ promoter, registered: dateField });
                 }
             }
-            return { leads, mode: 'aggregate', totalClicks, clicksByPromoter };
+            return { leads, mode: 'aggregate', totalClicks, clicksByPromoter, tierTagsByPromoter };
         }
 
         // 4. Per-affiliate paginated fetch using the working sub-resource.
@@ -673,7 +693,7 @@ window.LearnWorlds = (function () {
             console.table(mismatches.slice(0, 20));
             if (mismatches.length > 20) console.log(`  …and ${mismatches.length - 20} more (not shown)`);
         }
-        return { leads, mode: workingSubpath, totalClicks, clicksByPromoter };
+        return { leads, mode: workingSubpath, totalClicks, clicksByPromoter, tierTagsByPromoter };
     }
 
     // ── Certificate records: per-user completions + dates, fetched BY COURSE ──

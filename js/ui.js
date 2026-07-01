@@ -972,6 +972,145 @@ Object.assign(window.App, {
         </div>`;
     },
 
+    // ── Ambassador certificate milestones / tiers ────────────────────────
+    // Ambassadors earn a certificate at referral milestones; GSF tags them in
+    // LearnWorlds (Ambassador_Bronze/Silver/Gold/Platinum), which triggers the
+    // cert email. This section shows who holds each tier and — the key admin
+    // action — who has REACHED a milestone (by referral count) but isn't yet
+    // tagged, so they can be tagged in LW. Tag status comes from the sync
+    // (affiliate roster tags + the /users tag scan); reach comes from referrals.
+    _ambTierDefs() {
+        return [
+            { key: 'platinum', label: 'Platinum', tag: 'Ambassador_Platinum', min: 5000, color: '#7c8aa0', emoji: '💎' },
+            { key: 'gold',     label: 'Gold',     tag: 'Ambassador_Gold',     min: 1000, color: '#D4A017', emoji: '🥇' },
+            { key: 'silver',   label: 'Silver',   tag: 'Ambassador_Silver',   min: 500,  color: '#94A3B8', emoji: '🥈' },
+            { key: 'bronze',   label: 'Bronze',   tag: 'Ambassador_Bronze',   min: 100,  color: '#B87333', emoji: '🥉' }
+        ];
+    },
+    _ambTiersHeldFor(snap, name) {
+        const byProm = (snap && snap.TierTagsByPromoter) || {};
+        const byName = (snap && snap.TierTagsByName) || {};
+        let t = byProm[name];
+        if (!t) t = byName[String(name || '').trim().toLowerCase().replace(/\s+/g, ' ')];
+        return Array.isArray(t) ? t : [];
+    },
+    _exportAmbTiersCsv() {
+        const snap = this.ambassadorData || {};
+        const promoters = snap.Promoters || {};
+        const defs = this._ambTierDefs();
+        const bronzeMin = defs[defs.length - 1].min;
+        const rows = [['Ambassador', 'Referrals', 'Highest tier reached', 'Tiers tagged', 'Tags to add (reached but untagged)']];
+        Object.keys(promoters).map(name => {
+            const refs = Number(promoters[name]) || 0;
+            const held = this._ambTiersHeldFor(snap, name);
+            const heldSet = new Set(held);
+            const earned = defs.filter(d => refs >= d.min);
+            return { name, refs, held, highest: earned[0] || null, missing: earned.filter(d => !heldSet.has(d.label)) };
+        }).filter(r => r.refs >= bronzeMin || r.held.length)
+          .sort((a, b) => b.refs - a.refs)
+          .forEach(r => {
+            const nm = String(r.name).indexOf('@') >= 0 ? 'Ambassador (name withheld)' : r.name;
+            rows.push([nm, r.refs, r.highest ? r.highest.label : '', r.held.join(' + '), r.missing.map(d => d.tag).join(' ')]);
+          });
+        this._downloadCsv(rows, 'Ambassador_Milestones');
+    },
+    _ambassadorTiers(snap) {
+        const promoters = (snap && snap.Promoters) || {};
+        const names = Object.keys(promoters);
+        if (!names.length) return '';
+        const defs = this._ambTierDefs();              // descending by threshold
+        const bronzeMin = defs[defs.length - 1].min;   // 100
+        const tagsAvailable = Object.keys(snap.TierTagsByPromoter || {}).length > 0
+            || Object.keys(snap.TierTagsByName || {}).length > 0;
+
+        const rows = names.map(name => {
+            const refs = Number(promoters[name]) || 0;
+            const held = this._ambTiersHeldFor(snap, name);
+            const heldSet = new Set(held);
+            const earned = defs.filter(d => refs >= d.min);     // tiers reached (desc)
+            return { name, refs, held, earned, highest: earned[0] || null, missing: earned.filter(d => !heldSet.has(d.label)) };
+        }).filter(r => r.refs >= bronzeMin || r.held.length);
+        if (!rows.length) return '';
+        rows.sort((a, b) => b.refs - a.refs);
+
+        const fmt = (n) => this.formatNumber(n);
+        const nm = (s) => this.escapeHtml(String(s).indexOf('@') >= 0 ? 'Ambassador (name withheld)' : s);
+        const chip = (d, on) => `<span title="${d.label} — ${fmt(d.min)}+ referrals" style="display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;background:${on ? d.color + '22' : '#f1f5f9'};color:${on ? d.color : '#cbd5e1'};border:1px solid ${on ? d.color + '55' : '#e2e8f0'}">${d.emoji} ${d.label}</span>`;
+
+        const summary = defs.map(d => {
+            const reached = rows.filter(r => r.refs >= d.min).length;
+            const tagged = rows.filter(r => r.refs >= d.min && r.held.indexOf(d.label) >= 0).length;
+            const toTag = reached - tagged;
+            return `<div class="bg-white rounded-xl border shadow-sm overflow-hidden">
+                <div class="h-1" style="background:${d.color}"></div>
+                <div class="p-4">
+                    <div class="flex items-center gap-1.5 mb-1"><span style="font-size:15px">${d.emoji}</span><h4 class="text-[11px] font-bold uppercase tracking-wide" style="color:${d.color}">${d.label}</h4></div>
+                    <div class="text-3xl font-bold leading-none" style="color:#1a2b3c;font-family:var(--num)">${fmt(reached)}</div>
+                    <div class="text-[10px] text-slate-400 mt-1">reached ${fmt(d.min)}+ referrals${tagsAvailable ? ` · <span class="text-emerald-600 font-semibold">${fmt(tagged)} tagged</span>${toTag > 0 ? ` · <span class="text-amber-600 font-semibold">${fmt(toTag)} to tag</span>` : ''}` : ''}</div>
+                </div>
+            </div>`;
+        }).join('');
+
+        const needs = rows.filter(r => r.missing.length);
+        let needsBlock = '';
+        if (!tagsAvailable) {
+            needsBlock = `<div class="mt-4 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800"><i data-lucide="info" width="16" class="shrink-0 mt-0.5"></i><div>Tier tags haven't been read from LearnWorlds yet, so we can't tell who's already tagged. Run <strong>Sync Demographics</strong> (or re-sync Ambassadors) to detect the <code>Ambassador_Bronze/Silver/Gold/Platinum</code> tags. Until then, the counts above show who has <em>reached</em> each milestone by referral count.</div></div>`;
+        } else if (!needs.length) {
+            needsBlock = `<div class="mt-4 flex items-center gap-2 bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-sm text-emerald-800"><i data-lucide="check-circle" width="16" class="shrink-0"></i> Every ambassador who's reached a milestone is already tagged — nothing to action.</div>`;
+        } else {
+            const body = needs.map(r => {
+                const addTags = r.missing.map(d => `<code class="text-[11px] bg-amber-100 text-amber-800 rounded px-1.5 py-0.5">${d.tag}</code>`).join(' ');
+                return `<tr class="border-b last:border-0 hover:bg-amber-50/40">
+                    <td class="py-2 px-4 font-medium text-gsf-prussian">${nm(r.name)}</td>
+                    <td class="py-2 px-4 text-right font-bold text-gsf-boston">${fmt(r.refs)}</td>
+                    <td class="py-2 px-4">${chip(r.highest, true)}</td>
+                    <td class="py-2 px-4">${addTags}</td>
+                </tr>`;
+            }).join('');
+            needsBlock = `<div class="mt-5 bg-white rounded-xl border border-amber-200 shadow-sm overflow-hidden">
+                <div class="bg-amber-50 border-b border-amber-200 p-4"><h4 class="font-bold text-amber-900 flex items-center gap-2"><i data-lucide="bell-ring" width="16"></i> Reached a milestone — needs tagging (${fmt(needs.length)})</h4>
+                <p class="text-xs text-amber-700 mt-1">These ambassadors have crossed a referral milestone but don't have the matching tag in the last sync. Add the tag(s) in LearnWorlds to trigger their certificate email. Verify in LW — a name occasionally doesn't match between the affiliate roster and the user record.</p></div>
+                <div class="overflow-x-auto"><table class="w-full text-left text-sm">
+                    <thead><tr class="border-b text-slate-500 text-xs"><th class="py-2 px-4 font-medium">Ambassador</th><th class="py-2 px-4 font-medium text-right">Referrals</th><th class="py-2 px-4 font-medium">Reached</th><th class="py-2 px-4 font-medium">Tag(s) to add</th></tr></thead>
+                    <tbody>${body}</tbody>
+                </table></div>
+            </div>`;
+        }
+
+        let holdersBlock = '';
+        const holders = rows.filter(r => r.held.length);
+        if (tagsAvailable && holders.length) {
+            const body = holders.map(r => `<tr class="border-b last:border-0 hover:bg-slate-50">
+                <td class="py-2 px-4 font-medium text-gsf-prussian">${nm(r.name)}</td>
+                <td class="py-2 px-4 text-right font-bold text-gsf-boston">${fmt(r.refs)}</td>
+                <td class="py-2 px-4"><div class="flex flex-wrap gap-1">${defs.slice().reverse().map(d => r.held.indexOf(d.label) >= 0 ? chip(d, true) : '').join('')}</div></td>
+            </tr>`).join('');
+            holdersBlock = `<details class="mt-5 bg-white rounded-xl border shadow-sm overflow-hidden group">
+                <summary class="cursor-pointer list-none p-4 flex items-center justify-between hover:bg-slate-50"><h4 class="font-bold text-gsf-prussian flex items-center gap-2"><i data-lucide="badge-check" width="16"></i> Tagged ambassadors (${fmt(holders.length)})</h4><i data-lucide="chevron-down" width="16" class="text-slate-400 group-open:rotate-180 transition-transform"></i></summary>
+                <div class="overflow-x-auto border-t max-h-[420px] overflow-y-auto custom-scrollbar"><table class="w-full text-left text-sm">
+                    <thead class="sticky top-0 bg-white"><tr class="border-b text-slate-500 text-xs"><th class="py-2 px-4 font-medium">Ambassador</th><th class="py-2 px-4 font-medium text-right">Referrals</th><th class="py-2 px-4 font-medium">Tier tags held</th></tr></thead>
+                    <tbody>${body}</tbody>
+                </table></div>
+            </details>`;
+        }
+
+        const asOf = snap.TierTagsAt ? ` · tags as of ${new Date(snap.TierTagsAt).toISOString().split('T')[0]}` : '';
+        return `<div id="amb-tiers-section" class="mb-8">
+            <div class="flex items-start justify-between gap-3 mb-1">
+                <h3 class="text-lg font-bold text-gsf-prussian flex items-center gap-2"><i data-lucide="medal" width="18" class="text-gsf-boston"></i> Milestones &amp; Certificates</h3>
+                <div class="flex items-center gap-1 shrink-0">
+                    <button onclick="App._copyEngagementSection('amb-tiers-section', this)" title="Copy section as PNG" class="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-gsf-boston"><i data-lucide="copy" width="13"></i></button>
+                    <button onclick="App._downloadEngagementSection('amb-tiers-section','Ambassador_Milestones')" title="Download PNG" class="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-gsf-boston"><i data-lucide="image" width="13"></i></button>
+                    <button onclick="App._exportAmbTiersCsv()" title="Download CSV" class="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-gsf-boston"><i data-lucide="file-spreadsheet" width="13"></i></button>
+                </div>
+            </div>
+            <p class="text-xs text-slate-500 mb-4">Ambassadors earn a certificate at each referral milestone (Bronze 100 · Silver 500 · Gold 1,000 · Platinum 5,000). Counts use referrals — signups via their link${asOf}.</p>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">${summary}</div>
+            ${needsBlock}
+            ${holdersBlock}
+        </div>`;
+    },
+
     // Program-health: ambassadors who were active but have gone quiet. Flags anyone
     // with prior real activity (>= MIN_PRIOR total leads) whose last month with any
     // leads is >= DORMANT_MONTHS before the most recent month present in the data.
@@ -2933,6 +3072,8 @@ Object.assign(window.App, {
 
                         ${this._ambassadorAwards(snap)}
 
+                        ${this._ambassadorTiers(snap)}
+
                         <div class="bg-white p-6 rounded-xl shadow-sm border mb-8">
                             <h3 class="text-lg font-bold mb-4 flex items-center gap-2 text-gsf-prussian">Cumulative Referrals Over Time ${this._chartWidthBtns('chart_ambassador_total')} ${this._resetChartBtn('chart_ambassador_total')} ${this._chartBtns('chart_ambassador_total', 'Referrals_Growth')}</h3>
                             <div class="mb-3 flex flex-wrap gap-4 items-center">
@@ -3779,6 +3920,7 @@ Object.assign(window.App, {
     _comboPick(id, val) {
         const d = this._comboData[id]; if (!d) return;
         const list = document.getElementById(id + '-list'); if (list) list.style.display = 'none';
+        if (d.kind === 'briefCountry') { this._pickBriefCountry(val); return; } // its own refresh handles re-render
         if (d.kind === 'provider') this.selectedProvider = val; else this.selectedCourse = val;
         this.renderView();
     },

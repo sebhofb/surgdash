@@ -2740,7 +2740,7 @@ Object.assign(window.App, {
 
             this._updateApiSyncOverlay('Connecting to LearnWorlds…', 5);
             try { window.LearnWorlds.startRawPull('ambassadors'); } catch (e) {}
-            const { leads: leadsJson, mode, totalClicks: ambClicks, clicksByPromoter: ambClicksByPromoter } = await window.LearnWorlds.fetchAmbassadorLeads(p => {
+            const { leads: leadsJson, mode, totalClicks: ambClicks, clicksByPromoter: ambClicksByPromoter, tierTagsByPromoter: ambTierTags } = await window.LearnWorlds.fetchAmbassadorLeads(p => {
                 let text, pct;
                 if (p.phase === 'list') {
                     text = `Listing affiliates (page ${p.current}/${p.total})…`;
@@ -2810,8 +2810,15 @@ Object.assign(window.App, {
                 // Referral-link clicks (link views) — total + per-promoter, from
                 // the affiliate counters. Clicks = visits; leads = signups.
                 TotalClicks: ambClicks || 0,
-                ClicksByPromoter: ambClicksByPromoter || {}
+                ClicksByPromoter: ambClicksByPromoter || {},
+                // Certificate-tier tags off the affiliate roster (exact name match).
+                TierTagsByPromoter: ambTierTags || {}
             };
+            // Preserve the Step-4-derived tier tags (from the /users tag scan) +
+            // their timestamp across this rebuild — only Step 4 produces them.
+            if (prev.TierTagsByName) next.TierTagsByName = prev.TierTagsByName;
+            if (prev.TierTagsAt) next.TierTagsAt = prev.TierTagsAt;
+            if (prev.TierTagHolderCount != null) next.TierTagHolderCount = prev.TierTagHolderCount;
             // Historical: prefer this run's value if we got one, else keep prev
             if (historicalTotal != null) {
                 next.HistoricalTotal = historicalTotal;
@@ -3013,6 +3020,39 @@ Object.assign(window.App, {
             // Cross-reference referrer_id counts (from /users) against the
             // current affiliates list to identify orphan leads (referred users
             // whose referrer affiliate has since been deleted).
+            // ── Ambassador certificate-tier tags (Ambassador_Bronze/Silver/Gold/
+            // Platinum) read off each user's raw tag list, keyed by normalised name.
+            // Lets the Ambassadors tab show who's already tagged + flag who's reached
+            // a milestone but isn't. Names only (no emails/ids) → no new PII. This is
+            // the fallback source when /affiliates carries no tags (see Step 8).
+            try {
+                const tierTagsByName = {};
+                let tierHolders = 0;
+                const _norm = s => String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+                for (const row of usersJson) {
+                    const raw = row._tags_raw;
+                    if (!raw || raw.toLowerCase().indexOf('ambassador') < 0) continue;
+                    const tiers = [];
+                    raw.split(',').forEach(t => {
+                        const m = t.trim().toLowerCase().match(/^ambassador[\s_\-]*(bronze|silver|gold|platinum)$/);
+                        if (m) tiers.push(m[1].charAt(0).toUpperCase() + m[1].slice(1));
+                    });
+                    if (!tiers.length) continue;
+                    const nm = _norm([row.first_name, row.last_name].filter(Boolean).join(' '))
+                        || ((row.name && String(row.name).indexOf('@') < 0) ? _norm(row.name) : '');
+                    if (!nm) continue;
+                    tierHolders++;
+                    tierTagsByName[nm] = Array.from(new Set((tierTagsByName[nm] || []).concat(tiers)));
+                }
+                this.ambassadorData = Object.assign({}, this.ambassadorData || {}, {
+                    TierTagsByName: tierTagsByName,
+                    TierTagHolderCount: tierHolders,
+                    TierTagsAt: new Date().toISOString()
+                });
+                await Storage.setItem('surghub_ambassadors', this.ambassadorData);
+                console.log(`[Ambassadors] Tier tags from /users: ${tierHolders} ambassadors tagged Ambassador_*`);
+            } catch (e) { console.warn('[Ambassadors] tier-tag capture skipped:', e.message); }
+
             this._updateApiSyncOverlay('Computing lead attribution…', 95);
             let ambassadorBonus = null;
             try {
