@@ -756,13 +756,13 @@ Object.assign(window.App, {
         const IC = window.IncomeClassification;
         const fmt = (n) => this.formatNumber(n);
         const pctStr = (p) => p >= 100 ? Math.round(p) + '%' : (p >= 10 ? p.toFixed(0) + '%' : p.toFixed(1) + '%');
-        const incBadge = (g) => `<span style="display:inline-block;font-size:10px;font-weight:700;padding:1px 7px;border-radius:999px;background:${(IC ? IC.color(g) : '#94a3b8')}22;color:${IC ? IC.color(g) : '#64748b'}">${IC ? IC.label(g) : g}</span>`;
+        const incBadge = (g) => `<span style="display:inline-block;white-space:nowrap;font-size:10px;font-weight:700;padding:1px 8px;border-radius:999px;background:${(IC ? IC.color(g) : '#94a3b8')}22;color:${IC ? IC.color(g) : '#64748b'}">${IC ? IC.label(g) : g}</span>`;
         const body = rows.map(r => `<tr class="border-b last:border-0 hover:bg-slate-50">
-            <td class="py-2 px-4 font-medium text-gsf-prussian">${this.escapeHtml(r.country)}</td>
-            <td class="py-2 px-4">${incBadge(r.income)}</td>
-            <td class="py-2 px-4 text-right text-slate-600" title="Scaled to the full learner base from ${fmt(r.declared)} who declared both profession and country">${fmt(r.docs)}<span class="text-slate-300 text-[10px]"> · from ${fmt(r.declared)}</span></td>
-            <td class="py-2 px-4 text-right text-slate-600">${fmt(r.physicians)}<span class="text-slate-300 text-[10px]"> · ${r.per1000.toFixed(2)}/1k · ${r.year}</span></td>
-            <td class="py-2 px-4 text-right font-bold" style="color:${r.pct >= 100 ? '#3FB984' : '#4389C8'}">${pctStr(r.pct)}</td>
+            <td class="py-2.5 px-4 font-medium text-gsf-prussian whitespace-nowrap">${this.escapeHtml(r.country)}</td>
+            <td class="py-2.5 px-4 whitespace-nowrap">${incBadge(r.income)}</td>
+            <td class="py-2.5 px-4 text-right text-slate-700 tabular-nums whitespace-nowrap" title="Scaled to the full learner base from ${fmt(r.declared)} who declared both profession and country">${fmt(r.docs)} <span class="text-slate-300 text-[11px]">· from ${fmt(r.declared)}</span></td>
+            <td class="py-2.5 px-4 text-right text-slate-700 tabular-nums whitespace-nowrap">${fmt(r.physicians)} <span class="text-slate-300 text-[11px]">· ${r.per1000.toFixed(2)}/1k · ${r.year}</span></td>
+            <td class="py-2.5 px-4 text-right font-bold tabular-nums whitespace-nowrap" style="color:${r.pct >= 100 ? '#3FB984' : '#4389C8'}">${pctStr(r.pct)}</td>
         </tr>`).join('');
         const tab = (v, l) => `<button onclick="App._setPhysReachScope('${v}')" class="px-3 py-1.5 text-xs font-bold rounded-lg transition-colors ${scope === v ? 'bg-gsf-boston text-white' : 'text-slate-500 hover:bg-slate-100'}">${l}</button>`;
         return `<div id="eng-section-physreach" class="bg-white rounded-xl shadow-sm border overflow-hidden">
