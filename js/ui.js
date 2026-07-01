@@ -2272,6 +2272,11 @@ Object.assign(window.App, {
                                 ? '<span class="text-xs text-gsf-boston font-semibold">' + this.escapeHtml(this._periodLabel()) + '</span><button onclick="App.clearReportPeriod()" class="text-xs text-red-400 hover:text-red-600 font-bold" title="Clear period (back to all-time)">✕</button>'
                                 : '<span class="text-xs text-slate-400">all time</span>'}
                         </div>
+                        <div class="border border-gsf-boston/30 rounded-xl p-4 mb-4 bg-gsf-boston/5 max-w-4xl">
+                            <p class="text-xs font-bold text-gsf-boston uppercase tracking-wide mb-1">Whole platform</p>
+                            <p class="text-xs text-slate-500 mb-3">One combined dark report for all of SURGhub — every provider and course together, with a Top Providers ranking. Single self-contained .html file.</p>
+                            <button onclick="App.exportPlatformHtmlReport()" class="flex items-center justify-center gap-2 py-3 px-5 bg-gsf-prussian text-white font-bold rounded-lg hover:bg-gsf-boston transition-colors shadow-sm"><i data-lucide="globe-2" width="18"></i> Whole SURGhub Report (Web)</button>
+                        </div>
                         <div class="border border-slate-200 rounded-xl p-4 mb-4 bg-slate-50/40 max-w-4xl">
                             <p class="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">Provider reports &amp; exports</p>
                             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -3226,8 +3231,6 @@ Object.assign(window.App, {
                             ${(this.reportPeriodFrom || this.reportPeriodTo) ? '<button onclick="App.clearReportPeriod()" class="text-xs text-red-400 hover:text-red-600 font-bold ml-0.5" title="Clear period (reports go back to all-time only)">✕</button>' : ''}
                         </div>
                         <div data-edit-only data-report-ok class="flex items-center gap-1.5 flex-wrap justify-end">
-                            <button onclick="App.exportPlatformHtmlReport()" class="flex items-center gap-1.5 px-3.5 py-2 bg-gsf-prussian text-white font-bold rounded-lg text-xs shadow-sm hover:bg-gsf-boston transition-colors" title="Dark web report for the ENTIRE SURGhub platform — all providers combined (single .html file)"><i data-lucide="globe-2" width="14"></i> Whole SURGhub</button>
-                            <span class="w-px h-6 bg-slate-200 mx-0.5"></span>
                             <button onclick="App.exportProviderPackage(App.selectedProvider)" class="flex items-center gap-1.5 px-3.5 py-2 bg-amber-500 text-white font-bold rounded-lg text-xs shadow-sm hover:bg-amber-600 transition-colors" title="One folder with the PDF + web report + anonymized users + anonymized feedback (Excel)"><i data-lucide="package" width="14"></i> Report Package</button>
                             <button onclick="App.exportProviderHtmlReport(App.selectedProvider)" class="flex items-center gap-1.5 px-3 py-2 border rounded-lg text-xs font-bold text-slate-600 hover:text-gsf-boston hover:bg-slate-50 transition-colors" title="Interactive dark-themed report (single .html file)"><i data-lucide="globe" width="14"></i> Web</button>
                             <button onclick="App.generateProviderReport(App.selectedProvider)" class="flex items-center gap-1.5 px-3 py-2 border rounded-lg text-xs font-bold text-slate-600 hover:text-gsf-boston hover:bg-slate-50 transition-colors" title="Printable PDF report"><i data-lucide="download" width="14"></i> PDF</button>
