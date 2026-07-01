@@ -42,44 +42,54 @@ Object.assign(window.App, {
     },
 
     // ── Action toolbar helpers (copy PNG, download PNG, download CSV) ─────
-    _engActionBtns(sectionId, csvKind, csvName) {
+    _engActionBtns(sectionId, csvKind, csvName, clip) {
+        const c = clip ? ', true' : '';
         return `<div class="flex items-center gap-1">
-            <button onclick="App._copyEngagementSection('${sectionId}', this)" title="Copy section as PNG" class="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-gsf-boston"><i data-lucide="copy" width="13"></i></button>
-            <button onclick="App._downloadEngagementSection('${sectionId}', '${csvName}')" title="Download PNG" class="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-gsf-boston"><i data-lucide="image" width="13"></i></button>
+            <button onclick="App._copyEngagementSection('${sectionId}', this${c})" title="Copy section as PNG" class="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-gsf-boston"><i data-lucide="copy" width="13"></i></button>
+            <button onclick="App._downloadEngagementSection('${sectionId}', '${csvName}'${c})" title="Download PNG" class="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-gsf-boston"><i data-lucide="image" width="13"></i></button>
             <button onclick="App._exportEngagementCsv('${csvKind}', '${csvName}')" title="Download CSV" class="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-gsf-boston"><i data-lucide="file-spreadsheet" width="13"></i></button>
         </div>`;
     },
 
     // Render the section to a canvas with capture-mode CSS applied
-    async _captureEngagementSection(el) {
-        el.classList.add('eng-capture-mode');
-        // Expand any collapsed <details> so their content is in the snapshot, then restore.
-        const dets = [].slice.call(el.querySelectorAll('details'));
-        const wasOpen = dets.map(d => d.open);
-        dets.forEach(d => { d.open = true; });
+    async _captureEngagementSection(el, clip) {
+        // clip=true → capture roughly what's on screen (keep inner scroll areas at their
+        // capped height) instead of expanding every row, which makes an unusably tall
+        // image for long tables. clip=false (default) → expand everything, open <details>.
+        let dets = [], wasOpen = [], scrollers = [];
+        if (!clip) {
+            el.classList.add('eng-capture-mode');
+            dets = [].slice.call(el.querySelectorAll('details'));
+            wasOpen = dets.map(d => d.open);
+            dets.forEach(d => { d.open = true; });
+        } else {
+            scrollers = [].slice.call(el.querySelectorAll('[class*="overflow-y-auto"]'));
+            scrollers.forEach(s => { s.__ov = s.style.overflowY; s.style.overflowY = 'hidden'; });
+        }
         // Give the browser a beat to re-layout with the capture styles before snapshotting
         await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
         try {
+            const h = clip ? el.clientHeight : el.scrollHeight;
             return await window.html2canvas(el, {
                 scale: 3,
                 backgroundColor: '#ffffff',
                 useCORS: true,
                 width: el.scrollWidth,
-                height: el.scrollHeight,
+                height: h,
                 windowWidth: el.scrollWidth + 40,
-                windowHeight: Math.max(window.innerHeight, el.scrollHeight + 40),
+                windowHeight: Math.max(window.innerHeight, h + 40),
             });
         } finally {
-            el.classList.remove('eng-capture-mode');
-            dets.forEach((d, i) => { d.open = wasOpen[i]; });
+            if (!clip) { el.classList.remove('eng-capture-mode'); dets.forEach((d, i) => { d.open = wasOpen[i]; }); }
+            else { scrollers.forEach(s => { s.style.overflowY = s.__ov || ''; delete s.__ov; }); }
         }
     },
 
-    async _copyEngagementSection(sectionId, btn) {
+    async _copyEngagementSection(sectionId, btn, clip) {
         const el = document.getElementById(sectionId);
         if (!el || !window.html2canvas) return;
         try {
-            const canvas = await this._captureEngagementSection(el);
+            const canvas = await this._captureEngagementSection(el, clip);
             const uri = canvas.toDataURL('image/png');
             if (window.electronAPI && electronAPI.invoke) {
                 await electronAPI.invoke('clipboard-write-image', uri);
@@ -92,11 +102,11 @@ Object.assign(window.App, {
         } catch (e) { console.error('Copy section failed:', e); }
     },
 
-    async _downloadEngagementSection(sectionId, name) {
+    async _downloadEngagementSection(sectionId, name, clip) {
         const el = document.getElementById(sectionId);
         if (!el || !window.html2canvas) return;
         try {
-            const canvas = await this._captureEngagementSection(el);
+            const canvas = await this._captureEngagementSection(el, clip);
             const uri = canvas.toDataURL('image/png');
             const a = document.createElement('a');
             a.href = uri;
@@ -761,7 +771,7 @@ Object.assign(window.App, {
                 <p class="text-xs text-slate-500 mt-1 max-w-3xl">SURGhub <strong>doctor-cadre</strong> learners in each country as a share of that country's physician workforce. An estimated <strong>${fmt(totDocs)}</strong> doctors across <strong>${rows.length}</strong> ${scope === 'liclmic' ? 'LIC/LMIC ' : ''}countries vs an estimated <strong>${fmt(totPhys)}</strong> physicians — an aggregate <strong style="color:#4389C8">${pctStr(aggPct)}</strong>.</p></div>
                 <div class="flex items-center gap-2 shrink-0">
                     <div class="flex items-center gap-1 bg-white border rounded-lg p-0.5">${tab('liclmic', 'LIC / LMIC')}${tab('all', 'All incomes')}</div>
-                    ${this._engActionBtns('eng-section-physreach', 'physreach', 'Physician_Workforce_Reach')}
+                    ${this._engActionBtns('eng-section-physreach', 'physreach', 'Physician_Workforce_Reach', true)}
                 </div>
             </div>
             <div class="overflow-x-auto max-h-[520px] overflow-y-auto custom-scrollbar"><table class="w-full text-left border-collapse text-sm">

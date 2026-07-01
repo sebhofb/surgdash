@@ -1099,8 +1099,8 @@ Object.assign(window.App, {
             <div class="flex items-start justify-between gap-3 mb-1">
                 <h3 class="text-lg font-bold text-gsf-prussian flex items-center gap-2"><i data-lucide="medal" width="18" class="text-gsf-boston"></i> Milestones &amp; Certificates</h3>
                 <div class="flex items-center gap-1 shrink-0">
-                    <button onclick="App._copyEngagementSection('amb-tiers-section', this)" title="Copy section as PNG" class="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-gsf-boston"><i data-lucide="copy" width="13"></i></button>
-                    <button onclick="App._downloadEngagementSection('amb-tiers-section','Ambassador_Milestones')" title="Download PNG" class="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-gsf-boston"><i data-lucide="image" width="13"></i></button>
+                    <button onclick="App._copyEngagementSection('amb-tiers-section', this, true)" title="Copy section as PNG" class="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-gsf-boston"><i data-lucide="copy" width="13"></i></button>
+                    <button onclick="App._downloadEngagementSection('amb-tiers-section','Ambassador_Milestones', true)" title="Download PNG" class="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-gsf-boston"><i data-lucide="image" width="13"></i></button>
                     <button onclick="App._exportAmbTiersCsv()" title="Download CSV" class="p-1.5 rounded hover:bg-slate-100 text-slate-400 hover:text-gsf-boston"><i data-lucide="file-spreadsheet" width="13"></i></button>
                 </div>
             </div>
