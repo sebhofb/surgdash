@@ -430,6 +430,20 @@
                 } catch(e) {}
             });
 
+            // Overall learner-rating distribution (every star rating, with or without a
+            // comment) for the report's rating band: share giving 4–5 stars, average, and
+            // count. Mirrors the Impact Showcase's rating band; needs ≥10 ratings to show.
+            let rbTotal = 0, rbSum = 0, rb45 = 0;
+            pSnap.forEach(c => {
+                if (!c.FeedbackBank) return;
+                try {
+                    const fb = JSON.parse(c.FeedbackBank);
+                    if (!Array.isArray(fb)) return;
+                    fb.forEach(f => { const r = Number(f && f.r) || 0; if (r >= 1 && r <= 5) { rbTotal++; rbSum += r; if (r >= 4) rb45++; } });
+                } catch (e) {}
+            });
+            const ratingBand = rbTotal >= 10 ? { avg: +(rbSum / rbTotal).toFixed(1), pct45: Math.round(rb45 / rbTotal * 100), n: rbTotal } : null;
+
             // Apply date cutoff for auto-detected feedback
             let allFeedback = feedbackCutoff
                 ? allFeedbackRaw.filter(f => !f.d || f.d >= feedbackCutoff)
@@ -636,7 +650,7 @@
                 totalLrn, totalCert, totalResp, totalMin, avgRating, certRate,
                 provTimeline, courseTimelines, courseRatings, ratingData,
                 pFrom, pTo, hasPeriod, periodLabel, perEnrol, perCert, perResp, perAvgRating,
-                surveyQRows, surveyImpact,
+                surveyQRows, surveyImpact, ratingBand,
                 courseCountryData, providerCountryData, providerCountryByIso, providerCountryJson,
                 testimonials, suggestions, critical, allFeedbackCount: allFeedback.length,
                 courseTestimonials, fbSummaries,
@@ -1239,26 +1253,36 @@ function drawCharts() {
             const totalCountryUsers = Object.values(D.providerCountryData).reduce((a, b) => a + b, 0);
 
             const _si = D.surveyImpact || {};
-            const _siCard = (heading, val, desc) => '<div><p style="margin:0 0 8px;font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#9fb3c8">' + heading + '</p><span style="font-family:var(--serif);font-size:32px;font-weight:700;color:var(--accent);line-height:1">' + val + '</span><p style="margin:6px 0 0;font-size:12px;color:#9fb3c8;line-height:1.5;text-wrap:balance">' + desc + '</p></div>';
-            const impactBand = (D.surveyImpact || D.totalMin > 0) ? (
-                '<div style="margin:0 0 28px">'
-                + '<p style="margin:0 0 14px;font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--accent);display:flex;align-items:center;justify-content:space-between">Learning Impact <button class="dlb" onclick="dlImpact()">&#8595; PNG</button></p>'
-                + '<div style="display:flex;gap:18px;flex-wrap:wrap;align-items:stretch">'
-                + (D.totalMin > 0 ? '<div style="flex:1 1 220px;min-width:200px;border:1px solid #FFC14538;border-radius:5px;padding:20px 24px;background:linear-gradient(135deg,#FFC14512,#001a2b 70%);display:flex;flex-direction:column;justify-content:center">'
-                    + '<p style="margin:0 0 8px;font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#9fb3c8">Learning Time</p>'
-                    + '<span style="font-family:var(--serif);font-size:40px;font-weight:700;color:var(--accent);line-height:1">' + this.formatLearningTime(D.totalMin) + '</span>'
-                    + '<p style="margin:8px 0 0;font-size:12.5px;color:#9fb3c8;line-height:1.5;text-wrap:balance;max-width:32ch">of <strong style="color:#eef4f9">study time</strong> recorded across all learners, all time</p>'
-                    + '</div>' : '')
-                + ((_si.contentNew || _si.willApply || _si.careerValue) ? '<div style="flex:2 1 380px;min-width:280px;border:1px solid #FFC14538;border-radius:5px;padding:20px 24px;background:linear-gradient(135deg,#FFC14512,#001a2b 70%)">'
-                    + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:18px 22px">'
-                    + (_si.contentNew ? _siCard('New Knowledge', _si.contentNew.pct + '%', 'of surveyed learners said the course content was <strong style="color:#eef4f9">new to them</strong>') : '')
-                    + (_si.willApply ? _siCard('Intent to Apply', _si.willApply.pct + '%', 'say they are <strong style="color:#eef4f9">likely to apply</strong> what they learned in their work') : '')
-                    + (_si.careerValue ? _siCard('Career Value', _si.careerValue.pct + '%', 'rate what they learned as <strong style="color:#eef4f9">important to their job success</strong>') : '')
-                    + '</div>'
-                    + (function () { const ns = []; if (_si.contentNew) ns.push(_si.contentNew.n); if (_si.willApply) ns.push(_si.willApply.n); if (_si.careerValue) ns.push(_si.careerValue.n); if (!ns.length) return ''; const bn = Math.min.apply(null, ns); const rounded = bn >= 1000 ? Math.floor(bn / 1000) * 1000 : Math.floor(bn / 100) * 100; return '<p style="margin:14px 0 0;font-family:var(--mono);font-size:9px;letter-spacing:.06em;color:#6d8ba3">Survey figures based on ' + fmt(rounded) + '+ surveys &middot; share answering 4 or 5 on a 1–5 scale</p>'; })()
-                    + '</div>' : '')
+            // Learning Impact, showcase-style ("Learning that changes practice."): three animated
+            // SVG dials for the post-course survey outcomes, plus the learning-time stat. The dials
+            // are built + fired client-side by buildDial() (see the inline script). data-cap holds
+            // small HTML (with &quot; for the inner style quotes) so the coloured keyword renders.
+            const _dial = (pct, color, cap) => '<div class="dial" data-pct="' + pct + '" data-color="' + color + '" data-cap="' + cap + '"></div>';
+            const _dials = [
+                _si.contentNew ? _dial(_si.contentNew.pct, '#5AA9E6', 'said the content was <b style=&quot;color:#5AA9E6&quot;>new</b> to them') : '',
+                _si.willApply ? _dial(_si.willApply.pct, '#3FB984', 'intend to <b style=&quot;color:#3FB984&quot;>apply</b> what they learned') : '',
+                _si.careerValue ? _dial(_si.careerValue.pct, '#FFC145', 'rate it important to their <b style=&quot;color:#FFC145&quot;>work</b>') : ''
+            ].join('');
+            const _surveyN = (function () { const ns = []; if (_si.contentNew) ns.push(_si.contentNew.n); if (_si.willApply) ns.push(_si.willApply.n); if (_si.careerValue) ns.push(_si.careerValue.n); if (!ns.length) return 0; const bn = Math.min.apply(null, ns); return bn >= 1000 ? Math.floor(bn / 1000) * 1000 : Math.floor(bn / 100) * 100; })();
+            const _timeLine = D.totalMin > 0
+                ? '<div style="margin-top:28px;padding-top:20px;border-top:1px solid var(--border);text-align:center"><span style="font-family:var(--serif);font-size:34px;font-weight:700;color:var(--accent);line-height:1">' + this.formatLearningTime(D.totalMin) + '</span><span style="font-size:13px;color:#9fb3c8;margin-left:12px">of study time recorded across all learners, all time</span></div>'
+                : '';
+            const impactBand = _dials ? (
+                '<div class="chart-card" style="margin:0 0 28px;overflow:hidden;background:radial-gradient(900px 460px at 50% -12%, rgba(63,185,132,0.10), transparent 62%),var(--surface)">'
+                + '<div style="display:flex;align-items:center;justify-content:flex-end"><button class="dlb" onclick="dlImpact()">&#8595; PNG</button></div>'
+                + '<p style="margin:0 0 6px;font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:var(--accent);text-align:center">Learning Impact</p>'
+                + '<h3 style="margin:0 auto 6px;font-size:27px;font-weight:700;color:#eef4f9;text-align:center;letter-spacing:-.01em">Learning that changes practice.</h3>'
+                + '<p style="margin:0 auto;font-size:14px;color:#9fb3c8;line-height:1.6;text-align:center;max-width:60ch">In post-course surveys, learners report applying what they have learned:</p>'
+                + '<div class="dials">' + _dials + '</div>'
+                + _timeLine
+                + (_surveyN ? '<p style="margin:22px 0 0;font-family:var(--mono);font-size:9px;letter-spacing:.06em;color:#6d8ba3;text-align:center">Based on ' + fmt(_surveyN) + '+ post-course survey responses &middot; share answering 4 or 5 on a 1–5 scale.</p>' : '')
                 + '</div>'
-                + '</div>') : '';
+            ) : (D.totalMin > 0 ? (
+                '<div class="chart-card" style="margin:0 0 28px;background:radial-gradient(900px 460px at 50% -12%, rgba(255,193,69,0.08), transparent 62%),var(--surface)">'
+                + '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px"><p style="margin:0;font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:var(--accent)">Learning Impact</p><button class="dlb" onclick="dlImpact()">&#8595; PNG</button></div>'
+                + '<div style="text-align:center;padding:8px 0 4px"><span style="font-family:var(--serif);font-size:44px;font-weight:700;color:var(--accent);line-height:1">' + this.formatLearningTime(D.totalMin) + '</span><p style="margin:10px auto 0;font-size:13px;color:#9fb3c8;max-width:40ch">of study time recorded across all learners, all time</p></div>'
+                + '</div>'
+            ) : '');
 
             // Interactive: month pickers recompute the period stats client-side
             // from the serialized monthly data (see periodChanged in the runtime).
@@ -1289,12 +1313,23 @@ function drawCharts() {
 
             const suggestionsBlock = ''; // Learner Suggestions removed from the dark export per request
             const criticalBlock = D.critical.length ? (secEyebrow('Areas for Improvement') + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:10px;margin-bottom:28px">' + D.critical.map(quoteCard).join('') + '</div>') : '';
-            // Platform: a standalone Learner Voices section (the per-course testimonials in
-            // Course Details are dropped in platform mode, so surface the best quotes here).
-            const voicesBlock = (platform && D.testimonials && D.testimonials.length) ? (
+            // Platform: a standalone Learner Voices section — a rating band (share giving 4–5
+            // stars + average rating) atop the best testimonials. The per-course testimonials in
+            // Course Details are dropped in platform mode, so surface the best quotes here.
+            const _rbHtml = D.ratingBand ? (
+                '<div class="ratingband">'
+                + '<div class="rb-block"><div class="rb-pct">' + D.ratingBand.pct45 + '%</div><div class="rb-pct-lab">gave 4 or 5 stars</div></div>'
+                + '<div class="rb-block rb-avg-block"><div class="rb-stars">★★★★★</div><div class="rb-avg"><b>' + D.ratingBand.avg + '</b> average rating</div></div>'
+                + (shLogoColor ? '<img src="' + shLogoColor + '" alt="SURGhub" style="margin-left:auto;align-self:center;height:44px;width:auto;max-width:130px;object-fit:contain;opacity:.92;background:#fff;border-radius:8px;padding:6px 10px">' : '')
+                + '<div class="rb-foot">Based on ' + fmt(D.ratingBand.n) + ' learner ratings across SURGhub courses</div></div>'
+            ) : '';
+            const voicesBlock = (platform && ((D.testimonials && D.testimonials.length) || D.ratingBand)) ? (
                 secEyebrow('Learner Voices')
-                + '<p style="margin:0 0 14px;font-size:12.5px;color:#9fb3c8;line-height:1.6">In their own words — a selection of what learners say about SURGhub courses.</p>'
-                + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:10px;margin-bottom:28px">' + D.testimonials.map(quoteCard).join('') + '</div>'
+                + _rbHtml
+                + ((D.testimonials && D.testimonials.length) ? (
+                    '<p style="margin:0 0 14px;font-size:12.5px;color:#9fb3c8;line-height:1.6">In their own words — a selection of what learners say about SURGhub courses.</p>'
+                    + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:10px;margin-bottom:28px">' + D.testimonials.map(quoteCard).join('') + '</div>'
+                  ) : '')
             ) : '';
 
             // Platform-only: the scroll-driven learner-story globe (ported from the Impact Showcase).
@@ -1412,6 +1447,24 @@ a.shl:hover{color:var(--accent);border-bottom-color:var(--accent);}
 .kpi-modal{display:none;position:fixed;inset:0;background:rgba(0,8,16,0.74);z-index:2000;align-items:center;justify-content:center;padding:24px;}
 .kpi-modal-box{position:relative;background:var(--surface);border:1px solid var(--border);border-radius:8px;max-width:440px;width:100%;padding:28px 30px;box-shadow:0 24px 64px rgba(0,0,0,.6);}
 @media print{body{background:#001523!important;-webkit-print-color-adjust:exact;}}
+/* Learning-impact dials + rating band + growth split (showcase-style sections) */
+.dials{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:26px;margin-top:28px;}
+.dial{text-align:center;}
+.dial svg{transform:rotate(-90deg);}
+.dial .pc{font-family:var(--serif);font-size:30px;font-weight:800;fill:#eef4f9;}
+.dial .cap{margin:12px auto 0;font-size:14px;color:#b9cede;max-width:24ch;line-height:1.45;}
+.ratingband{display:flex;align-items:center;column-gap:48px;row-gap:0;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:24px 34px;margin:0 0 20px;flex-wrap:wrap;}
+.rb-block{display:flex;flex-direction:column;justify-content:center;}
+.rb-pct{font-family:var(--serif);font-size:clamp(46px,7vw,66px);font-weight:800;color:#3FB984;line-height:1;}
+.rb-pct-lab{font-size:14px;color:#9fb3c8;margin-top:6px;}
+.rb-avg-block{padding-left:48px;border-left:1px solid var(--border);}
+@media(max-width:600px){.rb-avg-block{padding-left:0;border-left:0;}}
+.rb-stars{font-size:26px;color:#f5b301;letter-spacing:4px;line-height:1;}
+.rb-avg{font-size:14px;color:#9fb3c8;margin-top:9px;}
+.rb-avg b{color:#eef4f9;font-size:22px;margin-right:6px;font-family:var(--serif);}
+.rb-foot{flex-basis:100%;font-family:var(--mono);font-size:11px;color:#6d8ba3;margin-top:14px;padding-top:12px;border-top:1px solid var(--border);}
+.growth-split{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:14px;margin-bottom:14px;}
+@media(max-width:760px){.growth-split{grid-template-columns:1fr;}}
 /* Scroll-driven learner-story globe (platform report) */
 .globe-scrolly{display:grid;grid-template-columns:0.92fr 1.08fr;gap:50px;margin:6px 0 8px;}
 @media(max-width:860px){.globe-scrolly{grid-template-columns:1fr;gap:0;}}
@@ -1580,10 +1633,19 @@ a.shl:hover{color:var(--accent);border-bottom-color:var(--accent);}
   ${periodBand}
 
   ${secEyebrow('Growth')}
-  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;margin-bottom:14px">
+  ${platform ? `<div class="growth-split">
+    <div class="chart-card"><p style="margin:0 0 12px;font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#4389C8;display:flex;align-items:center;justify-content:space-between">Enrolled Learners <button class="dlb" onclick="dlChart('growth-enrol','Enrolled Learners')">&#8595; PNG</button></p><div style="height:250px;position:relative"><canvas id="growth-enrol"></canvas></div></div>
+    <div class="chart-card" style="display:flex;flex-direction:column;justify-content:center;text-align:center;background:radial-gradient(600px 340px at 50% 0%, rgba(63,185,132,0.16), transparent 70%),var(--surface)">
+      <p style="margin:0 0 4px;font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#3FB984">Certification rate</p>
+      <div style="font-family:var(--serif);font-size:clamp(52px,8vw,84px);font-weight:800;color:#3FB984;line-height:.95">${D.certRate != null ? D.certRate + '%' : '&ndash;'}</div>
+      <p style="margin:12px auto 0;font-size:13.5px;color:#d4dde7;line-height:1.55;max-width:30ch">of enrolments run the full course and earn a certificate</p>
+      ${D.totalCert > 0 ? '<p style="margin:10px auto 0;font-family:var(--mono);font-size:10px;letter-spacing:.05em;color:#9fb3c8">' + fmt(D.totalCert) + ' certificates earned</p>' : ''}
+      ${D.certRate != null ? '<p style="margin:12px auto 0;font-size:11.5px;color:#6d8ba3;line-height:1.5;max-width:34ch">Roughly 2&ndash;3&times; the completion rate typical of open online courses (widely cited around 10&ndash;15%, shown for scale).</p>' : ''}
+    </div>
+  </div>` : `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;margin-bottom:14px">
     <div class="chart-card"><p style="margin:0 0 12px;font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#4389C8;display:flex;align-items:center;justify-content:space-between">Enrolled Learners <button class="dlb" onclick="dlChart('growth-enrol','Enrolled Learners')">&#8595; PNG</button></p><div style="height:230px;position:relative"><canvas id="growth-enrol"></canvas></div></div>
     <div class="chart-card"><p style="margin:0 0 12px;font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--accent);display:flex;align-items:center;justify-content:space-between">Courses Completed <button class="dlb" onclick="dlChart('growth-cert','Courses Completed')">&#8595; PNG</button></p><div style="height:230px;position:relative"><canvas id="growth-cert"></canvas></div></div>
-  </div>
+  </div>`}
   <div class="chart-card" style="margin-bottom:28px"><p style="margin:0 0 12px;font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#9fb3c8;display:flex;align-items:center;justify-content:space-between">Survey Responses &amp; Average Rating <button class="dlb" onclick="dlChart('feedback-chart','Survey Responses and Average Rating')">&#8595; PNG</button></p><div style="height:240px;position:relative"><canvas id="feedback-chart"></canvas></div></div>
 
   ${Object.keys(D.providerCountryData).length ? (
@@ -2110,6 +2172,14 @@ function drawRating(id,rd){
       plugins:{legend:{labels:{color:TICK,font:{size:10},boxWidth:14}},tooltip:ttCfg()},
       scales:{x:xAx(),y:{min:0,max:5,position:'left',grid:{color:GRID},ticks:{color:TICK,font:{size:10}},border:{display:false}},y1:{beginAtZero:true,position:'right',grid:{color:'transparent'},ticks:{color:TICK,font:{size:10},callback:function(v){return fmtS(v);}},border:{display:false}}}}});
 }
+// Learning-impact dials: an animated SVG ring (0→pct) with a coloured caption, built
+// from .dial[data-pct|data-color|data-cap]. _fire() runs the count-up; reduced motion snaps.
+var RMOTION=!!(window.matchMedia&&matchMedia('(prefers-reduced-motion:reduce)').matches);
+function buildDial(d){
+  var pct=+d.getAttribute('data-pct'),cap=d.getAttribute('data-cap')||'',color=d.getAttribute('data-color')||'#7fb6e3',r=58,c=2*Math.PI*r;
+  d.innerHTML='<svg width="150" height="150" viewBox="0 0 150 150"><circle cx="75" cy="75" r="'+r+'" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="12"/><circle class="ring" cx="75" cy="75" r="'+r+'" fill="none" stroke="'+color+'" stroke-width="12" stroke-linecap="round" stroke-dasharray="'+c+'" stroke-dashoffset="'+c+'" style="transition:stroke-dashoffset 1.4s cubic-bezier(.2,.7,.2,1)"/><text class="pc" x="75" y="75" text-anchor="middle" dominant-baseline="central" transform="rotate(90 75 75)">0%</text></svg><p class="cap">'+cap+'</p>';
+  d._fire=function(){var ring=d.querySelector('.ring'),txt=d.querySelector('.pc');if(RMOTION){ring.style.strokeDashoffset=c*(1-pct/100);txt.textContent=pct+'%';return;}requestAnimationFrame(function(){ring.style.strokeDashoffset=c*(1-pct/100);});var st=null;function step(ts){st=st||ts;var p=Math.min((ts-st)/1400,1),e=1-Math.pow(1-p,4);txt.textContent=Math.round(pct*e)+'%';if(p<1)requestAnimationFrame(step);}requestAnimationFrame(step);};
+}
 // Scroll-driven learner-story globe (platform report only). A sticky orthographic
 // canvas globe rotates to centre each learner's country as their card scrolls in; on
 // the finale "reach" step it spins and lights up a dot + line for every learner country.
@@ -2194,6 +2264,11 @@ document.addEventListener('DOMContentLoaded',function(){
   Object.keys(CMAP).forEach(function(c){ if(CTL[c]) drawCourse(CMAP[c],CTL[c]); });
   Object.keys(RMAP).forEach(function(c){ if(CRD[c]) drawRating(RMAP[c],CRD[c]); });
   periodChanged(true);
+  // Learning-impact dials: build, then fire the count-up when each scrolls into view.
+  var _dials=[].slice.call(document.querySelectorAll('.dial'));
+  _dials.forEach(buildDial);
+  if('IntersectionObserver' in window){var _dio=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting&&e.target._fire){e.target._fire();_dio.unobserve(e.target);}});},{threshold:0.3});_dials.forEach(function(d){_dio.observe(d);});}
+  else{_dials.forEach(function(d){if(d._fire)d._fire();});}
 });
 if(Object.keys(GEO).length){
   // Resolve any country-NAME keys to ISO-2 via Intl.DisplayNames (CLDR) so the
