@@ -8514,16 +8514,45 @@ updateDirtyCount();
                         if (Object.keys(_iso).length) _countryMap = _iso;
                     } catch (e) { _countryMap = null; }
                     // Transformative-learning survey stats ("content was new to me" /
-                    // "likely to apply"), aggregated across all courses' QuestionStats.
+                    // "likely to apply" / "important to my work"), aggregated across QuestionStats.
                     let _surveyImpact = null;
                     try { _surveyImpact = App._surveyImpactStats ? App._surveyImpactStats(_snap) : null; } catch (e) { _surveyImpact = null; }
+                    // Certification rate = certificates ÷ enrolments (matches the report's definition).
+                    const _certRate = _enrol > 0 ? Math.round(_certs / _enrol * 1000) / 10 : null;
+                    // Overall learner-rating band: every star rating (1–5) across FeedbackBank →
+                    // share giving 4–5, average, count. Needs ≥10 ratings to be shown.
+                    let _rbT = 0, _rbS = 0, _rb45 = 0;
+                    _snap.forEach(d => {
+                        if (!d.FeedbackBank) return;
+                        try { const fb = JSON.parse(d.FeedbackBank); if (Array.isArray(fb)) fb.forEach(f => { const r = Number(f && f.r) || 0; if (r >= 1 && r <= 5) { _rbT++; _rbS += r; if (r >= 4) _rb45++; } }); } catch (e) {}
+                    });
+                    const _ratingBand = _rbT >= 10 ? { avg: +(_rbS / _rbT).toFixed(1), pct45: Math.round(_rb45 / _rbT * 100), n: _rbT } : null;
+                    // Learner testimonials — scored by FeedbackIntel, top 6. PRIVACY: only the
+                    // comment text, star rating, and course are copied — never email/initials.
+                    let _testimonials = [];
+                    try {
+                        if (window.FeedbackIntel) {
+                            const _raw = [];
+                            _snap.forEach(d => {
+                                if (!d.FeedbackBank) return;
+                                try { const fb = JSON.parse(d.FeedbackBank); if (Array.isArray(fb)) fb.forEach(f => { if (f && f.t && String(f.t).trim().length > 10 && !/^no\s*data$/i.test(f.t)) _raw.push({ t: f.t, r: Number(f.r) || 0, s: f.s, _course: d.Course }); }); } catch (e) {}
+                            });
+                            _testimonials = _raw.map(f => window.FeedbackIntel.scoreFeedback(f))
+                                .filter(f => f._flags && f._flags.includes('testimonial'))
+                                .sort((a, b) => b._testimonialScore - a._testimonialScore)
+                                .slice(0, 6)
+                                .map(f => ({ t: f.t, r: f.r, course: f._course || '' }));
+                        }
+                    } catch (e) { _testimonials = []; }
                     if (_learners > 0 || _certs > 0 || _enrol > 0 || _courses > 0) {
                         surghub = {
                             learners: _learners, certificates: _certs, enrolments: _enrol,
-                            countries: _countries, courses: _courses,
+                            countries: _countries, courses: _courses, certRate: _certRate,
                             learnersSeries: _cum(_signups), certsSeries: _cum(_certMonth),
                             countryMap: _countryMap,
-                            surveyImpact: _surveyImpact
+                            surveyImpact: _surveyImpact,
+                            ratingBand: _ratingBand,
+                            testimonials: _testimonials
                         };
                     }
                 } catch (e) { surghub = null; }
@@ -8795,6 +8824,53 @@ h1,h2,h3,h4{font-family:var(--serif);}
 .text-slate-400{color:var(--muted)!important;}
 .text-slate-300{color:#4f6378!important;}
 .text-amber-700,.text-amber-800,.text-amber-600{color:var(--accent)!important;}
+/* SURGhub showcase sections: learning-impact dials, rating band, growth split, story globe */
+.dials{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:26px;margin-top:28px;}
+.dial{text-align:center;}
+.dial svg{transform:rotate(-90deg);}
+.dial .pc{font-family:var(--serif);font-size:30px;font-weight:800;fill:#eef4f9;}
+.dial .cap{margin:12px auto 0;font-size:14px;color:#b9cede;max-width:24ch;line-height:1.45;}
+.ratingband{display:flex;align-items:center;column-gap:48px;row-gap:0;background:var(--surface);border:1px solid var(--border);border-radius:5px;padding:24px 34px;margin:0 0 20px;flex-wrap:wrap;}
+.rb-block{display:flex;flex-direction:column;justify-content:center;}
+.rb-pct{font-family:var(--serif);font-size:clamp(46px,7vw,66px);font-weight:800;color:#3FB984;line-height:1;}
+.rb-pct-lab{font-size:14px;color:#9fb3c8;margin-top:6px;}
+.rb-avg-block{padding-left:48px;border-left:1px solid var(--border);}
+@media(max-width:600px){.rb-avg-block{padding-left:0;border-left:0;}}
+.rb-stars{font-size:26px;color:#f5b301;letter-spacing:4px;line-height:1;}
+.rb-avg{font-size:14px;color:#9fb3c8;margin-top:9px;}
+.rb-avg b{color:#eef4f9;font-size:22px;margin-right:6px;font-family:var(--serif);}
+.rb-foot{flex-basis:100%;font-family:var(--mono);font-size:11px;color:#6d8ba3;margin-top:14px;padding-top:12px;border-top:1px solid var(--border);}
+.growth-split{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:16px;}
+@media(max-width:760px){.growth-split{grid-template-columns:1fr;}}
+.globe-scrolly{display:grid;grid-template-columns:0.92fr 1.08fr;gap:50px;margin:6px 0 8px;}
+@media(max-width:860px){.globe-scrolly{grid-template-columns:1fr;gap:0;}}
+.globe-stage{position:sticky;top:8vh;height:80vh;display:flex;align-items:center;justify-content:center;background:#00101b;border:1px solid var(--border);border-radius:5px;overflow:hidden;}
+@media(max-width:860px){.globe-stage{top:0;height:46vh;margin:0;z-index:2;}}
+#globe{width:100%;height:100%;display:block;touch-action:pan-y;}
+.globe-cap{position:absolute;left:0;right:0;bottom:5%;display:flex;align-items:center;justify-content:center;gap:11px;font-family:var(--serif);font-size:18px;font-weight:700;letter-spacing:.01em;color:#eaf2f8;pointer-events:none;text-shadow:0 2px 14px rgba(0,0,0,.6);transition:opacity .4s ease;}
+.globe-cap .gc-flag{font-size:26px;line-height:1;}
+.globe-steps{display:flex;flex-direction:column;}
+.gstep{min-height:64vh;display:flex;align-items:center;}
+@media(max-width:860px){.gstep{min-height:auto;padding:26px 0;}}
+.gstep-card{width:100%;background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden;opacity:.42;transform:scale(.985);transition:opacity .45s ease,transform .45s cubic-bezier(.2,.7,.2,1),border-color .45s ease,background .45s ease;}
+.gstep.on .gstep-card{opacity:1;transform:none;border-color:rgba(63,185,132,.5);background:var(--surface2);}
+.gstep-media{position:relative;aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;overflow:hidden;}
+.gstep-media img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;}
+.gstep-init{font-family:var(--serif);font-size:48px;font-weight:800;color:rgba(255,255,255,.9);letter-spacing:.02em;}
+.gstep-body{padding:20px 24px 22px;}
+.gstep-loc{display:flex;align-items:center;gap:9px;font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#74bce9;font-weight:700;}
+.gstep-flag{font-size:20px;line-height:1;}
+.gstep-nm{font-size:23px;font-weight:700;color:#eef4f9;margin:10px 0 2px;letter-spacing:-.01em;}
+.gstep-role{font-size:13px;color:#9fc1dc;font-weight:600;margin-bottom:11px;}
+.gstep-sum{font-size:14px;line-height:1.6;color:#b9cede;margin:0 0 15px;}
+.gstep-go{font-family:var(--mono);font-size:12px;font-weight:700;color:#74bce9;text-decoration:none;letter-spacing:.03em;}
+.gstep-card:hover .gstep-go{color:var(--accent);}
+.gstep-reach{justify-content:center;}
+.reach-card{width:100%;text-align:center;}
+.reach-line{font-family:var(--serif);font-size:26px;font-weight:700;line-height:1.42;color:#eef4f9;margin:0 auto;max-width:30ch;}
+.reach-line b{font-weight:800;}
+.reach-line b:first-of-type{color:#3FB984;}
+.reach-line b:last-of-type{color:#74bce9;}
 <\/style>
 </head>
 <body class="text-slate-800 min-h-screen">
@@ -8884,8 +8960,118 @@ var DATA = ${json};
 var GSF_LOGO = ${JSON.stringify(gsfEmblem || '')};
 var SURGHUB_LOGO = ${JSON.stringify(surghubLogo || '')};
 var SURGFUND_LOGO = ${JSON.stringify(surgfundLogo || '')};
+${(surghub && surghub.countryMap && typeof window !== 'undefined' && window.SURGGlobeData) ? ('var LAND=' + window.SURGGlobeData.LAND + ';var CENTROIDS=' + window.SURGGlobeData.CENT + ';') : 'var LAND=[];var CENTROIDS={};'}
 var fmt=function(n){return n!=null?new Intl.NumberFormat('en-US').format(n):'\u2014';};
 var fmtShort=function(n){if(n==null)return'\u2014';if(n>=1e6)return(n/1e6).toFixed(1).replace(/\\.0$/,'')+' M';if(n>=1e3)return(n/1e3).toFixed(n>=1e4?0:1).replace(/\\.0$/,'')+' k';return String(n);};
+var _starStr=function(r){r=Math.round(Number(r)||0);var o='';for(var i=0;i<r&&i<5;i++){o+='\u2605';}return o;};
+// Top-level HTML-escape helper (initOrgMap has its own local copy; the showcase sections
+// below run at script scope and need one here too).
+var _esc=function(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');};
+var RMOTION=!!(window.matchMedia&&matchMedia('(prefers-reduced-motion:reduce)').matches);
+// Learning-impact dial: an animated SVG ring (0->pct) with a coloured caption.
+function buildDial(d){
+  var pct=+d.getAttribute('data-pct'),cap=d.getAttribute('data-cap')||'',color=d.getAttribute('data-color')||'#7fb6e3',r=58,c=2*Math.PI*r;
+  d.innerHTML='<svg width="150" height="150" viewBox="0 0 150 150"><circle cx="75" cy="75" r="'+r+'" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="12"\/><circle class="ring" cx="75" cy="75" r="'+r+'" fill="none" stroke="'+color+'" stroke-width="12" stroke-linecap="round" stroke-dasharray="'+c+'" stroke-dashoffset="'+c+'" style="transition:stroke-dashoffset 1.4s cubic-bezier(.2,.7,.2,1)"\/><text class="pc" x="75" y="75" text-anchor="middle" dominant-baseline="central" transform="rotate(90 75 75)">0%<\/text><\/svg><p class="cap">'+cap+'<\/p>';
+  d._fire=function(){var ring=d.querySelector('.ring'),txt=d.querySelector('.pc');if(RMOTION){ring.style.strokeDashoffset=c*(1-pct/100);txt.textContent=pct+'%';return;}requestAnimationFrame(function(){ring.style.strokeDashoffset=c*(1-pct/100);});var st=null;function step(ts){st=st||ts;var p=Math.min((ts-st)/1400,1),e=1-Math.pow(1-p,4);txt.textContent=Math.round(pct*e)+'%';if(p<1)requestAnimationFrame(step);}requestAnimationFrame(step);};
+}
+// Scroll-driven learner-story globe steps: six real learners (A-Z by country) + a finale
+// reach card. Hero photos load from the SURGhub blog; fall back to a gradient + initials.
+function _globeSteps(){
+  var ST=[
+    {fl:'\ud83c\udde7\ud83c\udde9',country:'Bangladesh',city:'Comilla',lon:91.18,lat:23.46,name:'Dr Sourov Das',role:'Surgical trainee',init:'SD',grad:'linear-gradient(135deg,#2f86c9,#1f9c63)',img:'https://lwfiles.mycourse.app/globalsurgery-public/133c0c57043cd551669e7b61c010247a.png',url:'https://www.surghub.org/blog/impact-stories-dr-sourov-das-surgical-training-bangladesh',sum:'A general-surgery trainee at Comilla Medical College Hospital, Dr Das used SURGhub\u2019s burn-care courses to supplement his training \u2014 then drew on them to confidently treat a young girl with severe thermal injuries.'},
+    {fl:'\ud83c\udde8\ud83c\udde9',country:'DR Congo',city:'Bukavu',lon:28.85,lat:-2.51,name:'William Baraka',role:'Anaesthesia & critical care',init:'WB',grad:'linear-gradient(135deg,#9b8cff,#2f86c9)',img:'https://lwfiles.mycourse.app/globalsurgery-public/cba96310c64045a6a853b14597f262b3.png',url:'https://www.surghub.org/blog/impact-stories-william-baraka-congo',sum:'After losing his sister to a preventable anaesthesia complication, William turned that loss into a mission. In conflict-affected eastern DRC he draws on SURGhub\u2019s perioperative resources to strengthen patient safety and train colleagues across Francophone Africa.'},
+    {fl:'\ud83c\uddea\ud83c\uddec',country:'Egypt',city:'Giza',lon:31.21,lat:30.01,name:'Dr Sanderene Abdelnor',role:'Reconstructive surgery',init:'SA',grad:'linear-gradient(135deg,#f5b301,#e57373)',img:'https://lwfiles.mycourse.app/globalsurgery-public/7553fc0356907fb5c04093a75d8fed2d.png',url:'https://www.surghub.org/blog/impact-stories-dr-sanderene-abdelnor-reconstructive-surgery-egypt',sum:'A plastic & reconstructive surgeon in a high-volume Giza hospital, Dr Abdelnor used SURGhub\u2019s guidance to introduce structured distraction techniques while treating a child with burn trauma \u2014 reshaping how she supports patients through recovery.'},
+    {fl:'\ud83c\uddee\ud83c\uddf3',country:'India',city:'Belagavi',lon:74.50,lat:15.85,name:'Dr Shubhangi Patil',role:'Surgeon & mentor',init:'SP',grad:'linear-gradient(135deg,#3FB984,#2f86c9)',img:'https://lwfiles.mycourse.app/globalsurgery-public/b9a80dd453cb04045740bb8d41765904.png',url:'https://www.surghub.org/blog/impact-stories-dr-shubhangi-patil-surgical-art-belagavi',sum:'An experienced surgeon who calls her craft a work of art, Dr Patil uses SURGhub to keep her skills current and to reach globally recognised surgical standards \u2014 and to mentor the next generation of surgeons in smaller towns.'},
+    {fl:'\ud83c\uddf0\ud83c\uddea',country:'Kenya',city:'Nakuru',lon:36.07,lat:-0.30,name:'Dennis Nyang\u2019au',role:'Emergency & critical care',init:'DN',grad:'linear-gradient(135deg,#2f86c9,#1f9c63)',img:'https://lwfiles.mycourse.app/globalsurgery-public/e8ec75ddced4d332f133aae56cab6c5c.png',url:'https://www.surghub.org/blog/impact-stories-dennis-nyangau-kenya',sum:'A Kenya Red Cross emergency responder, Dennis completed SURGhub\u2019s Essential Emergency & Critical Care course \u2014 then used it to stabilise a hit-and-run victim in the field, proving the principles work well beyond the hospital.'},
+    {fl:'\ud83c\uddf8\ud83c\uddf1',country:'Sierra Leone',city:'Freetown',lon:-13.23,lat:8.48,name:'Dr Sheku Massaquoi',role:'General surgeon',init:'SM',grad:'linear-gradient(135deg,#9b8cff,#3FB984)',img:'https://lwfiles.mycourse.app/globalsurgery-public/2c455e1bbf586dbf235aed0014d53a76.png',url:'https://www.surghub.org/blog/impact-stories-dr-sheku-dennis-massaquoi-resilient-care',sum:'A general surgeon at 34 Military Hospital in Freetown, Dr Massaquoi sets aside 90 minutes each morning to learn on SURGhub \u2014 training that directly shaped a palliative mastectomy he performed under regional anaesthesia for a patient unfit for general anaesthesia.'}
+  ];
+  var steps=ST.map(function(s){
+    return '<article class="gstep" data-lon="'+s.lon+'" data-lat="'+s.lat+'" data-country="'+_esc(s.country)+'" data-flag="'+s.fl+'">'
+      +'<div class="gstep-card"><div class="gstep-media" style="background:'+s.grad+'">'+(s.img?'<img src="'+_esc(s.img)+'" alt="'+_esc(s.name)+'" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">':'')+'<span class="gstep-init">'+s.init+'<\/span><\/div>'
+      +'<div class="gstep-body"><div class="gstep-loc"><span class="gstep-flag">'+s.fl+'<\/span>'+_esc(s.country)+(s.city?' \u00b7 '+_esc(s.city):'')+'<\/div>'
+      +'<h3 class="gstep-nm">'+_esc(s.name)+'<\/h3><div class="gstep-role">'+_esc(s.role)+'<\/div>'
+      +'<p class="gstep-sum">'+_esc(s.sum)+'<\/p>'
+      +'<a class="gstep-go" href="'+_esc(s.url)+'" target="_blank" rel="noopener">Read the full story \u2192<\/a>'
+      +'<\/div><\/div><\/article>';
+  }).join('');
+  var d=DATA.surghub||{};
+  var cc=d.countries||(d.countryMap?Object.keys(d.countryMap).length:0)||0;
+  steps+='<article class="gstep gstep-reach" data-reach="1"><div class="reach-card"><p class="reach-line">Six stories from a global classroom \u2014 and counting. SURGhub now reaches <b>'+fmt(d.learners||0)+'<\/b> health workers across <b>'+fmt(cc)+'<\/b> countries around the world.<\/p><\/div><\/article>';
+  return steps;
+}
+// Scroll-driven orthographic canvas globe. Rotates to each learner's country as their card
+// scrolls in; the finale reach step lights up every learner country. Ported from the report.
+function initGlobe(){
+  var reduce=!!(window.matchMedia&&matchMedia('(prefers-reduced-motion:reduce)').matches);
+  var cv=document.getElementById('globe'); if(!cv||!cv.getContext) return;
+  var ctx; try{ctx=cv.getContext('2d');}catch(e){return;} if(!ctx) return;
+  var steps=[].slice.call(document.querySelectorAll('.globe-steps .gstep'));
+  if(!steps.length){var stg=cv.parentNode; if(stg) stg.style.display='none'; return;}
+  var d2r=Math.PI/180;
+  var LP=(typeof LAND!=='undefined'&&LAND)?LAND:[];
+  var cap=document.getElementById('globe-cap');
+  function vec(lon,lat){var a=lat*d2r,o=lon*d2r; return [Math.cos(a)*Math.cos(o),Math.cos(a)*Math.sin(o),Math.sin(a)];}
+  function llf(x,y,z){var r=Math.sqrt(x*x+y*y+z*z)||1; return {lon:Math.atan2(y,x)/d2r,lat:Math.asin(z/r)/d2r};}
+  function gdist(a,b){var dl=(a.lon-b.lon)*d2r,p=a.lat*d2r,q=b.lat*d2r; return Math.acos(Math.max(-1,Math.min(1,Math.sin(p)*Math.sin(q)+Math.cos(p)*Math.cos(q)*Math.cos(dl))));}
+  function arcPts(p0,p1){var v0=vec(p0.lon,p0.lat),v1=vec(p1.lon,p1.lat); var dot=Math.max(-1,Math.min(1,v0[0]*v1[0]+v0[1]*v1[1]+v0[2]*v1[2])); var om=Math.acos(dot); var out=[]; if(om<1e-3) return out; var so=Math.sin(om); for(var t=0;t<=1.0001;t+=1/24){var s0=Math.sin((1-t)*om)/so,s1=Math.sin(t*om)/so; out.push(llf(s0*v0[0]+s1*v1[0],s0*v0[1]+s1*v1[1],s0*v0[2]+s1*v1[2]));} return out;}
+  var pts=[],reachIdx=-1;
+  steps.forEach(function(s,i){if(s.getAttribute('data-reach')){pts.push(null);reachIdx=i;}else pts.push({lon:+s.getAttribute('data-lon'),lat:+s.getAttribute('data-lat'),country:s.getAttribute('data-country'),flag:s.getAttribute('data-flag'),idx:i});});
+  var story=pts.filter(Boolean);
+  var sArcs=[]; for(var si=0;si<story.length-1;si++){var ss=arcPts(story[si],story[si+1]); if(ss.length) sArcs.push(ss);}
+  var CZ=(typeof CENTROIDS!=='undefined'&&CENTROIDS)?CENTROIDS:{};
+  var cm=(DATA.surghub&&DATA.surghub.countryMap)?DATA.surghub.countryMap:{};
+  var rdots=[],maxv=0;
+  for(var iso in cm){if(!Object.prototype.hasOwnProperty.call(cm,iso)) continue; var v=Number(cm[iso])||0; var cz=CZ[iso]||CZ[String(iso).toUpperCase()]; if(v>0&&cz){rdots.push({lon:cz[0],lat:cz[1],v:v}); if(v>maxv) maxv=v;}}
+  rdots.sort(function(a,b){return b.v-a.v;});
+  rdots.forEach(function(dd,i){dd.rank=i/(rdots.length||1); dd.r=Math.sqrt((dd.v||0)/(maxv||1));});
+  var hubs=rdots.slice(0,Math.min(6,rdots.length)),rArcs=[];
+  rdots.forEach(function(dd){var cand=[]; for(var h=0;h<hubs.length;h++){if(hubs[h]===dd) continue; cand.push({h:hubs[h],dd:gdist(dd,hubs[h])});} cand.sort(function(a,b){return a.dd-b.dd;}); for(var k=0;k<Math.min(2,cand.length);k++){if(cand[k].dd>0.05){var seg=arcPts(dd,cand[k].h); if(seg.length) rArcs.push({seg:seg,rank:dd.rank});}}});
+  for(var hi=0;hi<hubs.length;hi++) for(var hj=hi+1;hj<hubs.length;hj++){var hs=arcPts(hubs[hi],hubs[hj]); if(hs.length) rArcs.push({seg:hs,rank:0});}
+  var dpr=Math.max(1,Math.min(2,window.devicePixelRatio||1)),W=0,H=0,R=0,cx=0,cy=0;
+  function size(){var rc=cv.getBoundingClientRect(); W=Math.max(40,rc.width); H=Math.max(40,rc.height); cv.width=Math.round(W*dpr); cv.height=Math.round(H*dpr); R=Math.min(W,H)*0.42; cx=W/2; cy=H/2;}
+  size();
+  function proj(lon,lat,l0,a0){var dl=(lon-l0)*d2r,a=lat*d2r,b=a0*d2r; var cc=Math.sin(b)*Math.sin(a)+Math.cos(b)*Math.cos(a)*Math.cos(dl); var x=Math.cos(a)*Math.sin(dl); var y=Math.cos(b)*Math.sin(a)-Math.sin(b)*Math.cos(a)*Math.cos(dl); return {x:cx+R*x,y:cy-R*y,c:cc};}
+  var start=story[0]||{lon:20,lat:12};
+  var cur={lon:start.lon,lat:start.lat},tgt={lon:start.lon,lat:start.lat},active=-1,reachActive=false,reachRev=0;
+  function draw(now){
+    ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,W,H);
+    var atm=ctx.createRadialGradient(cx,cy,R*0.62,cx,cy,R*1.24); atm.addColorStop(0,'rgba(47,134,201,0)'); atm.addColorStop(0.74,'rgba(47,134,201,0.12)'); atm.addColorStop(1,'rgba(47,134,201,0)'); ctx.fillStyle=atm; ctx.beginPath(); ctx.arc(cx,cy,R*1.24,0,7); ctx.fill();
+    var oc=ctx.createRadialGradient(cx-R*0.32,cy-R*0.36,R*0.15,cx,cy,R); oc.addColorStop(0,'#0e3f63'); oc.addColorStop(1,'#04263d'); ctx.fillStyle=oc; ctx.beginPath(); ctx.arc(cx,cy,R,0,7); ctx.fill();
+    ctx.strokeStyle='rgba(127,182,227,.22)'; ctx.lineWidth=1; ctx.beginPath(); ctx.arc(cx,cy,R,0,7); ctx.stroke();
+    for(var i=0;i<LP.length;i+=2){var p=proj(LP[i],LP[i+1],cur.lon,cur.lat); if(p.c<0.04) continue; ctx.fillStyle='rgba(143,197,235,'+(0.22+0.5*p.c).toFixed(3)+')'; ctx.beginPath(); ctx.arc(p.x,p.y,0.8+1.0*p.c,0,7); ctx.fill();}
+    var sa=1-reachRev;
+    if(sa>0.01){
+      for(var aj=0;aj<sArcs.length;aj++){ctx.strokeStyle='rgba(127,182,227,'+(0.16*sa).toFixed(3)+')'; ctx.lineWidth=1.2; ctx.beginPath(); var seg=sArcs[aj],on=false; for(var t2=0;t2<seg.length;t2++){var q=proj(seg[t2].lon,seg[t2].lat,cur.lon,cur.lat); if(q.c<0){on=false;continue;} if(!on){ctx.moveTo(q.x,q.y);on=true;}else ctx.lineTo(q.x,q.y);} ctx.stroke();}
+      var pulse=reduce?1:(0.5+0.5*Math.sin((now||0)/520));
+      for(var m=0;m<story.length;m++){var pm=proj(story[m].lon,story[m].lat,cur.lon,cur.lat); if(pm.c<0) continue; if(story[m].idx===active){ctx.fillStyle='rgba(63,185,132,'+(sa*(0.16+0.16*pulse)).toFixed(3)+')'; ctx.beginPath(); ctx.arc(pm.x,pm.y,10+6*pulse,0,7); ctx.fill(); ctx.fillStyle='rgba(63,185,132,'+sa.toFixed(3)+')'; ctx.beginPath(); ctx.arc(pm.x,pm.y,5.5,0,7); ctx.fill(); ctx.lineWidth=1.6; ctx.strokeStyle='rgba(255,255,255,'+(0.92*sa).toFixed(3)+')'; ctx.stroke();}else{ctx.fillStyle='rgba(127,182,227,'+(sa*(0.45+0.45*pm.c)).toFixed(3)+')'; ctx.beginPath(); ctx.arc(pm.x,pm.y,3.1,0,7); ctx.fill();}}
+    }
+    if(reachRev>0.01){
+      for(var ra=0;ra<rArcs.length;ra++){var ar=rArcs[ra]; var av=Math.max(0,Math.min(1,(reachRev-ar.rank)/0.3)); if(av<=0) continue; ctx.strokeStyle='rgba(95,208,197,'+(0.05+0.24*av*reachRev).toFixed(3)+')'; ctx.lineWidth=1; ctx.beginPath(); var rseg=ar.seg,ron=false; for(var rt=0;rt<rseg.length;rt++){var rq=proj(rseg[rt].lon,rseg[rt].lat,cur.lon,cur.lat); if(rq.c<0.02){ron=false;continue;} if(!ron){ctx.moveTo(rq.x,rq.y);ron=true;}else ctx.lineTo(rq.x,rq.y);} ctx.stroke();}
+      for(var rd=0;rd<rdots.length;rd++){var dt=rdots[rd]; var dv=Math.max(0,Math.min(1,(reachRev-dt.rank*0.7)/0.18)); if(dv<=0) continue; var dm=proj(dt.lon,dt.lat,cur.lon,cur.lat); if(dm.c<0.02) continue; var tw=reduce?1:(0.8+0.2*Math.sin((now||0)/540+rd)); var rad=(1.4+2.8*dt.r)*(0.62+0.5*dm.c); var al=dv*reachRev*(0.55+0.45*dm.c)*tw; ctx.fillStyle='rgba(63,185,132,'+(al*0.26).toFixed(3)+')'; ctx.beginPath(); ctx.arc(dm.x,dm.y,rad*2.5,0,7); ctx.fill(); ctx.fillStyle='rgba(126,240,193,'+al.toFixed(3)+')'; ctx.beginPath(); ctx.arc(dm.x,dm.y,rad,0,7); ctx.fill();}
+    }
+  }
+  function shortest(dd){dd=(dd+540)%360-180; return dd;}
+  var raf=0,vis=false;
+  function loop(now){
+    if(reachActive){if(!reduce){cur.lon+=0.16; cur.lat+=(10-cur.lat)*0.05; reachRev+=(1-reachRev)*0.05;}}
+    else{if(!reduce){if(pts[active]){cur.lon+=shortest(tgt.lon-cur.lon)*0.085; cur.lat+=(tgt.lat-cur.lat)*0.085;} reachRev+=(0-reachRev)*0.08;}}
+    draw(now);
+    if(reduce||!vis){raf=0; return;} raf=requestAnimationFrame(loop);
+  }
+  function kick(){if(!raf&&!reduce) raf=requestAnimationFrame(loop);}
+  function setActive(i){
+    i=Math.max(0,Math.min(steps.length-1,i)); if(i===active) return; active=i; reachActive=(i===reachIdx);
+    if(!reachActive&&pts[i]){tgt.lon=pts[i].lon; tgt.lat=pts[i].lat;}
+    if(cap){cap.innerHTML=''; var f=document.createElement('span'); f.className='gc-flag'; var c=document.createElement('span'); if(reachActive){f.textContent='\ud83c\udf0d'; c.textContent=((DATA.surghub&&DATA.surghub.countries)?fmt(DATA.surghub.countries)+' countries':'Worldwide');}else{f.textContent=(pts[i]&&pts[i].flag)||''; c.textContent=(pts[i]&&pts[i].country)||'';} cap.appendChild(f); cap.appendChild(c);}
+    for(var j=0;j<steps.length;j++) steps[j].classList.toggle('on',j===i);
+    if(reduce){reachRev=reachActive?1:0; if(reachActive) cur.lat=10; else if(pts[i]){cur.lon=pts[i].lon; cur.lat=pts[i].lat;} draw(0);}else kick();
+  }
+  function pick(){var mid=(window.innerHeight||0)*0.5,best=0,bd=1e9; for(var i=0;i<steps.length;i++){var rr=steps[i].getBoundingClientRect(); var ctr=rr.top+rr.height/2; var dd=Math.abs(ctr-mid); if(dd<bd){bd=dd;best=i;}} setActive(best);}
+  if('IntersectionObserver' in window){var io2=new IntersectionObserver(function(es){es.forEach(function(e){vis=e.isIntersecting; if(vis) kick();});},{threshold:0.01}); io2.observe(cv);}else{vis=true;}
+  addEventListener('scroll',pick,{passive:true});
+  addEventListener('resize',function(){size(); draw(0);});
+  setActive(0); draw(0); pick();
+}
 // Headline KPI numbers: round millions to "12.4 M" so big figures (population)
 // stay short; everything under a million keeps its full grouped form.
 var fmtM=function(n){if(n==null)return'\u2014';if(n>=1e6)return(n/1e6).toFixed(1).replace(/\\.0$/,'')+' M';return fmt(n);};
@@ -9322,45 +9508,77 @@ function renderSurghub(){
         +'<\/div>'
         +'<div class="reveal" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:28px">'+cards+'<\/div>'
         +(s.surveyImpact?(
-            '<div class="reveal" style="margin:0 0 28px;border:1px solid #FFC14538;border-radius:5px;padding:18px 22px;background:linear-gradient(135deg,#FFC14512,#001a2b 70%)">'
-            +'<p style="margin:0 0 14px;font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--accent)">Learning Impact<\/p>'
-            +'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:20px">'
-            +(s.surveyImpact.contentNew?(
-                '<div><p style="margin:0 0 8px;font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#9fb3c8">New Knowledge<\/p>'
-                +'<span style="font-family:var(--serif);font-size:36px;font-weight:700;color:var(--accent);line-height:1">'+s.surveyImpact.contentNew.pct+'%<\/span>'
-                +'<p style="margin:6px 0 0;font-size:12.5px;color:#9fb3c8;line-height:1.5">of surveyed learners said the course content was <strong style="color:#eef4f9">new to them<\/strong><\/p><\/div>'
-            ):'')
-            +(s.surveyImpact.willApply?(
-                '<div><p style="margin:0 0 8px;font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#9fb3c8">Intent to Apply<\/p>'
-                +'<span style="font-family:var(--serif);font-size:36px;font-weight:700;color:var(--accent);line-height:1">'+s.surveyImpact.willApply.pct+'%<\/span>'
-                +'<p style="margin:6px 0 0;font-size:12.5px;color:#9fb3c8;line-height:1.5">say they are <strong style="color:#eef4f9">likely to apply<\/strong> what they learned in their work<\/p><\/div>'
-            ):'')
+            '<div class="reveal" style="margin:0 0 28px;overflow:hidden;border:1px solid var(--border);border-radius:5px;padding:22px 24px;background:radial-gradient(900px 460px at 50% -12%, rgba(63,185,132,0.10), transparent 62%),var(--surface)">'
+            +'<p style="margin:0 0 6px;font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:var(--accent);text-align:center">Learning Impact<\/p>'
+            +'<h2 style="margin:0 auto 6px;font-family:var(--serif);font-size:27px;font-weight:700;color:#eef4f9;text-align:center;letter-spacing:-.01em">Learning that changes practice.<\/h2>'
+            +'<p style="margin:0 auto;font-size:14px;color:#9fb3c8;line-height:1.6;text-align:center;max-width:60ch">In post-course surveys, learners report applying what they have learned:<\/p>'
+            +'<div class="dials">'
+            +(s.surveyImpact.contentNew?'<div class="dial" data-pct="'+s.surveyImpact.contentNew.pct+'" data-color="#5AA9E6" data-cap="said the content was <b style=&quot;color:#5AA9E6&quot;>new<\/b> to them"><\/div>':'')
+            +(s.surveyImpact.willApply?'<div class="dial" data-pct="'+s.surveyImpact.willApply.pct+'" data-color="#3FB984" data-cap="intend to <b style=&quot;color:#3FB984&quot;>apply<\/b> what they learned"><\/div>':'')
+            +(s.surveyImpact.careerValue?'<div class="dial" data-pct="'+s.surveyImpact.careerValue.pct+'" data-color="#FFC145" data-cap="rate it important to their <b style=&quot;color:#FFC145&quot;>work<\/b>"><\/div>':'')
             +'<\/div>'
             +(function(){
                 var ns=[];
                 if(s.surveyImpact.contentNew)ns.push(s.surveyImpact.contentNew.n);
                 if(s.surveyImpact.willApply)ns.push(s.surveyImpact.willApply.n);
+                if(s.surveyImpact.careerValue)ns.push(s.surveyImpact.careerValue.n);
                 if(!ns.length)return '';
                 var bn=Math.min.apply(null,ns);
                 var rounded=bn>=1000?Math.floor(bn/1000)*1000:Math.floor(bn/100)*100;
-                return '<p style="margin:14px 0 0;font-family:var(--mono);font-size:9px;letter-spacing:.06em;color:#54708a;text-transform:uppercase">Based on '+fmt(rounded)+'+ surveys<\/p>';
+                return '<p style="margin:22px 0 0;font-family:var(--mono);font-size:9px;letter-spacing:.06em;color:#54708a;text-transform:uppercase;text-align:center">Based on '+fmt(rounded)+'+ post-course survey responses<\/p>';
             })()
             +'<\/div>'
         ):'')
         +'<div class="reveal" style="margin-bottom:10px"><h2 style="margin:0;font-family:var(--mono);font-size:10px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.2em">Growth Over Time<\/h2><\/div>'
-        +'<div class="reveal" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px">'
-            +'<div class="chart-card"><p style="margin:0 0 14px;font-family:var(--mono);font-size:10px;font-weight:700;color:#6d8ba3;text-transform:uppercase;letter-spacing:.14em">Registered Users<\/p><div id="shub-learners" style="position:relative;height:280px"><\/div><\/div>'
-            +'<div class="chart-card"><p style="margin:0 0 14px;font-family:var(--mono);font-size:10px;font-weight:700;color:#6d8ba3;text-transform:uppercase;letter-spacing:.14em">Courses Completed<\/p><div id="shub-certs" style="position:relative;height:280px"><\/div><\/div>'
+        +'<div class="reveal growth-split">'
+            +'<div class="chart-card"><p style="margin:0 0 14px;font-family:var(--mono);font-size:10px;font-weight:700;color:#6d8ba3;text-transform:uppercase;letter-spacing:.14em">Registered Users<\/p><div id="shub-learners" style="position:relative;height:300px"><\/div><\/div>'
+            +'<div class="chart-card" style="display:flex;flex-direction:column;justify-content:center;text-align:center;background:radial-gradient(600px 340px at 50% 0%, rgba(63,185,132,0.16), transparent 70%),var(--surface)">'
+                +'<p style="margin:0 0 4px;font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#3FB984">Certification rate<\/p>'
+                +'<div style="font-family:var(--serif);font-size:clamp(52px,8vw,84px);font-weight:800;color:#3FB984;line-height:.95">'+(s.certRate!=null?s.certRate+'%':'&ndash;')+'<\/div>'
+                +'<p style="margin:12px auto 0;font-size:13.5px;color:#d4dde7;line-height:1.55;max-width:30ch">of enrolments run the full course and earn a certificate<\/p>'
+                +(s.certificates>0?'<p style="margin:10px auto 0;font-family:var(--mono);font-size:10px;letter-spacing:.05em;color:#9fb3c8">'+fmt(s.certificates)+' certificates earned<\/p>':'')
+                +(s.certRate!=null?'<p style="margin:12px auto 0;font-size:11.5px;color:#6d8ba3;line-height:1.5;max-width:34ch">Roughly 2&ndash;3&times; the completion rate typical of open online courses (widely cited around 10&ndash;15%, shown for scale).<\/p>':'')
+            +'<\/div>'
         +'<\/div>'
         +(s.countryMap?(
             '<div class="reveal" style="margin:32px 0 10px"><h2 style="margin:0;font-family:var(--mono);font-size:10px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.2em">Learners by Country<\/h2><\/div>'
             +'<div class="chart-card" style="padding:16px 16px 18px;background:radial-gradient(135% 150% at 50% -18%, #0d3454 0%, #021726 70%)"><div id="shub-map" style="width:100%;height:470px;opacity:0.9"><\/div><div id="shub-map-legend" style="margin-top:8px"><\/div><\/div>'
         ):'')
+        +((s.ratingBand||(s.testimonials&&s.testimonials.length))?(
+            '<div class="reveal" style="margin:32px 0 10px"><h2 style="margin:0;font-family:var(--mono);font-size:10px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.2em">Learner Voices<\/h2><\/div>'
+            +(s.ratingBand?(
+                '<div class="reveal ratingband">'
+                +'<div class="rb-block"><div class="rb-pct">'+s.ratingBand.pct45+'%<\/div><div class="rb-pct-lab">gave 4 or 5 stars<\/div><\/div>'
+                +'<div class="rb-block rb-avg-block"><div class="rb-stars">★★★★★<\/div><div class="rb-avg"><b>'+s.ratingBand.avg+'<\/b> average rating<\/div><\/div>'
+                +(SURGHUB_LOGO?'<img src="'+SURGHUB_LOGO+'" alt="SURGhub" style="margin-left:auto;align-self:center;height:44px;width:auto;max-width:130px;object-fit:contain;opacity:.92;filter:brightness(0) invert(1)">':'')
+                +'<div class="rb-foot">Based on '+fmt(s.ratingBand.n)+' learner ratings across SURGhub courses<\/div><\/div>'
+            ):'')
+            +((s.testimonials&&s.testimonials.length)?(
+                '<div class="reveal" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;margin-bottom:8px">'
+                +s.testimonials.map(function(q){
+                    var st=q.r>0?'<span style="color:#f5b301;font-size:11px;letter-spacing:.1em;flex-shrink:0;white-space:nowrap">'+_starStr(q.r)+'<\/span>':'';
+                    return '<div style="background:var(--surface2);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:5px;padding:14px 16px;font-size:13px;color:#d4dde7;line-height:1.55">'
+                        +'<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">&ldquo;'+_esc(q.t)+'&rdquo;'+st+'<\/div>'
+                        +(q.course?'<div style="margin-top:8px;font-family:var(--mono);font-size:9px;letter-spacing:.04em;color:#6d8ba3;text-transform:uppercase">'+_esc(q.course)+'<\/div>':'')
+                        +'<\/div>';
+                }).join('')
+                +'<\/div>'
+            ):'')
+        ):'')
+        +(s.countryMap?(
+            '<div class="reveal" style="margin:36px 0 10px"><h2 style="margin:0;font-family:var(--mono);font-size:10px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.2em">On the Ground<\/h2><\/div>'
+            +'<p class="reveal" style="margin:0 0 8px;font-size:13px;color:#9fb3c8;line-height:1.6;max-width:760px">Behind every point on the map is a clinician putting new skills to work. Scroll to travel the globe — from Bangladesh to Sierra Leone.<\/p>'
+            +'<div class="globe-scrolly"><div class="globe-stage"><canvas id="globe"><\/canvas><div id="globe-cap" class="globe-cap" aria-hidden="true"><\/div><\/div><div class="globe-steps">'+_globeSteps()+'<\/div><\/div>'
+            +'<p class="reveal" style="margin:22px 0 0;text-align:center;font-family:var(--mono);font-size:10px;color:#6d8ba3">More learner stories on the <a href="https://www.surghub.org/blog" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none">SURGhub blog<\/a>.<\/p>'
+        ):'')
         +'<p style="margin:22px 0 0;font-family:var(--mono);font-size:9.5px;letter-spacing:.04em;color:#6d8ba3;text-transform:uppercase">Cumulative totals · SURGhub platform data<\/p>'
         +'<\/div>';
     _drawGrowthLine(document.getElementById('shub-learners'),'Registered Users',s.learnersSeries,'#4389C8');
-    _drawGrowthLine(document.getElementById('shub-certs'),'Courses completed',s.certsSeries,'#FFC145');
     if(s.countryMap) _drawCountryMap('shub-map',s.countryMap);
+    // Learning-impact dials: build + count-up.
+    [].forEach.call(el.querySelectorAll('.dial'),function(d){buildDial(d);if(d._fire)d._fire();});
+    // Scroll-driven learner-story globe (bottom of the page).
+    if(s.countryMap && typeof initGlobe==='function'){ try{ initGlobe(); }catch(e){} }
 }
 // Country choropleth (Google GeoChart) for the SURGhub page. ISO alpha-2 keyed counts.
 // Retries until the gstatic loader is ready; degrades to a notice if offline.
