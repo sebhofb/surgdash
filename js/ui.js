@@ -339,6 +339,83 @@ Object.assign(window.App, {
             <p class="text-xs text-slate-400 mt-3">${entries.length} countries total · ${this.formatNumber(total)}${refLearners ? ' of ' + this.formatNumber(refLearners) : ''} learners with country data${refLearners && total < refLearners * 0.4 ? ' · <span class="text-amber-600 font-medium">low coverage — may not be representative</span>' : ''}</p>
         </div>`;
     },
+    // "Who the learners are" card for a single course: cadre + organisation-type
+    // breakdowns computed from the anonymised per-user-per-course records
+    // (surghub_anon_users; one row = one learner on this course). Cadres are
+    // grouped via _canonProf (same buckets as Engagement Analysis / Growth by
+    // Cadre); org types arrive as canonical labels from tags + the signup survey.
+    // Returns '' when the course has no rows in the demographics data.
+    _courseDemographicsSection(cSnap) {
+        if (!cSnap || !cSnap.Course) return '';
+        // The ~31MB anon blob is lazy-loaded; app.js preloads it shortly after start,
+        // but if a course page renders first, kick the load and re-render when ready.
+        if (this._rawAnonymizedUsers == null) {
+            if (this.ensureAnonLoaded) this.ensureAnonLoaded().then(() => { if (this.view === 'course') this.renderView(); });
+            return `<div class="bg-white p-6 rounded-xl shadow-sm border mb-8">
+                <h3 class="text-lg font-bold mb-1 flex items-center gap-2 text-gsf-prussian"><i data-lucide="users" class="text-gsf-boston"></i> Who the Learners Are</h3>
+                <p class="text-sm text-slate-400">Loading learner demographics&hellip;</p>
+            </div>`;
+        }
+        const rows = (this._rawAnonymizedUsers || []).filter(r => r && r.course === cSnap.Course);
+        if (rows.length === 0) return '';
+        // One row per learner per course; dedupe defensively on user_uid where present.
+        const seen = new Set();
+        const learners = rows.filter(r => { if (!r.user_uid) return true; if (seen.has(r.user_uid)) return false; seen.add(r.user_uid); return true; });
+        const UNDECLARED = /^(not\s*declared|unknown|undeclared|n\/?a|nan|none|prefer)/i;
+        const byCadre = {}; let cadreN = 0;
+        const byOrg = {}; let orgN = 0;
+        learners.forEach(r => {
+            const canon = this._canonProf ? this._canonProf(r.profession) : (r.profession || null);
+            if (canon) { byCadre[canon] = (byCadre[canon] || 0) + 1; cadreN++; }
+            const org = String(r.organisation_type || '').trim();
+            if (org && !UNDECLARED.test(org)) { byOrg[org] = (byOrg[org] || 0) + 1; orgN++; }
+        });
+        if (cadreN === 0 && orgN === 0) return '';
+        // Bar list: top N of the declared subset + an "Other" roll-up.
+        const barList = (obj, declared, color, topN) => {
+            const entries = Object.entries(obj).sort((a, b) => b[1] - a[1]);
+            const top = entries.slice(0, topN);
+            const tail = entries.slice(topN);
+            if (tail.length > 0) {
+                const rest = tail.reduce((s, [, v]) => s + v, 0);
+                const idx = top.findIndex(([k]) => k === 'Other');
+                if (idx >= 0) { top[idx] = ['Other', top[idx][1] + rest]; top.sort((a, b) => b[1] - a[1]); }
+                else top.push([`Other (${tail.length} more)`, rest]);
+            }
+            return top.map(([label, v]) => {
+                const pct = declared > 0 ? (v / declared) * 100 : 0;
+                return `<div class="mb-2.5">
+                    <div class="flex items-baseline justify-between gap-3 mb-1">
+                        <span class="text-sm text-slate-700 truncate">${this.escapeHtml(label)}</span>
+                        <span class="text-xs text-slate-500 whitespace-nowrap"><strong class="text-gsf-prussian">${this.formatNumber(v)}</strong> · ${pct >= 10 ? Math.round(pct) : pct.toFixed(1)}%</span>
+                    </div>
+                    <div class="h-2 bg-slate-100 rounded-full overflow-hidden"><div class="h-full rounded-full" style="width:${Math.max(1.5, pct)}%;background:${color}"></div></div>
+                </div>`;
+            }).join('');
+        };
+        const covNote = (declared, what) => {
+            const pct = learners.length > 0 ? Math.round((declared / learners.length) * 100) : 0;
+            return `<p class="text-xs text-slate-400 mt-3">${this.escapeHtml(what)} declared by ${this.formatNumber(declared)} of ${this.formatNumber(learners.length)} learners (${pct}%)${declared > 0 && declared < learners.length * 0.4 ? ' · <span class="text-amber-600 font-medium">low coverage — may not be representative</span>' : ''}</p>`;
+        };
+        const enrolTotal = Number(cSnap.Learners) || 0;
+        return `<div class="bg-white p-6 rounded-xl shadow-sm border mb-8">
+            <h3 class="text-lg font-bold mb-1 flex items-center gap-2 text-gsf-prussian"><i data-lucide="users" class="text-gsf-boston"></i> Who the Learners Are</h3>
+            <p class="text-xs text-slate-400 mb-5">Shares are of learners who declared each attribute, for this course only.</p>
+            <div class="grid md:grid-cols-2 gap-x-10 gap-y-6">
+                ${cadreN > 0 ? `<div>
+                    <p class="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-3">Cadre</p>
+                    ${barList(byCadre, cadreN, '#7A9E9F', 8)}
+                    ${covNote(cadreN, 'Cadre')}
+                </div>` : ''}
+                ${orgN > 0 ? `<div>
+                    <p class="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-3">Organisation Type</p>
+                    ${barList(byOrg, orgN, '#206095', 8)}
+                    ${covNote(orgN, 'Organisation type')}
+                </div>` : ''}
+            </div>
+            <p class="text-xs text-slate-400 mt-4 pt-3 border-t">Based on ${this.formatNumber(learners.length)}${enrolTotal ? ' of ' + this.formatNumber(enrolTotal) : ''} enrolled learners present in the demographics data · cadre from the signup &ldquo;activity&rdquo; answers and profile tags · organisation type from profile tags and the signup survey.</p>
+        </div>`;
+    },
     // Per-ambassador performance table: Leads (signups) · Clicks (link visits) ·
     // Conversion. Built from snap.Promoters + snap.ClicksByPromoter. Returns ''
     // when no click data is present (e.g. older snapshots / CSV uploads).
@@ -3413,6 +3490,8 @@ Object.assign(window.App, {
                     </div>
 
                     ${this._countryTableHtml([cSnap])}
+
+                    ${this._courseDemographicsSection(cSnap)}
 
                     <div class="bg-white p-6 rounded-xl shadow-sm border mb-8">
                         <h3 class="text-lg font-bold mb-4 flex items-center gap-2 text-gsf-prussian"><i data-lucide="message-square" class="text-gsf-boston"></i> Feedback Trends ${this._chartBtns('chart_feedback_growth', 'Course_Feedback')}</h3>
