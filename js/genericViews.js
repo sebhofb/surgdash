@@ -8989,6 +8989,23 @@ h1,h2,h3,h4{font-family:var(--serif);}
 .reach-line b{font-weight:800;}
 .reach-line b:first-of-type{color:#3FB984;}
 .reach-line b:last-of-type{color:#74bce9;}
+/* Mobile refinements (<=640px). Additive only — the desktop layout is untouched. Every
+   inline-styled card/chart grid inside the pages collapses to one column (!important is
+   required to beat inline styles); tall fixed-height maps shrink to fit a phone screen;
+   oversized stats and paddings scale down. Placed last so these rules win the cascade. */
+@media(max-width:640px){
+[id^="page-"]{overflow-wrap:break-word;}
+[id^="page-"] [style*="grid-template-columns"]{grid-template-columns:1fr!important;}
+#page-surghub>div,[id^="page-proj-"]>div{padding:20px 14px!important;}
+#org-map{height:300px!important;}
+#shub-map{height:300px!important;}
+.chart-card{padding:16px;}
+.kpi-card .num{font-size:34px;}
+.dials{gap:16px;}
+.ratingband{column-gap:28px;padding:20px 18px;}
+.kpi-modal{padding:14px;}
+.kpi-modal-box{padding:22px 20px;}
+}
 <\/style>
 </head>
 <body class="text-slate-800 min-h-screen">
