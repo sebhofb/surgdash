@@ -8452,8 +8452,11 @@ updateDirtyCount();
         this._extSnapCountTestis();
     },
     _extSnapTestisAll(on) {
+        // "Select visible" only ticks rows passing the current filter; "Clear" unticks ALL
+        // rows — including filter-hidden ones — so no hidden-checked quote sneaks into the
+        // export and the selected-count visibly drops to 0.
         document.querySelectorAll('#ext-ti-list .ext-ti-row').forEach(r => {
-            if (r.style.display === 'none') return;
+            if (on && r.style.display === 'none') return;
             const cb = r.querySelector('input'); if (cb) cb.checked = !!on;
         });
         this._extSnapCountTestis();
