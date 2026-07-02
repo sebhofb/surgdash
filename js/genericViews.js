@@ -8282,6 +8282,28 @@ updateDirtyCount();
         allProjects.forEach(p => (p.enabledQualityKpis || []).forEach(id => enabledQ.add(id)));
         const qKpis = allKpis.filter(k => enabledQ.has(k.id));
 
+        // Candidate SURGhub testimonials for the selectable list (best-first).
+        let testis = [];
+        try {
+            const _snap = App.getAnalyticsSnap ? App.getAnalyticsSnap() : [];
+            const _aiMap = App._aiScoreMap || (await Storage.getItem('surghub_feedback_ai')) || {};
+            const _demo = App._emailDemoMap || (await Storage.getItem('surghub_email_demo')) || {};
+            testis = this._collectSurghubTestimonials(_snap, _aiMap, _demo);
+        } catch (e) { testis = []; }
+        const tiThemes = Array.from(new Set(testis.reduce((a, t) => a.concat(t.themes || []), []))).filter(Boolean).sort();
+        const tiPretty = (s) => String(s).replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        const tiStars = (r) => { r = Math.round(Number(r) || 0); let s = ''; for (let k = 0; k < r && k < 5; k++) s += '★'; return s; };
+        const tiRow = (t, i) => {
+            const by = [t.cadre, t.country].filter(Boolean).join(', ') || t.course || 'A SURGhub learner';
+            const short = t.text.length > 120 ? t.text.slice(0, 120).replace(/\s+\S*$/, '') + '…' : t.text;
+            return `<label class="ext-ti-row flex items-start gap-2 px-2.5 py-2 hover:bg-slate-50 cursor-pointer" data-type="${App.escapeHtml((t.themes || []).join('|'))}" data-ai="${t.aiScore == null ? '' : t.aiScore}">
+                <input type="checkbox" data-group="testimonial" data-id="${App.escapeHtml(t.id)}" ${i < 6 ? 'checked' : ''} onchange="GenericViews._extSnapCountTestis()" class="mt-0.5 rounded border-slate-300 text-gsf-boston" />
+                <span class="min-w-0 flex-1">
+                    <span class="block text-xs text-slate-700 leading-snug">&ldquo;${App.escapeHtml(short)}&rdquo;</span>
+                    <span class="block text-[10px] text-slate-400 mt-0.5">${tiStars(t.rating) ? '<span class="text-amber-500">' + tiStars(t.rating) + '</span> · ' : ''}${App.escapeHtml(by)}${t.aiScore != null ? ' · AI ' + t.aiScore : ''}</span>
+                </span></label>`;
+        };
+
         const chip = (id, label, checked, group) => `<label class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 cursor-pointer text-xs">
             <input type="checkbox" data-group="${group}" data-id="${App.escapeHtml(String(id))}" ${checked ? 'checked' : ''} class="rounded border-slate-300 text-gsf-boston" /> ${App.escapeHtml(label)}</label>`;
 
@@ -8332,6 +8354,25 @@ updateDirtyCount();
                         <p class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">Quality indicators</p>
                         <div class="flex flex-wrap gap-1.5">${qKpis.map(k => chip(k.id, (k.shortName || k.name), true, 'qkpi')).join('')}</div>
                     </div>` : ''}
+                    ${testis.length ? `<div>
+                        <div class="flex items-center justify-between mb-2">
+                            <p class="text-xs font-bold text-slate-500 uppercase tracking-wide">Testimonials <span class="font-normal normal-case text-slate-400">— SURGhub learner voices</span></p>
+                            <div class="flex gap-1">
+                                <button onclick="GenericViews._extSnapTestisAll(true)" class="text-[10px] text-gsf-boston hover:underline">Select visible</button>
+                                <span class="text-slate-300">·</span>
+                                <button onclick="GenericViews._extSnapTestisAll(false)" class="text-[10px] text-slate-500 hover:underline">Clear</button>
+                            </div>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-2 mb-2 text-xs">
+                            <span class="text-slate-500">Type</span>
+                            <select id="ext-ti-type" onchange="GenericViews._extSnapFilterTestis()" class="border border-slate-200 rounded px-2 py-1 text-xs bg-white"><option value="">Any</option>${tiThemes.map(t => `<option value="${App.escapeHtml(t)}">${App.escapeHtml(tiPretty(t))}</option>`).join('')}</select>
+                            <span class="text-slate-500 ml-1">Min AI rating</span>
+                            <select id="ext-ti-ai" onchange="GenericViews._extSnapFilterTestis()" class="border border-slate-200 rounded px-2 py-1 text-xs bg-white"><option value="0">Any</option><option value="5">&ge; 5</option><option value="7">&ge; 7</option><option value="8">&ge; 8</option></select>
+                            <span id="ext-ti-count" class="ml-auto text-slate-500 font-medium"></span>
+                        </div>
+                        <div id="ext-ti-list" class="border border-slate-200 rounded-lg max-h-56 overflow-y-auto divide-y divide-slate-100">${testis.map((t, i) => tiRow(t, i)).join('')}</div>
+                        <p class="text-[11px] text-slate-400 italic mt-1.5">Pick the quotes to feature. Filter by AI-scored type / rating, then select. Top 6 are pre-selected; if you deselect all, the snapshot shows no testimonials.</p>
+                    </div>` : ''}
                     <div>
                         <p class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">Title</p>
                         <input type="text" id="ext-snap-title" value="GSF Programme Snapshot" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-gsf-boston/30" />
@@ -8344,11 +8385,82 @@ updateDirtyCount();
                 </div>
             </div>`;
         document.body.appendChild(modal);
+        this._extSnapCountTestis();
         if (window.lucide) lucide.createIcons();
     },
 
     _extSnapToggleGroup(group, on) {
         document.querySelectorAll(`#ext-snapshot-modal input[data-group="${group}"]`).forEach(cb => { cb.checked = !!on; });
+    },
+
+    // Candidate SURGhub testimonials with full attributes, best-first. Shared by the External
+    // snapshot picker (to list) and the export (to select + render). PRIVACY: only
+    // {text,rating,course,cadre,country} may be exported — the email used for the demo lookup
+    // here must never leave the app.
+    _collectSurghubTestimonials(snap, aiMap, demo) {
+        snap  = snap  || (App.getAnalyticsSnap ? App.getAnalyticsSnap() : []) || [];
+        aiMap = aiMap || App._aiScoreMap || {};
+        demo  = demo  || App._emailDemoMap || {};
+        const hash = (t) => (App._djb2Hash ? App._djb2Hash(String(t || '').trim()) : String(t || '').trim().slice(0, 48));
+        const tcase = (s) => String(s || '').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+        const out = [], seen = {};
+        (snap || []).forEach(d => {
+            if (!d || !d.FeedbackBank) return;
+            let fb; try { fb = JSON.parse(d.FeedbackBank); } catch (e) { return; }
+            if (!Array.isArray(fb)) return;
+            fb.forEach(f => {
+                if (!f || !f.t || String(f.t).trim().length <= 10 || /^no\s*data$/i.test(f.t)) return;
+                const h = hash(f.t);
+                if (seen[h]) return;
+                const ai = aiMap[h];
+                if (ai && ai.s != null && Number(ai.s) <= 0) return;                 // AI flagged as junk
+                const scored = window.FeedbackIntel ? window.FeedbackIntel.scoreFeedback(f) : null;
+                const isTest = !!(scored && scored._flags && scored._flags.indexOf('testimonial') >= 0);
+                const quotable = !!(ai && ai.q);
+                if (!isTest && !quotable) return;                                    // testimonial-grade only
+                seen[h] = 1;
+                const dm = f.e ? demo[String(f.e).trim().toLowerCase()] : null;
+                const themes = (ai && ai.t && ai.t.length) ? ai.t.slice() : (scored && scored._topics ? scored._topics.slice() : []);
+                out.push({
+                    id: h,
+                    text: (ai && ai.c) ? String(ai.c) : String(f.t).trim(),           // AI-cleaned pull-quote when available
+                    rating: Number(f.r) || 0,
+                    course: d.Course || '',
+                    cadre: (dm && dm.profession) ? tcase(dm.profession) : '',
+                    country: (dm && dm.country) ? String(dm.country) : '',
+                    aiScore: (ai && ai.s != null) ? Number(ai.s) : null,
+                    themes: themes,
+                    score: (ai && ai.s != null) ? Number(ai.s) : (scored ? (scored._testimonialScore || 0) : 0)
+                });
+            });
+        });
+        out.sort((a, b) => (b.score || 0) - (a.score || 0));
+        return out;
+    },
+
+    // Picker (client-side) filter/count/select helpers for the testimonials list.
+    _extSnapFilterTestis() {
+        const ty = (document.getElementById('ext-ti-type') || {}).value || '';
+        const ai = +(((document.getElementById('ext-ti-ai') || {}).value) || 0);
+        document.querySelectorAll('#ext-ti-list .ext-ti-row').forEach(r => {
+            const okTy = !ty || ((r.getAttribute('data-type') || '').split('|').indexOf(ty) >= 0);
+            const raw = r.getAttribute('data-ai');
+            const rai = (raw === '' || raw == null) ? -1 : +raw;
+            const okAi = !ai || (rai >= ai);
+            r.style.display = (okTy && okAi) ? '' : 'none';
+        });
+        this._extSnapCountTestis();
+    },
+    _extSnapTestisAll(on) {
+        document.querySelectorAll('#ext-ti-list .ext-ti-row').forEach(r => {
+            if (r.style.display === 'none') return;
+            const cb = r.querySelector('input'); if (cb) cb.checked = !!on;
+        });
+        this._extSnapCountTestis();
+    },
+    _extSnapCountTestis() {
+        const n = document.querySelectorAll('#ext-snapshot-modal input[data-group="testimonial"]:checked').length;
+        const el = document.getElementById('ext-ti-count'); if (el) el.textContent = n + ' selected';
     },
 
     async _runExternalSnapshot(defaultYear) {
@@ -8357,6 +8469,10 @@ updateDirtyCount();
         const includeYears    = sel('year').map(Number);
         const includeKpis     = sel('kpi');
         const includeQKpis    = sel('qkpi');
+        // Testimonials: honour the exact selection when the picker showed a list (even if the
+        // user cleared it → no testimonials). null = no list shown → export falls back to top 6.
+        const tiExisted = document.querySelectorAll('#ext-snapshot-modal input[data-group="testimonial"]').length > 0;
+        const includeTestimonials = sel('testimonial');
         if (includeProjects.length === 0) { alert('Pick at least one project.'); return; }
         if (includeKpis.length === 0 && includeQKpis.length === 0) { alert('Pick at least one indicator.'); return; }
         const title = (document.getElementById('ext-snap-title')?.value || 'GSF Programme Snapshot').trim() || 'GSF Programme Snapshot';
@@ -8371,6 +8487,7 @@ updateDirtyCount();
             includeYears: includeYears.length ? new Set(includeYears) : null,
             includeKpis: new Set(includeKpis),
             includeQualityKpis: new Set(includeQKpis),
+            includeTestimonials: tiExisted ? new Set(includeTestimonials) : null,
         });
     },
 
@@ -8467,12 +8584,12 @@ updateDirtyCount();
                     const _countries = _aud ? (Number(_aud.KnownCountry) || 0) : 0;
                     // Cumulative learners over time, from monthly new signups.
                     const _signups = (_aud && _aud.Signups) ? _parse(_aud.Signups) : {};
-                    // Cumulative certificates over time, summed across all course timelines.
-                    const _certMonth = {};
+                    // Cumulative certificates + enrolments over time, summed across all course timelines.
+                    const _certMonth = {}, _enrolMonth = {};
                     _snap.forEach(d => {
                         if (!d.CourseTimeline) return;
                         const sc = _scale(d.CourseTimeline) || {};
-                        Object.keys(sc).forEach(m => { _certMonth[m] = (_certMonth[m] || 0) + ((sc[m] && sc[m].c) || 0); });
+                        Object.keys(sc).forEach(m => { _certMonth[m] = (_certMonth[m] || 0) + ((sc[m] && sc[m].c) || 0); _enrolMonth[m] = (_enrolMonth[m] || 0) + ((sc[m] && sc[m].e) || 0); });
                     });
                     // Both growth charts share ONE fixed month axis: platform launch (Jun 2023)
                     // → last fully completed month. The in-progress month is excluded so the tail
@@ -8482,7 +8599,7 @@ updateDirtyCount();
                     const _nowMonth = _nd.getFullYear() + '-' + String(_nd.getMonth() + 1).padStart(2, '0');
                     const SHUB_START = '2023-06';
                     let _end = '';
-                    [_signups, _certMonth].forEach(mp => Object.keys(mp).forEach(m => {
+                    [_signups, _certMonth, _enrolMonth].forEach(mp => Object.keys(mp).forEach(m => {
                         if (/^\d{4}-\d{2}$/.test(m) && m < _nowMonth && m > _end) _end = m;
                     }));
                     const _monthRange = (s, e) => {
@@ -8527,28 +8644,24 @@ updateDirtyCount();
                         try { const fb = JSON.parse(d.FeedbackBank); if (Array.isArray(fb)) fb.forEach(f => { const r = Number(f && f.r) || 0; if (r >= 1 && r <= 5) { _rbT++; _rbS += r; if (r >= 4) _rb45++; } }); } catch (e) {}
                     });
                     const _ratingBand = _rbT >= 10 ? { avg: +(_rbS / _rbT).toFixed(1), pct45: Math.round(_rb45 / _rbT * 100), n: _rbT } : null;
-                    // Learner testimonials — scored by FeedbackIntel, top 6. PRIVACY: only the
-                    // comment text, star rating, and course are copied — never email/initials.
+                    // Learner testimonials. Candidates come from the shared collector (FeedbackIntel
+                    // + AI curation + email→demographics). If the export picker passed an explicit
+                    // selection use exactly that (empty selection → none); otherwise the top 6.
+                    // PRIVACY: only text, rating, course, cadre and country are copied — never email.
                     let _testimonials = [];
                     try {
-                        if (window.FeedbackIntel) {
-                            const _raw = [];
-                            _snap.forEach(d => {
-                                if (!d.FeedbackBank) return;
-                                try { const fb = JSON.parse(d.FeedbackBank); if (Array.isArray(fb)) fb.forEach(f => { if (f && f.t && String(f.t).trim().length > 10 && !/^no\s*data$/i.test(f.t)) _raw.push({ t: f.t, r: Number(f.r) || 0, s: f.s, _course: d.Course }); }); } catch (e) {}
-                            });
-                            _testimonials = _raw.map(f => window.FeedbackIntel.scoreFeedback(f))
-                                .filter(f => f._flags && f._flags.includes('testimonial'))
-                                .sort((a, b) => b._testimonialScore - a._testimonialScore)
-                                .slice(0, 6)
-                                .map(f => ({ t: f.t, r: f.r, course: f._course || '' }));
-                        }
+                        const _aiMap = App._aiScoreMap || (await Storage.getItem('surghub_feedback_ai')) || {};
+                        const _demo = App._emailDemoMap || (await Storage.getItem('surghub_email_demo')) || {};
+                        const _cands = this._collectSurghubTestimonials(_snap, _aiMap, _demo);
+                        const _sel = opts.includeTestimonials;
+                        const _chosen = _sel ? _cands.filter(c => _sel.has(c.id)) : _cands.slice(0, 6);
+                        _testimonials = _chosen.map(c => ({ t: c.text, r: c.rating, course: c.course, cadre: c.cadre, country: c.country }));
                     } catch (e) { _testimonials = []; }
                     if (_learners > 0 || _certs > 0 || _enrol > 0 || _courses > 0) {
                         surghub = {
                             learners: _learners, certificates: _certs, enrolments: _enrol,
                             countries: _countries, courses: _courses, certRate: _certRate,
-                            learnersSeries: _cum(_signups), certsSeries: _cum(_certMonth),
+                            learnersSeries: _cum(_signups), certsSeries: _cum(_certMonth), enrolSeries: _cum(_enrolMonth),
                             countryMap: _countryMap,
                             surveyImpact: _surveyImpact,
                             ratingBand: _ratingBand,
@@ -8826,7 +8939,7 @@ h1,h2,h3,h4{font-family:var(--serif);}
 .text-amber-700,.text-amber-800,.text-amber-600{color:var(--accent)!important;}
 /* SURGhub showcase sections: learning-impact dials, rating band, growth split, story globe */
 .dials{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:26px;margin-top:28px;}
-.dial{text-align:center;}
+.dial{display:flex;flex-direction:column;align-items:center;text-align:center;}
 .dial svg{transform:rotate(-90deg);}
 .dial .pc{font-family:var(--serif);font-size:30px;font-weight:800;fill:#eef4f9;}
 .dial .cap{margin:12px auto 0;font-size:14px;color:#b9cede;max-width:24ch;line-height:1.45;}
@@ -8840,6 +8953,8 @@ h1,h2,h3,h4{font-family:var(--serif);}
 .rb-avg{font-size:14px;color:#9fb3c8;margin-top:9px;}
 .rb-avg b{color:#eef4f9;font-size:22px;margin-right:6px;font-family:var(--serif);}
 .rb-foot{flex-basis:100%;font-family:var(--mono);font-size:11px;color:#6d8ba3;margin-top:14px;padding-top:12px;border-top:1px solid var(--border);}
+.tcard{cursor:pointer;transition:border-color .18s ease,transform .18s ease,background .18s ease;}
+.tcard:hover{border-color:var(--accent)!important;transform:translateY(-2px);}
 .growth-split{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:16px;}
 @media(max-width:760px){.growth-split{grid-template-columns:1fr;}}
 .globe-scrolly{display:grid;grid-template-columns:0.92fr 1.08fr;gap:50px;margin:6px 0 8px;}
@@ -8973,6 +9088,24 @@ function buildDial(d){
   var pct=+d.getAttribute('data-pct'),cap=d.getAttribute('data-cap')||'',color=d.getAttribute('data-color')||'#7fb6e3',r=58,c=2*Math.PI*r;
   d.innerHTML='<svg width="150" height="150" viewBox="0 0 150 150"><circle cx="75" cy="75" r="'+r+'" fill="none" stroke="rgba(255,255,255,.12)" stroke-width="12"\/><circle class="ring" cx="75" cy="75" r="'+r+'" fill="none" stroke="'+color+'" stroke-width="12" stroke-linecap="round" stroke-dasharray="'+c+'" stroke-dashoffset="'+c+'" style="transition:stroke-dashoffset 1.4s cubic-bezier(.2,.7,.2,1)"\/><text class="pc" x="75" y="75" text-anchor="middle" dominant-baseline="central" transform="rotate(90 75 75)">0%<\/text><\/svg><p class="cap">'+cap+'<\/p>';
   d._fire=function(){var ring=d.querySelector('.ring'),txt=d.querySelector('.pc');if(RMOTION){ring.style.strokeDashoffset=c*(1-pct/100);txt.textContent=pct+'%';return;}requestAnimationFrame(function(){ring.style.strokeDashoffset=c*(1-pct/100);});var st=null;function step(ts){st=st||ts;var p=Math.min((ts-st)/1400,1),e=1-Math.pow(1-p,4);txt.textContent=Math.round(pct*e)+'%';if(p<1)requestAnimationFrame(step);}requestAnimationFrame(step);};
+}
+// Testimonial popout — reuses the .kpi-modal overlay + hideKpiInfo/_kpiEsc machinery.
+function showTestimonial(i){
+  var s=DATA.surghub; if(!s||!s.testimonials||!s.testimonials[i]) return;
+  var q=s.testimonials[i];
+  var by=[q.cadre,q.country].filter(Boolean).join(', ')||q.course||'A SURGhub learner';
+  var ov=document.getElementById('kpi-modal');
+  if(!ov){ov=document.createElement('div');ov.id='kpi-modal';ov.className='kpi-modal';ov.addEventListener('click',function(e){if(e.target===ov)hideKpiInfo();});document.body.appendChild(ov);}
+  var stars=q.r>0?'<div style="color:#f5b301;font-size:17px;letter-spacing:3px;margin:0 0 14px">'+_starStr(q.r)+'<\/div>':'';
+  ov.innerHTML='<div class="kpi-modal-box" style="border-top:3px solid var(--accent);max-width:560px">'
+    +'<button class="kpi-modal-x" onclick="hideKpiInfo()" aria-label="Close">&times;<\/button>'
+    +'<p class="kpi-modal-eyebrow" style="color:var(--accent)">Learner Voice<\/p>'
+    +stars
+    +'<p style="margin:0 0 16px;font-family:var(--serif);font-size:20px;font-weight:400;color:#eef4f9;line-height:1.5">&ldquo;'+_esc(q.t)+'&rdquo;<\/p>'
+    +'<p class="kpi-modal-body" style="font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#9fb3c8">'+_esc(by)+((q.course&&by!==q.course)?' · '+_esc(q.course):'')+'<\/p>'
+    +'<\/div>';
+  ov.style.display='flex';
+  document.addEventListener('keydown',_kpiEsc);
 }
 // Scroll-driven learner-story globe steps: six real learners (A-Z by country) + a finale
 // reach card. Hero photos load from the SURGhub blog; fall back to a gradient + initials.
@@ -9531,13 +9664,13 @@ function renderSurghub(){
         ):'')
         +'<div class="reveal" style="margin-bottom:10px"><h2 style="margin:0;font-family:var(--mono);font-size:10px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.2em">Growth Over Time<\/h2><\/div>'
         +'<div class="reveal growth-split">'
-            +'<div class="chart-card"><p style="margin:0 0 14px;font-family:var(--mono);font-size:10px;font-weight:700;color:#6d8ba3;text-transform:uppercase;letter-spacing:.14em">Registered Users<\/p><div id="shub-learners" style="position:relative;height:300px"><\/div><\/div>'
+            +'<div class="chart-card"><div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:0 0 12px"><p style="margin:0;font-family:var(--mono);font-size:10px;font-weight:700;color:#6d8ba3;text-transform:uppercase;letter-spacing:.14em">Enrolled Learners<\/p><p style="margin:0;font-family:var(--serif);font-size:26px;font-weight:700;color:#4389C8;line-height:1">'+fmt(s.enrolments)+'<span style="font-family:var(--mono);font-size:10px;font-weight:600;color:#6d8ba3;text-transform:uppercase;letter-spacing:.08em;margin-left:8px">to date<\/span><\/p><\/div><div id="shub-learners" style="position:relative;height:270px"><\/div><\/div>'
             +'<div class="chart-card" style="display:flex;flex-direction:column;justify-content:center;text-align:center;background:radial-gradient(600px 340px at 50% 0%, rgba(63,185,132,0.16), transparent 70%),var(--surface)">'
                 +'<p style="margin:0 0 4px;font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#3FB984">Certification rate<\/p>'
                 +'<div style="font-family:var(--serif);font-size:clamp(52px,8vw,84px);font-weight:800;color:#3FB984;line-height:.95">'+(s.certRate!=null?s.certRate+'%':'&ndash;')+'<\/div>'
                 +'<p style="margin:12px auto 0;font-size:13.5px;color:#d4dde7;line-height:1.55;max-width:30ch">of enrolments run the full course and earn a certificate<\/p>'
                 +(s.certificates>0?'<p style="margin:10px auto 0;font-family:var(--mono);font-size:10px;letter-spacing:.05em;color:#9fb3c8">'+fmt(s.certificates)+' certificates earned<\/p>':'')
-                +(s.certRate!=null?'<p style="margin:12px auto 0;font-size:11.5px;color:#6d8ba3;line-height:1.5;max-width:34ch">Roughly 2&ndash;3&times; the completion rate typical of open online courses (widely cited around 10&ndash;15%, shown for scale).<\/p>':'')
+                +(s.certRate!=null?'<p style="margin:12px auto 0;font-size:11.5px;color:#6d8ba3;line-height:1.5;max-width:34ch">Roughly 2&ndash;3&times; the completion rate typical of open online courses (widely cited around 10&ndash;15%).<\/p>':'')
             +'<\/div>'
         +'<\/div>'
         +(s.countryMap?(
@@ -9555,11 +9688,15 @@ function renderSurghub(){
             ):'')
             +((s.testimonials&&s.testimonials.length)?(
                 '<div class="reveal" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;margin-bottom:8px">'
-                +s.testimonials.map(function(q){
+                +s.testimonials.map(function(q,i){
                     var st=q.r>0?'<span style="color:#f5b301;font-size:11px;letter-spacing:.1em;flex-shrink:0;white-space:nowrap">'+_starStr(q.r)+'<\/span>':'';
-                    return '<div style="background:var(--surface2);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:5px;padding:14px 16px;font-size:13px;color:#d4dde7;line-height:1.55">'
-                        +'<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">&ldquo;'+_esc(q.t)+'&rdquo;'+st+'<\/div>'
-                        +(q.course?'<div style="margin-top:8px;font-family:var(--mono);font-size:9px;letter-spacing:.04em;color:#6d8ba3;text-transform:uppercase">'+_esc(q.course)+'<\/div>':'')
+                    var by=[q.cadre,q.country].filter(Boolean).join(', ')||q.course||'A SURGhub learner';
+                    var meta=_esc(by)+((q.course&&by!==q.course)?' · '+_esc(q.course):'');
+                    var full=String(q.t||'');
+                    var shortT=full.length>150?full.slice(0,150).replace(/\s+\S*$/,'')+'…':full;
+                    return '<div class="tcard" onclick="showTestimonial('+i+')" style="background:var(--surface2);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:5px;padding:14px 16px;font-size:13px;color:#d4dde7;line-height:1.55">'
+                        +'<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">&ldquo;'+_esc(shortT)+'&rdquo;'+st+'<\/div>'
+                        +'<div style="margin-top:8px;font-family:var(--mono);font-size:9px;letter-spacing:.04em;color:#6d8ba3;text-transform:uppercase">'+meta+'<\/div>'
                         +'<\/div>';
                 }).join('')
                 +'<\/div>'
@@ -9573,7 +9710,7 @@ function renderSurghub(){
         ):'')
         +'<p style="margin:22px 0 0;font-family:var(--mono);font-size:9.5px;letter-spacing:.04em;color:#6d8ba3;text-transform:uppercase">Cumulative totals · SURGhub platform data<\/p>'
         +'<\/div>';
-    _drawGrowthLine(document.getElementById('shub-learners'),'Registered Users',s.learnersSeries,'#4389C8');
+    _drawGrowthLine(document.getElementById('shub-learners'),'Enrolled Learners',s.enrolSeries||s.learnersSeries,'#4389C8');
     if(s.countryMap) _drawCountryMap('shub-map',s.countryMap);
     // Learning-impact dials: build + count-up.
     [].forEach.call(el.querySelectorAll('.dial'),function(d){buildDial(d);if(d._fire)d._fire();});

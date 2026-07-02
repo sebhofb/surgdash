@@ -1449,7 +1449,7 @@ a.shl:hover{color:var(--accent);border-bottom-color:var(--accent);}
 @media print{body{background:#001523!important;-webkit-print-color-adjust:exact;}}
 /* Learning-impact dials + rating band + growth split (showcase-style sections) */
 .dials{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:26px;margin-top:28px;}
-.dial{text-align:center;}
+.dial{display:flex;flex-direction:column;align-items:center;text-align:center;}
 .dial svg{transform:rotate(-90deg);}
 .dial .pc{font-family:var(--serif);font-size:30px;font-weight:800;fill:#eef4f9;}
 .dial .cap{margin:12px auto 0;font-size:14px;color:#b9cede;max-width:24ch;line-height:1.45;}
@@ -1640,7 +1640,7 @@ a.shl:hover{color:var(--accent);border-bottom-color:var(--accent);}
       <div style="font-family:var(--serif);font-size:clamp(52px,8vw,84px);font-weight:800;color:#3FB984;line-height:.95">${D.certRate != null ? D.certRate + '%' : '&ndash;'}</div>
       <p style="margin:12px auto 0;font-size:13.5px;color:#d4dde7;line-height:1.55;max-width:30ch">of enrolments run the full course and earn a certificate</p>
       ${D.totalCert > 0 ? '<p style="margin:10px auto 0;font-family:var(--mono);font-size:10px;letter-spacing:.05em;color:#9fb3c8">' + fmt(D.totalCert) + ' certificates earned</p>' : ''}
-      ${D.certRate != null ? '<p style="margin:12px auto 0;font-size:11.5px;color:#6d8ba3;line-height:1.5;max-width:34ch">Roughly 2&ndash;3&times; the completion rate typical of open online courses (widely cited around 10&ndash;15%, shown for scale).</p>' : ''}
+      ${D.certRate != null ? '<p style="margin:12px auto 0;font-size:11.5px;color:#6d8ba3;line-height:1.5;max-width:34ch">Roughly 2&ndash;3&times; the completion rate typical of open online courses (widely cited around 10&ndash;15%).</p>' : ''}
     </div>
   </div>` : `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;margin-bottom:14px">
     <div class="chart-card"><p style="margin:0 0 12px;font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#4389C8;display:flex;align-items:center;justify-content:space-between">Enrolled Learners <button class="dlb" onclick="dlChart('growth-enrol','Enrolled Learners')">&#8595; PNG</button></p><div style="height:230px;position:relative"><canvas id="growth-enrol"></canvas></div></div>
