@@ -1689,6 +1689,31 @@ Object.assign(window.App, {
         return (hash >>> 0).toString(36);
     },
 
+    // Normalized tag list from a user row (the API path stashes _tags_raw; some CSV
+    // exports carry a Tags column). Shared by the audience aggregation and the
+    // anonymized-user builder.
+    _rowTags(row) {
+        let raw = row._tags_raw || row.tags || row.Tags || row.TAGS || '';
+        if (Array.isArray(raw)) raw = raw.join(',');
+        return String(raw).split(',').map(t => t.trim().toLowerCase()).filter(Boolean);
+    },
+
+    // Career stage (survey Q2) from user tags → canonical label, or null when
+    // undeclared. The deprecated 'resident' ACTIVITY tag (stopped being applied
+    // ~Jan 2026) is folded into 'Postgraduate clinical' — its successor bucket —
+    // so pre-2026 trainees don't vanish from career-stage breakdowns. A real Q2
+    // tag always wins over the legacy fallback.
+    _careerStageFromTags(tags) {
+        const MAP = {
+            'in-practice': 'In practice', 'postgraduate-clinical': 'Postgraduate clinical',
+            'postgraduate-academic': 'Postgraduate academic', 'undergraduate': 'Undergraduate', 'retired': 'Retired'
+        };
+        const set = tags instanceof Set ? tags : new Set(tags || []);
+        for (const k in MAP) { if (set.has(k)) return MAP[k]; }
+        if (set.has('resident')) return 'Postgraduate clinical';
+        return null;
+    },
+
     _buildAnonymizedUsers(usersJson) {
         const resolveSlug = this._buildSlugMap();
         // Fallback learner→course lists from the card-2 User Progress upload
@@ -1736,6 +1761,10 @@ Object.assign(window.App, {
             const orgKey = Object.keys(row).find(k => k.toLowerCase().includes('organisation') || k.toLowerCase().includes('organization'));
             const org = orgKey ? (row[orgKey] || '').trim() : '';
 
+            // Career stage (survey Q2) from tags; legacy 'resident' folds into
+            // 'Postgraduate clinical' (see _careerStageFromTags).
+            const careerStage = this._careerStageFromTags(this._rowTags(row)) || '';
+
             const courses = (row.courses || '').split(',').map(c => c.trim()).filter(Boolean);
             const certs = (row.certificates || '').split(',').map(c => c.trim()).filter(Boolean);
 
@@ -1771,6 +1800,7 @@ Object.assign(window.App, {
                         profession: profession,
                         gender: gender,
                         organisation_type: org,
+                        career_stage: careerStage,
                         has_certificate: certs.some(c => c.toLowerCase().includes(rawSlug.substring(0, 20).toLowerCase())) ? 'Yes' : 'No',
                         course_minutes: Math.round(minPerCourse),
                         // Per-user denormalized fields (same on every row of this user)
@@ -1789,6 +1819,7 @@ Object.assign(window.App, {
                         profession: profession,
                         gender: gender,
                         organisation_type: org,
+                        career_stage: careerStage,
                         has_certificate: comp.certs[courseName] ? 'Yes' : 'No',
                         course_minutes: Math.round(comp.mins[courseName] || minPerCourse),
                         user_uid,
@@ -1945,10 +1976,9 @@ Object.assign(window.App, {
         // not fuzzy keyword matching — this is what fixes the "Intern/Resident"
         // flatline (legacy 'resident' tag, deprecated ~Jan 2026; trainees now
         // answer Q2 'postgraduate-clinical').
-        const CAREER_STAGE_MAP = {
-            'in-practice': 'In practice', 'postgraduate-clinical': 'Postgraduate clinical',
-            'postgraduate-academic': 'Postgraduate academic', 'undergraduate': 'Undergraduate', 'retired': 'Retired'
-        };
+        // (Career-stage classification lives in _careerStageFromTags — shared with
+        // the anonymized-user builder, and the single place the legacy 'resident'
+        // tag is folded into 'Postgraduate clinical'.)
         const ACTIVITY_MAP = {
             'surgeon': 'Surgeon', 'anaesthesiologist': 'Anaesthesiologist', 'anaesthesia-technician': 'Anaesthesia technician',
             'nurse-anaesthetist': 'Nurse anaesthetist', 'nurse': 'Nurse', 'obstetrician': 'Obstetrician',
@@ -2118,10 +2148,10 @@ Object.assign(window.App, {
             // ── Per-question breakdowns from exact tags (Q2 career, Q3 activity, Q8 topics) ──
             const tagSet = new Set(getRowTags(row));
             if (tagSet.size > 0) {
-                // Q2 — career stage (single)
-                for (const k in CAREER_STAGE_MAP) {
-                    if (tagSet.has(k)) { const d = CAREER_STAGE_MAP[k]; careerStats[d] = (careerStats[d] || 0) + 1; careerKnown++; (careerTimeline[month] || (careerTimeline[month] = {}))[d] = (careerTimeline[month][d] || 0) + 1; break; }
-                }
+                // Q2 — career stage (single). _careerStageFromTags also folds the legacy
+                // 'resident' activity tag into 'Postgraduate clinical' (its successor).
+                const d = this._careerStageFromTags(tagSet);
+                if (d) { careerStats[d] = (careerStats[d] || 0) + 1; careerKnown++; (careerTimeline[month] || (careerTimeline[month] = {}))[d] = (careerTimeline[month][d] || 0) + 1; }
                 // Q3 — activity (single, specific activity preferred over legacy 'resident')
                 let act = null;
                 for (const k of ACTIVITY_PRIORITY) { if (tagSet.has(k)) { act = ACTIVITY_MAP[k]; break; } }

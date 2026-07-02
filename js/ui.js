@@ -364,13 +364,16 @@ Object.assign(window.App, {
         const UNDECLARED = /^(not\s*declared|unknown|undeclared|n\/?a|nan|none|prefer)/i;
         const byCadre = {}; let cadreN = 0;
         const byOrg = {}; let orgN = 0;
+        const byStage = {}; let stageN = 0;
         learners.forEach(r => {
             const canon = this._canonProf ? this._canonProf(r.profession) : (r.profession || null);
             if (canon) { byCadre[canon] = (byCadre[canon] || 0) + 1; cadreN++; }
             const org = String(r.organisation_type || '').trim();
             if (org && !UNDECLARED.test(org)) { byOrg[org] = (byOrg[org] || 0) + 1; orgN++; }
+            const stage = String(r.career_stage || '').trim();
+            if (stage && !UNDECLARED.test(stage)) { byStage[stage] = (byStage[stage] || 0) + 1; stageN++; }
         });
-        if (cadreN === 0 && orgN === 0) return '';
+        if (cadreN === 0 && orgN === 0 && stageN === 0) return '';
         // Bar list: top N of the declared subset + an "Other" roll-up.
         const barList = (obj, declared, color, topN) => {
             const entries = Object.entries(obj).sort((a, b) => b[1] - a[1]);
@@ -401,11 +404,16 @@ Object.assign(window.App, {
         return `<div class="bg-white p-6 rounded-xl shadow-sm border mb-8">
             <h3 class="text-lg font-bold mb-1 flex items-center gap-2 text-gsf-prussian"><i data-lucide="users" class="text-gsf-boston"></i> Who the Learners Are</h3>
             <p class="text-xs text-slate-400 mb-5">Shares are of learners who declared each attribute, for this course only.</p>
-            <div class="grid md:grid-cols-2 gap-x-10 gap-y-6">
+            <div class="grid md:grid-cols-2 xl:grid-cols-3 gap-x-10 gap-y-6">
                 ${cadreN > 0 ? `<div>
                     <p class="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-3">Cadre</p>
                     ${barList(byCadre, cadreN, '#7A9E9F', 8)}
                     ${covNote(cadreN, 'Cadre')}
+                </div>` : ''}
+                ${stageN > 0 ? `<div>
+                    <p class="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-3">Career Stage</p>
+                    ${barList(byStage, stageN, '#A78BFA', 8)}
+                    ${covNote(stageN, 'Career stage')}
                 </div>` : ''}
                 ${orgN > 0 ? `<div>
                     <p class="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-3">Organisation Type</p>
@@ -413,7 +421,34 @@ Object.assign(window.App, {
                     ${covNote(orgN, 'Organisation type')}
                 </div>` : ''}
             </div>
-            <p class="text-xs text-slate-400 mt-4 pt-3 border-t">Based on ${this.formatNumber(learners.length)}${enrolTotal ? ' of ' + this.formatNumber(enrolTotal) : ''} enrolled learners present in the demographics data · cadre from the signup &ldquo;activity&rdquo; answers and profile tags · organisation type from profile tags and the signup survey.</p>
+            <p class="text-xs text-slate-400 mt-4 pt-3 border-t">Based on ${this.formatNumber(learners.length)}${enrolTotal ? ' of ' + this.formatNumber(enrolTotal) : ''} enrolled learners present in the demographics data · cadre from the signup &ldquo;activity&rdquo; answers and profile tags · career stage from profile tags (survey Q2; the legacy Intern/Resident tag counts as Postgraduate clinical) · organisation type from profile tags and the signup survey.</p>
+        </div>`;
+    },
+    // Platform-wide Career Stage table (Learners tab) from the latest audience
+    // snapshot's CareerStageStats — extrapolated counts, same source as the
+    // "Growth by Career Stage" chart so the two always reconcile.
+    _careerStageTableHtml(snap) {
+        if (!snap || !snap.CareerStageStats) return '';
+        const stats = this._safeParseObj(snap.CareerStageStats);
+        const entries = Object.entries(stats).map(([k, v]) => [k, Number(v) || 0]).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
+        if (!entries.length) return '';
+        const total = entries.reduce((s, [, v]) => s + v, 0);
+        const rows = entries.map(([stage, v], i) => `<tr class="border-b last:border-0 hover:bg-slate-50">
+                <td class="py-2 px-3 text-slate-400 text-xs w-8">${i + 1}</td>
+                <td class="py-2 px-3 font-medium text-gsf-prussian">${this.escapeHtml(stage)}</td>
+                <td class="py-2 px-3 text-right font-bold text-gsf-boston">${this.formatNumber(v)}</td>
+                <td class="py-2 px-3 text-right text-slate-500 text-xs">${total > 0 ? ((v / total) * 100).toFixed(1) : '0.0'}%</td>
+            </tr>`).join('');
+        const known = Number(snap.CareerKnownCount) || 0;
+        const totalUsers = Number(snap.TotalUsers) || 0;
+        const covPct = known && totalUsers ? Math.round((known / totalUsers) * 100) : 0;
+        return `<div class="bg-white p-6 rounded-xl shadow-sm border mb-8">
+            <h3 class="text-lg font-bold mb-4 flex items-center gap-2 text-gsf-prussian"><i data-lucide="graduation-cap" class="text-gsf-boston"></i> Career Stage Breakdown</h3>
+            <table class="w-full text-sm border-collapse">
+                <thead><tr class="border-b text-slate-500"><th class="py-2 px-3 text-left font-medium w-8">#</th><th class="py-2 px-3 text-left font-medium">Career Stage</th><th class="py-2 px-3 text-right font-medium">Learners (est.)</th><th class="py-2 px-3 text-right font-medium">%</th></tr></thead>
+                <tbody>${rows}</tbody>
+            </table>
+            <p class="text-xs text-slate-400 mt-3">Career stage (survey Q2)${known ? ' · extrapolated to all ' + this.formatNumber(totalUsers) + ' learners from the ' + this.formatNumber(known) + ' (' + covPct + '%) who declared one' : ' · extrapolated from the declared subset'} · the legacy Intern/Resident tag counts as Postgraduate clinical.</p>
         </div>`;
     },
     // Per-ambassador performance table: Leads (signups) · Clicks (link visits) ·
@@ -4495,9 +4530,11 @@ Object.assign(window.App, {
 
                     ${this._renderEngagementAnalysis(false, 'learners')}
 
-                    ${this._audienceBreakdownSection({ title: 'Growth by Cadre', chartId: 'chart_activity_timeline', kind: 'activity', rangeKey: 'activityTimelineRange', trimKey: 'activityGrowthTrim', list: allActivities, selProp: 'selectedActivities', field: snap.ActivityTimeline ? 'ActivityTimeline' : 'ProfTimeline', exportName: 'Cadre_Growth', note: 'Self-reported cadre (survey Q3 — "which best describes your activity"). Exact-tag classification. The "Intern/Resident (legacy)" series is a deprecated tag that stopped being applied ~Jan 2026; those learners now appear under Career Stage → "Postgraduate clinical".' })}
+                    ${this._audienceBreakdownSection({ title: 'Growth by Cadre', chartId: 'chart_activity_timeline', kind: 'activity', rangeKey: 'activityTimelineRange', trimKey: 'activityGrowthTrim', list: allActivities, selProp: 'selectedActivities', field: snap.ActivityTimeline ? 'ActivityTimeline' : 'ProfTimeline', exportName: 'Cadre_Growth', note: 'Self-reported cadre (survey Q3 — "which best describes your activity"). Exact-tag classification. The "Intern/Resident (legacy)" series is a deprecated tag that stopped being applied ~Jan 2026; in Career Stage those learners are counted under "Postgraduate clinical".' })}
 
-                    ${this._audienceBreakdownSection({ title: 'Growth by Career Stage', chartId: 'chart_career_timeline', kind: 'career', rangeKey: 'careerTimelineRange', trimKey: 'careerGrowthTrim', list: allCareerStages, selProp: 'selectedCareerStages', field: 'CareerStageTimeline', exportName: 'Career_Stage_Growth', note: 'Career stage (survey Q2) — this is where trainees/residents now appear ("Postgraduate clinical").' })}
+                    ${this._audienceBreakdownSection({ title: 'Growth by Career Stage', chartId: 'chart_career_timeline', kind: 'career', rangeKey: 'careerTimelineRange', trimKey: 'careerGrowthTrim', list: allCareerStages, selProp: 'selectedCareerStages', field: 'CareerStageTimeline', exportName: 'Career_Stage_Growth', note: 'Career stage (survey Q2). Trainees/residents appear as "Postgraduate clinical" — including learners who only carry the deprecated Intern/Resident tag.' })}
+
+                    ${this._careerStageTableHtml(snap)}
 
                     ${this._audienceBreakdownSection({ title: 'Growth by Topic Interest', chartId: 'chart_topic_timeline', kind: 'topic', rangeKey: 'topicTimelineRange', trimKey: 'topicGrowthTrim', list: allTopics, selProp: 'selectedTopics', field: 'TopicTimeline', exportName: 'Topic_Interest_Growth', note: 'Topics of interest (survey Q8, multi-select — a learner can pick several, so totals exceed the user count).' })}
 
