@@ -2631,6 +2631,12 @@ Object.assign(window.App, {
             `;
         }
         else if (this.view === 'upload') {
+            // The User Progress blob (~37MB) is lazy-loaded and nothing at startup touches
+            // it — without this kick, card 2's "N learner records loaded" badge stays hidden
+            // even when the data is on disk. Load it once when the Data Sync page opens.
+            if (this._rawCompletion == null && this.ensureCompletionLoaded) {
+                this.ensureCompletionLoaded().then(() => { if (this.view === 'upload') this.renderView(); });
+            }
             body.innerHTML = `
                 <div class="p-6 md:p-10 max-w-6xl mx-auto w-full fade-in">
                     <header class="mb-8">
@@ -2719,7 +2725,11 @@ Object.assign(window.App, {
                             <i data-lucide="clipboard-list" width="18" class="text-indigo-600"></i>
                             <h2 class="text-lg font-bold text-gsf-prussian">2 · Upload User Progress</h2>
                             <span class="text-[10px] font-bold uppercase text-indigo-700 bg-indigo-100 border border-indigo-200 px-2 py-0.5 rounded-full">xlsx · before each report</span>
-                            ${this._rawCompletion && this._rawCompletion.length > 0 ? '<span class="inline-flex items-center gap-1.5 text-xs text-slate-400 font-medium ml-2"><i data-lucide="check-circle-2" width="12" class="text-green-500"></i> ' + this.formatNumber(this._rawCompletion.length) + ' learner records loaded</span>' : ''}
+                            ${this._rawCompletion == null
+                                ? '<span class="text-xs text-slate-400 italic ml-2">checking local data&hellip;</span>'
+                                : (this._rawCompletion.length > 0
+                                    ? '<span class="inline-flex items-center gap-1.5 text-xs text-slate-400 font-medium ml-2"><i data-lucide="check-circle-2" width="12" class="text-green-500"></i> ' + this.formatNumber(this._rawCompletion.length) + ' learner records loaded</span>'
+                                    : '<span class="inline-flex items-center gap-1.5 text-xs text-amber-600 font-medium ml-2"><i data-lucide="alert-circle" width="12"></i> none loaded yet &mdash; upload below</span>')}
                         </div>
                         <p class="text-sm text-slate-600 max-w-3xl mb-3">The per-user progress export is the <strong>only source of exact learner dates</strong> — it makes every growth curve precise, and fills per-learner <strong>learning time and completion</strong> for the provider report packages. It also links learners to their courses, powering the per-course <strong>&ldquo;Who the Learners Are&rdquo;</strong> demographics (upload this before card 3 / Sync Everything — no Growth-Timelines API sync needed).</p>
                         <p class="text-xs text-slate-500 mb-3"><a href="#" onclick="electronAPI.openExternal('https://www.surghub.org/author/userprogress'); return false" class="text-indigo-700 hover:underline font-medium">Open User Progress</a> → filter <strong>Registered: before <em>tomorrow's date</em></strong> ("before" excludes the chosen day, so tomorrow captures everyone) → <strong>Export user progress</strong> (Excel) → wait for it in the <strong>Reports log</strong> (LearnWorlds admin → Reports) → download → upload here. Or use the saved <a href="#" onclick="electronAPI.openExternal('https://www.surghub.org/author/usersegments?segmentId=18'); return false" class="text-indigo-700 hover:underline font-medium">User Segment ↗</a> and export its <strong>Summary</strong> report — same data, one xlsx (not the CSV ZIP used for Social Activity).</p>
