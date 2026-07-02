@@ -1528,7 +1528,9 @@ Object.assign(window.App, {
                 }
             }
 
-            // Build anonymized per-user records for provider export
+            // Build anonymized per-user records for provider export. Load the User
+            // Progress data first — it's the course-list fallback for rows without one.
+            if (this.ensureCompletionLoaded) await this.ensureCompletionLoaded();
             this._rawAnonymizedUsers = this._buildAnonymizedUsers(usersJson);
             await Storage.setItem('surghub_anon_users', this._rawAnonymizedUsers);
 
@@ -1689,6 +1691,27 @@ Object.assign(window.App, {
 
     _buildAnonymizedUsers(usersJson) {
         const resolveSlug = this._buildSlugMap();
+        // Fallback learner→course lists from the card-2 User Progress upload
+        // (surghub_completion): users whose export row carries no course list — e.g.
+        // an API demographics sync without the (hours-long) Growth-Timelines map —
+        // still get per-course records, joined by email hash. Only the rich xlsx
+        // shape carries emails + enrolments; deep-sync cert-only records (no email)
+        // are skipped, so a certs-only blob degrades to a harmless no-op.
+        let compByUid = null;
+        if (Array.isArray(this._rawCompletion) && this._rawCompletion.length) {
+            this._rawCompletion.forEach(r => {
+                const cEmail = r && r.email ? String(r.email).trim().toLowerCase() : '';
+                const cName = r ? (r.course_resolved || r.course) : '';
+                if (!cEmail || !cName) return;
+                const cUid = this._djb2Hash(cEmail);
+                compByUid = compByUid || {};
+                const e = compByUid[cUid] = compByUid[cUid] || { courses: [], certs: {}, mins: {} };
+                if (!e.courses.includes(cName)) e.courses.push(cName);
+                if (r.certificate || r.completed) e.certs[cName] = 1;
+                const m = Number(r.time_minutes) || 0;
+                if (m > 0) e.mins[cName] = (e.mins[cName] || 0) + m;
+            });
+        }
         const records = [];
         usersJson.forEach(row => {
             const signup = row.signup || row.Signup || row['signup date'] || row['Signup date'] || '';
@@ -1716,41 +1739,65 @@ Object.assign(window.App, {
             const courses = (row.courses || '').split(',').map(c => c.trim()).filter(Boolean);
             const certs = (row.certificates || '').split(',').map(c => c.trim()).filter(Boolean);
 
-            // Per-user total learning minutes, split evenly across enrolled courses
-            const totalMin = parseFloat(row['course minutes']) || parseFloat(row['total minutes']) || 0;
-            const minPerCourse = courses.length > 0 && totalMin > 0 ? totalMin / courses.length : 0;
-
             // Per-user identifiers / aggregates — let the analytics code do per-user grouping
             // without storing email. user_uid is a one-way djb2 hash → stable across re-imports
             // for the same email but not reversible.
             const email = (row.email || row.Email || '').trim().toLowerCase();
             const user_uid = email ? this._djb2Hash(email) : '';
-            const user_course_count = courses.length;
-            const user_cert_count = certs.length;
+
+            // Completion fallback: when the row has no course list, take this user's
+            // enrolments (already canonical course titles) from the User Progress data.
+            const comp = (courses.length === 0 && compByUid && user_uid) ? (compByUid[user_uid] || null) : null;
+            const compCourses = comp ? comp.courses : [];
+
+            // Per-user total learning minutes, split evenly across enrolled courses
+            // (completion-sourced rows use their exact per-course minutes when known).
+            const nCourses = courses.length || compCourses.length;
+            const totalMin = parseFloat(row['course minutes']) || parseFloat(row['total minutes'])
+                || (comp ? Object.values(comp.mins).reduce((s, v) => s + v, 0) : 0) || 0;
+            const minPerCourse = nCourses > 0 && totalMin > 0 ? totalMin / nCourses : 0;
+
+            const user_course_count = nCourses;
+            const user_cert_count = certs.length || (comp ? Object.keys(comp.certs).length : 0);
             const user_total_minutes = Math.round(totalMin);
 
-            // FUTURE: ingest LearnWorlds course-completion export (per-user-per-course with
-            // start/completion dates + time-in-course) to enable cohort retention curves and
-            // time-to-completion analyses. Today only signup_month + totals are available.
-
-            courses.forEach(rawSlug => {
-                const courseName = resolveSlug(rawSlug);
-                records.push({
-                    course: courseName,
-                    signup_month: month,
-                    country: country || '',
-                    profession: profession,
-                    gender: gender,
-                    organisation_type: org,
-                    has_certificate: certs.some(c => c.toLowerCase().includes(rawSlug.substring(0, 20).toLowerCase())) ? 'Yes' : 'No',
-                    course_minutes: Math.round(minPerCourse),
-                    // Per-user denormalized fields (same on every row of this user)
-                    user_uid,
-                    user_course_count,
-                    user_cert_count,
-                    user_total_minutes,
+            if (courses.length > 0) {
+                courses.forEach(rawSlug => {
+                    const courseName = resolveSlug(rawSlug);
+                    records.push({
+                        course: courseName,
+                        signup_month: month,
+                        country: country || '',
+                        profession: profession,
+                        gender: gender,
+                        organisation_type: org,
+                        has_certificate: certs.some(c => c.toLowerCase().includes(rawSlug.substring(0, 20).toLowerCase())) ? 'Yes' : 'No',
+                        course_minutes: Math.round(minPerCourse),
+                        // Per-user denormalized fields (same on every row of this user)
+                        user_uid,
+                        user_course_count,
+                        user_cert_count,
+                        user_total_minutes,
+                    });
                 });
-            });
+            } else {
+                compCourses.forEach(courseName => {
+                    records.push({
+                        course: courseName,
+                        signup_month: month,
+                        country: country || '',
+                        profession: profession,
+                        gender: gender,
+                        organisation_type: org,
+                        has_certificate: comp.certs[courseName] ? 'Yes' : 'No',
+                        course_minutes: Math.round(comp.mins[courseName] || minPerCourse),
+                        user_uid,
+                        user_course_count,
+                        user_cert_count,
+                        user_total_minutes,
+                    });
+                });
+            }
         });
         return records;
     },
@@ -2297,9 +2344,13 @@ Object.assign(window.App, {
     // the full course names in surghub_data so all downstream views can join.
     //
     // Storage: surghub_completion = array of per-(user, course) records:
-    //   { uid, email, name, course, course_resolved, start_month, start_date,
-    //     completion_date, completed: bool, time_minutes, score, certificate: bool,
+    //   { uid, email, name, course (RESOLVED canonical title), course_sheet (raw
+    //     truncated sheet name), start_month, start_date, completion_date,
+    //     completed: bool, time_minutes, score, certificate: bool,
     //     certificate_date, certificate_score }
+    //   NOTE: the deep API sync may overwrite this with cert-only records
+    //   { user_uid, course, completed_at, completed, score } — no email/enrolments;
+    //   consumers joining by email (e.g. _buildAnonymizedUsers) must tolerate both.
     // ==========================================
 
     // DD MMM YYYY → ISO YYYY-MM-DD (e.g. "08 Mar 2023" → "2023-03-08")
@@ -2921,7 +2972,7 @@ Object.assign(window.App, {
                     }
                     console.log(`[LearnWorlds] Joined Growth-Timeline data: courses → ${joined.toLocaleString()} users, certs → ${certJoined.toLocaleString()} users`);
                 } else {
-                    console.warn('[LearnWorlds] No surghub_user_courses map — run "Sync Growth Timelines" once to enable per-course anonymized user records.');
+                    console.warn('[LearnWorlds] No surghub_user_courses map — per-course anonymized records will fall back to the User Progress upload (card 2) where available. Run "Sync Growth Timelines" via API or upload the User Progress xlsx to cover everyone.');
                 }
             } catch (e) { console.warn('[LearnWorlds] user-courses join skipped:', e.message); }
 
@@ -3006,6 +3057,9 @@ Object.assign(window.App, {
                 );
             }
 
+            // User Progress data doubles as the course-list fallback for users the
+            // Growth-Timelines map doesn't cover — load it before the anon build.
+            if (this.ensureCompletionLoaded) await this.ensureCompletionLoaded();
             this._rawAnonymizedUsers = this._buildAnonymizedUsers(usersJson);
             await Storage.setItem('surghub_anon_users', this._rawAnonymizedUsers);
             this._emailDemoMap = this._buildEmailDemoMap(usersJson);
