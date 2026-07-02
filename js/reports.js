@@ -1253,10 +1253,31 @@ function drawCharts() {
             const totalCountryUsers = Object.values(D.providerCountryData).reduce((a, b) => a + b, 0);
 
             const _si = D.surveyImpact || {};
-            // Learning Impact, showcase-style ("Learning that changes practice."): three animated
-            // SVG dials for the post-course survey outcomes, plus the learning-time stat. The dials
-            // are built + fired client-side by buildDial() (see the inline script). data-cap holds
-            // small HTML (with &quot; for the inner style quotes) so the coloured keyword renders.
+            // Provider reports keep the original Learning Impact band: a Learning Time card
+            // beside the New Knowledge / Intent to Apply / Career Value stat cards.
+            const _siCard = (heading, val, desc) => '<div><p style="margin:0 0 8px;font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#9fb3c8">' + heading + '</p><span style="font-family:var(--serif);font-size:32px;font-weight:700;color:var(--accent);line-height:1">' + val + '</span><p style="margin:6px 0 0;font-size:12px;color:#9fb3c8;line-height:1.5;text-wrap:balance">' + desc + '</p></div>';
+            const _providerImpactBand = (D.surveyImpact || D.totalMin > 0) ? (
+                '<div style="margin:0 0 28px">'
+                + '<p style="margin:0 0 14px;font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--accent);display:flex;align-items:center;justify-content:space-between">Learning Impact <button class="dlb" onclick="dlImpact()">&#8595; PNG</button></p>'
+                + '<div style="display:flex;gap:18px;flex-wrap:wrap;align-items:stretch">'
+                + (D.totalMin > 0 ? '<div style="flex:1 1 220px;min-width:200px;border:1px solid #FFC14538;border-radius:5px;padding:20px 24px;background:linear-gradient(135deg,#FFC14512,#001a2b 70%);display:flex;flex-direction:column;justify-content:center">'
+                    + '<p style="margin:0 0 8px;font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#9fb3c8">Learning Time</p>'
+                    + '<span style="font-family:var(--serif);font-size:40px;font-weight:700;color:var(--accent);line-height:1">' + this.formatLearningTime(D.totalMin) + '</span>'
+                    + '<p style="margin:8px 0 0;font-size:12.5px;color:#9fb3c8;line-height:1.5;text-wrap:balance;max-width:32ch">of <strong style="color:#eef4f9">study time</strong> recorded across all learners, all time</p>'
+                    + '</div>' : '')
+                + ((_si.contentNew || _si.willApply || _si.careerValue) ? '<div style="flex:2 1 380px;min-width:280px;border:1px solid #FFC14538;border-radius:5px;padding:20px 24px;background:linear-gradient(135deg,#FFC14512,#001a2b 70%)">'
+                    + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:18px 22px">'
+                    + (_si.contentNew ? _siCard('New Knowledge', _si.contentNew.pct + '%', 'of surveyed learners said the course content was <strong style="color:#eef4f9">new to them</strong>') : '')
+                    + (_si.willApply ? _siCard('Intent to Apply', _si.willApply.pct + '%', 'say they are <strong style="color:#eef4f9">likely to apply</strong> what they learned in their work') : '')
+                    + (_si.careerValue ? _siCard('Career Value', _si.careerValue.pct + '%', 'rate what they learned as <strong style="color:#eef4f9">important to their job success</strong>') : '')
+                    + '</div>'
+                    + (function () { const ns = []; if (_si.contentNew) ns.push(_si.contentNew.n); if (_si.willApply) ns.push(_si.willApply.n); if (_si.careerValue) ns.push(_si.careerValue.n); if (!ns.length) return ''; const bn = Math.min.apply(null, ns); const rounded = bn >= 1000 ? Math.floor(bn / 1000) * 1000 : Math.floor(bn / 100) * 100; return '<p style="margin:14px 0 0;font-family:var(--mono);font-size:9px;letter-spacing:.06em;color:#6d8ba3">Survey figures based on ' + fmt(rounded) + '+ surveys &middot; share answering 4 or 5 on a 1–5 scale</p>'; })()
+                    + '</div>' : '')
+                + '</div>'
+                + '</div>') : '';
+            // Platform-only: showcase-style "Learning that changes practice." with three animated
+            // SVG dials, built + fired client-side by buildDial() (see the inline script). data-cap
+            // holds small HTML (with &quot; for the inner style quotes) so the coloured keyword renders.
             const _dial = (pct, color, cap) => '<div class="dial" data-pct="' + pct + '" data-color="' + color + '" data-cap="' + cap + '"></div>';
             const _dials = [
                 _si.contentNew ? _dial(_si.contentNew.pct, '#5AA9E6', 'said the content was <b style=&quot;color:#5AA9E6&quot;>new</b> to them') : '',
@@ -1267,7 +1288,7 @@ function drawCharts() {
             const _timeLine = D.totalMin > 0
                 ? '<div style="margin-top:28px;padding-top:20px;border-top:1px solid var(--border);text-align:center"><span style="font-family:var(--serif);font-size:34px;font-weight:700;color:var(--accent);line-height:1">' + this.formatLearningTime(D.totalMin) + '</span><span style="font-size:13px;color:#9fb3c8;margin-left:12px">of study time recorded across all learners, all time</span></div>'
                 : '';
-            const impactBand = _dials ? (
+            const _platformImpactBand = _dials ? (
                 '<div class="chart-card" style="margin:0 0 28px;overflow:hidden;background:radial-gradient(900px 460px at 50% -12%, rgba(63,185,132,0.10), transparent 62%),var(--surface)">'
                 + '<div style="display:flex;align-items:center;justify-content:flex-end"><button class="dlb" onclick="dlImpact()">&#8595; PNG</button></div>'
                 + '<p style="margin:0 0 6px;font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:var(--accent);text-align:center">Learning Impact</p>'
@@ -1283,6 +1304,7 @@ function drawCharts() {
                 + '<div style="text-align:center;padding:8px 0 4px"><span style="font-family:var(--serif);font-size:44px;font-weight:700;color:var(--accent);line-height:1">' + this.formatLearningTime(D.totalMin) + '</span><p style="margin:10px auto 0;font-size:13px;color:#9fb3c8;max-width:40ch">of study time recorded across all learners, all time</p></div>'
                 + '</div>'
             ) : '');
+            const impactBand = platform ? _platformImpactBand : _providerImpactBand;
 
             // Interactive: month pickers recompute the period stats client-side
             // from the serialized monthly data (see periodChanged in the runtime).
