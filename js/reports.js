@@ -2813,7 +2813,10 @@ ${platform && globeCountryCount > 0 ? ('\nvar LAND=' + _globeGeo.LAND + ';var CE
             }
         },
 
-        // Provider page: packages for ALL of one provider's courses.
+        // Provider page: the consolidated provider package PLUS one package per course.
+        // Both land in {folder}/{provider}/ — provider files at the top, courses in
+        // subfolders — since _writeProviderPackage and _writeCoursePackage share the
+        // same safe-name folder computation.
         async exportProviderCoursePackages(providerName) {
             if (!providerName) return alert('No provider selected.');
             const courses = this.getAnalyticsSnap().filter(d => d.Provider === providerName).map(d => d.Course).filter(Boolean).sort();
@@ -2823,6 +2826,12 @@ ${platform && globeCountryCount > 0 ? ('\nvar LAND=' + _globeGeo.LAND + ';var CE
             const dateStr = new Date().toISOString().split('T')[0];
             const anonUsers = await this._getAnonUsers();
             this._reportCancelled = false;
+            let provOk = false;
+            this._showReportProgress('Consolidated provider package: ' + providerName, true);
+            try {
+                const ps = await this._writeProviderPackage(providerName, folder, dateStr, anonUsers);
+                provOk = !!(ps.pdf || ps.html || ps.users || ps.feedback);
+            } catch (e) { console.error('[CoursePackage] provider package failed for', providerName, e); }
             let ok = 0, partial = 0, failed = 0;
             for (let i = 0; i < courses.length; i++) {
                 if (this._reportCancelled) break;
@@ -2835,40 +2844,58 @@ ${platform && globeCountryCount > 0 ? ('\nvar LAND=' + _globeGeo.LAND + ';var CE
                 } catch (e) { console.error('[CoursePackage]', courses[i], e); failed++; }
             }
             this._hideReportProgress();
-            alert((this._reportCancelled ? 'Cancelled. ' : 'Done! ') + ok + ' complete course package' + (ok !== 1 ? 's' : '') +
+            alert((this._reportCancelled ? 'Cancelled. ' : 'Done! ') +
+                (provOk ? 'Consolidated provider package + ' : 'Provider package FAILED; ') +
+                ok + ' complete course package' + (ok !== 1 ? 's' : '') +
                 (partial > 0 ? ', ' + partial + ' partial (some files missing — check that user data + feedback are synced)' : '') +
                 (failed > 0 ? ', ' + failed + ' failed' : '') +
-                '\n\nEach course has its own folder inside:\n' + path.join(folder, providerName.replace(/[^a-z0-9]/gi, '_').toLowerCase()));
+                '\n\nProvider files sit at the top of the folder; each course has its own subfolder inside:\n' + path.join(folder, providerName.replace(/[^a-z0-9]/gi, '_').toLowerCase()));
         },
 
-        // Reports tab: packages for EVERY course of EVERY provider (provider → course tree).
+        // Reports tab: for EVERY provider, the consolidated provider package (top of the
+        // provider folder) plus one package per course (subfolders) — the full tree.
         async exportAllCoursePackages() {
             const snapData = this.getAnalyticsSnap();
-            const pairs = snapData.filter(d => d.Provider && d.Course).map(d => ({ prov: d.Provider, course: d.Course }));
-            if (pairs.length === 0) return alert('No course data available.');
-            pairs.sort((a, b) => a.prov.localeCompare(b.prov) || a.course.localeCompare(b.course));
+            const byProv = {};
+            snapData.filter(d => d.Provider && d.Course).forEach(d => { (byProv[d.Provider] = byProv[d.Provider] || []).push(d.Course); });
+            const provs = Object.keys(byProv).sort();
+            if (provs.length === 0) return alert('No course data available.');
+            const totalCourses = provs.reduce((s, p) => s + byProv[p].length, 0);
             const folder = await electronAPI.invoke('pick-folder');
             if (!folder) return;
             const dateStr = new Date().toISOString().split('T')[0];
             const anonUsers = await this._getAnonUsers();
             this._reportCancelled = false;
-            let ok = 0, partial = 0, failed = 0;
-            for (let i = 0; i < pairs.length; i++) {
+            let provOk = 0, provFailed = 0, ok = 0, partial = 0, failed = 0, done = 0;
+            for (let p = 0; p < provs.length; p++) {
                 if (this._reportCancelled) break;
-                const { prov, course } = pairs[i];
-                this._showReportProgress('Course package ' + (i + 1) + '/' + pairs.length + ': ' + prov + ' · ' + course, true);
+                const prov = provs[p];
+                this._showReportProgress('Provider ' + (p + 1) + '/' + provs.length + ': ' + prov + ' — consolidated package', true);
                 try {
-                    const s = await this._writeCoursePackage(prov, course, folder, dateStr, anonUsers);
-                    if (s.pdf && s.html && s.users && s.feedback) ok++;
-                    else if (s.pdf || s.html || s.users || s.feedback) partial++;
-                    else failed++;
-                } catch (e) { console.error('[CoursePackage]', prov, course, e); failed++; }
+                    const ps = await this._writeProviderPackage(prov, folder, dateStr, anonUsers);
+                    if (ps.pdf || ps.html || ps.users || ps.feedback) provOk++; else provFailed++;
+                } catch (e) { console.error('[CoursePackage] provider package failed for', prov, e); provFailed++; }
+                const courses = byProv[prov].sort();
+                for (let i = 0; i < courses.length; i++) {
+                    if (this._reportCancelled) break;
+                    done++;
+                    this._showReportProgress('Course package ' + done + '/' + totalCourses + ': ' + prov + ' · ' + courses[i], true);
+                    try {
+                        const s = await this._writeCoursePackage(prov, courses[i], folder, dateStr, anonUsers);
+                        if (s.pdf && s.html && s.users && s.feedback) ok++;
+                        else if (s.pdf || s.html || s.users || s.feedback) partial++;
+                        else failed++;
+                    } catch (e) { console.error('[CoursePackage]', prov, courses[i], e); failed++; }
+                }
             }
             this._hideReportProgress();
-            alert((this._reportCancelled ? 'Cancelled. ' : 'Done! ') + ok + ' complete course package' + (ok !== 1 ? 's' : '') +
+            alert((this._reportCancelled ? 'Cancelled. ' : 'Done! ') +
+                provOk + '/' + provs.length + ' consolidated provider package' + (provs.length !== 1 ? 's' : '') +
+                (provFailed > 0 ? ' (' + provFailed + ' failed)' : '') + ' · ' +
+                ok + ' complete course package' + (ok !== 1 ? 's' : '') +
                 (partial > 0 ? ', ' + partial + ' partial (some files missing — check that user data + feedback are synced)' : '') +
                 (failed > 0 ? ', ' + failed + ' failed' : '') +
-                '\n\nFolder structure: provider → course, inside:\n' + folder);
+                '\n\nEach provider folder holds its consolidated report files plus one subfolder per course, inside:\n' + folder);
         },
 
         _showReportProgress(msg, showCancel) {
