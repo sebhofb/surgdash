@@ -2402,6 +2402,9 @@ Object.assign(window.App, {
                                 <button onclick="App.exportAllProviderPackages()" class="flex items-center justify-center gap-2 py-3 px-4 bg-white border border-slate-200 text-gsf-prussian font-bold rounded-lg hover:border-gsf-boston hover:text-gsf-boston hover:shadow-md transition-all shadow-sm" title="One folder per provider: PDF report + anonymized users + anonymized feedback (Excel)">
                                     <i data-lucide="package" width="18" class="text-gsf-boston"></i> Full Report Packages
                                 </button>
+                                <button onclick="App.exportAllCoursePackages()" class="flex items-center justify-center gap-2 py-3 px-4 bg-white border border-slate-200 text-gsf-prussian font-bold rounded-lg hover:border-gsf-boston hover:text-gsf-boston hover:shadow-md transition-all shadow-sm" title="A full report package per COURSE, organised provider → course: each course folder gets its own PDF + web report + anonymized users + anonymized feedback. Slow — one PDF per course.">
+                                    <i data-lucide="folder-tree" width="18" class="text-gsf-boston"></i> All Course Packages
+                                </button>
                                 <button onclick="App.generateAllProviderReports()" class="flex items-center justify-center gap-2 py-3 px-4 bg-white border border-slate-200 text-gsf-prussian font-bold rounded-lg hover:border-gsf-boston hover:text-gsf-boston hover:shadow-md transition-all shadow-sm">
                                     <i data-lucide="folder-down" width="18" class="text-gsf-boston"></i> All PDF Reports
                                 </button>
@@ -3361,6 +3364,7 @@ Object.assign(window.App, {
                         </div>
                         <div data-edit-only data-report-ok class="flex items-center gap-1.5 flex-wrap justify-end">
                             <button onclick="App.exportProviderPackage(App.selectedProvider)" class="flex items-center gap-1.5 px-3.5 py-2 bg-amber-500 text-white font-bold rounded-lg text-xs shadow-sm hover:bg-amber-600 transition-colors" title="One folder with the PDF + web report + anonymized users + anonymized feedback (Excel)"><i data-lucide="package" width="14"></i> Report Package</button>
+                            <button onclick="App.exportProviderCoursePackages(App.selectedProvider)" class="flex items-center gap-1.5 px-3 py-2 border rounded-lg text-xs font-bold text-slate-600 hover:text-gsf-boston hover:bg-slate-50 transition-colors" title="A full report package per course — provider folder with one subfolder per course (PDF + web report + users + feedback each)"><i data-lucide="folder-tree" width="14"></i> Course Packages</button>
                             <button onclick="App.exportProviderHtmlReport(App.selectedProvider)" class="flex items-center gap-1.5 px-3 py-2 border rounded-lg text-xs font-bold text-slate-600 hover:text-gsf-boston hover:bg-slate-50 transition-colors" title="Interactive dark-themed report (single .html file)"><i data-lucide="globe" width="14"></i> Web</button>
                             <button onclick="App.generateProviderReport(App.selectedProvider)" class="flex items-center gap-1.5 px-3 py-2 border rounded-lg text-xs font-bold text-slate-600 hover:text-gsf-boston hover:bg-slate-50 transition-colors" title="Printable PDF report"><i data-lucide="download" width="14"></i> PDF</button>
                             <button onclick="App.exportAnonymizedUserData(App.selectedProvider)" class="flex items-center gap-1.5 px-3 py-2 border rounded-lg text-xs font-bold text-slate-600 hover:text-gsf-boston hover:bg-slate-50 transition-colors" title="Anonymized per-learner Excel"><i data-lucide="users" width="14"></i> User Data</button>
@@ -3489,11 +3493,12 @@ Object.assign(window.App, {
 
                     <div class="flex items-center justify-between gap-3 flex-wrap bg-white border border-slate-200 rounded-xl shadow-sm px-4 py-3 mb-6">
                         <p class="text-sm text-slate-500">Provider: ${(cSnap.Provider && cSnap.Provider !== 'Unknown' && cSnap.Provider !== 'Unknown Provider') ? '<button onclick="App.openProvider(\'' + this.escapeHtml(cSnap.Provider).replace(/'/g, '&#39;') + '\')" class="font-bold text-gsf-boston hover:underline cursor-pointer">' + this.escapeHtml(cSnap.Provider) + ' &rsaquo;</button>' : '<span class="font-bold text-gsf-boston">' + this.escapeHtml(cSnap.Provider || 'Unknown') + '</span>'}${this._courseStatusBadge(cSnap.Access)}</p>
-                        <div class="flex items-center gap-2">
+                        <div class="flex items-center gap-2 flex-wrap">
                             <label class="inline-flex items-center gap-2 text-sm font-medium ${this.isCourseIncluded(this.selectedCourse) ? 'text-slate-600' : 'text-amber-700'} cursor-pointer" title="Untick to exclude this course from all analytics, reports and totals (use for unpublished/test courses)">
                                 <input type="checkbox" ${this.isCourseIncluded(this.selectedCourse) ? 'checked' : ''} onchange="App.toggleCourseIncludedByName('${this.escapeHtml(this.selectedCourse).replace(/'/g, "\\'")}', this.checked)">
                                 ${this.isCourseIncluded(this.selectedCourse) ? 'Included in analytics' : 'Excluded from analytics'}
                             </label>
+                            <button data-edit-only data-report-ok onclick="App.exportCurrentCoursePackage()" class="flex items-center gap-1.5 px-3.5 py-2 bg-amber-500 text-white font-bold rounded-lg text-xs shadow-sm hover:bg-amber-600 transition-colors" title="One folder ({provider}/{course}) with the course PDF + web report + anonymized users + anonymized feedback (Excel)"><i data-lucide="package" width="14"></i> Report Package</button>
                         </div>
                     </div>
                     ${(this._feedbackSummaries && this._feedbackSummaries[this.selectedCourse] && this._feedbackSummaries[this.selectedCourse].s) ? '<div class="bg-amber-50 border border-amber-200 rounded-xl p-5 mb-6"><p class="text-[10px] font-bold uppercase tracking-wide text-amber-700 mb-1.5">What learners are saying</p><p class="text-sm text-slate-700 leading-relaxed">' + this.escapeHtml(this._feedbackSummaries[this.selectedCourse].s) + '</p></div>' : ''}
