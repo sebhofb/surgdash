@@ -488,6 +488,19 @@ window.App = {
         return String(unsafe).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
     },
 
+    // For dynamic values placed inside single-quoted JS string literals in inline
+    // handler attributes, e.g. onclick="App.openProvider('NAME')". The browser
+    // decodes HTML entities in the attribute BEFORE the JS engine parses the
+    // handler, so escapeHtml alone turns O&#039;Brien back into a raw quote that
+    // breaks the literal. Escape for JS first, then for HTML.
+    escapeJsArg(value) {
+        return this.escapeHtml(String(value ?? '')
+            .replace(/\\/g, '\\\\')
+            .replace(/'/g, "\\'")
+            .replace(/\r/g, '\\r')
+            .replace(/\n/g, '\\n'));
+    },
+
     async _hashPassword(pw) {
         const data = new TextEncoder().encode(pw);
         const buf = await crypto.subtle.digest('SHA-256', data);

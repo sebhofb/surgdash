@@ -363,10 +363,10 @@ window.GenericViews = {
                         <button data-edit-only onclick="GenericViews._exportSubmissionForm('${project.id}')" class="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold text-emerald-700 hover:bg-emerald-600 hover:text-white transition-all" title="Generate a standalone HTML submission form to send to a colleague"><i data-lucide="file-edit" width="12"></i> Submission Form</button>
                         ${project.hcwMultiplierEnabled ? `<span class="w-px h-4 bg-slate-200 mx-1"></span><button onclick="App.showHcwMultiplier=!App.showHcwMultiplier; App.renderView()" class="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-semibold transition-all ${multiplierEnabled ? 'bg-gsf-boston text-white' : 'text-slate-500 hover:bg-slate-100'}" title="HCW multiplier ×${multiplierRate}"><i data-lucide="trending-up" width="12"></i> ×${multiplierRate} HCW</button>` : ''}
                         ${(project.sheetsTabUrl || appSettings.googleSheetsViewUrl) || project.linkGsf || project.linkFolder || (project.linksExtra || []).some(l => l.url) ? `<span class="w-px h-4 bg-slate-200 mx-1 ml-auto"></span>` : '<span class="ml-auto"></span>'}
-                        ${(project.sheetsTabUrl || appSettings.googleSheetsViewUrl) ? `<button onclick="electronAPI.openExternal('${App.escapeHtml(project.sheetsTabUrl || appSettings.googleSheetsViewUrl)}')" class="p-1.5 rounded text-emerald-600 hover:bg-emerald-50 transition-all" title="Open Google Sheet"><i data-lucide="sheet" width="14"></i></button>` : ''}
-                        ${project.linkGsf ? `<button onclick="electronAPI.openExternal('${App.escapeHtml(project.linkGsf)}')" class="p-1.5 rounded text-slate-500 hover:bg-slate-100 transition-all" title="Open GSF page"><i data-lucide="external-link" width="14"></i></button>` : ''}
-                        ${project.linkFolder ? `<button onclick="electronAPI.openExternal('${App.escapeHtml(project.linkFolder)}')" class="p-1.5 rounded text-slate-500 hover:bg-slate-100 transition-all" title="Open project folder"><i data-lucide="folder" width="14"></i></button>` : ''}
-                        ${(project.linksExtra || []).map(l => l.url ? `<button onclick="electronAPI.openExternal('${App.escapeHtml(l.url)}')" class="p-1.5 rounded text-slate-500 hover:bg-slate-100 transition-all" title="${App.escapeHtml(l.label || l.url)}"><i data-lucide="link" width="14"></i></button>` : '').join('')}
+                        ${(project.sheetsTabUrl || appSettings.googleSheetsViewUrl) ? `<button onclick="electronAPI.openExternal('${App.escapeJsArg(project.sheetsTabUrl || appSettings.googleSheetsViewUrl)}')" class="p-1.5 rounded text-emerald-600 hover:bg-emerald-50 transition-all" title="Open Google Sheet"><i data-lucide="sheet" width="14"></i></button>` : ''}
+                        ${project.linkGsf ? `<button onclick="electronAPI.openExternal('${App.escapeJsArg(project.linkGsf)}')" class="p-1.5 rounded text-slate-500 hover:bg-slate-100 transition-all" title="Open GSF page"><i data-lucide="external-link" width="14"></i></button>` : ''}
+                        ${project.linkFolder ? `<button onclick="electronAPI.openExternal('${App.escapeJsArg(project.linkFolder)}')" class="p-1.5 rounded text-slate-500 hover:bg-slate-100 transition-all" title="Open project folder"><i data-lucide="folder" width="14"></i></button>` : ''}
+                        ${(project.linksExtra || []).map(l => l.url ? `<button onclick="electronAPI.openExternal('${App.escapeJsArg(l.url)}')" class="p-1.5 rounded text-slate-500 hover:bg-slate-100 transition-all" title="${App.escapeHtml(l.label || l.url)}"><i data-lucide="link" width="14"></i></button>` : '').join('')}
                     </div>
                 </header>
 
@@ -450,7 +450,7 @@ window.GenericViews = {
                         <p class="text-xs font-black text-gsf-prussian uppercase tracking-wide flex-1">${kpi.nameBig || kpi.name}</p>
                         <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                             <button data-copy-chart="dash-chart-${kpi.id}" onclick="GenericCharts.copyChart('dash-chart-${kpi.id}')" title="Copy to clipboard" class="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600"><i data-lucide="copy" width="11"></i></button>
-                            <button onclick="GenericCharts.downloadChart('dash-chart-${kpi.id}','${(kpi.nameBig||kpi.name).replace(/'/g,'')}')" title="Download PNG" class="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600"><i data-lucide="download" width="11"></i></button>
+                            <button onclick="GenericCharts.downloadChart('dash-chart-${kpi.id}','${App.escapeJsArg(kpi.nameBig||kpi.name)}')" title="Download PNG" class="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600"><i data-lucide="download" width="11"></i></button>
                         </div>
                     </div>
                     <div id="dash-chart-${kpi.id}" style="min-height:220px;"></div>
@@ -830,7 +830,7 @@ window.GenericViews = {
                     ${trendHtml}
                     <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button data-copy-chart="quality-chart-${kpi.id}" onclick="GenericCharts.copyChart('quality-chart-${kpi.id}')" title="Copy to clipboard" class="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600"><i data-lucide="copy" width="11"></i></button>
-                        <button onclick="GenericCharts.downloadChart('quality-chart-${kpi.id}','${kpi.shortName.replace(/'/g,'')}')" title="Download PNG" class="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600"><i data-lucide="download" width="11"></i></button>
+                        <button onclick="GenericCharts.downloadChart('quality-chart-${kpi.id}','${App.escapeJsArg(kpi.shortName)}')" title="Download PNG" class="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600"><i data-lucide="download" width="11"></i></button>
                     </div>
                 </div>
                 ${latestActual !== null ? `
@@ -1420,7 +1420,7 @@ window.GenericViews = {
                     </td>
                 </tr>`;
             } else {
-                const linkIcon = e.link ? ` <a href="${App.escapeHtml(e.link)}" onclick="event.stopPropagation(); electronAPI.openExternal('${App.escapeHtml(e.link)}'); return false;" class="inline-flex items-center text-gsf-boston hover:text-gsf-prussian ml-1" title="${App.escapeHtml(e.link)}"><i data-lucide="external-link" width="12"></i></a>` : '';
+                const linkIcon = e.link ? ` <a href="${App.escapeHtml(e.link)}" onclick="event.stopPropagation(); electronAPI.openExternal('${App.escapeJsArg(e.link)}'); return false;" class="inline-flex items-center text-gsf-boston hover:text-gsf-prussian ml-1" title="${App.escapeHtml(e.link)}"><i data-lucide="external-link" width="12"></i></a>` : '';
                 historyRows += `<tr class="border-b border-slate-100 hover:bg-slate-50 cursor-pointer" onclick="GenericViews._showActivityDetail('${project.id}','update','${e.id}')">
                     <td class="px-4 py-2 text-xs text-slate-500 whitespace-nowrap">${e.date}</td>
                     <td class="px-4 py-2"><span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-purple-100 text-purple-700"><i data-lucide="flag" width="10"></i>Milestone</span></td>
@@ -3413,7 +3413,7 @@ window.GenericViews = {
                     ${item.link ? `
                         <div>
                             <h4 class="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Link</h4>
-                            <a href="#" onclick="electronAPI.openExternal('${App.escapeHtml(item.link)}'); return false;" class="text-sm text-gsf-boston hover:underline break-all inline-flex items-center gap-1.5">
+                            <a href="#" onclick="electronAPI.openExternal('${App.escapeJsArg(item.link)}'); return false;" class="text-sm text-gsf-boston hover:underline break-all inline-flex items-center gap-1.5">
                                 <i data-lucide="external-link" width="13"></i> ${App.escapeHtml(item.link)}
                             </a>
                         </div>
@@ -3458,7 +3458,7 @@ window.GenericViews = {
                     ${item.link ? `
                         <div>
                             <h4 class="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Link</h4>
-                            <a href="#" onclick="electronAPI.openExternal('${App.escapeHtml(item.link)}'); return false;" class="text-sm text-gsf-boston hover:underline break-all inline-flex items-center gap-1.5">
+                            <a href="#" onclick="electronAPI.openExternal('${App.escapeJsArg(item.link)}'); return false;" class="text-sm text-gsf-boston hover:underline break-all inline-flex items-center gap-1.5">
                                 <i data-lucide="external-link" width="13"></i> ${App.escapeHtml(item.link)}
                             </a>
                         </div>
@@ -3772,7 +3772,7 @@ window.GenericViews = {
 
     // ===== BUDGET MATRIX (per-year allocated + spent) =====
     _renderBudgetMatrix(project, allBudget, years) {
-        const projectIdJs = String(project.id).replace(/'/g, "\\'");
+        const projectIdJs = App.escapeJsArg(project.id);
         const visibleYears = years.slice();
         const currency = project.currency || 'USD';
         const cell = (y, kind) => {
@@ -3925,7 +3925,7 @@ window.GenericViews = {
     // Q2 has data, year total = Q2. Backward compat: if an old entry has
     // kpis[kpiId] but no quarters, we surface it as Q4 (full-year value).
     _renderKpiMatrix(project, allTargets, allActuals, years) {
-        const projectIdJs = String(project.id).replace(/'/g, "\\'");
+        const projectIdJs = App.escapeJsArg(project.id);
         const visibleYears = years.slice();
 
         // Target value for a year (single annual cell)
@@ -4292,7 +4292,7 @@ window.GenericViews = {
         if (!activeQKpis || activeQKpis.length === 0) {
             return `<p class="text-sm text-slate-400 italic">No quality indicators enabled for this project.</p>`;
         }
-        const projectIdJs = String(project.id).replace(/'/g, "\\'");
+        const projectIdJs = App.escapeJsArg(project.id);
         const visibleYears = years.slice();
 
         const cellVal = (kpi, y, q, kind) => {
@@ -5447,7 +5447,7 @@ window.GenericViews = {
                         <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Sheets</span>
                         <button id="sheets-sync-btn" onclick="GenericViews._syncToSheets()" data-edit-only class="p-1.5 rounded text-emerald-600 hover:bg-emerald-50 transition-all" title="Push all projects + org summary to Google Sheets"><i data-lucide="upload" width="14"></i></button>
                         <button id="sheets-pull-btn" onclick="GenericViews._pullFromSheets()" class="p-1.5 rounded text-emerald-600 hover:bg-emerald-50 transition-all" title="Pull KPI data back from Google Sheets"><i data-lucide="download" width="14"></i></button>
-                        ${appSettings.googleSheetsViewUrl ? `<button onclick="electronAPI.openExternal('${App.escapeHtml(appSettings.googleSheetsViewUrl)}')" class="p-1.5 rounded text-emerald-600 hover:bg-emerald-50 transition-all" title="Open Google Sheet"><i data-lucide="sheet" width="14"></i></button>` : ''}
+                        ${appSettings.googleSheetsViewUrl ? `<button onclick="electronAPI.openExternal('${App.escapeJsArg(appSettings.googleSheetsViewUrl)}')" class="p-1.5 rounded text-emerald-600 hover:bg-emerald-50 transition-all" title="Open Google Sheet"><i data-lucide="sheet" width="14"></i></button>` : ''}
                         <span data-edit-only class="w-px h-4 bg-slate-200 mx-1"></span>
                         <span data-edit-only class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Local</span>
                         <button data-edit-only onclick="GenericViews._localBackup()" class="p-1.5 rounded text-slate-500 hover:bg-slate-100 transition-all" title="Save a complete JSON backup — SURGfund projects + SURGhub data + settings"><i data-lucide="hard-drive-download" width="14"></i></button>
@@ -5474,7 +5474,7 @@ window.GenericViews = {
                                     <p class="text-xs font-black text-gsf-prussian uppercase tracking-wide flex-1">${kpi.nameBig || kpi.name}</p>
                                     <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                         <button data-copy-chart="org-chart-${kpi.id}" onclick="GenericCharts.copyChart('org-chart-${kpi.id}')" title="Copy to clipboard" class="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600"><i data-lucide="copy" width="11"></i></button>
-                                        <button onclick="GenericCharts.downloadChart('org-chart-${kpi.id}','${(kpi.nameBig||kpi.name).replace(/'/g,'')}')" title="Download PNG" class="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600"><i data-lucide="download" width="11"></i></button>
+                                        <button onclick="GenericCharts.downloadChart('org-chart-${kpi.id}','${App.escapeJsArg(kpi.nameBig||kpi.name)}')" title="Download PNG" class="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600"><i data-lucide="download" width="11"></i></button>
                                     </div>
                                 </div>
                                 <div id="org-chart-${kpi.id}" style="min-height:220px;"></div>
@@ -10628,7 +10628,7 @@ function initProjectMap(pid){
                     <td class="px-4 py-2 text-xs">${details.join(' · ')}</td>
                 </tr>`;
             }
-            const linkIcon = e.link ? ` <a href="${App.escapeHtml(e.link)}" onclick="event.stopPropagation(); electronAPI.openExternal('${App.escapeHtml(e.link)}'); return false;" class="inline-flex items-center text-gsf-boston hover:text-gsf-prussian ml-1"><i data-lucide="external-link" width="12"></i></a>` : '';
+            const linkIcon = e.link ? ` <a href="${App.escapeHtml(e.link)}" onclick="event.stopPropagation(); electronAPI.openExternal('${App.escapeJsArg(e.link)}'); return false;" class="inline-flex items-center text-gsf-boston hover:text-gsf-prussian ml-1"><i data-lucide="external-link" width="12"></i></a>` : '';
             return `<tr class="border-b border-slate-100 hover:bg-slate-50 cursor-pointer" onclick="GenericViews._showActivityDetail('${e._project.id}','update','${e.id}')">
                 <td class="px-4 py-2 text-xs text-slate-500 whitespace-nowrap">${e.date || ''}</td>
                 <td class="px-4 py-2">${projChip}</td>
@@ -10842,7 +10842,7 @@ function initProjectMap(pid){
                                 <span class="text-xs font-medium text-slate-400">${u.date}</span>
                                 ${tagHtml}
                             </div>
-                            <h3 class="text-sm font-bold text-slate-800">${App.escapeHtml(u.title)}${u.link ? ` <a href="${App.escapeHtml(u.link)}" onclick="event.stopPropagation(); electronAPI.openExternal('${App.escapeHtml(u.link)}'); return false;" class="inline-flex items-center text-gsf-boston hover:text-gsf-prussian ml-1" title="${App.escapeHtml(u.link)}"><i data-lucide="external-link" width="12"></i></a>` : ''}</h3>
+                            <h3 class="text-sm font-bold text-slate-800">${App.escapeHtml(u.title)}${u.link ? ` <a href="${App.escapeHtml(u.link)}" onclick="event.stopPropagation(); electronAPI.openExternal('${App.escapeJsArg(u.link)}'); return false;" class="inline-flex items-center text-gsf-boston hover:text-gsf-prussian ml-1" title="${App.escapeHtml(u.link)}"><i data-lucide="external-link" width="12"></i></a>` : ''}</h3>
                             ${u.body ? `<p class="text-sm text-slate-600 mt-1 whitespace-pre-line">${App.escapeHtml(u.body)}</p>` : ''}
                         </div>
                         <div class="flex items-center gap-2 shrink-0">
@@ -12551,7 +12551,7 @@ ${additionalPages.map((inner, i) => `
                             <button id="proj-map-labels-btn" onclick="GenericViews._toggleMapLabels('proj')" title="Toggle labels" style="display:flex;align-items:center;gap:4px;padding:5px 10px;border:1px solid #e2e8f0;border-radius:7px;background:#fff;cursor:pointer;font-size:11px;font-weight:600;color:#64748b"><i data-lucide="tag" width="11"></i> Labels</button>
                             <button id="proj-leaflet-map-cluster-btn" onclick="GenericViews._toggleMapClustering('proj-leaflet-map')" title="Toggle facility clustering" style="display:flex;align-items:center;gap:4px;padding:5px 10px;border:1px solid #e2e8f0;border-radius:7px;background:#fff;cursor:pointer;font-size:11px;font-weight:600;color:#64748b"><i data-lucide="group" width="11"></i> Cluster</button>
                             <button data-copy-map="proj-leaflet-map" onclick="GenericCharts.copyMap('proj-leaflet-map')" title="Copy map to clipboard" style="display:flex;align-items:center;gap:4px;padding:5px 10px;border:1px solid #e2e8f0;border-radius:7px;background:#fff;cursor:pointer;font-size:11px;font-weight:600;color:#64748b"><i data-lucide="copy" width="11"></i> Copy</button>
-                            <button onclick="GenericCharts.downloadMap('proj-leaflet-map','${App.escapeHtml((project.shortName||project.name).replace(/'/g,''))}_Map')" title="Download map as PNG" style="display:flex;align-items:center;gap:4px;padding:5px 10px;border:1px solid #e2e8f0;border-radius:7px;background:#fff;cursor:pointer;font-size:11px;font-weight:600;color:#64748b"><i data-lucide="download" width="11"></i> Save</button>
+                            <button onclick="GenericCharts.downloadMap('proj-leaflet-map','${App.escapeJsArg(project.shortName||project.name)}_Map')" title="Download map as PNG" style="display:flex;align-items:center;gap:4px;padding:5px 10px;border:1px solid #e2e8f0;border-radius:7px;background:#fff;cursor:pointer;font-size:11px;font-weight:600;color:#64748b"><i data-lucide="download" width="11"></i> Save</button>
                             <span style="border-left:1px solid #e2e8f0;height:20px"></span>
                             <button onclick="App.navigate('project-setup')" style="font-size:12px;color:#4389C8;background:none;border:1px solid #e2e8f0;padding:5px 12px;border-radius:7px;cursor:pointer;font-weight:600">
                                 Manage Facilities

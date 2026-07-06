@@ -1295,7 +1295,7 @@ Object.assign(window.App, {
     _chartBtns(elementId, name) {
         return `<div class="flex items-center gap-1 ml-auto">
             <button data-copy-chart="${elementId}" onclick="Charts.copyChart('${elementId}')" title="Copy to clipboard" class="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600"><i data-lucide="copy" width="11"></i></button>
-            <button onclick="Charts.downloadChart('${elementId}','${(name||elementId).replace(/'/g,'')}')" title="Download PNG" class="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600"><i data-lucide="download" width="11"></i></button>
+            <button onclick="Charts.downloadChart('${elementId}','${this.escapeJsArg(name||elementId)}')" title="Download PNG" class="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-slate-600"><i data-lucide="download" width="11"></i></button>
         </div>`;
     },
 
@@ -2043,8 +2043,8 @@ Object.assign(window.App, {
                 ${contextProvider ? '<button onclick="App.feedbackShowSelected=!App.feedbackShowSelected; App._applySelectedFilter()" class="px-2 py-1 rounded font-semibold border transition-all ' + (this.feedbackShowSelected ? 'bg-green-100 text-green-700 border-green-300' : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300') + '">☑ Selected only</button>' : ''}
                 ${hasActiveFilter ? '<button onclick="App.feedbackFilterTag=\'all\'; App.feedbackFilterDate=\'\'; App.reportFeedbackFromDate=\'\'; App.feedbackShowSelected=false; App.renderView()" class="text-gsf-crimson font-bold hover:underline">Clear</button>' : ''}
                 <button data-edit-only data-report-ok onclick="App.scoreFeedbackWithAI()" class="px-2.5 py-1 rounded font-bold bg-gsf-prussian text-white hover:bg-slate-900 transition-colors flex items-center gap-1" title="Score all feedback with Claude — surfaces real impact stories, filters junk, feeds provider reports">✨ Score with AI</button>
-                <button data-edit-only data-report-ok onclick="App.autoSelectTestimonials(${contextProvider ? "'" + this.escapeHtml(contextProvider).replace(/'/g, '&#39;') + "'" : 'null'})" class="px-2.5 py-1 rounded font-bold bg-amber-500 text-white hover:bg-amber-600 transition-colors" title="Select the top X comments per course (AI score ≥ Y) as report testimonials — then fine-tune with the checkboxes">⭐ Auto-select</button>
-                <button data-edit-only data-report-ok onclick="App.summarizeFeedbackWithAI(${contextProvider ? "'" + this.escapeHtml(contextProvider).replace(/'/g, '&#39;') + "'" : 'null'})" class="px-2.5 py-1 rounded font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition-colors" title="AI summary of what learners are saying, per course and per provider — shown in reports">📝 Summarize</button>
+                <button data-edit-only data-report-ok onclick="App.autoSelectTestimonials(${contextProvider ? "'" + this.escapeJsArg(contextProvider) + "'" : 'null'})" class="px-2.5 py-1 rounded font-bold bg-amber-500 text-white hover:bg-amber-600 transition-colors" title="Select the top X comments per course (AI score ≥ Y) as report testimonials — then fine-tune with the checkboxes">⭐ Auto-select</button>
+                <button data-edit-only data-report-ok onclick="App.summarizeFeedbackWithAI(${contextProvider ? "'" + this.escapeJsArg(contextProvider) + "'" : 'null'})" class="px-2.5 py-1 rounded font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition-colors" title="AI summary of what learners are saying, per course and per provider — shown in reports">📝 Summarize</button>
                 <button data-edit-only data-report-ok onclick="App.setAnthropicKey()" class="px-2 py-1 rounded font-semibold border bg-white text-slate-500 border-slate-200 hover:border-slate-300" title="Set / change the Anthropic API key (stored locally on this machine)">⚙</button>
                 <span class="text-slate-400 ml-auto">${filtered.length} of ${scored.length}</span>
             </div>
@@ -2054,8 +2054,8 @@ Object.assign(window.App, {
                 <div class="space-y-3 max-h-[600px] overflow-y-auto custom-scrollbar pr-2 pb-2" data-feedback-grid="${this.escapeHtml(contextProvider || '')}">
                     ${filtered.map(f => {
                         const showCb = contextProvider && f._course && f.s !== 'Critical';
-                        const safeText = this.escapeHtml(f.t).replace(/'/g, '&#39;').replace(/\\/g, '\\\\');
-                        const safeCourse = f._course ? this.escapeHtml(f._course).replace(/'/g, '&#39;') : '';
+                        const safeText = this.escapeHtml(f.t);
+                        const safeCourse = f._course ? this.escapeHtml(f._course) : '';
                         const _ai = (this._aiScoreMap || {})[this._djb2Hash(String(f.t || '').trim())];
                         // AI themes replace the legacy keyword pills once scored
                         const allTags = (_ai && Array.isArray(_ai.t) && _ai.t.length && _ai.t[0] !== 'junk')
@@ -2084,7 +2084,7 @@ Object.assign(window.App, {
                                 ${allTags.length > 0 || showCb ? `
                                     <div class="flex flex-wrap items-center gap-1 mt-1 pt-2 border-t border-slate-100">
                                         ${allTags.map(tag => tagPill(tag, false)).join(' ')}
-                                        ${showCb ? '<label class="ml-auto inline-flex items-center gap-1 cursor-pointer" title="Select for PDF report"><input type="checkbox" data-report-ok class="accent-green-600 testimonial-cb" data-fb-text="' + safeText + '" data-fb-course="' + safeCourse + '" onchange="App.toggleTestimonial(\'' + this.escapeHtml(contextProvider).replace(/'/g, '&#39;') + '\', \'' + safeCourse + '\', this.dataset.fbText, this.checked)"><span class="text-[10px] font-semibold text-green-700">Use in report</span></label>' : ''}
+                                        ${showCb ? '<label class="ml-auto inline-flex items-center gap-1 cursor-pointer" title="Select for PDF report"><input type="checkbox" data-report-ok class="accent-green-600 testimonial-cb" data-fb-text="' + safeText + '" data-fb-course="' + safeCourse + '" onchange="App.toggleTestimonial(\'' + this.escapeJsArg(contextProvider) + '\', this.dataset.fbCourse, this.dataset.fbText, this.checked)"><span class="text-[10px] font-semibold text-green-700">Use in report</span></label>' : ''}
                                     </div>
                                 ` : ''}
                             </div>
@@ -2140,7 +2140,7 @@ Object.assign(window.App, {
         this[stateKey] = selected.slice();
 
         const available = allCategories.filter(c => !selected.includes(c));
-        const esc = (s) => this.escapeHtml(s).replace(/'/g, "\\'");
+        const esc = (s) => this.escapeJsArg(s);
 
         // Checkboxes for currently selected items (can uncheck to remove from chart)
         let checkboxes = selected.map(cat =>
@@ -2577,8 +2577,8 @@ Object.assign(window.App, {
                                             return 0;
                                         });
                                         return enriched.map(s => {
-                                            const provEsc = this.escapeHtml(s.Provider).replace(/'/g, '&#39;');
-                                            const courseEsc = this.escapeHtml(s.Course).replace(/'/g, '&#39;');
+                                            const provEsc = this.escapeJsArg(s.Provider);
+                                            const courseEsc = this.escapeJsArg(s.Course);
                                             const isUnknownProv = s.Provider === 'Unknown Provider';
                                             return `<tr class="border-b hover:bg-slate-50 ${s.isExcluded ? 'opacity-40' : ''}">
                                             <td class="py-2 px-3 text-xs truncate" title="${this.escapeHtml(s.Provider)} — click to view provider page">
@@ -3400,7 +3400,7 @@ Object.assign(window.App, {
                         <div class="overflow-x-auto max-h-[400px] overflow-y-auto custom-scrollbar">
                             <table class="w-full text-left border-collapse text-sm">
                                 <thead class="sticky top-0 bg-white shadow-sm z-10"><tr class="border-b text-slate-500"><th class="py-3 px-4 font-medium">Course Title</th><th class="py-3 px-4 font-medium text-right">Learners</th><th class="py-3 px-4 font-medium text-right">Certificates</th><th class="py-3 px-4 font-medium text-right">Learning Time</th><th class="py-3 px-4 font-medium text-right">Rating</th><th class="py-3 px-4 font-medium text-right">Responses</th><th class="py-3 px-4 font-medium text-center">Include</th></tr></thead>
-                                <tbody>${provAllCourses.map(d => { const inc = !d.Excluded; const courseEsc = this.escapeHtml(d.Course).replace(/'/g, "\\'"); return '<tr class="border-b hover:bg-slate-50 ' + (inc ? '' : 'opacity-40') + '"><td class="py-3 px-4 font-bold text-gsf-prussian cursor-pointer" onclick="App.selectedCourse=\'' + courseEsc + '\'; App.navigate(\'course\')">' + this.escapeHtml(d.Course) + this._courseStatusBadge(d.Access) + '</td><td class="py-3 px-4 text-right">' + this.formatNumber(d.Learners) + '</td><td class="py-3 px-4 text-right">' + this.formatNumber(d.Certificates) + '</td><td class="py-3 px-4 text-right text-slate-500">' + this.formatLearningTime(this.courseLearningMinutes(d, courseMins)) + '</td><td class="py-3 px-4 text-right text-gsf-crimson font-bold">' + (Number(d.Rating) > 0 ? Number(d.Rating).toFixed(2) : '-') + '</td><td class="py-3 px-4 text-right text-gsf-boston">' + this.formatNumber(d.Responses) + '</td><td class="py-3 px-4 text-center"><input type="checkbox" ' + (inc ? 'checked' : '') + ' onchange="App.toggleCourseIncludedByName(\'' + courseEsc + '\', this.checked, this)" title="' + (inc ? 'Included in analytics — untick to exclude' : 'Excluded — tick to include') + '"></td></tr>'; }).join('')}</tbody>
+                                <tbody>${provAllCourses.map(d => { const inc = !d.Excluded; const courseEsc = this.escapeJsArg(d.Course); return '<tr class="border-b hover:bg-slate-50 ' + (inc ? '' : 'opacity-40') + '"><td class="py-3 px-4 font-bold text-gsf-prussian cursor-pointer" onclick="App.selectedCourse=\'' + courseEsc + '\'; App.navigate(\'course\')">' + this.escapeHtml(d.Course) + this._courseStatusBadge(d.Access) + '</td><td class="py-3 px-4 text-right">' + this.formatNumber(d.Learners) + '</td><td class="py-3 px-4 text-right">' + this.formatNumber(d.Certificates) + '</td><td class="py-3 px-4 text-right text-slate-500">' + this.formatLearningTime(this.courseLearningMinutes(d, courseMins)) + '</td><td class="py-3 px-4 text-right text-gsf-crimson font-bold">' + (Number(d.Rating) > 0 ? Number(d.Rating).toFixed(2) : '-') + '</td><td class="py-3 px-4 text-right text-gsf-boston">' + this.formatNumber(d.Responses) + '</td><td class="py-3 px-4 text-center"><input type="checkbox" ' + (inc ? 'checked' : '') + ' onchange="App.toggleCourseIncludedByName(\'' + courseEsc + '\', this.checked, this)" title="' + (inc ? 'Included in analytics — untick to exclude' : 'Excluded — tick to include') + '"></td></tr>'; }).join('')}</tbody>
                             </table>
                         </div>
                     </div>
@@ -3492,10 +3492,10 @@ Object.assign(window.App, {
                     </header>
 
                     <div class="flex items-center justify-between gap-3 flex-wrap bg-white border border-slate-200 rounded-xl shadow-sm px-4 py-3 mb-6">
-                        <p class="text-sm text-slate-500">Provider: ${(cSnap.Provider && cSnap.Provider !== 'Unknown' && cSnap.Provider !== 'Unknown Provider') ? '<button onclick="App.openProvider(\'' + this.escapeHtml(cSnap.Provider).replace(/'/g, '&#39;') + '\')" class="font-bold text-gsf-boston hover:underline cursor-pointer">' + this.escapeHtml(cSnap.Provider) + ' &rsaquo;</button>' : '<span class="font-bold text-gsf-boston">' + this.escapeHtml(cSnap.Provider || 'Unknown') + '</span>'}${this._courseStatusBadge(cSnap.Access)}</p>
+                        <p class="text-sm text-slate-500">Provider: ${(cSnap.Provider && cSnap.Provider !== 'Unknown' && cSnap.Provider !== 'Unknown Provider') ? '<button onclick="App.openProvider(\'' + this.escapeJsArg(cSnap.Provider) + '\')" class="font-bold text-gsf-boston hover:underline cursor-pointer">' + this.escapeHtml(cSnap.Provider) + ' &rsaquo;</button>' : '<span class="font-bold text-gsf-boston">' + this.escapeHtml(cSnap.Provider || 'Unknown') + '</span>'}${this._courseStatusBadge(cSnap.Access)}</p>
                         <div class="flex items-center gap-2 flex-wrap">
                             <label class="inline-flex items-center gap-2 text-sm font-medium ${this.isCourseIncluded(this.selectedCourse) ? 'text-slate-600' : 'text-amber-700'} cursor-pointer" title="Untick to exclude this course from all analytics, reports and totals (use for unpublished/test courses)">
-                                <input type="checkbox" ${this.isCourseIncluded(this.selectedCourse) ? 'checked' : ''} onchange="App.toggleCourseIncludedByName('${this.escapeHtml(this.selectedCourse).replace(/'/g, "\\'")}', this.checked)">
+                                <input type="checkbox" ${this.isCourseIncluded(this.selectedCourse) ? 'checked' : ''} onchange="App.toggleCourseIncludedByName('${this.escapeJsArg(this.selectedCourse)}', this.checked)">
                                 ${this.isCourseIncluded(this.selectedCourse) ? 'Included in analytics' : 'Excluded from analytics'}
                             </label>
                             <button data-edit-only data-report-ok onclick="App.exportCurrentCoursePackage()" class="flex items-center gap-1.5 px-3.5 py-2 bg-amber-500 text-white font-bold rounded-lg text-xs shadow-sm hover:bg-amber-600 transition-colors" title="One folder ({provider}/{course}) with the course PDF + web report + anonymized users + anonymized feedback (Excel)"><i data-lucide="package" width="14"></i> Report Package</button>
@@ -4101,7 +4101,7 @@ Object.assign(window.App, {
         if (!uri) { el.style.display = 'none'; return; }
         const img = '<img src="' + uri + '" alt="' + this.escapeHtml(providerName) + '" style="height:52px;width:auto;max-width:200px;object-fit:contain;display:block">';
         const chip = '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:8px 14px;display:inline-flex;align-items:center">' + img + '</div>';
-        el.innerHTML = href ? ('<div onclick="electronAPI.openExternal(\'' + this.escapeHtml(href).replace(/'/g, "\\'") + '\')" style="cursor:pointer" title="View on SURGhub">' + chip + '</div>') : chip;
+        el.innerHTML = href ? ('<div onclick="electronAPI.openExternal(\'' + this.escapeJsArg(href) + '\')" style="cursor:pointer" title="View on SURGhub">' + chip + '</div>') : chip;
         el.style.display = '';
     },
 
@@ -4735,7 +4735,7 @@ Object.assign(window.App, {
             const list = courseMap[d.Course];
             if (list && list.length) list.slice().sort((a, b) => (a.rank || 9) - (b.rank || 9)).forEach(a => cards.push({
                 rank: a.rank, tag: 'COURSE', label: a.label, sub: d.Course, valueFmt: a.valueFmt,
-                scope: 'Across all SURGhub courses', onclick: "App.openCourse('" + this.escapeHtml(d.Course).replace(/'/g, '&#39;') + "')"
+                scope: 'Across all SURGhub courses', onclick: "App.openCourse('" + this.escapeJsArg(d.Course) + "')"
             }));
         });
         return this._awardCardsGrid(cards);
@@ -4788,7 +4788,7 @@ Object.assign(window.App, {
                         if (!aw.categories || !aw.categories.length) return '';
                         const medal = i => ['🥇', '🥈', '🥉'][i] || '';
                         const cell = (arr, kind) => !arr.length ? '<span class="text-slate-300">—</span>' : arr.map((e, i) =>
-                            '<div class="' + (i ? 'mt-1.5 pt-1.5 border-t border-slate-100' : '') + '">' + medal(i) + ' <button onclick="App.open' + kind + '(\'' + this.escapeHtml(e.name).replace(/'/g, '&#39;') + '\')" class="text-gsf-boston hover:underline text-left">' + this.escapeHtml(e.name) + '</button> <span class="text-slate-400 whitespace-nowrap">' + e.valueFmt + '</span></div>').join('');
+                            '<div class="' + (i ? 'mt-1.5 pt-1.5 border-t border-slate-100' : '') + '">' + medal(i) + ' <button onclick="App.open' + kind + '(\'' + this.escapeJsArg(e.name) + '\')" class="text-gsf-boston hover:underline text-left">' + this.escapeHtml(e.name) + '</button> <span class="text-slate-400 whitespace-nowrap">' + e.valueFmt + '</span></div>').join('');
                         return `<div class="bg-white rounded-xl shadow-sm border overflow-hidden mb-8">
                             <div class="bg-slate-50 border-b p-5"><h2 class="font-bold text-lg text-gsf-prussian flex items-center gap-2"><i data-lucide="trophy" class="text-amber-500"></i> Awards &amp; Leaders</h2><p class="text-xs text-slate-500 mt-1">Top three courses and providers in each category across the platform (incl. private courses). See methodology for eligibility.</p></div>
                             <div class="overflow-x-auto"><table class="w-full text-left text-sm">
@@ -4874,8 +4874,8 @@ Object.assign(window.App, {
                                         <tbody>
                                             ${rows.map(r => {
                                                 const completion = r.completion >= 0 ? r.completion : 0;
-                                                const courseEsc = this.escapeHtml(r.course).replace(/'/g, '&#39;');
-                                                const provEsc = this.escapeHtml(r.provider).replace(/'/g, '&#39;');
+                                                const courseEsc = this.escapeJsArg(r.course);
+                                                const provEsc = this.escapeJsArg(r.provider);
                                                 return `<tr class="border-b hover:bg-slate-50">
                                                     <td class="py-2 px-3 font-bold text-xs"><button onclick="App.openCourse('${courseEsc}')" class="text-gsf-prussian hover:text-gsf-boston hover:underline text-left">${this.escapeHtml(r.course)}</button>${this._courseStatusBadge(accessByCourse[r.course])}</td>
                                                     <td class="py-2 px-3 text-xs"><button onclick="App.openProvider('${provEsc}')" class="text-slate-600 hover:text-gsf-boston hover:underline text-left">${this.escapeHtml(r.provider)}</button></td>
