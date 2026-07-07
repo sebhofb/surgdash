@@ -38,6 +38,7 @@ Signing + notarization are unchanged from before (that's what makes the install 
 ## B. Each release (you)
 
 1. **Bump the version** in `package.json` (e.g. `1.2.0` → `1.2.1`). Auto-update only fires when the published version is **higher** than what's installed — so always bump.
+   Also update the **"What's new" changelog** in `js/whatsnew.js` (the `RELEASES` array, newest entry first) — the app shows it once per version, and a stale changelog is worse than none.
 
 2. **Build, sign, notarize, and upload** in one command:
    ```sh

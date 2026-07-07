@@ -376,6 +376,7 @@
                     <div class="w-2 h-2 rounded-full bg-green-400 animate-pulse"></div> System Ready
                 </div>
                 <div class="flex items-center gap-2">
+                    <button onclick="App.showWhatsNew()" class="flex items-center gap-1 text-[10px] font-semibold text-gsf-polo/50 hover:text-gsf-polo transition-colors" title="What changed in this version"><i data-lucide="sparkles" width="10"></i>What's new</button>
                     <button onclick="App.startOnboarding(true)" class="text-[10px] font-semibold text-gsf-polo/50 hover:text-gsf-polo transition-colors" title="Show onboarding tips">Tips</button>
                     <button id="sidebar-lock-btn" onclick="(App._editPasswordHash || App._reportPasswordHash) ? ((App.editUnlocked || App.reportAccess) ? App.relock() : App.showUnlockPrompt()) : null" class="text-gsf-polo/50 hover:text-gsf-polo transition-colors" title="Lock/Unlock editing" style="display:none;">
                         <i data-lucide="lock" width="12"></i>
@@ -403,6 +404,7 @@
     <script src="js/export.js"></script>
     <script src="js/globeData.js"></script>
     <script src="js/reports.js"></script>
+    <script src="js/whatsnew.js"></script>
     <script src="js/aicurate.js"></script>
     <script src="js/feedback.js"></script>
     <script src="js/incomeClassification.js"></script>

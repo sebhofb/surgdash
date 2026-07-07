@@ -265,6 +265,10 @@ window.App = {
 
         // Start onboarding tips on first launch (after UI settles)
         setTimeout(() => { if (this.startOnboarding) this.startOnboarding(); }, 800);
+
+        // "What's new" popup — once per version change (after the UI settles, and a
+        // beat after onboarding so the two never appear at the same instant).
+        setTimeout(() => { if (this.initWhatsNew) this.initWhatsNew(); }, 1400);
     },
 
     getCurrentProject() {

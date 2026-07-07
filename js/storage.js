@@ -66,6 +66,7 @@
         if (key === 'report_back_path')      return path.join('settings', 'report_back_path.json');
         if (key === 'report_period')         return path.join('settings', 'report_period.json');
         if (key === 'report_data_through')   return path.join('settings', 'report_data_through.json');
+        if (key === 'last_seen_version')     return path.join('settings', 'last_seen_version.json');
         if (key === 'learnworlds_client_id')     return path.join('settings', 'learnworlds_client_id.json');
         if (key === 'learnworlds_api_token')     return path.join('settings', 'learnworlds_api_token.json');
         if (key === 'learnworlds_school_domain') return path.join('settings', 'learnworlds_school_domain.json');
@@ -115,6 +116,7 @@
                 'report_cover_path': 'report_cover_path', 'report_back_path': 'report_back_path',
                 'report_period': 'report_period',
                 'report_data_through': 'report_data_through',
+                'last_seen_version': 'last_seen_version',
                 'learnworlds_client_id': 'learnworlds_client_id',
                 'learnworlds_api_token': 'learnworlds_api_token',
                 'learnworlds_school_domain': 'learnworlds_school_domain',
