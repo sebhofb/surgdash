@@ -1249,20 +1249,86 @@ Object.assign(window.App, {
             .filter(x => x.total >= MIN_PRIOR && x.gap >= DORMANT_MONTHS && x.n.indexOf('@') < 0)
             .sort((a, b) => b.total - a.total || b.gap - a.gap);
         if (!dormant.length) return '';
-        const shown = dormant.slice(0, MAX_SHOW);
         const moLabel = m => new Date(m + '-01').toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-        const rows = shown.map(x => `<li class="flex items-center justify-between gap-3 py-2 border-b border-slate-100 last:border-0">
-            <span class="font-semibold text-gsf-prussian truncate flex-1" title="${this.escapeHtml(x.n)}">${this.escapeHtml(x.n)}</span>
-            <span class="text-xs text-slate-500 shrink-0">${this.formatNumber(x.total)} leads · last active <span class="font-semibold text-slate-600">${moLabel(x.lastActive)}</span> <span class="text-amber-600">(${x.gap} mo ago)</span></span>
-        </li>`).join('');
-        const more = dormant.length > MAX_SHOW ? `<p class="text-[11px] text-slate-400 mt-2">+ ${this.formatNumber(dormant.length - MAX_SHOW)} more dormant ambassador${dormant.length - MAX_SHOW === 1 ? '' : 's'}.</p>` : '';
-        return `<div class="bg-white rounded-xl shadow-sm border overflow-hidden mb-8">
+        // Contact emails from the latest raw affiliates pull — joined at render time,
+        // held in memory only (emails are never written into any persisted store).
+        const emails = this._ambassadorEmails();
+        dormant.forEach(x => { x.email = emails[x.n] || ''; });
+        // Full list (with emails + labels) stashed for the Excel export — the export
+        // always covers ALL dormant ambassadors, not just the rows shown.
+        this._lastDormant = dormant.map(x => ({ name: x.n, email: x.email, total: x.total, lastActive: moLabel(x.lastActive), gap: x.gap }));
+        const shown = dormant.slice(0, MAX_SHOW);
+        const rows = shown.map(x => `<tr class="border-b border-slate-100 last:border-0 hover:bg-slate-50">
+            <td class="py-2 pr-3 font-semibold text-gsf-prussian text-sm truncate max-w-[220px]" title="${this.escapeHtml(x.n)}">${this.escapeHtml(x.n)}</td>
+            <td class="py-2 pr-3 text-xs">${x.email ? '<a href="mailto:' + this.escapeHtml(x.email) + '" class="text-gsf-boston hover:underline">' + this.escapeHtml(x.email) + '</a>' : '<span class="text-slate-300">—</span>'}</td>
+            <td class="py-2 pr-3 text-right text-sm font-bold text-gsf-boston">${this.formatNumber(x.total)}</td>
+            <td class="py-2 pr-3 text-right text-xs text-slate-600 whitespace-nowrap">${moLabel(x.lastActive)}</td>
+            <td class="py-2 text-right text-xs font-semibold text-amber-600 whitespace-nowrap">${x.gap} mo</td>
+        </tr>`).join('');
+        const more = dormant.length > MAX_SHOW ? `<p class="text-[11px] text-slate-400 mt-2">+ ${this.formatNumber(dormant.length - MAX_SHOW)} more dormant ambassador${dormant.length - MAX_SHOW === 1 ? '' : 's'} — included in the Excel export.</p>` : '';
+        return `<div id="amb-reengage-card" class="bg-white rounded-xl shadow-sm border overflow-hidden mb-8">
             <div class="bg-amber-50 border-b border-amber-100 p-5">
-                <h3 class="text-lg font-bold text-gsf-prussian flex items-center gap-2"><i data-lucide="bell-ring" class="text-amber-500" width="18"></i> Needs Re-engagement <span class="text-sm font-semibold text-amber-600">(${this.formatNumber(dormant.length)})</span></h3>
-                <p class="text-xs text-slate-500 mt-1">Ambassadors with ${MIN_PRIOR}+ historic referrals who have brought no new leads in the last ${DORMANT_MONTHS} months (latest data month: ${moLabel(latest)}). Worth a nudge.</p>
+                <div class="flex items-start justify-between gap-3">
+                    <div>
+                        <h3 class="text-lg font-bold text-gsf-prussian flex items-center gap-2"><i data-lucide="bell-ring" class="text-amber-500" width="18"></i> Needs Re-engagement <span class="text-sm font-semibold text-amber-600">(${this.formatNumber(dormant.length)})</span></h3>
+                        <p class="text-xs text-slate-500 mt-1">Ambassadors with ${MIN_PRIOR}+ historic referrals who have brought no new leads in the last ${DORMANT_MONTHS} months (latest data month: ${moLabel(latest)}). Worth a nudge.</p>
+                    </div>
+                    <div class="flex items-center gap-1 shrink-0" data-edit-only>
+                        <button onclick="App._copyEngagementSection('amb-reengage-card', this)" title="Copy as PNG" class="p-1.5 rounded hover:bg-amber-100 text-slate-400 hover:text-gsf-boston"><i data-lucide="copy" width="13"></i></button>
+                        <button onclick="App._downloadEngagementSection('amb-reengage-card', 'Needs_Reengagement')" title="Download PNG" class="p-1.5 rounded hover:bg-amber-100 text-slate-400 hover:text-gsf-boston"><i data-lucide="image" width="13"></i></button>
+                        <button onclick="App._exportReengagementXlsx()" title="Download Excel (all dormant ambassadors, with emails)" class="p-1.5 rounded hover:bg-amber-100 text-slate-400 hover:text-gsf-boston"><i data-lucide="file-spreadsheet" width="13"></i></button>
+                    </div>
+                </div>
             </div>
-            <div class="p-5"><ol class="space-y-0.5">${rows}</ol>${more}</div>
+            <div class="p-5 overflow-x-auto"><table class="w-full border-collapse">
+                <thead><tr class="text-[10px] font-bold uppercase tracking-wide text-slate-400 border-b"><th class="text-left py-1.5 pr-3">Ambassador</th><th class="text-left py-1.5 pr-3">Email</th><th class="text-right py-1.5 pr-3">Referrals</th><th class="text-right py-1.5 pr-3">Last active</th><th class="text-right py-1.5">Inactive</th></tr></thead>
+                <tbody>${rows}</tbody>
+            </table>${more}</div>
         </div>`;
+    },
+
+    // Name → email map from the latest raw /affiliates pull. In-memory only:
+    // ambassador emails are needed for re-engagement outreach, but they are never
+    // persisted into any store or shareable export (matches the referrer-bridge rule).
+    _ambassadorEmails() {
+        if (this._ambEmailMap) return this._ambEmailMap;
+        const map = {};
+        try {
+            const fs = electronAPI.fs, path = electronAPI.path;
+            const rawDir = path.join(Storage.DATA_DIR, 'surghub', 'raw');
+            const dir = fs.readdirSync(rawDir, { withFileTypes: true }).filter(e => e.isDirectory && /^ambassadors__/.test(e.name)).map(e => e.name).sort().pop();
+            if (dir) {
+                String(fs.readFileSync(path.join(rawDir, dir, 'pull.jsonl'), 'utf8')).split('\n').forEach(ln => {
+                    if (!ln || ln.indexOf('affiliates') < 0) return;
+                    try {
+                        const rec = JSON.parse(ln);
+                        if (rec.path !== '/affiliates') return;   // skip /affiliates/{id}/leads lines
+                        ((JSON.parse(rec.body || '{}')).data || []).forEach(a => {
+                            const name = String(a.username || ((a.first_name || '') + ' ' + (a.last_name || ''))).trim();
+                            if (name && a.email) map[name] = String(a.email).trim();
+                        });
+                    } catch (e) {}
+                });
+            }
+        } catch (e) {}
+        this._ambEmailMap = map;
+        return map;
+    },
+
+    // Excel export of the FULL dormant list (incl. rows beyond the on-screen cap).
+    async _exportReengagementXlsx() {
+        const list = this._lastDormant || [];
+        if (!list.length) return alert('No dormant ambassadors to export.');
+        const rows = list.map((x, i) => ({
+            '#': i + 1, 'Ambassador': x.name, 'Email': x.email || '',
+            'Total referrals': x.total, 'Last active': x.lastActive, 'Months inactive': x.gap
+        }));
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Needs Re-engagement');
+        const savePath = await electronAPI.invoke('pick-save-path', 'ambassadors_needs_reengagement_' + new Date().toISOString().split('T')[0] + '.xlsx');
+        if (!savePath) return;
+        this._writeWorkbook(wb, savePath);
+        this.showMsg('Saved ' + list.length + ' dormant ambassadors → ' + savePath.split('/').pop());
     },
     formatDate(dateString) {
         if (!dateString) return 'No Date';
