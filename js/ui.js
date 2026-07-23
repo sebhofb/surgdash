@@ -1662,6 +1662,23 @@ Object.assign(window.App, {
         if (this._shCourseSortCol === col) this._shCourseSortAsc = !this._shCourseSortAsc;
         else { this._shCourseSortCol = col; this._shCourseSortAsc = col === 'course' || col === 'provider'; }
         this.renderView();
+        // Re-apply an active directory search after the sort re-render.
+        setTimeout(() => { const q = document.getElementById('dir-search'); if (q && this._dirSearch) { q.value = this._dirSearch; this._filterDirectory(this._dirSearch); } }, 0);
+    },
+
+    // Directory search: DOM-level filtering (no re-render, so the input keeps focus).
+    // Matches provider rows and course rows via their data-dirsearch text.
+    _filterDirectory(q) {
+        this._dirSearch = String(q || '');
+        const needle = this._dirSearch.trim().toLowerCase();
+        let provN = 0, crsN = 0;
+        document.querySelectorAll('[data-dirsearch]').forEach(el => {
+            const hit = !needle || (el.getAttribute('data-dirsearch') || '').includes(needle);
+            el.style.display = hit ? '' : 'none';
+            if (hit) { if (el.tagName === 'TR') crsN++; else provN++; }
+        });
+        const badge = document.getElementById('dir-search-count');
+        if (badge) badge.textContent = needle ? `${provN} provider${provN !== 1 ? 's' : ''} · ${crsN} course${crsN !== 1 ? 's' : ''} match` : '';
     },
 
     renderSidebar() {
@@ -2511,7 +2528,16 @@ Object.assign(window.App, {
         else if (this.view === 'manage') {
             body.innerHTML = `
                 <div class="p-6 md:p-10 fade-in w-full max-w-6xl mx-auto">
-                    <header class="mb-8"><h1 class="text-2xl font-bold text-gsf-prussian">Directory</h1></header>
+                    <header class="mb-8 flex items-end justify-between gap-4 flex-wrap">
+                        <h1 class="text-2xl font-bold text-gsf-prussian">Directory</h1>
+                        <div class="flex items-center gap-3">
+                            <span id="dir-search-count" class="text-xs text-slate-400"></span>
+                            <div class="relative">
+                                <i data-lucide="search" width="14" class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"></i>
+                                <input id="dir-search" type="search" placeholder="Search courses or providers…" oninput="App._filterDirectory(this.value)" class="pl-9 pr-3 py-2 w-72 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-gsf-boston/30 bg-white shadow-sm" />
+                            </div>
+                        </div>
+                    </header>
 
                     ${(() => {
                         const provCounts = {};
@@ -2528,7 +2554,7 @@ Object.assign(window.App, {
                                 </div>
                             </div>
                             <div class="max-h-[320px] overflow-y-auto custom-scrollbar divide-y divide-slate-100">
-                                ${provs.map(p => { const inc = this.isProviderIncluded(p); const n = provCounts[p].size; return '<label class="flex items-center justify-between gap-3 px-5 py-2.5 hover:bg-slate-50 cursor-pointer">' + '<span class="text-sm ' + (inc ? 'text-gsf-prussian font-medium' : 'text-slate-400 line-through') + '">' + this.escapeHtml(p) + ' <span class="text-xs text-slate-400 font-normal">(' + n + ' course' + (n !== 1 ? 's' : '') + ')</span></span>' + '<input type="checkbox" ' + (inc ? 'checked' : '') + ' data-prov="' + this.escapeHtml(p) + '" onchange="App.toggleProviderIncluded(this.getAttribute(\'data-prov\'), this.checked, this)">' + '</label>'; }).join('')}
+                                ${provs.map(p => { const inc = this.isProviderIncluded(p); const n = provCounts[p].size; return '<label data-dirsearch="' + this.escapeHtml(p.toLowerCase()) + '" class="flex items-center justify-between gap-3 px-5 py-2.5 hover:bg-slate-50 cursor-pointer">' + '<span class="text-sm ' + (inc ? 'text-gsf-prussian font-medium' : 'text-slate-400 line-through') + '">' + this.escapeHtml(p) + ' <span class="text-xs text-slate-400 font-normal">(' + n + ' course' + (n !== 1 ? 's' : '') + ')</span></span>' + '<input type="checkbox" ' + (inc ? 'checked' : '') + ' data-prov="' + this.escapeHtml(p) + '" onchange="App.toggleProviderIncluded(this.getAttribute(\'data-prov\'), this.checked, this)">' + '</label>'; }).join('')}
                             </div>
                         </div>`;
                     })()}
@@ -2580,7 +2606,7 @@ Object.assign(window.App, {
                                             const provEsc = this.escapeJsArg(s.Provider);
                                             const courseEsc = this.escapeJsArg(s.Course);
                                             const isUnknownProv = s.Provider === 'Unknown Provider';
-                                            return `<tr class="border-b hover:bg-slate-50 ${s.isExcluded ? 'opacity-40' : ''}">
+                                            return `<tr data-dirsearch="${this.escapeHtml((s.Provider + ' | ' + s.Course).toLowerCase())}" class="border-b hover:bg-slate-50 ${s.isExcluded ? 'opacity-40' : ''}">
                                             <td class="py-2 px-3 text-xs truncate" title="${this.escapeHtml(s.Provider)} — click to view provider page">
                                                 ${isUnknownProv
                                                     ? '<span class="text-red-500 italic">' + this.escapeHtml(s.Provider) + '</span>'
