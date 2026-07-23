@@ -713,6 +713,19 @@ window.App = {
         })();
         return this._completionLoadPromise;
     },
+    // Raw anonymised survey responses ({course: {cols, data}} — written by Sync
+    // Surveys, read by the report packages' feedback workbook).
+    async ensureSurveyRawLoaded() {
+        if (this._rawSurveyResponses != null) return this._rawSurveyResponses;
+        if (this._surveyRawLoadPromise) return this._surveyRawLoadPromise;
+        this._surveyRawLoadPromise = (async () => {
+            let v = null; try { v = await Storage.getItem('surghub_survey_raw'); } catch (e) {}
+            this._rawSurveyResponses = (v && typeof v === 'object' && !Array.isArray(v)) ? v : {};
+            this._surveyRawLoadPromise = null;
+            return this._rawSurveyResponses;
+        })();
+        return this._surveyRawLoadPromise;
+    },
 
     async _startAutoPull() {
         if (this._autoPullInterval) { clearInterval(this._autoPullInterval); this._autoPullInterval = null; }

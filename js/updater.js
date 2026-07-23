@@ -1015,6 +1015,14 @@ Object.assign(window.App, {
 
     async executeSurveyLoop() {
         let _ok = 0, _fail = 0, _expired = false;
+        // Raw anonymised responses accumulate per course (merged into the existing
+        // store so partial syncs never wipe other courses' raw data).
+        if (this._rawSurveyResponses == null) {
+            try { this._rawSurveyResponses = (await Storage.getItem('surghub_survey_raw')) || {}; } catch (e) { this._rawSurveyResponses = {}; }
+        }
+        if (!this._emailDemoMap) {
+            try { this._emailDemoMap = (await Storage.getItem('surghub_email_demo')) || {}; } catch (e) {}
+        }
         for (let i = 0; i < this.updateQueue.length; i++) {
             const course = this.updateQueue[i];
             this.currentUpdateIndex = i + 1;
@@ -1228,11 +1236,37 @@ Object.assign(window.App, {
                             });
                         });
                         if (feedbackBank.length > 0) course.FeedbackBank = JSON.stringify(feedbackBank);
+
+                        // ── Raw anonymised responses: the original export, minus identity.
+                        // Every question column verbatim (original order); the user column is
+                        // replaced by Respondent # + Country/Profession from the email→demo
+                        // map. Compact {cols, data:[[…]]} form. Feeds the report packages'
+                        // feedback workbook so partners get the raw data, anonymised.
+                        try {
+                            const idCol = /^\s*(id|user|usuario|utilisateur|e-?mail|correo|username|full name|name|nombre|nom)\s*$/i;
+                            const keepCols = cols.filter(k => k !== userCol && !idCol.test(String(k)));
+                            const demoMap = this._emailDemoMap || {};
+                            const header = ['Respondent', 'Country', 'Profession', ...keepCols];
+                            const data = json.map((r, ri) => {
+                                let email = '';
+                                if (userCol) {
+                                    const us = String(r[userCol] || '');
+                                    const m = us.match(/\(([^)]+@[^)]+)\)/);
+                                    email = m ? m[1].trim().toLowerCase() : (us.includes('@') ? us.trim().toLowerCase() : '');
+                                }
+                                const d = email ? demoMap[email] : null;
+                                return [ri + 1, (d && d.country) || '', (d && d.profession) || '',
+                                    ...keepCols.map(k => (r[k] == null ? '' : r[k]))];
+                            });
+                            this._rawSurveyResponses[course.Course] = { cols: header, data, fetchedAt: new Date().toISOString().slice(0, 10) };
+                        } catch (e) { console.warn('[Surveys] raw anonymised capture failed for', course.Course, e.message); }
                         _ok++;
                     } else { _fail++; }
                 }
             } catch (err) { console.error(`Survey failed: ${course.Course}`, err); _fail++; }
         }
+        // Persist the raw anonymised responses (lazy-loaded elsewhere via ensureSurveyRawLoaded).
+        try { await Storage.setItem('surghub_survey_raw', this._rawSurveyResponses); } catch (e) { console.warn('[Surveys] raw store save failed:', e.message); }
 
         // ── Signup survey (Gender + Organisation Type). Lives in the same
         // Survey Exports area as the course surveys, so the fresh token also

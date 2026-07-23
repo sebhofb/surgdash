@@ -2590,13 +2590,28 @@ ${platform && globeCountryCount > 0 ? ('\nvar LAND=' + _globeGeo.LAND + ';var CE
             const pSnap = this.getAnalyticsSnap().filter(d => d.Provider === providerName && (!courseOnly || d.Course === courseOnly));
             if (pSnap.length === 0) return null;
             const demo = this._emailDemoMap || {};
+            // Preferred source: the RAW anonymised survey responses captured by Sync
+            // Surveys — the original export (every question, every answer, original
+            // column order) with identity replaced by Respondent # + demographics.
+            // Courses synced before that capture existed fall back to the summarised
+            // FeedbackBank sheet below.
+            if (this.ensureSurveyRawLoaded) await this.ensureSurveyRawLoaded();
+            const rawStore = this._rawSurveyResponses || {};
             // AI rating per comment (0–10, blank if not yet scored). The Excel keeps
             // ALL raw comments unedited regardless of testimonial selection.
             const aiScores = (typeof this._getAiScores === 'function') ? (await this._getAiScores()) : (this._aiScoreMap || {});
             const wb = XLSX.utils.book_new();
             let sheetsAdded = 0;
             pSnap.forEach(c => {
-                if (!c.FeedbackBank || !c.Course) return;
+                if (!c.Course) return;
+                const rr = rawStore[c.Course];
+                if (rr && Array.isArray(rr.cols) && Array.isArray(rr.data) && rr.data.length > 0) {
+                    const rows = rr.data.map(arr => { const o = {}; rr.cols.forEach((k, i) => { o[k] = arr[i] == null ? '' : arr[i]; }); return o; });
+                    this._appendCourseSheet(wb, rows, c.Course);
+                    sheetsAdded++;
+                    return;
+                }
+                if (!c.FeedbackBank) return;
                 let fb;
                 try { fb = JSON.parse(c.FeedbackBank); } catch (e) { return; }
                 if (!Array.isArray(fb)) return;
