@@ -1770,6 +1770,45 @@ Object.assign(window.App, {
         if (badge) badge.textContent = needle ? `${provN} provider${provN !== 1 ? 's' : ''} · ${crsN} course${crsN !== 1 ? 's' : ''} match` : '';
     },
 
+    // New-course triage save (Data Sync page). Updates the course's latest record AND
+    // the stored Provider Map / Course Links rows (exact-title entries), so future
+    // syncs and "Apply to existing courses now" preserve the fix. Index-based — no
+    // course names in onclick strings.
+    async _saveCourseTriage(i) {
+        const courseName = (this._triageList || [])[i];
+        if (!courseName) return;
+        const prov = ((document.getElementById('triage-prov-' + i) || {}).value || '').trim();
+        const url = ((document.getElementById('triage-url-' + i) || {}).value || '').trim();
+        if (!prov && !url) return alert('Enter a provider and/or a survey link first.');
+        if (url && !/^https?:\/\//i.test(url)) return alert('The survey link should be a full URL starting with https://');
+        const latest = (this.data || []).filter(d => !d.IsShell && d.Course === courseName)
+            .sort((a, b) => String(b.Timestamp || '').localeCompare(String(a.Timestamp || '')))[0];
+        if (!latest) return;
+        if (prov) latest.Provider = prov;
+        if (url && url !== latest.URL) {
+            // Old stats came from the previously-linked survey — rebuilt by Sync Surveys.
+            if (latest.URL && this._clearSurveyStats) this._clearSurveyStats(latest);
+            latest.URL = url;
+        }
+        try {
+            if (prov) {
+                const pm = (await Storage.getItem('surgdash_provider_map')) || [];
+                const row = pm.find(r => String(r['All Courses'] || Object.values(r)[0] || '').trim() === courseName);
+                if (row) row['Providers'] = prov; else pm.push({ 'All Courses': courseName, 'Providers': prov });
+                await Storage.setItem('surgdash_provider_map', pm);
+            }
+            if (url) {
+                const lm = (await Storage.getItem('surgdash_course_links')) || [];
+                const row = lm.find(r => String(r['Course Name'] || Object.values(r)[0] || '').trim() === courseName);
+                if (row) row['Post-Course Survey Link'] = url; else lm.push({ 'Course Name': courseName, 'Post-Course Survey Link': url });
+                await Storage.setItem('surgdash_course_links', lm);
+            }
+        } catch (e) { console.warn('[Triage] stored-map update failed:', e.message); }
+        await this.handleDbSave();
+        this.showMsg('✓ ' + courseName + ' updated — mirror this in the SharePoint Provider Map / Course Links.');
+        this.renderView();
+    },
+
     renderSidebar() {
         const navEl = document.getElementById('project-nav');
         if (!navEl) return;
@@ -2783,6 +2822,43 @@ Object.assign(window.App, {
                             </div>
                         </div>
                     </div>
+
+                    ${(() => {
+                        // ── New-course triage: courses the sync brought in without a provider
+                        // and/or survey link. Fill them in here; saves update the course AND the
+                        // stored Provider Map / Course Links so future syncs keep the fix.
+                        const latestByCourse = {};
+                        (this.data || []).forEach(d => { if (d.IsShell || !d.Course) return; const p = latestByCourse[d.Course]; if (!p || (d.Timestamp || '') > (p.Timestamp || '')) latestByCourse[d.Course] = d; });
+                        const needs = Object.values(latestByCourse).filter(d => {
+                            const noProv = !d.Provider || d.Provider === 'Unknown Provider' || d.Provider === 'Unknown';
+                            return (noProv || !d.URL) && !d.Excluded;
+                        }).sort((a, b) => (Number(b.Learners) || 0) - (Number(a.Learners) || 0));
+                        this._triageList = needs.map(d => d.Course);
+                        if (!needs.length) return '';
+                        const provOptions = [...new Set((this.data || []).map(d => d.Provider).filter(p => p && p !== 'Unknown Provider' && p !== 'Unknown'))].sort().map(p => '<option value="' + this.escapeHtml(p) + '"></option>').join('');
+                        const rows = needs.map((d, i) => {
+                            const noProv = !d.Provider || d.Provider === 'Unknown Provider' || d.Provider === 'Unknown';
+                            return `<div class="flex items-center gap-2 flex-wrap py-2.5 border-b border-rose-100 last:border-0">
+                                <div class="min-w-[220px] flex-1">
+                                    <p class="text-sm font-bold text-gsf-prussian truncate" title="${this.escapeHtml(d.Course)}">${this.escapeHtml(d.Course)}</p>
+                                    <p class="text-[10px] text-slate-400">${this.formatNumber(d.Learners || 0)} learners · missing: ${noProv ? 'provider' : ''}${noProv && !d.URL ? ' + ' : ''}${!d.URL ? 'survey link' : ''}</p>
+                                </div>
+                                <input id="triage-prov-${i}" list="triage-provs" placeholder="Provider…" value="${noProv ? '' : this.escapeHtml(d.Provider)}" class="text-xs border rounded-lg px-2.5 py-1.5 w-52 outline-none focus:ring-2 focus:ring-rose-300" />
+                                <input id="triage-url-${i}" type="url" placeholder="Survey export link (https://…)" value="${this.escapeHtml(d.URL || '')}" class="text-xs border rounded-lg px-2.5 py-1.5 flex-1 min-w-[220px] outline-none focus:ring-2 focus:ring-rose-300" />
+                                <button onclick="App._saveCourseTriage(${i})" class="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg">Save</button>
+                            </div>`;
+                        }).join('');
+                        return `<div data-edit-only class="bg-gradient-to-br from-rose-50 to-white border border-rose-200 rounded-2xl p-6 mb-4 shadow-sm">
+                            <div class="flex items-center gap-2 mb-1">
+                                <i data-lucide="alert-triangle" width="18" class="text-rose-600"></i>
+                                <h2 class="text-lg font-bold text-gsf-prussian">New courses needing info</h2>
+                                <span class="text-[10px] font-bold uppercase text-rose-700 bg-rose-100 border border-rose-200 px-2 py-0.5 rounded-full">${needs.length} course${needs.length !== 1 ? 's' : ''}</span>
+                            </div>
+                            <p class="text-sm text-slate-600 max-w-3xl mb-3">The sync found these courses without a <strong>provider</strong> and/or <strong>survey link</strong>. Fill them in here — each save updates the course <em>and</em> the app's stored Provider Map / Course Links, so future syncs and &ldquo;Apply to existing courses&rdquo; keep your fix. <strong>Remember to mirror the change in the SharePoint masters</strong> so a future file upload doesn't revert it.</p>
+                            <datalist id="triage-provs">${provOptions}</datalist>
+                            ${rows}
+                        </div>`;
+                    })()}
 
                     <!-- ── Sync Everything: one click, runs both sequentially ── -->
                     <div class="bg-gsf-prussian rounded-2xl p-5 mb-4 shadow-md flex flex-wrap items-center justify-between gap-4">
