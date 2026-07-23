@@ -992,24 +992,48 @@ Object.assign(window.App, {
         // headline "Attributable Referrals" card uses), else synced promoter leads.
         // In range mode the timeline is the only dated source, so it wins.
         const complete = !!(bridge && Array.isArray(bridge.byName) && bridge.byName.length);
-        const referralTop = hasRange
-            ? rank(leadsIn)
-            : (complete
-                ? bridge.byName.filter(x => x.name && x.name !== '(unnamed referrer)' && x.name.indexOf('@') < 0)
-                    .map(x => ({ n: x.name, v: Number(x.reach) || 0 })).filter(o => o.v > 0)
-                    .sort((a, b) => b.v - a.v).slice(0, 3)
-                : rank(n => promoters[n] || 0));
-        const cats = [
-            { label: 'Most Referrals', icon: 'user-plus', color: '#4389C8', fmt: v => this.formatNumber(v), top: referralTop },
-            !hasRange && { label: 'Most Link Clicks', icon: 'mouse-pointer-click', color: '#E28743', fmt: v => this.formatNumber(v), top: rank(n => clicks[n] || 0) },
-            !hasRange && { label: 'Best Conversion', icon: 'percent', color: '#3FB984', fmt: v => v.toFixed(0) + '%', top: rank(n => (clicks[n] >= 20 ? (promoters[n] || 0) / clicks[n] * 100 : 0), n => (clicks[n] || 0) >= 20) },
-            { label: 'Most Consistent', icon: 'calendar-check', color: '#7A9E9F', fmt: v => v + (v === 1 ? ' mo' : ' mos'), top: rank(n => Object.keys(tl[n] || {}).filter(m => inRange(m) && (tl[n][m] || 0) > 0).length) },
-            !hasRange && { label: 'Most Learner Certs', icon: 'award', color: '#3FB984', fmt: v => this.formatNumber(v), top: outRank('certs') },
-            !hasRange && { label: 'Most Learner Enrolments', icon: 'book-open', color: '#206095', fmt: v => this.formatNumber(v), top: outRank('courses') },
-        ].filter(c => c && c.top.length);
-        if (!cats.length && !hasRange) return '';
+        // ── All-time awards: always shown and labelled as such — the lifetime record
+        // doesn't vanish when a timeframe is picked; period awards render separately.
+        const allTimeReferralTop = complete
+            ? bridge.byName.filter(x => x.name && x.name !== '(unnamed referrer)' && x.name.indexOf('@') < 0)
+                .map(x => ({ n: x.name, v: Number(x.reach) || 0 })).filter(o => o.v > 0)
+                .sort((a, b) => b.v - a.v).slice(0, 3)
+            : rank(n => promoters[n] || 0);
+        const allTimeCats = [
+            { label: 'Most Referrals', icon: 'user-plus', color: '#4389C8', fmt: v => this.formatNumber(v), top: allTimeReferralTop,
+              desc: 'Signups attributed to the ambassador’s personal referral link since the programme began. Uses the complete raw attribution (which names every referrer) when built; otherwise the synced promoter leads.' },
+            { label: 'Most Link Clicks', icon: 'mouse-pointer-click', color: '#E28743', fmt: v => this.formatNumber(v), top: rank(n => clicks[n] || 0),
+              desc: 'Lifetime clicks on the ambassador’s referral link. LearnWorlds only reports clicks as a lifetime total — there is no monthly click history, which is why this award has no time-period version.' },
+            { label: 'Best Conversion', icon: 'percent', color: '#3FB984', fmt: v => v.toFixed(0) + '%', top: rank(n => (clicks[n] >= 20 ? (promoters[n] || 0) / clicks[n] * 100 : 0), n => (clicks[n] || 0) >= 20),
+              desc: 'Referrals divided by link clicks — how well an ambassador’s audience converts. Only ambassadors with at least 20 lifetime clicks qualify, so a couple of lucky clicks can’t top the board. All-time only (clicks carry no dates).' },
+            { label: 'Most Consistent', icon: 'calendar-check', color: '#7A9E9F', fmt: v => v + (v === 1 ? ' mo' : ' mos'), top: rank(n => Object.keys(tl[n] || {}).filter(m => (tl[n][m] || 0) > 0).length),
+              desc: 'The number of calendar months in which the ambassador brought at least one referral — rewarding steady advocacy over a single big push.' },
+            { label: 'Most Learner Certs', icon: 'award', color: '#3FB984', fmt: v => this.formatNumber(v), top: outRank('certs'),
+              desc: 'Certificates earned by the learners this ambassador referred — the downstream impact of their outreach. From the raw attribution build; lifetime only.' },
+            { label: 'Most Learner Enrolments', icon: 'book-open', color: '#206095', fmt: v => this.formatNumber(v), top: outRank('courses'),
+              desc: 'Course enrolments by referred learners — how much learning the ambassador’s referrals went on to start. From the raw attribution build; lifetime only.' },
+        ].filter(c => c.top.length);
+        // ── Period awards: the referral timeline is the only dated source, so only
+        // these two can be computed within a window.
+        const periodCats = hasRange ? [
+            { label: 'Most Referrals', icon: 'user-plus', color: '#4389C8', fmt: v => this.formatNumber(v), top: rank(leadsIn),
+              desc: 'Signups via the ambassador’s referral link within the selected months, summed from the monthly referral timeline.' },
+            { label: 'Most Consistent', icon: 'calendar-check', color: '#7A9E9F', fmt: v => v + (v === 1 ? ' mo' : ' mos'), top: rank(n => Object.keys(tl[n] || {}).filter(m => inRange(m) && (tl[n][m] || 0) > 0).length),
+              desc: 'Months with at least one referral, counted within the selected timeframe only.' },
+        ].filter(c => c.top.length) : [];
+        if (!allTimeCats.length && !periodCats.length && !hasRange) return '';
         const moLbl = m => m ? new Date(m + '-01').toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : '';
         const rangeLbl = hasRange ? `${aFrom ? moLbl(aFrom) : 'start'} – ${aTo ? moLbl(aTo) : 'latest'}` : '';
+        // Display-ready stash for the click-to-explain modal. Emails come from the raw
+        // affiliates pull, joined in memory for outreach — never persisted to a store.
+        const awEmails = this._ambassadorEmails();
+        const mkInfo = (c, scope) => ({ label: c.label, icon: c.icon, color: c.color, scope, desc: c.desc,
+            entries: c.top.map(o => ({ n: o.n, v: c.fmt(o.v), email: awEmails[o.n] || '' })) });
+        this._ambAwardCats = [...allTimeCats.map(c => mkInfo(c, 'All time')), ...periodCats.map(c => mkInfo(c, rangeLbl))];
+        const card = (c, gi) => `<div onclick="App._showAmbAwardInfo(${gi})" class="rounded-lg border border-slate-200 p-3 cursor-pointer hover:border-gsf-boston hover:shadow-md transition-all group" style="border-left:3px solid ${c.color}" title="Click for what this award means + winner contacts">
+            <p class="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-2 flex items-center gap-1.5"><i data-lucide="${c.icon}" width="12" style="color:${c.color}"></i>${c.label}<i data-lucide="info" width="10" class="ml-auto text-slate-300 group-hover:text-gsf-boston"></i></p>
+            <ol class="space-y-1.5">${c.top.map((o, i) => `<li class="flex items-center gap-2 text-sm"><span class="w-4 text-center">${medal(i + 1)}</span><span class="font-semibold text-gsf-prussian truncate flex-1" title="${this.escapeHtml(o.n)}">${this.escapeHtml(o.n)}</span><span class="text-slate-500 text-xs font-bold shrink-0">${c.fmt(o.v)}</span></li>`).join('')}</ol>
+        </div>`;
         return `<div class="bg-white rounded-xl shadow-sm border p-6 mb-8">
             <div class="flex items-start justify-between gap-3 flex-wrap">
                 <h3 class="text-xs font-bold uppercase tracking-wide text-slate-500 mb-1 flex items-center gap-2"><i data-lucide="trophy" class="text-amber-500" width="15"></i> Ambassador Awards</h3>
@@ -1018,19 +1042,62 @@ Object.assign(window.App, {
                     <input type="month" data-viewer-allowed value="${aFrom}" onchange="App._ambAwardsFrom=this.value; App.renderView()" class="text-xs border rounded px-1.5 py-1 outline-none focus:ring-2 focus:ring-gsf-boston/30" />
                     <span class="text-slate-400 text-xs">&ndash;</span>
                     <input type="month" data-viewer-allowed value="${aTo}" onchange="App._ambAwardsTo=this.value; App.renderView()" class="text-xs border rounded px-1.5 py-1 outline-none focus:ring-2 focus:ring-gsf-boston/30" />
-                    ${hasRange ? '<button data-viewer-allowed onclick="App._ambAwardsFrom=\'\'; App._ambAwardsTo=\'\'; App.renderView()" class="text-xs text-red-400 hover:text-red-600 font-bold ml-0.5" title="Clear timeframe (back to all-time)">✕</button>' : ''}
+                    ${hasRange ? '<button data-viewer-allowed onclick="App._ambAwardsFrom=\'\'; App._ambAwardsTo=\'\'; App.renderView()" class="text-xs text-red-400 hover:text-red-600 font-bold ml-0.5" title="Clear timeframe">✕</button>' : ''}
                 </div>
             </div>
-            <p class="text-xs text-slate-400 mb-4">${hasRange
-                ? 'Top performers · referrals between <span class="font-semibold text-gsf-boston">' + rangeLbl + '</span> · click, conversion and learner-outcome awards are all-time only — clear the timeframe to see them'
-                : 'Top performers across all ambassadors · as of ' + this._currentQuarterLabel()}</p>
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                ${cats.map(c => `<div class="rounded-lg border border-slate-200 p-3" style="border-left:3px solid ${c.color}">
-                    <p class="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-2 flex items-center gap-1.5"><i data-lucide="${c.icon}" width="12" style="color:${c.color}"></i>${c.label}</p>
-                    <ol class="space-y-1.5">${c.top.map((o, i) => `<li class="flex items-center gap-2 text-sm"><span class="w-4 text-center">${medal(i + 1)}</span><span class="font-semibold text-gsf-prussian truncate flex-1" title="${this.escapeHtml(o.n)}">${this.escapeHtml(o.n)}</span><span class="text-slate-500 text-xs font-bold shrink-0">${c.fmt(o.v)}</span></li>`).join('')}</ol>
-                </div>`).join('')}
+            <p class="text-xs text-slate-400 mb-4">Click any award for what it means and the winners’ contact emails.</p>
+            <p class="text-[10px] font-bold uppercase tracking-wide text-slate-500 mb-2 flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-slate-400"></span>All time <span class="font-normal normal-case text-slate-400">· as of ${this._currentQuarterLabel()}</span></p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+                ${allTimeCats.map((c, i) => card(c, i)).join('')}
+            </div>
+            <p class="text-[10px] font-bold uppercase tracking-wide text-slate-500 mb-2 flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-gsf-boston"></span>Selected period${hasRange ? ' <span class="font-normal normal-case text-gsf-boston">· ' + rangeLbl + '</span>' : ''}</p>
+            ${hasRange
+                ? (periodCats.length
+                    ? `<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">${periodCats.map((c, i) => card(c, allTimeCats.length + i)).join('')}</div>
+                       <p class="text-[11px] text-slate-400 mt-3">Only referral-based awards can be computed for a period — LearnWorlds reports clicks, conversion and learner outcomes as lifetime totals without dates (they stay in the all-time row above).</p>`
+                    : '<p class="text-xs text-slate-400 italic">No referrals recorded in this timeframe.</p>')
+                : '<p class="text-xs text-slate-400 italic">Pick a timeframe above to see who led in a specific period (referral-based awards only — clicks and learner outcomes carry no dates).</p>'}
+        </div>`;
+    },
+
+    // Click-to-explain modal for an award card: what it measures, eligibility, and the
+    // winners with contact emails (in-memory join from the raw affiliates pull).
+    _showAmbAwardInfo(i) {
+        const c = (this._ambAwardCats || [])[i];
+        if (!c) return;
+        this._hideAmbAwardInfo();
+        const medals = ['🥇', '🥈', '🥉'];
+        const ov = document.createElement('div');
+        ov.id = 'amb-award-modal';
+        ov.className = 'fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4';
+        ov.onclick = (e) => { if (e.target === ov) this._hideAmbAwardInfo(); };
+        ov.innerHTML = `<div class="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
+            <div class="p-5 border-b" style="box-shadow:inset 0 4px 0 ${c.color}">
+                <div class="flex items-center justify-between gap-3">
+                    <h3 class="text-lg font-bold text-gsf-prussian flex items-center gap-2"><i data-lucide="${c.icon}" width="16" style="color:${c.color}"></i>${this.escapeHtml(c.label)}</h3>
+                    <span class="text-[10px] font-bold uppercase tracking-wide ${c.scope === 'All time' ? 'text-slate-500 bg-slate-100' : 'text-gsf-boston bg-sky-50'} px-2 py-0.5 rounded-full whitespace-nowrap">${this.escapeHtml(c.scope)}</span>
+                </div>
+                <p class="text-xs text-slate-500 mt-2 leading-relaxed">${this.escapeHtml(c.desc)}</p>
+            </div>
+            <div class="p-5">
+                <p class="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-2.5">Winners · emails for outreach</p>
+                <ol class="space-y-2.5">${c.entries.map((o, j) => `<li class="flex items-center gap-2.5">
+                    <span class="w-5 text-center text-lg">${medals[j] || ''}</span>
+                    <span class="min-w-0 flex-1">
+                        <span class="block text-sm font-semibold text-gsf-prussian truncate" title="${this.escapeHtml(o.n)}">${this.escapeHtml(o.n)}</span>
+                        ${o.email ? '<a href="mailto:' + this.escapeHtml(o.email) + '" class="block text-xs text-gsf-boston hover:underline truncate">' + this.escapeHtml(o.email) + '</a>' : '<span class="block text-xs text-slate-300">no email on file</span>'}
+                    </span>
+                    <span class="text-xs font-bold text-slate-500 shrink-0">${this.escapeHtml(o.v)}</span>
+                </li>`).join('')}</ol>
+                <button onclick="App._hideAmbAwardInfo()" class="mt-4 w-full py-2 rounded-lg text-sm font-semibold text-slate-600 hover:bg-slate-100 border">Close</button>
             </div>
         </div>`;
+        document.body.appendChild(ov);
+        if (window.lucide) lucide.createIcons();
+    },
+    _hideAmbAwardInfo() {
+        const el = document.getElementById('amb-award-modal');
+        if (el) el.remove();
     },
 
     _ambassadorPerformanceTable(snap) {
@@ -1051,11 +1118,13 @@ Object.assign(window.App, {
         const outByName = {};
         if (showOut) bridge.byName.forEach(x => { outByName[x.name] = { active: x.active || 0, courses: x.courses || 0, certs: x.certs || 0, minutes: x.minutes || 0 }; });
         const names = new Set([...Object.keys(leadsByName), ...Object.keys(clicksByP)]);
+        // Contact emails for outreach — in-memory join from the raw affiliates pull.
+        const perfEmails = this._ambassadorEmails();
         const rows = [...names].map(name => {
             const leads = Number(leadsByName[name]) || 0;
             const clicks = Number(clicksByP[name]) || 0;
             const o = outByName[name];
-            return { name, leads, clicks, convNum: clicks > 0 ? (leads / clicks) * 100 : -1, conv: clicks > 0 ? ((leads / clicks) * 100).toFixed(1) + '%' : '–', active: o ? o.active : null, courses: o ? o.courses : null, certs: o ? o.certs : null, minutes: o ? o.minutes : null };
+            return { name, email: perfEmails[name] || '', leads, clicks, convNum: clicks > 0 ? (leads / clicks) * 100 : -1, conv: clicks > 0 ? ((leads / clicks) * 100).toFixed(1) + '%' : '–', active: o ? o.active : null, courses: o ? o.courses : null, certs: o ? o.certs : null, minutes: o ? o.minutes : null };
         });
         // Sortable by column (mirrors the All-Courses table). Default: leads desc.
         const sortCol = this._ambSortCol || 'leads';
@@ -1063,6 +1132,7 @@ Object.assign(window.App, {
         rows.sort((a, b) => {
             let va, vb;
             if (sortCol === 'name') { va = (a.name || '').toLowerCase(); vb = (b.name || '').toLowerCase(); }
+            else if (sortCol === 'email') { va = (a.email || '').toLowerCase(); vb = (b.email || '').toLowerCase(); }
             else if (sortCol === 'conv') { va = a.convNum; vb = b.convNum; }
             else { va = a[sortCol] == null ? -1 : a[sortCol]; vb = b[sortCol] == null ? -1 : b[sortCol]; }
             if (va < vb) return sortAsc ? -1 : 1;
@@ -1073,6 +1143,7 @@ Object.assign(window.App, {
         rows.splice(200); // cap display
         const body = rows.map(r => `<tr class="border-b last:border-0 hover:bg-slate-50">
             <td class="py-2 px-4 font-medium text-gsf-prussian">${this.escapeHtml(r.name.indexOf('@') >= 0 ? 'Ambassador (name withheld)' : r.name)}</td>
+            <td class="py-2 px-4 text-xs">${r.email ? '<a href="mailto:' + this.escapeHtml(r.email) + '" class="text-gsf-boston hover:underline">' + this.escapeHtml(r.email) + '</a>' : '<span class="text-slate-300">—</span>'}</td>
             <td class="py-2 px-4 text-right font-bold text-gsf-boston">${this.formatNumber(r.leads)}</td>
             <td class="py-2 px-4 text-right text-slate-600">${this.formatNumber(r.clicks)}</td>
             <td class="py-2 px-4 text-right text-slate-500 text-xs">${r.conv}</td>
@@ -1096,6 +1167,7 @@ Object.assign(window.App, {
                 <table class="w-full text-left border-collapse text-sm">
                     <thead class="sticky top-0 bg-white shadow-sm z-10"><tr class="border-b text-slate-500">
                         ${th('name', 'Ambassador')}
+                        ${th('email', 'Email')}
                         ${th('leads', 'Referrals', 'text-right')}
                         ${th('clicks', 'Clicks', 'text-right')}
                         ${th('conv', 'Conversion', 'text-right')}
@@ -1806,6 +1878,26 @@ Object.assign(window.App, {
         } catch (e) { console.warn('[Triage] stored-map update failed:', e.message); }
         await this.handleDbSave();
         this.showMsg('✓ ' + courseName + ' updated — mirror this in the SharePoint Provider Map / Course Links.');
+        this.renderView();
+    },
+
+    // Silence a triage row (hide the course from "New courses needing info"). Persisted;
+    // restorable from the panel footer. Index-based — no course names in onclick strings.
+    async _silenceTriage(i) {
+        const courseName = (this._triageList || [])[i];
+        if (!courseName) return;
+        const list = this._triageSilenced || [];
+        if (list.indexOf(courseName) < 0) list.push(courseName);
+        this._triageSilenced = list;
+        try { await Storage.setItem('surgdash_triage_silenced', list); } catch (e) {}
+        this.renderView();
+    },
+    async _unsilenceTriage(j) {
+        const list = this._triageSilenced || [];
+        if (j < 0 || j >= list.length) return;
+        list.splice(j, 1);
+        this._triageSilenced = list;
+        try { await Storage.setItem('surgdash_triage_silenced', list); } catch (e) {}
         this.renderView();
     },
 
@@ -2827,14 +2919,26 @@ Object.assign(window.App, {
                         // ── New-course triage: courses the sync brought in without a provider
                         // and/or survey link. Fill them in here; saves update the course AND the
                         // stored Provider Map / Course Links so future syncs keep the fix.
+                        // Silenced courses (persisted) are dropped from the list; the lazy
+                        // load kicks a re-render the first time this page opens.
+                        if (this._triageSilenced == null) {
+                            this._triageSilenced = [];
+                            Storage.getItem('surgdash_triage_silenced').then(v => { this._triageSilenced = Array.isArray(v) ? v : []; if (this.view === 'upload') this.renderView(); }).catch(() => {});
+                        }
+                        const silenced = this._triageSilenced || [];
                         const latestByCourse = {};
                         (this.data || []).forEach(d => { if (d.IsShell || !d.Course) return; const p = latestByCourse[d.Course]; if (!p || (d.Timestamp || '') > (p.Timestamp || '')) latestByCourse[d.Course] = d; });
                         const needs = Object.values(latestByCourse).filter(d => {
                             const noProv = !d.Provider || d.Provider === 'Unknown Provider' || d.Provider === 'Unknown';
-                            return (noProv || !d.URL) && !d.Excluded;
+                            return (noProv || !d.URL) && !d.Excluded && silenced.indexOf(d.Course) < 0;
                         }).sort((a, b) => (Number(b.Learners) || 0) - (Number(a.Learners) || 0));
                         this._triageList = needs.map(d => d.Course);
-                        if (!needs.length) return '';
+                        const silencedFooter = silenced.length ? `<div class="mt-3 pt-3 border-t border-rose-100">
+                            <button onclick="App._showSilencedTriage=!App._showSilencedTriage; App.renderView()" class="text-[11px] font-semibold text-slate-400 hover:text-slate-600">${silenced.length} silenced course${silenced.length !== 1 ? 's' : ''} ${this._showSilencedTriage ? '▾' : '▸'}</button>
+                            ${this._showSilencedTriage ? '<div class="mt-2 space-y-1">' + silenced.map((c, j) => '<div class="flex items-center gap-2 text-xs text-slate-500"><span class="flex-1 truncate">' + this.escapeHtml(c) + '</span><button onclick="App._unsilenceTriage(' + j + ')" class="text-gsf-boston hover:underline font-semibold">restore</button></div>').join('') + '</div>' : ''}
+                        </div>` : '';
+                        if (!needs.length && !silenced.length) return '';
+                        if (!needs.length) return `<div data-edit-only class="bg-white border border-slate-200 rounded-2xl px-6 py-4 mb-4 shadow-sm"><p class="text-xs text-slate-400">No new courses needing info.</p>${silencedFooter}</div>`;
                         const provOptions = [...new Set((this.data || []).map(d => d.Provider).filter(p => p && p !== 'Unknown Provider' && p !== 'Unknown'))].sort().map(p => '<option value="' + this.escapeHtml(p) + '"></option>').join('');
                         const rows = needs.map((d, i) => {
                             const noProv = !d.Provider || d.Provider === 'Unknown Provider' || d.Provider === 'Unknown';
@@ -2846,6 +2950,7 @@ Object.assign(window.App, {
                                 <input id="triage-prov-${i}" list="triage-provs" placeholder="Provider…" value="${noProv ? '' : this.escapeHtml(d.Provider)}" class="text-xs border rounded-lg px-2.5 py-1.5 w-52 outline-none focus:ring-2 focus:ring-rose-300" />
                                 <input id="triage-url-${i}" type="url" placeholder="Survey export link (https://…)" value="${this.escapeHtml(d.URL || '')}" class="text-xs border rounded-lg px-2.5 py-1.5 flex-1 min-w-[220px] outline-none focus:ring-2 focus:ring-rose-300" />
                                 <button onclick="App._saveCourseTriage(${i})" class="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-lg">Save</button>
+                                <button onclick="App._silenceTriage(${i})" title="Silence — hide this course from the list (restorable from the footer)" class="p-1.5 rounded-lg text-slate-300 hover:text-slate-500 hover:bg-slate-100"><i data-lucide="bell-off" width="13"></i></button>
                             </div>`;
                         }).join('');
                         return `<div data-edit-only class="bg-gradient-to-br from-rose-50 to-white border border-rose-200 rounded-2xl p-6 mb-4 shadow-sm">
@@ -2857,6 +2962,7 @@ Object.assign(window.App, {
                             <p class="text-sm text-slate-600 max-w-3xl mb-3">The sync found these courses without a <strong>provider</strong> and/or <strong>survey link</strong>. Fill them in here — each save updates the course <em>and</em> the app's stored Provider Map / Course Links, so future syncs and &ldquo;Apply to existing courses&rdquo; keep your fix. <strong>Remember to mirror the change in the SharePoint masters</strong> so a future file upload doesn't revert it.</p>
                             <datalist id="triage-provs">${provOptions}</datalist>
                             ${rows}
+                            ${silencedFooter}
                         </div>`;
                     })()}
 
