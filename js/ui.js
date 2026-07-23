@@ -981,26 +981,49 @@ Object.assign(window.App, {
                 .map(x => ({ n: x.name, v: Number(x[key]) || 0 })).filter(o => o.v > 0)
                 .sort((a, b) => b.v - a.v).slice(0, 3)
             : [];
+        // Optional timeframe (months): when set, referral-based awards recompute from
+        // the per-promoter monthly timeline within the window. Clicks, conversion and
+        // learner-outcome data are lifetime-only, so those categories hide in range mode.
+        const aFrom = this._ambAwardsFrom || '', aTo = this._ambAwardsTo || '';
+        const hasRange = !!(aFrom || aTo);
+        const inRange = m => (!aFrom || m >= aFrom) && (!aTo || m <= aTo);
+        const leadsIn = n => Object.keys(tl[n] || {}).filter(inRange).reduce((s, m) => s + (Number(tl[n][m]) || 0), 0);
         // Per-ambassador REFERRALS = complete bridge reach when built (the source the
         // headline "Attributable Referrals" card uses), else synced promoter leads.
+        // In range mode the timeline is the only dated source, so it wins.
         const complete = !!(bridge && Array.isArray(bridge.byName) && bridge.byName.length);
-        const referralTop = complete
-            ? bridge.byName.filter(x => x.name && x.name !== '(unnamed referrer)' && x.name.indexOf('@') < 0)
-                .map(x => ({ n: x.name, v: Number(x.reach) || 0 })).filter(o => o.v > 0)
-                .sort((a, b) => b.v - a.v).slice(0, 3)
-            : rank(n => promoters[n] || 0);
+        const referralTop = hasRange
+            ? rank(leadsIn)
+            : (complete
+                ? bridge.byName.filter(x => x.name && x.name !== '(unnamed referrer)' && x.name.indexOf('@') < 0)
+                    .map(x => ({ n: x.name, v: Number(x.reach) || 0 })).filter(o => o.v > 0)
+                    .sort((a, b) => b.v - a.v).slice(0, 3)
+                : rank(n => promoters[n] || 0));
         const cats = [
             { label: 'Most Referrals', icon: 'user-plus', color: '#4389C8', fmt: v => this.formatNumber(v), top: referralTop },
-            { label: 'Most Link Clicks', icon: 'mouse-pointer-click', color: '#E28743', fmt: v => this.formatNumber(v), top: rank(n => clicks[n] || 0) },
-            { label: 'Best Conversion', icon: 'percent', color: '#3FB984', fmt: v => v.toFixed(0) + '%', top: rank(n => (clicks[n] >= 20 ? (promoters[n] || 0) / clicks[n] * 100 : 0), n => (clicks[n] || 0) >= 20) },
-            { label: 'Most Consistent', icon: 'calendar-check', color: '#7A9E9F', fmt: v => v + (v === 1 ? ' mo' : ' mos'), top: rank(n => Object.keys(tl[n] || {}).filter(m => (tl[n][m] || 0) > 0).length) },
-            { label: 'Most Learner Certs', icon: 'award', color: '#3FB984', fmt: v => this.formatNumber(v), top: outRank('certs') },
-            { label: 'Most Learner Enrolments', icon: 'book-open', color: '#206095', fmt: v => this.formatNumber(v), top: outRank('courses') },
-        ].filter(c => c.top.length);
-        if (!cats.length) return '';
+            !hasRange && { label: 'Most Link Clicks', icon: 'mouse-pointer-click', color: '#E28743', fmt: v => this.formatNumber(v), top: rank(n => clicks[n] || 0) },
+            !hasRange && { label: 'Best Conversion', icon: 'percent', color: '#3FB984', fmt: v => v.toFixed(0) + '%', top: rank(n => (clicks[n] >= 20 ? (promoters[n] || 0) / clicks[n] * 100 : 0), n => (clicks[n] || 0) >= 20) },
+            { label: 'Most Consistent', icon: 'calendar-check', color: '#7A9E9F', fmt: v => v + (v === 1 ? ' mo' : ' mos'), top: rank(n => Object.keys(tl[n] || {}).filter(m => inRange(m) && (tl[n][m] || 0) > 0).length) },
+            !hasRange && { label: 'Most Learner Certs', icon: 'award', color: '#3FB984', fmt: v => this.formatNumber(v), top: outRank('certs') },
+            !hasRange && { label: 'Most Learner Enrolments', icon: 'book-open', color: '#206095', fmt: v => this.formatNumber(v), top: outRank('courses') },
+        ].filter(c => c && c.top.length);
+        if (!cats.length && !hasRange) return '';
+        const moLbl = m => m ? new Date(m + '-01').toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : '';
+        const rangeLbl = hasRange ? `${aFrom ? moLbl(aFrom) : 'start'} – ${aTo ? moLbl(aTo) : 'latest'}` : '';
         return `<div class="bg-white rounded-xl shadow-sm border p-6 mb-8">
-            <h3 class="text-xs font-bold uppercase tracking-wide text-slate-500 mb-1 flex items-center gap-2"><i data-lucide="trophy" class="text-amber-500" width="15"></i> Ambassador Awards</h3>
-            <p class="text-xs text-slate-400 mb-4">Top performers across all ambassadors · as of ${this._currentQuarterLabel()}</p>
+            <div class="flex items-start justify-between gap-3 flex-wrap">
+                <h3 class="text-xs font-bold uppercase tracking-wide text-slate-500 mb-1 flex items-center gap-2"><i data-lucide="trophy" class="text-amber-500" width="15"></i> Ambassador Awards</h3>
+                <div class="flex items-center gap-1.5 flex-wrap">
+                    <span class="text-[10px] font-bold uppercase tracking-wide text-slate-400">Timeframe</span>
+                    <input type="month" data-viewer-allowed value="${aFrom}" onchange="App._ambAwardsFrom=this.value; App.renderView()" class="text-xs border rounded px-1.5 py-1 outline-none focus:ring-2 focus:ring-gsf-boston/30" />
+                    <span class="text-slate-400 text-xs">&ndash;</span>
+                    <input type="month" data-viewer-allowed value="${aTo}" onchange="App._ambAwardsTo=this.value; App.renderView()" class="text-xs border rounded px-1.5 py-1 outline-none focus:ring-2 focus:ring-gsf-boston/30" />
+                    ${hasRange ? '<button data-viewer-allowed onclick="App._ambAwardsFrom=\'\'; App._ambAwardsTo=\'\'; App.renderView()" class="text-xs text-red-400 hover:text-red-600 font-bold ml-0.5" title="Clear timeframe (back to all-time)">✕</button>' : ''}
+                </div>
+            </div>
+            <p class="text-xs text-slate-400 mb-4">${hasRange
+                ? 'Top performers · referrals between <span class="font-semibold text-gsf-boston">' + rangeLbl + '</span> · click, conversion and learner-outcome awards are all-time only — clear the timeframe to see them'
+                : 'Top performers across all ambassadors · as of ' + this._currentQuarterLabel()}</p>
             <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 ${cats.map(c => `<div class="rounded-lg border border-slate-200 p-3" style="border-left:3px solid ${c.color}">
                     <p class="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-2 flex items-center gap-1.5"><i data-lucide="${c.icon}" width="12" style="color:${c.color}"></i>${c.label}</p>
