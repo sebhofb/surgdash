@@ -1356,5 +1356,197 @@ renderPlatform();
             console.error(err);
             alert('Export failed: ' + err.message);
         }
+    },
+
+    // ── Master data export ────────────────────────────────────────────────
+    // One comprehensive, ANONYMISED workbook: About · Learners (one row per user) ·
+    // Courses · Providers · Countries · Monthly. Learner identity is the one-way
+    // uid hash only — no names or emails anywhere (standing export rule).
+    // _buildMasterWorkbookData is pure (no dialogs) so it can be unit-tested.
+    _buildMasterWorkbookData() {
+        const parse = s => { try { return JSON.parse(s) || {}; } catch (e) { return {}; } };
+        const safeTl = d => { const p = (window.Charts && Charts.safeParse) ? Charts.safeParse(d.CourseTimeline) : parse(d.CourseTimeline); return p.timeline || p; };
+        const seg = m => (!m || m <= 0) ? 'Ghost (0 min)' : m < 30 ? 'Explorer (<30 min)' : m < 300 ? 'Engaged (30-300 min)' : 'Power (300+ min)';
+        const income = c => (window.IncomeClassification && c) ? IncomeClassification.classify(c) : '';
+        const incomeLabel = t => (window.IncomeClassification && t && t !== 'Unknown') ? IncomeClassification.label(t) : '';
+
+        // Comprehensive: bypass the "hide <50-learner courses" UI toggle for the export.
+        const wasHide = this.hideLowLearners; this.hideLowLearners = false;
+        const snap = this.getAnalyticsSnap(); this.hideLowLearners = wasHide;
+        const snapCourses = new Set(snap.map(d => d.Course));
+        const anon = (this._rawAnonymizedUsers || []).filter(r => r && r.course && snapCourses.has(r.course));
+
+        // ── Learners: one row per distinct user ──
+        const byUid = {};
+        let anonRowN = 0;
+        anon.forEach(r => {
+            const k = r.user_uid || ('anon_' + (anonRowN++));   // uid-less rows stay separate
+            const u = byUid[k] || (byUid[k] = { uid: r.user_uid || '', signup: '', country: '', profession: '', gender: '', org: '', stage: '', courses: [], certs: 0, minutes: 0, declaredMinutes: 0 });
+            u.courses.push(r.course);
+            if (String(r.has_certificate) === 'Yes') u.certs++;
+            u.minutes += Number(r.course_minutes) || 0;
+            if (!u.signup && r.signup_month) u.signup = r.signup_month;
+            if (!u.country && r.country) u.country = r.country;
+            if (!u.profession && r.profession) u.profession = r.profession;
+            if (!u.gender && r.gender) u.gender = r.gender;
+            if (!u.org && r.organisation_type) u.org = r.organisation_type;
+            if (!u.stage && r.career_stage) u.stage = r.career_stage;
+            if (!u.declaredMinutes && r.user_total_minutes) u.declaredMinutes = Number(r.user_total_minutes) || 0;
+        });
+        const userRows = Object.values(byUid).map(u => {
+            const mins = u.declaredMinutes || u.minutes;
+            return {
+                'User ID': u.uid, 'Signup month': u.signup, 'Country': u.country,
+                'Income level': incomeLabel(income(u.country)),
+                'Cadre': this._canonProf ? (this._canonProf(u.profession) || '') : '',
+                'Profession (as declared)': u.profession, 'Career stage': u.stage,
+                'Gender': u.gender, 'Organisation type': u.org,
+                'Courses enrolled': u.courses.length, 'Certificates': u.certs,
+                'Completion rate': u.courses.length ? Math.round(u.certs / u.courses.length * 100) + '%' : '',
+                'Learning minutes': Math.round(mins), 'Engagement segment': seg(mins),
+                'Courses': u.courses.join(' | ').slice(0, 8000)
+            };
+        });
+
+        // ── Courses ──
+        let awards = null; try { awards = this.computeAwards ? this.computeAwards() : null; } catch (e) {}
+        const courseMins = this.getCourseLearningMinutes ? this.getCourseLearningMinutes() : {};
+        const anonByCourse = {};
+        anon.forEach(r => (anonByCourse[r.course] = anonByCourse[r.course] || []).push(r));
+        const courseRows = snap.slice().sort((a, b) => (Number(b.Learners) || 0) - (Number(a.Learners) || 0)).map(d => {
+            const tl = d.CourseTimeline ? safeTl(d) : {};
+            const months = Object.keys(tl).filter(m => /^\d{4}-\d{2}/.test(m)).sort();
+            const csE = Object.entries(d.CountryStats ? parse(d.CountryStats) : {}).filter(([k]) => k && k !== 'Unknown' && k !== 'nan').sort((a, b) => b[1] - a[1]);
+            const rowsA = anonByCourse[d.Course] || [];
+            let lmicN = 0, incKnown = 0; const cadreCount = {};
+            rowsA.forEach(r => {
+                const t = income(r.country);
+                if (t && t !== 'Unknown') { incKnown++; if (t === 'LIC' || t === 'LMIC') lmicN++; }
+                const c = this._canonProf ? this._canonProf(r.profession) : null;
+                if (c) cadreCount[c] = (cadreCount[c] || 0) + 1;
+            });
+            const topCadre = Object.entries(cadreCount).sort((a, b) => b[1] - a[1])[0];
+            let si = null; try { si = (typeof this._surveyImpactStats === 'function') ? this._surveyImpactStats([d]) : null; } catch (e) {}
+            const fb = d.FeedbackBank ? parse(d.FeedbackBank) : [];
+            const lrn = Number(d.Learners) || 0, cert = Number(d.Certificates) || 0, resp = Number(d.Responses) || 0;
+            return {
+                'Course': d.Course, 'Provider': d.Provider || '', 'Status': d.Access || '',
+                'SURGhub link': (d.CourseId && this._courseSurghubUrl) ? (this._courseSurghubUrl(d.CourseId) || '') : '',
+                'Launch month': months[0] ? months[0].slice(0, 7) : '',
+                'Learners': lrn, 'Certificates': cert,
+                'Cert rate': lrn > 0 ? (Math.round(cert / lrn * 1000) / 10) + '%' : '',
+                'Learning minutes': Math.round(this.courseLearningMinutes ? this.courseLearningMinutes(d, courseMins) : (Number(d.LearningMinutes) || 0)),
+                'Avg rating': Number(d.Rating) > 0 ? Number(d.Rating) : '',
+                'Survey responses': resp,
+                'Response rate': lrn > 0 && resp > 0 ? Math.round(resp / lrn * 100) + '%' : '',
+                'Feedback comments': Array.isArray(fb) ? fb.length : 0,
+                'Countries reached': csE.length,
+                'Top country': csE[0] ? csE[0][0] : '',
+                '% learners LIC/LMIC': incKnown ? Math.round(lmicN / incKnown * 100) + '%' : '',
+                'Top cadre': topCadre ? topCadre[0] : '',
+                '% content new': si && si.contentNew ? si.contentNew.pct + '%' : '',
+                '% intend to apply': si && si.willApply ? si.willApply.pct + '%' : '',
+                '% career value': si && si.careerValue ? si.careerValue.pct + '%' : '',
+                'Awards': (awards && awards.course && awards.course[d.Course]) ? awards.course[d.Course].map(a => a.label).join(' | ') : ''
+            };
+        });
+
+        // ── Providers: roll-up of the snap ──
+        const pm = {};
+        snap.forEach(d => {
+            const p = String(d.Provider || 'Unknown').trim() || 'Unknown';
+            const m = pm[p] || (pm[p] = { courses: 0, lrn: 0, cert: 0, resp: 0, rSum: 0, rCnt: 0, mins: 0, countries: new Set() });
+            m.courses++; m.lrn += Number(d.Learners) || 0; m.cert += Number(d.Certificates) || 0; m.resp += Number(d.Responses) || 0;
+            const r = Number(d.Rating) || 0; if (r > 0) { m.rSum += r; m.rCnt++; }
+            m.mins += this.courseLearningMinutes ? this.courseLearningMinutes(d, courseMins) : (Number(d.LearningMinutes) || 0);
+            Object.keys(d.CountryStats ? parse(d.CountryStats) : {}).forEach(c => { if (c && c !== 'Unknown' && c !== 'nan') m.countries.add(c); });
+        });
+        const providerRows = Object.entries(pm).sort((a, b) => b[1].lrn - a[1].lrn).map(([p, m]) => ({
+            'Provider': p, 'Courses': m.courses, 'Learners': m.lrn, 'Certificates': m.cert,
+            'Cert rate': m.lrn > 0 ? (Math.round(m.cert / m.lrn * 1000) / 10) + '%' : '',
+            'Avg rating': m.rCnt ? +(m.rSum / m.rCnt).toFixed(2) : '',
+            'Survey responses': m.resp, 'Learning minutes': Math.round(m.mins), 'Countries reached': m.countries.size
+        }));
+
+        // ── Countries (from the anonymised learner rows) ──
+        const cm = {};
+        anon.forEach(r => {
+            const c = (r.country || '').trim(); if (!c || c === 'Unknown' || c === 'nan') return;
+            const m = cm[c] || (cm[c] = { users: new Set(), rowN: 0, enrol: 0, certs: 0, mins: 0 });
+            if (r.user_uid) m.users.add(r.user_uid); else m.rowN++;
+            m.enrol++;
+            if (String(r.has_certificate) === 'Yes') m.certs++;
+            m.mins += Number(r.course_minutes) || 0;
+        });
+        const cSize = m => m.users.size + m.rowN;
+        const totalCUsers = Object.values(cm).reduce((s, m) => s + cSize(m), 0);
+        const countryRows = Object.entries(cm).sort((a, b) => cSize(b[1]) - cSize(a[1])).map(([c, m]) => ({
+            'Country': c, 'Income level': incomeLabel(income(c)),
+            'Learners': cSize(m), '% of learners': totalCUsers ? (cSize(m) / totalCUsers * 100).toFixed(1) + '%' : '',
+            'Enrolments': m.enrol, 'Certificates': m.certs,
+            'Completion rate': m.enrol ? Math.round(m.certs / m.enrol * 100) + '%' : '',
+            'Learning minutes': Math.round(m.mins)
+        }));
+
+        // ── Monthly (registrations from signup dates; enrol/certs from timelines
+        // reconciled to official totals) ──
+        const aud = (this.userHistory || []).slice().sort((a, b) => String(b.Timestamp || '').localeCompare(String(a.Timestamp || '')))[0] || null;
+        const signups = (aud && aud.Signups) ? parse(aud.Signups) : {};
+        const em = {}, cmn = {};
+        snap.forEach(d => {
+            if (!d.CourseTimeline) return;
+            const tl = safeTl(d);
+            let sE = 0, sC = 0;
+            Object.values(tl).forEach(v => { if (v && typeof v === 'object') { sE += (+v.e || 0); sC += (+v.c || 0); } });
+            const scE = sE > 0 ? (Number(d.Learners) || 0) / sE : 0, scC = sC > 0 ? (Number(d.Certificates) || 0) / sC : 0;
+            Object.keys(tl).forEach(date => { const m = date.slice(0, 7); const v = tl[date]; if (v && typeof v === 'object') { em[m] = (em[m] || 0) + (+v.e || 0) * scE; cmn[m] = (cmn[m] || 0) + (+v.c || 0) * scC; } });
+        });
+        const allMonths = [...new Set([...Object.keys(signups), ...Object.keys(em), ...Object.keys(cmn)])].filter(m => /^\d{4}-\d{2}$/.test(m)).sort();
+        let cumS = 0, cumC = 0;
+        const monthlyRows = allMonths.map(m => {
+            cumS += Number(signups[m]) || 0; cumC += (cmn[m] || 0);
+            return { 'Month': m, 'New registrations': Number(signups[m]) || 0, 'Cumulative registrations': cumS, 'New enrolments': Math.round(em[m] || 0), 'New certificates': Math.round(cmn[m] || 0), 'Cumulative certificates': Math.round(cumC) };
+        });
+
+        const about = [
+            ['SURGhub master data export'],
+            ['Generated', new Date().toISOString().slice(0, 10)],
+            ['Data synced through', aud && aud.Timestamp ? String(aud.Timestamp).slice(0, 10) : ''],
+            ['Learners', userRows.length], ['Courses', courseRows.length], ['Providers', providerRows.length], ['Countries', countryRows.length],
+            [''],
+            ['ANONYMISATION', 'Learner identity is a one-way hash (User ID). No names or e-mail addresses appear anywhere in this workbook.'],
+            ['Learners tab', 'One row per registered learner present in the anonymised demographics data (requires a course list from the User Progress upload or the Growth-Timelines sync). Demographics from the signup survey and profile tags; income level per World Bank classification; engagement segment from learning minutes (0 = Ghost, <30 Explorer, <300 Engaged, 300+ Power).'],
+            ['Courses tab', 'Latest synced record per included course. Cert rate = certificates / learners. Survey % columns = share answering 4-5 on the 1-5 scale. Launch month = first month in the course timeline. % LIC/LMIC is of learners with a known country income level.'],
+            ['Providers tab', 'Roll-up of the Courses tab by provider.'],
+            ['Countries tab', 'From the anonymised learner rows (learners with a known country). Enrolments count learner-course pairs.'],
+            ['Monthly tab', 'Registrations from signup dates; enrolments/certificates from course timelines reconciled to official totals - monthly timing is approximate, totals are exact. The current month is partial.'],
+            ['Exclusions', 'Courses and providers excluded in the app are not included anywhere in this workbook.']
+        ];
+        return { about, userRows, courseRows, providerRows, countryRows, monthlyRows };
+    },
+
+    async exportMasterWorkbook() {
+        try {
+            this._showReportProgress && this._showReportProgress('Building master workbook…');
+            if (this.ensureAnonLoaded) await this.ensureAnonLoaded();
+            const D = this._buildMasterWorkbookData();
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(D.about), 'About');
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(D.userRows.length ? D.userRows : [{ 'Note': 'No anonymised learner data — upload User Progress (card 2) then run Sync Learners (card 3).' }]), 'Learners');
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(D.courseRows), 'Courses');
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(D.providerRows), 'Providers');
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(D.countryRows), 'Countries');
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(D.monthlyRows), 'Monthly');
+            this._hideReportProgress && this._hideReportProgress();
+            const savePath = await electronAPI.invoke('pick-save-path', 'surghub_master_export_' + new Date().toISOString().split('T')[0] + '.xlsx');
+            if (!savePath) return;
+            this._writeWorkbook(wb, savePath);
+            alert('Master export saved:\n' + savePath + '\n\n' +
+                D.userRows.length.toLocaleString() + ' learners · ' + D.courseRows.length + ' courses · ' +
+                D.providerRows.length + ' providers · ' + D.countryRows.length + ' countries · ' + D.monthlyRows.length + ' months.');
+        } catch (e) {
+            this._hideReportProgress && this._hideReportProgress();
+            alert('Master export failed: ' + e.message);
+        }
     }
 });
