@@ -9,6 +9,17 @@
     // this is shown to the team, not to developers. Update this list per release.
     const RELEASES = [
         {
+            v: '2.0.10',
+            date: 'July 2026',
+            items: [
+                { t: 'Master Data Export', d: 'One Excel with everything: Learners (one row per person — including name and email for internal analysis; delete those columns before wider sharing), Courses, Providers, Countries, and a Monthly timeline — every tab formatted with filters and sensible column widths. Reports tab → Bulk Reports & Exports.' },
+                { t: 'Raw feedback in report packages', d: 'The feedback Excel in provider and course packages is now the original survey export — every question, every answer — anonymised. It fills in as courses are re-synced (card 4 · Sync Surveys).' },
+                { t: 'Ambassador outreach tools', d: '“Needs Re-engagement” now shows contact emails and downloads as PNG or Excel. Awards are split into All-time and Selected-period sections with a timeframe picker, and every award card opens an explainer with the winners’ emails. The performance table gained an email column too.' },
+                { t: 'New-course triage', d: 'Courses arriving from a sync without a provider or survey link now surface at the top of Data Sync — fill them in inline, or silence the ones you don’t care about. Saves also update the stored Provider Map / Course Links so syncs keep your fix.' },
+                { t: 'Directory search', d: 'Find any course or provider instantly with the new search box at the top of the Directory.' }
+            ]
+        },
+        {
             v: '2.0.9',
             date: 'July 2026',
             items: [
