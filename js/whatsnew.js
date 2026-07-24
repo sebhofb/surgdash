@@ -9,6 +9,14 @@
     // this is shown to the team, not to developers. Update this list per release.
     const RELEASES = [
         {
+            v: '2.0.11',
+            date: 'July 2026',
+            items: [
+                { t: 'Ambassador Performance downloads', d: 'The performance table now downloads as PNG (a clean screenful) or Excel — the Excel covers every ambassador with emails, referrals, clicks, conversion and learner outcomes, in your current sort order.' },
+                { t: 'Ambassador exports in view mode', d: 'The download buttons on Ambassador Performance and Needs Re-engagement now also work when the app is locked in view mode — no need to unlock just to pull an outreach list.' }
+            ]
+        },
+        {
             v: '2.0.10',
             date: 'July 2026',
             items: [
