@@ -1376,6 +1376,25 @@ renderPlatform();
         const snapCourses = new Set(snap.map(d => d.Course));
         const anon = (this._rawAnonymizedUsers || []).filter(r => r && r.course && snapCourses.has(r.course));
 
+        // ── Learner identity (Name + Email) — joined from the User Progress records
+        // and the email→demographics map at the user's explicit request ("we can
+        // always delete that"). The About tab flags the workbook as containing
+        // personal data; the columns are adjacent so they're easy to delete before
+        // wider sharing. uid = one-way hash of the email, so the join is exact.
+        const idMap = {};
+        (this._rawCompletion || []).forEach(r => {
+            if (!r || !r.email || !this._djb2Hash) return;
+            const u = this._djb2Hash(String(r.email).trim().toLowerCase());
+            const e = idMap[u] || (idMap[u] = { email: '', name: '' });
+            if (!e.email) e.email = String(r.email).trim().toLowerCase();
+            if (!e.name && r.name) e.name = String(r.name).trim();
+        });
+        Object.keys(this._emailDemoMap || {}).forEach(em => {
+            if (!this._djb2Hash) return;
+            const u = this._djb2Hash(String(em).trim().toLowerCase());
+            if (!idMap[u]) idMap[u] = { email: String(em).trim().toLowerCase(), name: '' };
+        });
+
         // ── Learners: one row per distinct user ──
         const byUid = {};
         let anonRowN = 0;
@@ -1395,8 +1414,10 @@ renderPlatform();
         });
         const userRows = Object.values(byUid).map(u => {
             const mins = u.declaredMinutes || u.minutes;
+            const id = idMap[u.uid] || { email: '', name: '' };
             return {
-                'User ID': u.uid, 'Signup month': u.signup, 'Country': u.country,
+                'User ID': u.uid, 'Name': id.name, 'Email': id.email,
+                'Signup month': u.signup, 'Country': u.country,
                 'Income level': incomeLabel(income(u.country)),
                 'Cadre': this._canonProf ? (this._canonProf(u.profession) || '') : '',
                 'Profession (as declared)': u.profession, 'Career stage': u.stage,
@@ -1514,7 +1535,7 @@ renderPlatform();
             ['Data synced through', aud && aud.Timestamp ? String(aud.Timestamp).slice(0, 10) : ''],
             ['Learners', userRows.length], ['Courses', courseRows.length], ['Providers', providerRows.length], ['Countries', countryRows.length],
             [''],
-            ['ANONYMISATION', 'Learner identity is a one-way hash (User ID). No names or e-mail addresses appear anywhere in this workbook.'],
+            ['PERSONAL DATA', 'The Learners tab contains learner NAMES and E-MAIL addresses (joined from the User Progress data for internal analysis). Handle accordingly — delete the Name and Email columns before sharing this file outside the team. All other tabs are aggregates.'],
             ['Learners tab', 'One row per registered learner present in the anonymised demographics data (requires a course list from the User Progress upload or the Growth-Timelines sync). Demographics from the signup survey and profile tags; income level per World Bank classification; engagement segment from learning minutes (0 = Ghost, <30 Explorer, <300 Engaged, 300+ Power).'],
             ['Courses tab', 'Latest synced record per included course. Cert rate = certificates / learners. Survey % columns = share answering 4-5 on the 1-5 scale. Launch month = first month in the course timeline. % LIC/LMIC is of learners with a known country income level.'],
             ['Providers tab', 'Roll-up of the Courses tab by provider.'],
@@ -1525,18 +1546,47 @@ renderPlatform();
         return { about, userRows, courseRows, providerRows, countryRows, monthlyRows };
     },
 
+    // Format a sheet: content-based column widths (capped), an Excel autofilter on
+    // the header row, and thousands separators on large integer cells. (Freeze panes
+    // and header styling need SheetJS Pro — not available in the community build.)
+    _niceSheet(ws, opts) {
+        opts = opts || {};
+        if (!ws || !ws['!ref']) return ws;
+        const range = XLSX.utils.decode_range(ws['!ref']);
+        const sampleLast = Math.min(range.e.r, range.s.r + 400);   // width from first 400 rows
+        const widths = [];
+        for (let C = range.s.c; C <= range.e.c; C++) {
+            let w = 8;
+            for (let R = range.s.r; R <= range.e.r; R++) {
+                const cell = ws[XLSX.utils.encode_cell({ r: R, c: C })];
+                if (!cell || cell.v == null) continue;
+                if (cell.t === 'n' && Number.isInteger(cell.v) && Math.abs(cell.v) >= 1000) cell.z = '#,##0';
+                if (R <= sampleLast) {
+                    const len = String(cell.v).length + (R === range.s.r ? 2 : 0);
+                    if (len > w) w = len;
+                }
+            }
+            widths.push({ wch: Math.min(w + 1, opts.maxWidth || 46) });
+        }
+        ws['!cols'] = opts.widths || widths;
+        if (!opts.noFilter && range.e.r > range.s.r) ws['!autofilter'] = { ref: ws['!ref'] };
+        return ws;
+    },
+
     async exportMasterWorkbook() {
         try {
             this._showReportProgress && this._showReportProgress('Building master workbook…');
             if (this.ensureAnonLoaded) await this.ensureAnonLoaded();
+            if (this.ensureCompletionLoaded) await this.ensureCompletionLoaded();   // Name + Email join source
+            if (!this._emailDemoMap) { try { this._emailDemoMap = (await Storage.getItem('surghub_email_demo')) || {}; } catch (e) {} }
             const D = this._buildMasterWorkbookData();
             const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(D.about), 'About');
-            XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(D.userRows.length ? D.userRows : [{ 'Note': 'No anonymised learner data — upload User Progress (card 2) then run Sync Learners (card 3).' }]), 'Learners');
-            XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(D.courseRows), 'Courses');
-            XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(D.providerRows), 'Providers');
-            XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(D.countryRows), 'Countries');
-            XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(D.monthlyRows), 'Monthly');
+            XLSX.utils.book_append_sheet(wb, this._niceSheet(XLSX.utils.aoa_to_sheet(D.about), { noFilter: true, widths: [{ wch: 26 }, { wch: 110 }] }), 'About');
+            XLSX.utils.book_append_sheet(wb, this._niceSheet(XLSX.utils.json_to_sheet(D.userRows.length ? D.userRows : [{ 'Note': 'No anonymised learner data — upload User Progress (card 2) then run Sync Learners (card 3).' }])), 'Learners');
+            XLSX.utils.book_append_sheet(wb, this._niceSheet(XLSX.utils.json_to_sheet(D.courseRows)), 'Courses');
+            XLSX.utils.book_append_sheet(wb, this._niceSheet(XLSX.utils.json_to_sheet(D.providerRows)), 'Providers');
+            XLSX.utils.book_append_sheet(wb, this._niceSheet(XLSX.utils.json_to_sheet(D.countryRows)), 'Countries');
+            XLSX.utils.book_append_sheet(wb, this._niceSheet(XLSX.utils.json_to_sheet(D.monthlyRows)), 'Monthly');
             this._hideReportProgress && this._hideReportProgress();
             const savePath = await electronAPI.invoke('pick-save-path', 'surghub_master_export_' + new Date().toISOString().split('T')[0] + '.xlsx');
             if (!savePath) return;
