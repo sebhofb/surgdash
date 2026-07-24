@@ -1140,6 +1140,9 @@ Object.assign(window.App, {
             return (b.leads - a.leads) || (b.clicks - a.clicks); // stable tiebreak
         });
         const totalNamed = rows.length;
+        // Full list (incl. emails + outcome columns) stashed for the Excel export —
+        // the export always covers everyone, not just the 200 rows shown.
+        this._lastAmbPerf = { rows: rows.slice(), showOut };
         rows.splice(200); // cap display
         const body = rows.map(r => `<tr class="border-b last:border-0 hover:bg-slate-50">
             <td class="py-2 px-4 font-medium text-gsf-prussian">${this.escapeHtml(r.name.indexOf('@') >= 0 ? 'Ambassador (name withheld)' : r.name)}</td>
@@ -1160,9 +1163,15 @@ Object.assign(window.App, {
             : '<span class="text-slate-300">&#8597;</span>';
         const th = (key, label, align) =>
             `<th class="py-3 px-4 font-medium ${align || ''} cursor-pointer hover:text-gsf-boston select-none" onclick="App._sortAmbDir('${key}')">${label} ${arrow(key)}</th>`;
-        return `<div class="bg-white rounded-xl shadow-sm border overflow-hidden mb-8">
+        return `<div id="amb-perf-card" class="bg-white rounded-xl shadow-sm border overflow-hidden mb-8">
             <div class="bg-slate-50 border-b p-5 flex justify-between items-start gap-3 flex-wrap"><div><h3 class="text-lg font-bold text-gsf-prussian">Ambassador Performance</h3>
-                <p class="text-xs text-slate-500 mt-1">${note}</p><p class="text-[11px] text-slate-400 mt-1">Click a column header to sort.</p></div>${buildBtn}</div>
+                <p class="text-xs text-slate-500 mt-1">${note}</p><p class="text-[11px] text-slate-400 mt-1">Click a column header to sort.</p></div>
+                <div class="flex items-center gap-1 shrink-0">
+                    <button onclick="App._copyEngagementSection('amb-perf-card', this, true)" title="Copy as PNG (visible rows)" class="p-1.5 rounded hover:bg-slate-200 text-slate-400 hover:text-gsf-boston"><i data-lucide="copy" width="13"></i></button>
+                    <button onclick="App._downloadEngagementSection('amb-perf-card', 'Ambassador_Performance', true)" title="Download PNG (visible rows)" class="p-1.5 rounded hover:bg-slate-200 text-slate-400 hover:text-gsf-boston"><i data-lucide="image" width="13"></i></button>
+                    <button onclick="App._exportAmbPerformanceXlsx()" title="Download Excel (all ambassadors, with emails)" class="p-1.5 rounded hover:bg-slate-200 text-slate-400 hover:text-gsf-boston"><i data-lucide="file-spreadsheet" width="13"></i></button>
+                    ${buildBtn}
+                </div></div>
             <div class="overflow-x-auto max-h-[480px] overflow-y-auto custom-scrollbar">
                 <table class="w-full text-left border-collapse text-sm">
                     <thead class="sticky top-0 bg-white shadow-sm z-10"><tr class="border-b text-slate-500">
@@ -1368,7 +1377,7 @@ Object.assign(window.App, {
                         <h3 class="text-lg font-bold text-gsf-prussian flex items-center gap-2"><i data-lucide="bell-ring" class="text-amber-500" width="18"></i> Needs Re-engagement <span class="text-sm font-semibold text-amber-600">(${this.formatNumber(dormant.length)})</span></h3>
                         <p class="text-xs text-slate-500 mt-1">Ambassadors with ${MIN_PRIOR}+ historic referrals who have brought no new leads in the last ${DORMANT_MONTHS} months (latest data month: ${moLabel(latest)}). Worth a nudge.</p>
                     </div>
-                    <div class="flex items-center gap-1 shrink-0" data-edit-only>
+                    <div class="flex items-center gap-1 shrink-0">
                         <button onclick="App._copyEngagementSection('amb-reengage-card', this)" title="Copy as PNG" class="p-1.5 rounded hover:bg-amber-100 text-slate-400 hover:text-gsf-boston"><i data-lucide="copy" width="13"></i></button>
                         <button onclick="App._downloadEngagementSection('amb-reengage-card', 'Needs_Reengagement')" title="Download PNG" class="p-1.5 rounded hover:bg-amber-100 text-slate-400 hover:text-gsf-boston"><i data-lucide="image" width="13"></i></button>
                         <button onclick="App._exportReengagementXlsx()" title="Download Excel (all dormant ambassadors, with emails)" class="p-1.5 rounded hover:bg-amber-100 text-slate-400 hover:text-gsf-boston"><i data-lucide="file-spreadsheet" width="13"></i></button>
@@ -1410,6 +1419,31 @@ Object.assign(window.App, {
         return map;
     },
 
+    // Excel export of the FULL performance table (everyone, not just the 200 shown),
+    // sorted as displayed, with contact emails and — when built — learner outcomes.
+    async _exportAmbPerformanceXlsx() {
+        const stash = this._lastAmbPerf;
+        if (!stash || !stash.rows || !stash.rows.length) return alert('No ambassador performance data to export.');
+        const rows = stash.rows.map((r, i) => {
+            const row = { '#': i + 1, 'Ambassador': r.name, 'Email': r.email || '', 'Referrals': r.leads, 'Clicks': r.clicks, 'Conversion': r.conv === '–' ? '' : r.conv };
+            if (stash.showOut) {
+                row['Active referred learners'] = r.active == null ? '' : r.active;
+                row['Learner courses'] = r.courses == null ? '' : r.courses;
+                row['Learner certs'] = r.certs == null ? '' : r.certs;
+                row['Learning hours'] = r.minutes == null ? '' : Math.round(r.minutes / 60);
+            }
+            return row;
+        });
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.json_to_sheet(rows);
+        if (this._niceSheet) this._niceSheet(ws);
+        XLSX.utils.book_append_sheet(wb, ws, 'Ambassador Performance');
+        const savePath = await electronAPI.invoke('pick-save-path', 'ambassador_performance_' + new Date().toISOString().split('T')[0] + '.xlsx');
+        if (!savePath) return;
+        this._writeWorkbook(wb, savePath);
+        this.showMsg('Saved ' + rows.length + ' ambassadors → ' + savePath.split('/').pop());
+    },
+
     // Excel export of the FULL dormant list (incl. rows beyond the on-screen cap).
     async _exportReengagementXlsx() {
         const list = this._lastDormant || [];
@@ -1419,7 +1453,9 @@ Object.assign(window.App, {
             'Total referrals': x.total, 'Last active': x.lastActive, 'Months inactive': x.gap
         }));
         const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Needs Re-engagement');
+        const ws = XLSX.utils.json_to_sheet(rows);
+        if (this._niceSheet) this._niceSheet(ws);
+        XLSX.utils.book_append_sheet(wb, ws, 'Needs Re-engagement');
         const savePath = await electronAPI.invoke('pick-save-path', 'ambassadors_needs_reengagement_' + new Date().toISOString().split('T')[0] + '.xlsx');
         if (!savePath) return;
         this._writeWorkbook(wb, savePath);
