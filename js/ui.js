@@ -473,18 +473,22 @@ Object.assign(window.App, {
             // (emails are used in-memory only to join outcomes from completion.json;
             // they are NEVER persisted — the stored summary is name + counts only).
             const reach = {}; const seenU = new Set(); const refEmails = {};
+            // Referred vs organic cohorts (emails in memory only — the stored summary
+            // keeps counts). Lets us answer "do referred learners engage differently?"
+            const refAll = new Set(), orgAll = new Set();
             for (const ln of String(fs.readFileSync(path.join(rawDir, demoDir, 'pull.jsonl'), 'utf8')).split('\n')) {
                 if (!ln) continue; let r; try { r = JSON.parse(ln); } catch (e) { continue; }
                 let b; try { b = JSON.parse(r.body); } catch (e) { continue; }
                 for (const u of (b.data || [])) {
                     if (!u || seenU.has(u.id)) continue; seenU.add(u.id);
+                    const em0 = (u.email || '').trim().toLowerCase();
                     if (u.referrer_id) {
                         reach[u.referrer_id] = (reach[u.referrer_id] || 0) + 1;
-                        const em = (u.email || '').trim().toLowerCase();
                         // Set, not array — a learner with two accounts under one referrer
                         // shares an email; count that learner's outcomes once, not per account.
-                        if (em) (refEmails[u.referrer_id] = refEmails[u.referrer_id] || new Set()).add(em);
-                    }
+                        if (em0) (refEmails[u.referrer_id] = refEmails[u.referrer_id] || new Set()).add(em0);
+                        if (em0) refAll.add(em0);
+                    } else if (em0) orgAll.add(em0);
                 }
             }
             // referrer_id → name (affiliate roster). Names only — emails are dropped.
@@ -542,6 +546,29 @@ Object.assign(window.App, {
             }).sort((a, b) => b.reach - a.reach);
             let named = 0, namedReach = 0, unnamed = 0, unnamedReach = 0;
             rows.forEach(x => { if (x.name) { named++; namedReach += x.reach; } else { unnamed++; unnamedReach += x.reach; } });
+            // ── Referred vs organic engagement, from the same completion.json join ──
+            // Counts only (no emails persisted). "activated" = ever appears in the
+            // progress data (i.e. actually started a course); rates are per that cohort.
+            let compare = null;
+            if (hasOutcomes) {
+                const cohort = (emails) => {
+                    let learners = 0, activated = 0, courses = 0, certs = 0, minutes = 0;
+                    for (const em of emails) {
+                        learners++;
+                        const e = emailOutcome[em]; if (!e) continue;
+                        activated++; courses += e.courses.size; certs += e.certs; minutes += e.minutes;
+                    }
+                    return {
+                        learners, activated, courses, certs, minutes,
+                        activationPct: learners ? +(activated / learners * 100).toFixed(1) : null,
+                        coursesPerActive: activated ? +(courses / activated).toFixed(2) : null,
+                        certsPerActive: activated ? +(certs / activated).toFixed(2) : null,
+                        completionPct: courses ? +(certs / courses * 100).toFixed(1) : null,
+                        minutesPerActive: activated ? Math.round(minutes / activated) : null,
+                    };
+                };
+                compare = { referred: cohort(refAll), organic: cohort(orgAll) };
+            }
             const summary = {
                 builtAt: new Date().toISOString(), fromDemoPull: demoDir, fromAmbPull: ambDir || null, rosterSize: roster,
                 distinctReferrers: rows.length, totalBridged: rows.reduce((s, x) => s + x.reach, 0),
@@ -553,6 +580,7 @@ Object.assign(window.App, {
                     totalMinutes: rows.reduce((s, x) => s + (x.minutes || 0), 0),
                     activeLearners: rows.reduce((s, x) => s + (x.active || 0), 0),
                 } : {}),
+                ...(compare ? { compare } : {}),
                 // name + counts only — NO learner emails (refEmails stays in memory).
                 byName: rows.map(x => ({ name: x.name || '(unnamed referrer)', reach: x.reach,
                     ...(hasOutcomes ? { active: x.active || 0, courses: x.courses || 0, certs: x.certs || 0, minutes: x.minutes || 0 } : {}) }))
@@ -1324,6 +1352,59 @@ Object.assign(window.App, {
             <div class="grid grid-cols-2 md:grid-cols-4 gap-3">${summary}</div>
             ${needsBlock}
             ${holdersBlock}
+        </div>`;
+    },
+
+    // Referred vs organic learners — does the ambassador channel bring learners who
+    // engage differently? Built by buildReferrerBridgeFromRaw (bridge.compare); counts
+    // only, no PII. Deliberately shows the comparison whichever way it falls: a channel
+    // that recruits well but converts worse is an onboarding finding, not a failure.
+    _referredVsOrganicCard() {
+        const c = this._referrerBridge && this._referrerBridge.compare;
+        if (!c || !c.referred || !c.organic) return '';
+        const R = c.referred, O = c.organic;
+        if (!R.activated || !O.activated) return '';
+        const rows = [
+            { k: 'Learners (accounts)', r: this.formatNumber(R.learners), o: this.formatNumber(O.learners), cmp: null },
+            { k: 'Started ≥1 course', r: R.activationPct + '%', o: O.activationPct + '%', cmp: +(R.activationPct - O.activationPct).toFixed(1), suffix: ' pts' },
+            { k: 'Courses per active learner', r: R.coursesPerActive, o: O.coursesPerActive, cmp: +(R.coursesPerActive - O.coursesPerActive).toFixed(2) },
+            { k: 'Certificates per active learner', r: R.certsPerActive, o: O.certsPerActive, cmp: +(R.certsPerActive - O.certsPerActive).toFixed(2) },
+            { k: 'Completion rate (certs ÷ courses)', r: R.completionPct + '%', o: O.completionPct + '%', cmp: +(R.completionPct - O.completionPct).toFixed(1), suffix: ' pts' },
+            { k: 'Learning minutes per active learner', r: this.formatNumber(R.minutesPerActive), o: this.formatNumber(O.minutesPerActive), cmp: R.minutesPerActive - O.minutesPerActive },
+        ];
+        const chip = (v, suffix) => {
+            if (v == null || isNaN(v)) return '';
+            const up = v > 0, flat = Math.abs(v) < 0.005;
+            const cls = flat ? 'text-slate-400 bg-slate-100' : (up ? 'text-emerald-700 bg-emerald-50' : 'text-amber-700 bg-amber-50');
+            return `<span class="text-[10px] font-bold px-1.5 py-0.5 rounded ${cls} whitespace-nowrap">${flat ? '≈' : (up ? '+' : '')}${flat ? '' : v}${flat ? '' : (suffix || '')}</span>`;
+        };
+        return `<div id="amb-refvorg-card" class="bg-white rounded-xl shadow-sm border overflow-hidden mb-8">
+            <div class="bg-slate-50 border-b p-5 flex items-start justify-between gap-3 flex-wrap">
+                <div>
+                    <h3 class="text-lg font-bold text-gsf-prussian flex items-center gap-2"><i data-lucide="git-compare" class="text-gsf-boston" width="18"></i> Referred vs Organic Learners</h3>
+                    <p class="text-xs text-slate-500 mt-1">Do learners who arrive via an ambassador link behave differently from those who find SURGhub themselves? Cohorts split on the account's referral tag; engagement from the per-learner progress data. Chips compare referred against organic.</p>
+                </div>
+                <div class="flex items-center gap-1 shrink-0">
+                    <button onclick="App._copyEngagementSection('amb-refvorg-card', this)" title="Copy as PNG" class="p-1.5 rounded hover:bg-slate-200 text-slate-400 hover:text-gsf-boston"><i data-lucide="copy" width="13"></i></button>
+                    <button onclick="App._downloadEngagementSection('amb-refvorg-card', 'Referred_vs_Organic')" title="Download PNG" class="p-1.5 rounded hover:bg-slate-200 text-slate-400 hover:text-gsf-boston"><i data-lucide="image" width="13"></i></button>
+                </div>
+            </div>
+            <div class="p-5 overflow-x-auto"><table class="w-full text-sm border-collapse">
+                <thead><tr class="text-[10px] font-bold uppercase tracking-wide text-slate-400 border-b">
+                    <th class="text-left py-2 pr-4">Measure</th>
+                    <th class="text-right py-2 pr-4">Referred</th>
+                    <th class="text-right py-2 pr-4">Organic</th>
+                    <th class="text-right py-2">Difference</th>
+                </tr></thead>
+                <tbody>${rows.map(x => `<tr class="border-b border-slate-100 last:border-0">
+                    <td class="py-2 pr-4 text-slate-600">${this.escapeHtml(x.k)}</td>
+                    <td class="py-2 pr-4 text-right font-bold text-gsf-boston">${x.r}</td>
+                    <td class="py-2 pr-4 text-right font-semibold text-slate-600">${x.o}</td>
+                    <td class="py-2 text-right">${chip(x.cmp, x.suffix)}</td>
+                </tr>`).join('')}</tbody>
+            </table>
+            <p class="text-[11px] text-slate-400 mt-3">Referral tags exist only for accounts created through a link, so the organic cohort includes everyone else (direct, search, campaigns). Not a controlled comparison — cohorts differ in country and cadre mix — so read it as a signal for where onboarding support is needed, not as a verdict on ambassador quality. Rebuild with &ldquo;Complete from raw&rdquo; after a sync.</p>
+            </div>
         </div>`;
     },
 
@@ -3397,6 +3478,17 @@ Object.assign(window.App, {
                 { label: 'Providers', value: providers.length, color: '#206095', icon: 'building-2' },
                 { label: 'Courses', value: snapData.length, color: '#4389C8', icon: 'book-open' },
                 { label: 'Registered Users', value: this.formatNumber(totalAudience), raw: totalAudience, color: '#1a5276', icon: 'users', title: 'Distinct SURGhub accounts — people who registered on the platform' },
+                // Registered ≠ active. Active30 is written by the Learners sync (API path)
+                // from each account's last login, as of that sync — so it is a real
+                // usage measure rather than a cumulative registration count.
+                { label: 'Active (30 days)', value: (audSnap && audSnap.Active30 != null) ? this.formatNumber(audSnap.Active30) : '-', raw: (audSnap && audSnap.Active30) || 0, color: '#3FB984', icon: 'activity',
+                  title: (audSnap && audSnap.Active30 != null)
+                    ? 'Accounts that logged in within 30 days of the ' + (audSnap.ActiveAsOf || 'last') + ' sync — ' +
+                      (totalAudience ? Math.round(audSnap.Active30 / totalAudience * 100) + '% of registered users' : '') +
+                      '. 90 days: ' + this.formatNumber(audSnap.Active90 || 0) +
+                      ' · 12 months: ' + this.formatNumber(audSnap.Active365 || 0) +
+                      '. Last-login known for ' + this.formatNumber(audSnap.LastLoginKnownCount || 0) + ' accounts.'
+                    : 'Run Sync Learners (card 3, API) to populate — login recency comes from the API user records, not the CSV export.' },
                 { label: 'Enrolled Learners', value: this.formatNumber(lrn), raw: lrn, color: '#4389C8', icon: 'user-plus', title: 'Course enrolments — one registered user can enrol in several courses, so this exceeds Registered Users' },
                 { label: 'Certificates', value: this.formatNumber(cert), raw: cert, color: '#7A9E9F', icon: 'award' },
                 { label: 'Certification Rate', value: this.formatCertRate(cert, lrn), raw: (this.formatCertRate(cert, lrn, { asNumber: true }) || 0), color: '#B8860B', icon: 'badge-check', title: 'Certificates awarded ÷ total learners, all time' },
@@ -3621,6 +3713,8 @@ Object.assign(window.App, {
                             ` : '<p class="text-[11px] text-slate-400 italic mb-4">Clicks are an all-time counter (no per-click dates) — the time window doesn\'t apply.</p>'}
                             <div id="chart_ambassador_bar" style="width: 100%; height: 400px;"></div>
                         </div>
+
+                        ${this._referredVsOrganicCard()}
 
                         ${this._ambassadorPerformanceTable(snap)}
 

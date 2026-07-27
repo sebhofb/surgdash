@@ -2209,6 +2209,35 @@ Object.assign(window.App, {
             if (cm > 0) totalCourseMinutes += cm;
         });
 
+        // ── Active learners (recency of last login) ───────────────────────────
+        // The API user records carry `last_login`; the CSV export does not, so these
+        // fields are only emitted when the data is actually present. Measured against
+        // the sync moment, so each stored snapshot keeps a valid as-of reading — which
+        // makes the series of snapshots an activity TREND for free.
+        // Registered ≠ active: this is the "are people actually using it?" counterpart
+        // to TotalUsers. Accepts epoch seconds/ms or an ISO date string.
+        let lastLoginKnown = 0, act30 = 0, act90 = 0, act365 = 0;
+        {
+            const nowMs = Date.now(), DAY = 86400000;
+            usersJson.forEach(u => {
+                const v = u && (u.last_login != null ? u.last_login : u.lastLogin);
+                if (v === undefined || v === null || v === '') return;
+                let ms = NaN;
+                if (typeof v === 'number' || /^\d+(\.\d+)?$/.test(String(v))) {
+                    const n = Number(v);
+                    ms = n > 1e11 ? n : n * 1000;          // ms vs seconds
+                } else {
+                    const t = Date.parse(String(v)); if (!isNaN(t)) ms = t;
+                }
+                if (isNaN(ms) || ms <= 0) return;
+                lastLoginKnown++;
+                const ageDays = (nowMs - ms) / DAY;
+                if (ageDays <= 30) act30++;
+                if (ageDays <= 90) act90++;
+                if (ageDays <= 365) act365++;
+            });
+        }
+
         // Extrapolation: scale surveyed sample up to total users
         const extrapolate = (counts, known, total) => {
             if (known === 0) return {};
@@ -2247,6 +2276,12 @@ Object.assign(window.App, {
             ProfKnownCount: knownProf, ProfKnownPct: profPct,
             // Tracking-only count (for documentation)
             TrackingOnlyCount: trackingOnly,
+            // Active learners by last-login recency (API path only — see above).
+            ...(lastLoginKnown > 0 ? {
+                LastLoginKnownCount: lastLoginKnown,
+                Active30: act30, Active90: act90, Active365: act365,
+                ActiveAsOf: new Date().toISOString().slice(0, 10),
+            } : {}),
             AllCountryStats: JSON.stringify(extrapolate(countries, knownCountry, totalUsers)),
             ProfStats: JSON.stringify(extrapolate(roles, knownProf, totalUsers)),
             Signups: JSON.stringify(signups),
