@@ -492,8 +492,20 @@
                     let minScore = 7;
                     try { const prefs = (await Storage.getItem('surghub_ai_prefs')) || {}; if (Number(prefs.minScore) >= 1) minScore = Number(prefs.minScore); } catch (e) {}
                     const seenThemed = new Set();
+                    // Suggestions and complaints are gated on THEME + a minimum length, not on
+                    // the testimonial-quality score. The AI is instructed to score complaints and
+                    // suggestions 0 ("never quotable"), so a score gate here silently emptied both
+                    // sections — 99.6% of complaints and 95% of suggestions were classified and
+                    // then discarded, which is exactly the feedback partners need. Score still
+                    // orders the survivors (best-written first) but no longer excludes them.
+                    const MIN_WORDS = 5;
+                    const wordCount = (s) => String(s || '').trim().split(/\s+/).filter(Boolean).length;
                     const themed = (theme) => allFeedback
-                        .filter(f => { const a = aiOf(f); return a && a.s >= minScore && Array.isArray(a.t) && a.t.includes(theme); })
+                        .filter(f => {
+                            const a = aiOf(f);
+                            if (!a || !Array.isArray(a.t) || !a.t.includes(theme)) return false;
+                            return wordCount(a.c || f.t) >= MIN_WORDS;
+                        })
                         .sort((x, y) => (aiOf(y).s - aiOf(x).s))
                         .filter(f => {
                             const a = aiOf(f);

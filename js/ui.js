@@ -4679,6 +4679,160 @@ Object.assign(window.App, {
 
     // ── Dashboard › Overview: merged cards, user growth first, then platform growth ──
     // ── Dashboard › Feedback: survey insights + AI-curated feedback ──
+    // ── "What learners ask us to fix" — the improvement corpus ────────────────
+    // Every AI-themed suggestion/complaint across the platform, bucketed by the
+    // existing TOPIC_TAGS, with an equity cut and CSV export. These comments were
+    // classified and then discarded by a score gate (see reports.js `themed`), so
+    // nothing aggregated them anywhere. Read-only; computed on render.
+    _improvementCorpus(snapData) {
+        const aiMap = this._aiScoreMap || {};
+        if (!Object.keys(aiMap).length || !this._djb2Hash) return null;
+        const demo = this._emailDemoMap || {};
+        const inc = (c) => (window.IncomeClassification && c) ? IncomeClassification.classify(c) : 'Unknown';
+        const TT = (window.FeedbackIntel && window.FeedbackIntel.TOPIC_TAGS) || {};
+        const rows = [];
+        (snapData || []).forEach(d => {
+            if (!d.FeedbackBank || !d.Course) return;
+            let fb; try { fb = JSON.parse(d.FeedbackBank); } catch (e) { return; }
+            if (!Array.isArray(fb)) return;
+            fb.forEach(f => {
+                if (!f || !f.t) return;
+                const a = aiMap[this._djb2Hash(String(f.t).trim())];
+                if (!a || !Array.isArray(a.t)) return;
+                const isSug = a.t.includes('suggestion'), isCmp = a.t.includes('complaint');
+                if (!isSug && !isCmp) return;
+                const text = String(a.c || f.t).trim();
+                if (text.split(/\s+/).filter(Boolean).length < 5) return;
+                const low = text.toLowerCase();
+                // Best match, not first match: score each topic by how many of its trigger
+                // words appear (first-match biased everything toward whichever topic happens
+                // to be first in TOPIC_TAGS).
+                let topic = null, bestHits = 0;
+                for (const [name, words] of Object.entries(TT)) {
+                    let hits = 0; for (const w of words) { if (low.includes(w)) hits++; }
+                    if (hits > bestHits) { bestHits = hits; topic = name; }
+                }
+                const dm = f.e ? demo[String(f.e).trim().toLowerCase()] : null;
+                const country = (dm && dm.country) || '';
+                rows.push({
+                    text, kind: isCmp ? 'Issue' : 'Suggestion', topic: topic || 'Uncategorised',
+                    course: d.Course, provider: d.Provider || '', rating: Number(f.r) || 0,
+                    date: f.d || '', lang: a.l || '', score: Number(a.s) || 0,
+                    country, income: inc(country),
+                    cadre: (dm && dm.profession && this._canonProf) ? (this._canonProf(dm.profession) || '') : '',
+                    fromImproveQ: f.c === 'improve',
+                });
+            });
+        });
+        if (!rows.length) return null;
+        const byTopic = {};
+        rows.forEach(r => { const t = byTopic[r.topic] || (byTopic[r.topic] = { topic: r.topic, n: 0, issues: 0, sug: 0, rows: [] }); t.n++; r.kind === 'Issue' ? t.issues++ : t.sug++; t.rows.push(r); });
+        // Biggest topic first, but "Uncategorised" always last — it's a residual bucket,
+        // not an action item, and leading with it buries the useful signal.
+        const topics = Object.values(byTopic).sort((a, b) => {
+            if (a.topic === 'Uncategorised') return 1;
+            if (b.topic === 'Uncategorised') return -1;
+            return b.n - a.n;
+        });
+        topics.forEach(t => t.rows.sort((a, b) => b.score - a.score || b.text.length - a.text.length));
+        // Equity cut: what share of each income tier's comments land in each topic
+        const tiers = ['LIC', 'LMIC', 'UMIC', 'HIC'];
+        const equity = {};
+        tiers.forEach(t => { equity[t] = { total: 0, byTopic: {} }; });
+        rows.forEach(r => { const e = equity[r.income]; if (!e) return; e.total++; e.byTopic[r.topic] = (e.byTopic[r.topic] || 0) + 1; });
+        return { rows, topics, equity, tiers,
+            total: rows.length, issues: rows.filter(r => r.kind === 'Issue').length,
+            fromImproveQ: rows.filter(r => r.fromImproveQ).length,
+            happy: rows.filter(r => r.rating >= 4).length,
+            withCountry: rows.filter(r => r.country).length };
+    },
+
+    _improvementCorpusHtml(snapData) {
+        const C = this._improvementCorpus(snapData);
+        if (!C) return '';
+        this._lastCorpus = C.rows;
+        const open = this._corpusOpen || '';
+        const pct = (n, d) => d ? Math.round(n / d * 100) : 0;
+        const topicRows = C.topics.map(t => {
+            const isOpen = open === t.topic;
+            const sample = t.rows.slice(0, isOpen ? 25 : 0);
+            return `<div class="border-b border-slate-100 last:border-0">
+                <button onclick="App._corpusOpen='${isOpen ? '' : this.escapeJsArg(t.topic)}'; App.renderView()" class="w-full flex items-center gap-3 px-5 py-3 hover:bg-slate-50 text-left">
+                    <i data-lucide="${isOpen ? 'chevron-down' : 'chevron-right'}" width="14" class="text-slate-400 shrink-0"></i>
+                    <span class="font-semibold text-gsf-prussian flex-1">${this.escapeHtml(t.topic)}</span>
+                    <span class="text-xs text-slate-500 shrink-0">${t.issues ? '<span class="text-rose-600 font-bold">' + t.issues + ' issue' + (t.issues !== 1 ? 's' : '') + '</span> · ' : ''}${t.sug} suggestion${t.sug !== 1 ? 's' : ''}</span>
+                    <span class="w-28 h-1.5 bg-slate-100 rounded-full overflow-hidden shrink-0"><span class="block h-full bg-gsf-boston" style="width:${pct(t.n, C.topics[0].n)}%"></span></span>
+                    <span class="text-sm font-bold text-gsf-prussian w-10 text-right shrink-0">${t.n}</span>
+                </button>
+                ${isOpen ? `<div class="px-5 pb-4 space-y-2 bg-slate-50/60">
+                    ${sample.map(r => `<div class="text-sm bg-white border border-slate-200 rounded-lg p-3">
+                        <div class="flex items-start gap-2">
+                            <span class="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded shrink-0 ${r.kind === 'Issue' ? 'bg-rose-50 text-rose-700' : 'bg-violet-50 text-violet-700'}">${r.kind}</span>
+                            <span class="text-slate-700 leading-snug">${this.escapeHtml(r.text)}</span>
+                        </div>
+                        <div class="mt-1.5 text-[10px] text-slate-400 flex flex-wrap gap-x-3">
+                            <span>${this.escapeHtml(r.course)}</span>${r.provider ? '<span>' + this.escapeHtml(r.provider) + '</span>' : ''}
+                            ${r.country ? '<span>' + this.escapeHtml(r.country) + (r.income && r.income !== 'Unknown' ? ' · ' + r.income : '') + '</span>' : ''}
+                            ${r.cadre ? '<span>' + this.escapeHtml(r.cadre) + '</span>' : ''}
+                            ${r.rating ? '<span class="text-amber-500">' + '★'.repeat(Math.round(r.rating)) + '</span>' : ''}
+                            ${r.date ? '<span>' + this.escapeHtml(r.date) + '</span>' : ''}
+                        </div>
+                    </div>`).join('')}
+                    ${t.rows.length > 25 ? '<p class="text-[11px] text-slate-400 pt-1">+ ' + (t.rows.length - 25) + ' more in this topic — all included in the CSV export.</p>' : ''}
+                </div>` : ''}
+            </div>`;
+        }).join('');
+        // Equity: topic mix per income tier (share of that tier's comments)
+        const tiersWithData = C.tiers.filter(t => C.equity[t].total >= 10);
+        // Actionable topics only — the residual bucket would just eat a column.
+        const topTopics = C.topics.filter(t => t.topic !== 'Uncategorised').slice(0, 5).map(t => t.topic);
+        const equityTable = tiersWithData.length >= 2 ? `
+            <div class="px-5 py-4 border-t bg-white">
+                <p class="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-2">What each group asks for &middot; share of that group's comments</p>
+                <div class="overflow-x-auto"><table class="w-full text-xs border-collapse">
+                    <thead><tr class="text-slate-400 border-b"><th class="text-left py-1.5 pr-3 font-medium">Income tier</th>${topTopics.map(t => '<th class="text-right py-1.5 px-2 font-medium whitespace-nowrap">' + this.escapeHtml(t) + '</th>').join('')}<th class="text-right py-1.5 pl-2 font-medium">Comments</th></tr></thead>
+                    <tbody>${tiersWithData.map(tier => {
+                        const e = C.equity[tier];
+                        return `<tr class="border-b border-slate-100 last:border-0">
+                            <td class="py-1.5 pr-3 font-semibold text-gsf-prussian">${tier}</td>
+                            ${topTopics.map(tp => { const p = pct(e.byTopic[tp] || 0, e.total); return '<td class="py-1.5 px-2 text-right ' + (p >= 25 ? 'font-bold text-gsf-boston' : 'text-slate-500') + '">' + p + '%</td>'; }).join('')}
+                            <td class="py-1.5 pl-2 text-right text-slate-400">${this.formatNumber(e.total)}</td>
+                        </tr>`;
+                    }).join('')}</tbody>
+                </table></div>
+                <p class="text-[10px] text-slate-400 mt-2">Country is known for ${this.formatNumber(C.withCountry)} of ${this.formatNumber(C.total)} comments, so tiers cover only that subset. Differences here point at what to fix for whom — a topic that dominates LIC/LMIC comments is a barrier for the audience GSF most wants to reach.</p>
+            </div>` : '';
+        return `<div id="corpus-card" class="bg-white rounded-xl shadow-sm border overflow-hidden mb-8">
+            <div class="bg-slate-50 border-b p-5 flex items-start justify-between gap-3 flex-wrap">
+                <div>
+                    <h2 class="font-bold text-lg text-gsf-prussian flex items-center gap-2"><i data-lucide="wrench" class="text-gsf-boston"></i> What Learners Ask Us to Fix <span class="text-sm font-semibold text-slate-400">(${this.formatNumber(C.total)})</span></h2>
+                    <p class="text-xs text-slate-500 mt-1">Every AI-classified suggestion and issue across the platform, bucketed by topic. <strong>${this.formatNumber(C.issues)}</strong> are reported problems &middot; <strong>${this.formatNumber(C.fromImproveQ)}</strong> came from the survey's own &ldquo;what could be improved&rdquo; question &middot; <strong>${pct(C.happy, C.total)}%</strong> come from learners who rated the course 4&ndash;5, so this is constructive input, not complaints from unhappy learners. Click a topic to read them.</p>
+                </div>
+                <div class="flex items-center gap-1 shrink-0">
+                    <button onclick="App._copyEngagementSection('corpus-card', this, true)" title="Copy as PNG" class="p-1.5 rounded hover:bg-slate-200 text-slate-400 hover:text-gsf-boston"><i data-lucide="copy" width="13"></i></button>
+                    <button onclick="App._exportImprovementCsv()" title="Download all comments as CSV" class="p-1.5 rounded hover:bg-slate-200 text-slate-400 hover:text-gsf-boston"><i data-lucide="file-spreadsheet" width="13"></i></button>
+                </div>
+            </div>
+            <div>${topicRows}</div>
+            ${equityTable}
+        </div>`;
+    },
+
+    _exportImprovementCsv() {
+        const rows = this._lastCorpus || [];
+        if (!rows.length) return alert('No improvement feedback to export.');
+        const cols = ['kind', 'topic', 'text', 'course', 'provider', 'rating', 'country', 'income', 'cadre', 'lang', 'date', 'fromImproveQ', 'score'];
+        const head = ['Type', 'Topic', 'Comment', 'Course', 'Provider', 'Rating', 'Country', 'Income tier', 'Cadre', 'Language', 'Date', 'From "what could be improved"', 'AI score'];
+        const esc = v => { const s = String(v == null ? '' : v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+        const csv = [head.join(','), ...rows.map(r => cols.map(c => esc(r[c])).join(','))].join('\n');
+        this._downloadCsv ? this._downloadCsv(csv, 'surghub_improvement_feedback') : (() => {
+            const a = document.createElement('a');
+            a.href = 'data:text/csv;charset=utf-8,﻿' + encodeURIComponent(csv);
+            a.download = 'surghub_improvement_feedback_' + new Date().toISOString().split('T')[0] + '.csv';
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        })();
+    },
+
     _dashFeedbackHtml(snapData) {
         const st = this._aiStory;
         const surveyRows = this._surveyInsightsRows(snapData);
@@ -4710,6 +4864,8 @@ Object.assign(window.App, {
                         </div>
                         <div id="chart_feedback_growth" style="width: 100%; height: 400px;"></div>
                     </div>
+
+                    ${this._improvementCorpusHtml(snapData)}
 
                     ${surveyRows.length ? `
                         <div class="bg-white rounded-xl shadow-sm border overflow-hidden mb-8">

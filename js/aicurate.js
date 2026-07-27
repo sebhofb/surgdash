@@ -606,7 +606,14 @@
                             const item = batch[r.i];
                             if (!item) return;
                             const s = Math.max(0, Math.min(10, Number(r.score) || 0));
-                            scores[item.h] = { s, q: !!r.quotable && s > 0, t: Array.isArray(r.themes) ? r.themes.slice(0, 4) : [], l: String(r.language || ''), c: r.quotable ? String(r.quote || '').trim() : '' };
+                            // Keep the cleaned quote when the model was ASKED for one: quotable
+                            // testimonials, and also suggestions/complaints (the prompt explicitly
+                            // requests cleaned text for those because they appear in report
+                            // sections even though quotable=false). Discarding it threw away
+                            // output already paid for and left those sections with raw text.
+                            const themes = Array.isArray(r.themes) ? r.themes.slice(0, 4) : [];
+                            const wantsQuote = !!r.quotable || themes.includes('suggestion') || themes.includes('complaint');
+                            scores[item.h] = { s, q: !!r.quotable && s > 0, t: themes, l: String(r.language || ''), c: wantsQuote ? String(r.quote || '').trim() : '' };
                         });
                         done += batch.length;
                         // persist incrementally so a crash/cancel keeps progress
