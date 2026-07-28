@@ -222,6 +222,19 @@ Object.assign(window.App, {
     // Heavy (~12 min) but slowly-changing — past months are fixed, only the
     // current month grows. Attaches CourseTimeline to each course record so the
     // Platform/Provider/Course Growth charts populate.
+    // Record that a sync/upload step just ran, so the Data Sync cards can show
+    // "last run N days ago". Keyed by step: courses | progress | learners |
+    // surveys | timelines. Best-effort — never blocks or fails a sync.
+    async _stampSync(key) {
+        try {
+            const log = (await Storage.getItem('surgdash_sync_log')) || {};
+            log[key] = new Date().toISOString().slice(0, 10);
+            await Storage.setItem('surgdash_sync_log', log);
+            this._syncLog = log;
+            this._syncRunCache = null;
+        } catch (e) {}
+    },
+
     async syncGrowthTimelinesFromApi(opts) {
         opts = opts || {};
         if (!window.LearnWorlds) { if (!opts.silent) alert('LearnWorlds module not loaded.'); throw new Error('module'); }
@@ -282,6 +295,7 @@ Object.assign(window.App, {
             }
             const repairedTl = this._repairZeroCountsFromTimelines();
             if (repairedTl) console.log(`[GrowthTimelines] repaired ${repairedTl} zeroed course counts from record counts`);
+            await this._stampSync('timelines');
             await this.handleDbSave();
             console.log(`[GrowthTimelines] Attached to ${attached} courses · ${totalE.toLocaleString()} dated enrolments, ${totalC.toLocaleString()} dated certs`);
             if (!opts.silent) {
@@ -963,6 +977,7 @@ Object.assign(window.App, {
             const warnings = [];
             if (missingProvider > 0) warnings.push(`${missingProvider} missing provider`);
             if (missingLink > 0)     warnings.push(`${missingLink} missing survey link`);
+            await this._stampSync('courses');
             let msg = `Sync Courses complete (source: ${sourceLabel || 'CSV'})\n\n` + summaryLines.join("\n");
             if (warnings.length > 0) msg += "\n\n⚠ " + warnings.join(", ") + ".\nUpload a Provider Map or Course Links file to fix.";
             if (!opts.silent) alert(msg);
@@ -1267,6 +1282,7 @@ Object.assign(window.App, {
         }
         // Persist the raw anonymised responses (lazy-loaded elsewhere via ensureSurveyRawLoaded).
         try { await Storage.setItem('surghub_survey_raw', this._rawSurveyResponses); } catch (e) { console.warn('[Surveys] raw store save failed:', e.message); }
+        await this._stampSync('surveys');
 
         // ── Signup survey (Gender + Organisation Type). Lives in the same
         // Survey Exports area as the course surveys, so the fresh token also
@@ -1486,6 +1502,7 @@ Object.assign(window.App, {
             });
             this.timelineMismatches = mismatches;
 
+            await this._stampSync('timelines');
             await this.handleDbSave();
             this.navigate('platform');
 
@@ -1587,6 +1604,7 @@ Object.assign(window.App, {
             if (diag.signupColumn) parts.push('Signup-date column: "' + diag.signupColumn + '" (' + diag.signupColumnFillPct + '% filled).');
             if (diag.rowsSkippedBefore2023May > 0) parts.push(diag.rowsSkippedBefore2023May.toLocaleString() + ' rows skipped (signup before May 2023).');
             if (diag.rowsSkippedNoDate > 0) parts.push(diag.rowsSkippedNoDate.toLocaleString() + ' rows skipped (no parseable signup date).');
+            await this._stampSync('learners');
             App.showMsg(parts.join(' '));
         } catch (err) {
             this.isLoading = false; this.renderView();
@@ -2824,6 +2842,7 @@ Object.assign(window.App, {
             if (records.length === 0) throw new Error('No valid course-completion rows parsed.');
 
             await Storage.setItem('surghub_completion', records);
+            await this._stampSync('progress');
             this._rawCompletion = records;
             const rebuiltTl = await this._rebuildTimelinesFromCompletion();
             if (rebuiltTl) console.log('[Completion] timelines rebuilt for', rebuiltTl, 'courses from exact start dates');
@@ -3265,6 +3284,7 @@ Object.assign(window.App, {
                 console.log(`[DeepSync] Stored ${completionRecords.length.toLocaleString()} completion records`);
             }
 
+            await this._stampSync('learners');
             this._updateApiSyncOverlay('Saving…', 99);
             await this.handleDbSave();
             if (!opts.silent) {

@@ -1885,6 +1885,76 @@ Object.assign(window.App, {
     },
 
     // "Last updated" badge — finds the latest timestamp from data/history
+    // ── "Last run" tracking for the Data Sync cards ───────────────────────────
+    // Two sources, newest wins:
+    //  1. surgdash_sync_log — stamped by each sync/upload as it completes (authoritative
+    //     going forward, and the only source for upload steps).
+    //  2. The raw API captures on disk (surghub/raw/<kind>__<YYYYMMDD-HHMMSS>) — ground
+    //     truth for API syncs that ran BEFORE stamping existed, so the badges are useful
+    //     immediately instead of blank until each step runs once.
+    // Deliberately not derived from record timestamps: a course's Timestamp only moves
+    // when its metrics change, so "latest record" reads older than the actual sync.
+    _syncRunLog() {
+        if (this._syncRunCache) return this._syncRunCache;
+        const out = {};
+        const put = (k, iso) => { if (iso && (!out[k] || String(iso) > String(out[k]))) out[k] = iso; };
+        // Stamps (loaded lazily; triggers one re-render when they arrive)
+        const log = this._syncLog;
+        if (log && typeof log === 'object') Object.keys(log).forEach(k => put(k, log[k]));
+        else if (this._syncLog === undefined) {
+            this._syncLog = null;
+            Storage.getItem('surgdash_sync_log').then(v => {
+                this._syncLog = (v && typeof v === 'object') ? v : {};
+                this._syncRunCache = null;
+                if (this.view === 'upload') this.renderView();
+            }).catch(() => { this._syncLog = {}; });
+        }
+        // Raw captures
+        try {
+            const fs = electronAPI.fs, path = electronAPI.path;
+            const rawDir = path.join(Storage.DATA_DIR, 'surghub', 'raw');
+            const map = { 'course-foundation': 'courses', 'demographics': 'learners', 'ambassadors': 'learners', 'growth-timelines': 'timelines' };
+            fs.readdirSync(rawDir, { withFileTypes: true }).forEach(e => {
+                const name = e.name || e;
+                const m = /^([a-z-]+)__(\d{4})(\d{2})(\d{2})-/.exec(String(name));
+                if (!m || !map[m[1]]) return;
+                put(map[m[1]], m[2] + '-' + m[3] + '-' + m[4]);
+            });
+        } catch (e) {}
+        // Upload stores: fall back to the file's own write time
+        try {
+            const fs = electronAPI.fs, path = electronAPI.path;
+            const st = fs.statSync(path.join(Storage.DATA_DIR, 'surghub', 'completion.json'));
+            const mt = st && (st.mtime || st.mtimeMs);
+            if (mt) put('progress', new Date(mt).toISOString().slice(0, 10));
+        } catch (e) {}
+        this._syncRunCache = out;
+        return out;
+    },
+
+    // Badge for a sync card: when it last ran, how long ago, amber past `staleDays`.
+    _syncCardBadge(key, staleDays) {
+        const iso = (this._syncRunLog() || {})[key];
+        if (!iso) return '<span class="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-400 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full whitespace-nowrap" title="No record of this step running yet — it will be stamped the next time you run it."><i data-lucide="clock" width="10"></i> never run</span>';
+        const days = Math.max(0, Math.round((Date.now() - new Date(iso + 'T12:00:00').getTime()) / 86400000));
+        const stale = staleDays && days > staleDays;
+        const ago = days === 0 ? 'today' : days === 1 ? 'yesterday' : days + ' days ago';
+        const cls = stale ? 'text-amber-700 bg-amber-50 border-amber-200' : 'text-slate-500 bg-white border-slate-200';
+        return `<span class="inline-flex items-center gap-1 text-[10px] font-semibold ${cls} border px-2 py-0.5 rounded-full whitespace-nowrap" title="Last run ${this.formatDate(iso)}${stale ? ' — older than ' + staleDays + ' days, worth re-running before you report' : ''}"><i data-lucide="${stale ? 'alert-circle' : 'clock'}" width="10"></i> last run ${ago}</span>`;
+    },
+
+    // Cross-card skew warning: if Sync Courses is older than the learner sync, the
+    // course-owned totals (certificates, learning time) silently under-report against
+    // the newer learner data — the exact trap behind the "why is our certificate count
+    // lower than LearnWorlds?" question.
+    _syncSkewNote() {
+        const log = this._syncRunLog() || {};
+        if (!log.courses || !log.learners) return '';
+        const skew = Math.round((new Date(log.learners + 'T12:00:00') - new Date(log.courses + 'T12:00:00')) / 86400000);
+        if (skew < 3) return '';
+        return `<p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-3 flex items-start gap-1.5"><i data-lucide="alert-triangle" width="13" class="mt-0.5 shrink-0"></i><span>This sync is <strong>${skew} days older</strong> than the learner sync (card 3). Certificates, learning time and success rates come from here, so they currently lag the learner numbers — re-run this card before reporting.</span></p>`;
+    },
+
     _lastUpdatedBadge(kind) {
         let ts = null;
         if (kind === 'course') {
@@ -3105,12 +3175,14 @@ Object.assign(window.App, {
                     <div class="bg-gradient-to-br from-sky-50 to-white border border-sky-200 rounded-2xl p-6 mb-4 shadow-sm">
                         <div class="flex flex-wrap items-center justify-between gap-4">
                             <div class="min-w-0">
-                                <div class="flex items-center gap-2 mb-1">
+                                <div class="flex flex-wrap items-center gap-2 mb-1">
                                     <i data-lucide="book-open" width="18" class="text-sky-600"></i>
                                     <h2 class="text-lg font-bold text-gsf-prussian">1 · Sync Courses</h2>
                                     <span class="text-[10px] font-bold uppercase text-sky-700 bg-sky-100 border border-sky-200 px-2 py-0.5 rounded-full">~5 min</span>
+                                    ${this._syncCardBadge('courses', 7)}
                                 </div>
                                 <p class="text-sm text-slate-600 max-w-3xl">Course-level metrics via LearnWorlds API: <strong>learners, certificates, learning time, success rate, providers</strong>. Always run this <strong>first</strong> — it also repairs counts, clamps timelines to launch dates, and re-applies exact dates from the User Progress upload.</p>
+                                ${this._syncSkewNote()}
                             </div>
                             <button onclick="App.syncCourseFoundationFromApi()" class="shrink-0 px-8 py-4 bg-sky-600 hover:bg-sky-700 text-white font-bold rounded-lg shadow-md transition-colors text-base flex items-center gap-2">
                                 <i data-lucide="refresh-cw" width="18"></i> Sync Courses
@@ -3141,10 +3213,11 @@ Object.assign(window.App, {
 
                     <!-- ── 2. Upload User Progress (exact dates + learning time) ── -->
                     <div class="bg-gradient-to-br from-indigo-50 to-white border border-indigo-200 rounded-2xl p-6 mb-4 shadow-sm">
-                        <div class="flex items-center gap-2 mb-1">
+                        <div class="flex flex-wrap items-center gap-2 mb-1">
                             <i data-lucide="clipboard-list" width="18" class="text-indigo-600"></i>
                             <h2 class="text-lg font-bold text-gsf-prussian">2 · Upload User Progress</h2>
                             <span class="text-[10px] font-bold uppercase text-indigo-700 bg-indigo-100 border border-indigo-200 px-2 py-0.5 rounded-full">xlsx · before each report</span>
+                            ${this._syncCardBadge('progress', 30)}
                             ${this._rawCompletion == null
                                 ? '<span class="text-xs text-slate-400 italic ml-2">checking local data&hellip;</span>'
                                 : (this._rawCompletion.length > 0
@@ -3165,10 +3238,11 @@ Object.assign(window.App, {
                     <div class="bg-gradient-to-br from-emerald-50 to-white border border-emerald-200 rounded-2xl p-6 mb-4 shadow-sm">
                         <div class="flex flex-wrap items-center justify-between gap-4">
                             <div class="min-w-0">
-                                <div class="flex items-center gap-2 mb-1">
+                                <div class="flex flex-wrap items-center gap-2 mb-1">
                                     <i data-lucide="users" width="18" class="text-emerald-600"></i>
                                     <h2 class="text-lg font-bold text-gsf-prussian">3 · Sync Learners &amp; Ambassadors</h2>
                                     <span class="text-[10px] font-bold uppercase text-emerald-700 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-full">~5 min</span>
+                                    ${this._syncCardBadge('learners', 14)}
                                 </div>
                                 <p class="text-sm text-slate-600 max-w-3xl">All user-side data via LearnWorlds API: <strong>demographics</strong> (country, profession — gender comes from the signup survey below), <strong>lead attribution</strong> (historical + orphan leads), and <strong>ambassador referrals &amp; timeline</strong>.</p>
                             </div>
@@ -3185,10 +3259,11 @@ Object.assign(window.App, {
 
                     <!-- ── 4. Sync Surveys (needs a fresh pasted token) ── -->
                     <div class="bg-gradient-to-br from-amber-50 to-white border border-amber-200 rounded-2xl p-6 mb-6 shadow-sm">
-                        <div class="flex items-center gap-2 mb-1">
+                        <div class="flex flex-wrap items-center gap-2 mb-1">
                             <i data-lucide="message-square-text" width="18" class="text-amber-600"></i>
                             <h2 class="text-lg font-bold text-gsf-prussian">4 · Sync Surveys</h2>
                             <span class="text-[10px] font-bold uppercase text-amber-700 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-full">paste token</span>
+                            ${this._syncCardBadge('surveys', 30)}
                         </div>
                         <p class="text-sm text-slate-600 max-w-3xl mb-3">Fetches ratings + feedback for every course that has a survey link. The API key <strong>can't</strong> authorise survey exports, so paste one fresh download URL below for its short-lived token — then it loops all courses automatically.</p>
                         <p class="text-xs text-slate-500 mb-2"><a href="#" onclick="electronAPI.openExternal('https://www.surghub.org/author/answers?assessment-id=68f7b49e2de0d89f1301ef5c&from=library'); return false" class="text-amber-700 hover:underline font-medium">Open Survey Exports</a> → export any assessment as XLS → copy the download URL (<kbd class="px-1 py-0.5 bg-slate-100 border rounded text-[10px]">Cmd+L</kbd> then <kbd class="px-1 py-0.5 bg-slate-100 border rounded text-[10px]">Cmd+C</kbd>) → paste here.</p>
@@ -3210,10 +3285,11 @@ Object.assign(window.App, {
 
                     <!-- ── 5. Growth Timelines (optional — superseded by the User Progress upload for most uses) ── -->
                     <div class="bg-gradient-to-br from-violet-50 to-white border border-violet-200 rounded-2xl p-6 mb-4 shadow-sm">
-                        <div class="flex items-center gap-2 mb-1">
+                        <div class="flex flex-wrap items-center gap-2 mb-1">
                             <i data-lucide="trending-up" width="18" class="text-violet-600"></i>
                             <h2 class="text-lg font-bold text-gsf-prussian">5 · Growth Timelines</h2>
                             <span class="text-[10px] font-bold uppercase text-violet-700 bg-violet-100 border border-violet-200 px-2 py-0.5 rounded-full">optional</span>
+                            ${this._syncCardBadge('timelines', 90)}
                         </div>
                         <p class="text-sm text-slate-600 max-w-3xl mb-3">Usually <strong>not needed</strong> — card 2's User Progress upload already builds exact monthly history. Still useful for courses missing from that file, and the <strong>API fetch also refreshes the learner→course maps</strong> behind the anonymized User Data exports (run it every few months).</p>
                         <div class="flex flex-wrap items-center gap-3">

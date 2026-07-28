@@ -69,6 +69,7 @@
         if (key === 'last_seen_version')     return path.join('settings', 'last_seen_version.json');
         if (key === 'surghub_survey_raw')    return path.join('surghub', 'survey_raw.json');
         if (key === 'surgdash_triage_silenced') return path.join('settings', 'triage_silenced.json');
+        if (key === 'surgdash_sync_log')     return path.join('settings', 'sync_log.json');
         if (key === 'learnworlds_client_id')     return path.join('settings', 'learnworlds_client_id.json');
         if (key === 'learnworlds_api_token')     return path.join('settings', 'learnworlds_api_token.json');
         if (key === 'learnworlds_school_domain') return path.join('settings', 'learnworlds_school_domain.json');
@@ -121,6 +122,7 @@
                 'last_seen_version': 'last_seen_version',
                 'surghub_survey_raw': 'surghub_survey_raw',
                 'surgdash_triage_silenced': 'surgdash_triage_silenced',
+                'surgdash_sync_log': 'surgdash_sync_log',
                 'learnworlds_client_id': 'learnworlds_client_id',
                 'learnworlds_api_token': 'learnworlds_api_token',
                 'learnworlds_school_domain': 'learnworlds_school_domain',
