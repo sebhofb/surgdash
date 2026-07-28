@@ -9288,10 +9288,24 @@ function orgToggleSeries(s){if(s==='a')orgShowActuals=!orgShowActuals;else orgSh
 var STOCK_KPIS = { facilities_strengthened: 1, population_access: 1 };
 function _isStock(kid){ return DATA.external && !!STOCK_KPIS[kid]; }
 
+// Was this project running in the given year? Mirrors the app's
+// GenericViews._isProjectActiveForYear so the snapshot's totals match the
+// dashboard exactly — a project whose active window ended before the selected
+// year must not contribute to that year's totals.
+function _projActiveInYear(p, y){
+    if(p.startDate){ var sy=new Date(p.startDate).getFullYear(); if(y<sy) return false; }
+    if(p.endDate){ var ey=new Date(p.endDate).getFullYear(); if(y>ey) return false; }
+    return true;
+}
 function getOrgTotals(){
     var a={},t={};
     DATA.kpis.forEach(function(k){a[k.id]=0;t[k.id]=0;});
     DATA.projects.forEach(function(p){
+        // Single-year view: skip projects not active that year (all-time counts
+        // every project). Without this the headline cards over-counted relative
+        // to the project table — e.g. a project that closed in 2024 still added
+        // its facilities to the 2025 total.
+        if(orgYear!=='all' && !_projActiveInYear(p, orgYear)) return;
         // Per-project across-year aggregation, then add to the org total.
         var per=_projectYearTotals(p);
         DATA.kpis.forEach(function(k){ a[k.id] += per.a[k.id]||0; t[k.id] += per.t[k.id]||0; });

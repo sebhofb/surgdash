@@ -790,8 +790,6 @@
             // Count feedback stats for summary
             const fbTotal = D.allFeedbackCount;
             const fbTestimonials = testimonials.length;
-            const fbSuggestions = suggestions.length;
-            const fbCritical = critical.length;
 
             return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <title>${esc(providerName)} Report</title>
@@ -904,7 +902,9 @@
   ${feedbackCutoff ? '<div style="margin-top:12px;padding:8px 12px;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;font-size:11px;color:#92400e"><strong>Note:</strong> Written feedback below is filtered to entries from <strong>' + this.formatDate(feedbackCutoff) + '</strong> onwards. Charts and learner data reflect all time.</div>' : ''}
 
   ${suggestions.length > 0 ? '<div class="section-block"><div class="section-title">\uD83D\uDCA1 Learner Suggestions</div><div class="fb-grid">' + feedbackCards(suggestions, '#faf5ff', '\uD83D\uDCA1 Suggestion') + '</div></div>' : ''}
-  ${critical.length > 0 ? '<div class="section-block"><div class="section-title">Areas for Improvement</div><div class="fb-grid">' + feedbackCards(critical, '#fef2f2', '\u26A0 Critical') + '</div></div>' : ''}
+  ${/* "Areas for Improvement" is deliberately NOT in partner-facing reports \u2014 critical
+       feedback is for internal triage (Dashboard \u2192 Feedback \u2192 "What Learners Ask Us to
+       Fix"), not for a document handed to the provider. */''}
 
   <div class="page-break"></div>
   <div class="section-title">Course Details</div>
@@ -1369,7 +1369,10 @@ function drawCharts() {
                 + '<p style="margin:8px 0 0;font-family:var(--mono);font-size:9px;color:#6d8ba3">End-of-course survey, all responses to date, aggregated across this provider’s courses. “N/A” answers are excluded.</p></div>') : '';
 
             const suggestionsBlock = ''; // Learner Suggestions removed from the dark export per request
-            const criticalBlock = D.critical.length ? (secEyebrow('Areas for Improvement') + '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:10px;margin-bottom:28px">' + D.critical.map(quoteCard).join('') + '</div>') : '';
+            // "Areas for Improvement" removed from the reports per request — critical
+            // feedback lives in the internal triage view (Dashboard → Feedback → "What
+            // Learners Ask Us to Fix"), not in a partner- or funder-facing document.
+            const criticalBlock = '';
             // Platform: a standalone Learner Voices section — a rating band (share giving 4–5
             // stars + average rating) atop the best testimonials. The per-course testimonials in
             // Course Details are dropped in platform mode, so surface the best quotes here.
