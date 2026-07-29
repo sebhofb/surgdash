@@ -396,17 +396,27 @@ window.Projects = {
 
     // --- Narrative Updates ---
 
+    // NOTE: `tags` on an update is a LIVE field, not legacy — it holds the single
+    // category chosen in the milestone form (Partnership / Publication / Grant / …)
+    // as a one-element array, and it is the only category an update record has.
+    // This function used to delete it on every read ("categories live on the unified
+    // event records now" — true for EVENTS, which have `type` + EVENT_TYPES, but
+    // updates never got an equivalent). The strip also rewrote the file, so the tag
+    // was gone from disk, and it fought the round-trip: the Sheets pull and the
+    // Milestones-sheet import both write tags, and the next read wiped them again.
+    // It is read by genericViews.js at 1151 (activity table), 2439 (Milestones xlsx
+    // export), 2746 (its import), 5048 (calendar detail), 6451 (org xlsx UPDATES
+    // block), 10851 (update cards) and 13784 (the Apps Script sheet writer).
+    // Do not "clean up" this field again.
     async getUpdates(projectId) {
         const updates = (await Storage.getItem(`surgdash_updates_${projectId}`)) || [];
-        // Backfill missing IDs + remove legacy free-text tags (we use categories now).
+        // Backfill missing IDs (legacy data or entries written without one).
         let mutated = false;
         updates.forEach((u, i) => {
             if (!u.id) {
                 u.id = 'u-' + Date.now().toString(36) + '-' + i + '-' + Math.random().toString(36).slice(2, 6);
                 mutated = true;
             }
-            // Strip legacy tags — categories live on the unified event records now.
-            if (u.tags !== undefined) { delete u.tags; mutated = true; }
         });
         if (mutated) {
             await Storage.setItem(`surgdash_updates_${projectId}`, updates);
@@ -419,7 +429,11 @@ window.Projects = {
         const updateId = id || 'u-' + Date.now().toString(36);
         const existing = updates.find(u => u.id === updateId);
         if (existing) {
-            Object.assign(existing, { date, title, body, tags, link: link || '' });
+            Object.assign(existing, { date, title, body, link: link || '' });
+            // Only touch tags when the caller actually supplied them — an edit that
+            // omits the field (e.g. a partial save) must not clear the category.
+            // An explicit [] DOES clear it (the form's blank "— Select tag —").
+            if (tags !== undefined) existing.tags = tags;
         } else {
             updates.push({ id: updateId, date, title, body, tags: tags || [], link: link || '' });
         }
