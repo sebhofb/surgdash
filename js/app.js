@@ -1061,7 +1061,7 @@ window.App = {
     },
 
     async exportSurghubJson() {
-        const keys = ['surghub_data','surghub_history','surghub_ambassadors','surghub_unique_users','surghub_anon_users','surghub_user_courses','surghub_user_certs','surghub_signup_demo','surghub_signup_survey_url','surghub_email_demo','surghub_social','surghub_completion','surghub_selected_testimonials'];
+        const keys = ['surghub_data','surghub_history','surghub_ambassadors','surghub_unique_users','surghub_anon_users','surghub_user_courses','surghub_user_certs','surghub_signup_demo','surghub_signup_survey_url','surghub_email_demo','surghub_social','surghub_completion','surghub_selected_testimonials','surghub_milestones'];
         const snapshot = { _type: 'surghub_snapshot', _version: 2, _exported: new Date().toISOString() };
         const included = [];
         for (const k of keys) {
@@ -1183,7 +1183,7 @@ window.App = {
             const snapshot = JSON.parse(text);
 
             // Support both new format (_type: 'surghub_snapshot') and old format (data/history/ambassadors/uniqueUsers)
-            const keys = ['surghub_data','surghub_history','surghub_ambassadors','surghub_unique_users','surghub_anon_users','surghub_user_courses','surghub_user_certs','surghub_signup_demo','surghub_signup_survey_url','surghub_email_demo','surghub_social','surghub_completion','surghub_selected_testimonials'];
+            const keys = ['surghub_data','surghub_history','surghub_ambassadors','surghub_unique_users','surghub_anon_users','surghub_user_courses','surghub_user_certs','surghub_signup_demo','surghub_signup_survey_url','surghub_email_demo','surghub_social','surghub_completion','surghub_selected_testimonials','surghub_milestones'];
             if (snapshot._type === 'surghub_snapshot') {
                 for (const k of keys) {
                     if (snapshot[k] != null) await Storage.setItem(k, snapshot[k]);
@@ -1227,6 +1227,7 @@ window.App = {
             // reader (Performance tab / report) re-reads the freshly-imported value
             // instead of serving a stale empty array loaded earlier this session.
             this._rawCompletion = null; this._completionLoadPromise = null;
+            this._milestones = undefined;   // the snapshot may carry its own milestones
             const emailDemo = await Storage.getItem('surghub_email_demo');
             if (emailDemo) this._emailDemoMap = emailDemo;
 
@@ -1274,6 +1275,7 @@ window.App = {
             "  • Testimonial selections\n\n" +
             "PRESERVED:\n" +
             "  • All SURGfund project data (KPIs, activities, facilities, budgets)\n" +
+            "  • Your hand-recorded SURGhub milestones\n" +
             "  • Your LearnWorlds API credentials\n\n" +
             "You can repopulate everything from Data Sync → Sync Courses + Sync Learners.\n\n" +
             "Continue?";
@@ -1298,6 +1300,19 @@ window.App = {
                 // Belt-and-braces: clear any legacy localStorage remnant too
                 try { localStorage.removeItem(k); } catch (e) { /* ignore */ }
             }
+            // The wipe just deleted surghub_unsynced_local / surghub_local_mtime — the
+            // only guard that stops a later pull from overwriting local SURGhub data with
+            // the cloud copy. Milestones deliberately SURVIVE the wipe, so if any exist,
+            // re-assert the guard: otherwise the next pull would silently replace
+            // hand-typed, unrecoverable text with whatever was last pushed.
+            try {
+                const survivingMs = await Storage.getItem('surghub_milestones');
+                if (Array.isArray(survivingMs) && survivingMs.length) {
+                    await Storage.setItem('surghub_unsynced_local', true);
+                    await Storage.setItem('surghub_local_mtime', new Date().toISOString());
+                }
+            } catch (e) { console.warn('Post-wipe milestone guard failed:', e); }
+
             // Reset in-memory SURGhub state
             this.data = [];
             this.userHistory = [];

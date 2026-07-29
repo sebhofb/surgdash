@@ -2870,6 +2870,7 @@ window.GenericViews = {
                 // Completion (~37MB) isn't reloaded into memory here — invalidate its lazy
                 // cache so the next reader re-reads the just-restored value, not a stale one.
                 App._rawCompletion = null; App._completionLoadPromise = null; App._anonLoadPromise = null;
+                App._milestones = undefined;
             } else if (b.kind === 'projects') {
                 const backup = JSON.parse(fs.readFileSync(path.join(dir, b.name), 'utf8'));
                 for (const [id, p] of Object.entries(backup.projects || {})) {
@@ -13934,6 +13935,7 @@ function _writeProject(ss, d) {
             written++;
         }
         await Projects.loadRegistry();
+        App._milestones = undefined;   // restored file may differ from the in-memory copy
         // Verify the registry round-tripped correctly — count what actually landed.
         const inMem = Projects.registry.filter(p => p.type === 'generic');
         const inMemWithImpact = inMem.filter(p => p.impactAssumptions && Object.values(p.impactAssumptions).some(v => v !== null && v !== undefined && v !== '')).length;
@@ -14254,6 +14256,7 @@ function _writeProject(ss, d) {
                 // Completion (~37MB) isn't reloaded into memory on a pull — invalidate its
                 // lazy cache so the next reader re-reads the just-pulled value, not a stale one.
                 App._rawCompletion = null; App._completionLoadPromise = null;
+                App._milestones = undefined;   // hand-recorded milestones may have been replaced — re-read on next render
                 const emailDemo = await Storage.getItem('surghub_email_demo');
                 if (emailDemo) App._emailDemoMap = emailDemo;
                 surghubRestored = true;
@@ -14865,6 +14868,7 @@ function _writeProject(ss, d) {
                 // Completion (~37MB) isn't reloaded into memory on a pull — invalidate its
                 // lazy cache so the next reader re-reads the just-pulled value, not a stale one.
                 App._rawCompletion = null; App._completionLoadPromise = null;
+                App._milestones = undefined;   // hand-recorded milestones may have been replaced — re-read on next render
                 const emailDemo = await Storage.getItem('surghub_email_demo');
                 if (emailDemo) App._emailDemoMap = emailDemo;
                 surghubRestored = proceedSurghub;

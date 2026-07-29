@@ -2348,6 +2348,7 @@ Object.assign(window.App, {
                  + tab('provider',    'building-2',       'Providers')
                  + tab('course',      'book-open',        'Courses')
                  + tab('ambassadors', 'award',            'Ambassadors')
+                 + tab('sh-milestones','milestone',       'Milestones')
                  + tab('sh-reports',  'file-text',        'Reports',    reportTabLocked)
                  + tab('manage',      'list',             'Directory')
                  + tab('upload',      'refresh-cw',       'Data Sync',  editLocked)
@@ -2772,6 +2773,12 @@ Object.assign(window.App, {
         // button in the top nav is the one place to load a SURGhub snapshot.)
 
         const shells = this.getShells();
+
+        if (this.view === 'sh-milestones') {
+            // No early return: renderView's shared tail strips the fade, builds the
+            // icons, and disables inputs in viewer mode. None of the branches below match.
+            this.renderSurghubMilestones(body);
+        }
 
         if (this.view === 'sh-reports') {
             const snapData = this.getAnalyticsSnap();
@@ -3629,6 +3636,7 @@ Object.assign(window.App, {
                         <div id="ask-data-result" class="mt-3"></div>
                     </div>
 
+                    ${dt === 'overview' ? this._milestoneStripHtml() : ''}
                     ${dashContent}
                 </div>
             `;

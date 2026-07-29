@@ -1543,7 +1543,9 @@ renderPlatform();
             ['Monthly tab', 'Registrations from signup dates; enrolments/certificates from course timelines reconciled to official totals - monthly timing is approximate, totals are exact. The current month is partial.'],
             ['Exclusions', 'Courses and providers excluded in the app are not included anywhere in this workbook.']
         ];
-        return { about, userRows, courseRows, providerRows, countryRows, monthlyRows };
+        const milestoneRows = this._milestoneExportRows ? this._milestoneExportRows() : [];
+        if (milestoneRows.length) about.push(['Milestones tab', 'Hand-recorded SURGhub milestones (Milestones tab in the app) — reach thresholds, launches, partnerships, grants, recognition. Oldest first.']);
+        return { about, userRows, courseRows, providerRows, countryRows, monthlyRows, milestoneRows };
     },
 
     // Format a sheet: content-based column widths (capped), an Excel autofilter on
@@ -1579,6 +1581,7 @@ renderPlatform();
             if (this.ensureAnonLoaded) await this.ensureAnonLoaded();
             if (this.ensureCompletionLoaded) await this.ensureCompletionLoaded();   // Name + Email join source
             if (!this._emailDemoMap) { try { this._emailDemoMap = (await Storage.getItem('surghub_email_demo')) || {}; } catch (e) {} }
+            if (this.getMilestones) { try { await this.getMilestones(); } catch (e) {} }   // warm the cache — the row builder is sync
             const D = this._buildMasterWorkbookData();
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, this._niceSheet(XLSX.utils.aoa_to_sheet(D.about), { noFilter: true, widths: [{ wch: 26 }, { wch: 110 }] }), 'About');
@@ -1587,13 +1590,16 @@ renderPlatform();
             XLSX.utils.book_append_sheet(wb, this._niceSheet(XLSX.utils.json_to_sheet(D.providerRows)), 'Providers');
             XLSX.utils.book_append_sheet(wb, this._niceSheet(XLSX.utils.json_to_sheet(D.countryRows)), 'Countries');
             XLSX.utils.book_append_sheet(wb, this._niceSheet(XLSX.utils.json_to_sheet(D.monthlyRows)), 'Monthly');
+            // Only when milestones exist — no empty tab for anyone who doesn't use them.
+            if (D.milestoneRows.length) XLSX.utils.book_append_sheet(wb, this._niceSheet(XLSX.utils.json_to_sheet(D.milestoneRows), { maxWidth: 80 }), 'Milestones');
             this._hideReportProgress && this._hideReportProgress();
             const savePath = await electronAPI.invoke('pick-save-path', 'surghub_master_export_' + new Date().toISOString().split('T')[0] + '.xlsx');
             if (!savePath) return;
             this._writeWorkbook(wb, savePath);
             alert('Master export saved:\n' + savePath + '\n\n' +
                 D.userRows.length.toLocaleString() + ' learners · ' + D.courseRows.length + ' courses · ' +
-                D.providerRows.length + ' providers · ' + D.countryRows.length + ' countries · ' + D.monthlyRows.length + ' months.');
+                D.providerRows.length + ' providers · ' + D.countryRows.length + ' countries · ' + D.monthlyRows.length + ' months' +
+                (D.milestoneRows.length ? ' · ' + D.milestoneRows.length + ' milestone' + (D.milestoneRows.length === 1 ? '' : 's') : '') + '.');
         } catch (e) {
             this._hideReportProgress && this._hideReportProgress();
             alert('Master export failed: ' + e.message);
