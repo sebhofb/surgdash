@@ -284,3 +284,310 @@ Object.assign(window.App, {
             </div>`;
     },
 });
+
+// ── Dashboard › Conflict Settings tab ─────────────────────────────────────────
+// Two data sources with different properties, kept visibly apart because mixing
+// them silently would be dishonest:
+//   · REGISTERED USERS + their growth come from the audience aggregate
+//     (AllCountryStats / CountryTimeline). Country is known for ~72% of users and
+//     scaled up, so these are estimates — same basis as the KPI card.
+//   · ENROLMENTS, CERTIFICATES, LEARNING TIME, cadre mix and course choices come
+//     from the anonymised per-user records, which are OBSERVED (never scaled) and
+//     cover only users with at least one enrolment.
+// Every card says which one it is.
+Object.assign(window.App, {
+
+    // Observed per-country activity for the active conflict list, from anon_users.
+    conflictActivity() {
+        const anon = this._rawAnonymizedUsers;
+        if (!Array.isArray(anon) || !anon.length) return null;
+        const map = this._conflictMatchMap();
+        const per = {};          // canonical country → aggregates
+        const users = {};        // canonical country → Set(user_uid)
+        const courses = {};      // course → enrolments (conflict learners only)
+        const cadre = {}, stage = {}, org = {};
+        let enrol = 0, certs = 0, minutes = 0, matchedRows = 0;
+        const uids = new Set();
+
+        anon.forEach(r => {
+            if (!r || !r.country) return;
+            const canon = map.get(this._conflictNorm(r.country));
+            if (!canon) return;
+            matchedRows++;
+            const p = per[canon] || (per[canon] = { enrol: 0, certs: 0, minutes: 0, learners: 0 });
+            const isCert = String(r.has_certificate) === 'Yes';   // the field is the STRING 'No'/'Yes' — truthiness is always true
+            p.enrol++; enrol++;
+            if (isCert) { p.certs++; certs++; }
+            const m = Number(r.course_minutes) || 0; p.minutes += m; minutes += m;
+            (users[canon] || (users[canon] = new Set())).add(r.user_uid);
+            uids.add(r.user_uid);
+            if (r.course) courses[r.course] = (courses[r.course] || 0) + 1;
+            // Canonicalise the cadre slug ('medical-officer' → 'Medical Officer') with
+            // the app's own taxonomy, so this tab reads like every other cadre view.
+            if (r.profession) {
+                const c = (window.Taxonomy && window.Taxonomy.canonProf) ? window.Taxonomy.canonProf(r.profession) : r.profession;
+                if (c) cadre[c] = (cadre[c] || 0) + 1;
+            }
+            if (r.career_stage)      stage[r.career_stage] = (stage[r.career_stage] || 0) + 1;
+            if (r.organisation_type)  org[r.organisation_type] = (org[r.organisation_type] || 0) + 1;
+        });
+        if (!matchedRows) return null;
+        Object.keys(per).forEach(k => { per[k].learners = users[k] ? users[k].size : 0; });
+
+        // Platform-wide comparators, so "is this better or worse than average?" is answerable.
+        let allEnrol = 0, allCerts = 0;
+        anon.forEach(r => { if (!r) return; allEnrol++; if (String(r.has_certificate) === 'Yes') allCerts++; });
+
+        return {
+            per, courses, cadre, stage, org,
+            enrol, certs, minutes, learners: uids.size,
+            certRate: enrol ? certs / enrol * 100 : 0,
+            platformCertRate: allEnrol ? allCerts / allEnrol * 100 : 0,
+            coveredCountries: Object.keys(per).length
+        };
+    },
+
+    // Monthly registered-user counts for the conflict list, from CountryTimeline.
+    // Returns { months, byCountry: {country: {month: n}}, totalByMonth, cumulative }.
+    conflictTimeline(audSnap) {
+        if (!audSnap || !audSnap.CountryTimeline) return null;
+        let tl;
+        try { tl = typeof audSnap.CountryTimeline === 'string' ? JSON.parse(audSnap.CountryTimeline) : audSnap.CountryTimeline; }
+        catch (e) { return null; }
+        const map = this._conflictMatchMap();
+        const months = Object.keys(tl).filter(m => /^\d{4}-\d{2}$/.test(m)).sort();
+        if (!months.length) return null;
+        const byCountry = {}, totalByMonth = {}, platformByMonth = {};
+        months.forEach(m => {
+            totalByMonth[m] = 0; platformByMonth[m] = 0;
+            Object.entries(tl[m] || {}).forEach(([country, n]) => {
+                const v = Number(n) || 0;
+                platformByMonth[m] += v;
+                const canon = map.get(this._conflictNorm(country));
+                if (!canon) return;
+                (byCountry[canon] || (byCountry[canon] = {}))[m] = ((byCountry[canon] || {})[m] || 0) + v;
+                totalByMonth[m] += v;
+            });
+        });
+        // Cumulative series for the headline chart
+        let runC = 0, runP = 0;
+        const cumulative = months.map(m => {
+            runC += totalByMonth[m] || 0; runP += platformByMonth[m] || 0;
+            return { m, conflict: Math.round(runC), platform: Math.round(runP), share: runP ? +(runC / runP * 100).toFixed(1) : 0 };
+        });
+        return { months, byCountry, totalByMonth, platformByMonth, cumulative };
+    },
+});
+
+Object.assign(window.App, {
+    _dashConflictHtml(snapData, audSnap) {
+        const b = this.conflictBreakdown(audSnap);
+        if (!audSnap || !audSnap.TotalUsers) return this._dashNoLearnerData ? this._dashNoLearnerData() : '<div class="bg-white p-12 text-center text-slate-500 italic rounded-xl border">No learner data yet — run Sync Learners.</div>';
+        const S = this.CONFLICT_SOURCE;
+        const esc = (t) => this.escapeHtml(t);
+        const fmt = (n) => this.formatNumber(Math.round(n || 0));
+        const act = this.conflictActivity();
+        const tl = this.conflictTimeline(audSnap);
+        const share = audSnap.TotalUsers ? (b.total / audSnap.TotalUsers * 100) : 0;
+
+        // Lazy: the observed activity needs the ~31MB anon blob.
+        if (!act && this.ensureAnonLoaded && this._rawAnonymizedUsers == null) {
+            this.ensureAnonLoaded().then(() => { if (this.view === 'platform' && this._dashTab === 'conflict') this.renderView(); });
+        }
+
+        const card = (label, value, sub, colour, icon) => `
+            <div class="bg-white rounded-xl border shadow-sm overflow-hidden">
+                <div style="height:3px;background:${colour}"></div>
+                <div class="p-4">
+                    <p class="text-[10px] font-bold uppercase tracking-wide text-slate-400 flex items-center gap-1.5"><i data-lucide="${icon}" width="11" style="color:${colour}"></i> ${esc(label)}</p>
+                    <p class="text-2xl font-black text-gsf-prussian mt-1 leading-tight">${value}</p>
+                    ${sub ? `<p class="text-[11px] text-slate-400 mt-0.5">${sub}</p>` : ''}
+                </div>
+            </div>`;
+
+        const kpis = `
+            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+                ${card('Registered learners', fmt(b.total), share.toFixed(1) + '% of the platform', '#e57373', 'users')}
+                ${card('Countries reached', b.rows.length + ' of ' + this.conflictList().length, 'on the list', '#206095', 'globe')}
+                ${act ? card('Enrolments', fmt(act.enrol), 'observed', '#4389C8', 'user-plus') : ''}
+                ${act ? card('Certificates', fmt(act.certs), 'observed', '#7A9E9F', 'award') : ''}
+                ${act ? card('Certification rate', act.certRate.toFixed(1) + '%', 'platform ' + act.platformCertRate.toFixed(1) + '%', act.certRate >= act.platformCertRate ? '#5B8C5A' : '#B8860B', 'target') : ''}
+                ${act ? card('Learning time', fmt(act.minutes / 60) + ' h', 'observed', '#5B8C5A', 'clock') : ''}
+            </div>`;
+
+        // ── growth
+        const growth = tl ? `
+            <div class="bg-white p-6 rounded-xl shadow-sm border mb-6">
+                <div class="flex items-baseline justify-between gap-3 flex-wrap mb-1">
+                    <h3 class="text-lg font-bold text-gsf-prussian">Growth in conflict-affected settings</h3>
+                    <p class="text-xs text-slate-400">Cumulative registered learners &middot; extrapolated</p>
+                </div>
+                <p class="text-xs text-slate-500 mb-4">Their share of the platform is the line that matters: it says whether SURGhub is reaching these settings faster or slower than it is growing overall.</p>
+                <div id="chart_conflict_growth" style="width:100%;height:340px"></div>
+            </div>
+
+            <div class="bg-white p-6 rounded-xl shadow-sm border mb-6">
+                <div class="flex items-baseline justify-between gap-3 flex-wrap mb-1">
+                    <h3 class="text-lg font-bold text-gsf-prussian">Growth by country</h3>
+                    <p class="text-xs text-slate-400">Cumulative registered learners &middot; top 8 countries</p>
+                </div>
+                <p class="text-xs text-slate-500 mb-4">Each line is one country on the list, running total over time. A line that flattens is a country the platform has stopped reaching; a step up usually tracks a specific outreach push or partner cohort.</p>
+                <div id="chart_conflict_countries" style="width:100%;height:420px"></div>
+            </div>` : '';
+
+        // ── map
+        const map = `
+            <div class="bg-white p-6 rounded-xl shadow-sm border mb-6">
+                <h3 class="text-lg font-bold text-gsf-prussian mb-1">Where they are</h3>
+                <p class="text-xs text-slate-500 mb-3">Only the ${this.conflictList().length} countries on the ${esc(S.label)} are shaded.</p>
+                <div id="chart_conflict_map" style="width:100%;height:420px"></div>
+            </div>`;
+
+        // ── per-country table, joining the estimate with the observed activity
+        const rows = b.rows.map(r => {
+            const a = act && act.per[r.name];
+            const cr = a && a.enrol ? (a.certs / a.enrol * 100) : null;
+            return `<tr class="border-b border-slate-100 hover:bg-slate-50">
+                <td class="py-2.5 px-4 font-semibold text-gsf-prussian">${esc(r.name)}</td>
+                <td class="py-2.5 px-4 text-right">${fmt(r.n)}</td>
+                <td class="py-2.5 px-4 text-right text-slate-500">${b.total ? (r.n / b.total * 100).toFixed(1) + '%' : '–'}</td>
+                <td class="py-2.5 px-4 text-right">${a ? fmt(a.learners) : '<span class="text-slate-300">–</span>'}</td>
+                <td class="py-2.5 px-4 text-right">${a ? fmt(a.enrol) : '<span class="text-slate-300">–</span>'}</td>
+                <td class="py-2.5 px-4 text-right">${a ? fmt(a.certs) : '<span class="text-slate-300">–</span>'}</td>
+                <td class="py-2.5 px-4 text-right ${cr != null && act && cr >= act.platformCertRate ? 'text-emerald-600 font-bold' : 'text-slate-500'}">${cr != null ? cr.toFixed(1) + '%' : '<span class="text-slate-300">–</span>'}</td>
+                <td class="py-2.5 px-4 text-right text-slate-500">${a ? fmt(a.minutes / 60) : '<span class="text-slate-300">–</span>'}</td>
+            </tr>`;
+        }).join('');
+
+        const table = `
+            <div class="bg-white rounded-xl shadow-sm border overflow-hidden mb-6">
+                <div class="p-5 border-b bg-slate-50">
+                    <h3 class="text-lg font-bold text-gsf-prussian">Country by country</h3>
+                    <p class="text-xs text-slate-500 mt-1">Registered learners are <strong>extrapolated</strong> (country known for ${audSnap.CountryKnownPct != null ? audSnap.CountryKnownPct : '~72'}% of users, scaled up). Everything to the right of it is <strong>observed</strong> from the anonymised records and counts only learners who enrolled in at least one course — so those columns are lower by construction, and the two must not be divided into each other.</p>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="text-slate-500 border-b bg-white">
+                            <tr>
+                                <th class="py-2.5 px-4 text-left font-medium">Country</th>
+                                <th class="py-2.5 px-4 text-right font-medium">Registered <span class="text-[10px] text-slate-400">est.</span></th>
+                                <th class="py-2.5 px-4 text-right font-medium">Share</th>
+                                <th class="py-2.5 px-4 text-right font-medium">Enrolled <span class="text-[10px] text-slate-400">obs.</span></th>
+                                <th class="py-2.5 px-4 text-right font-medium">Enrolments</th>
+                                <th class="py-2.5 px-4 text-right font-medium">Certificates</th>
+                                <th class="py-2.5 px-4 text-right font-medium">Cert rate</th>
+                                <th class="py-2.5 px-4 text-right font-medium">Hours</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows || '<tr><td colspan="8" class="py-8 text-center text-slate-400 italic">No learners recorded from the listed countries.</td></tr>'}</tbody>
+                    </table>
+                </div>
+                ${b.unmatched.length ? `<p class="px-5 py-3 text-xs text-slate-400 border-t">No learners yet from: ${b.unmatched.map(esc).join(', ')}.</p>` : ''}
+            </div>`;
+
+        // ── who they are + what they take
+        const topList = (obj, n, label, colour) => {
+            const e = Object.entries(obj || {}).sort((a, b2) => b2[1] - a[1]).slice(0, n);
+            const tot = Object.values(obj || {}).reduce((s, v) => s + v, 0);
+            if (!e.length) return '';
+            return `<div class="bg-white p-5 rounded-xl shadow-sm border">
+                <p class="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-3">${esc(label)}</p>
+                <div class="space-y-2">${e.map(([k, v]) => `
+                    <div>
+                        <div class="flex items-baseline justify-between gap-2 mb-0.5">
+                            <span class="text-sm text-slate-700 truncate">${esc(k)}</span>
+                            <span class="text-xs font-bold text-gsf-prussian shrink-0">${fmt(v)}</span>
+                        </div>
+                        <div class="h-1.5 bg-slate-100 rounded-full overflow-hidden"><div class="h-full rounded-full" style="width:${tot ? (v / e[0][1] * 100).toFixed(1) : 0}%;background:${colour}"></div></div>
+                    </div>`).join('')}</div>
+            </div>`;
+        };
+
+        const profile = act ? `
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                ${topList(act.cadre, 6, 'Who they are · cadre', '#4389C8')}
+                ${topList(act.stage, 5, 'Career stage', '#7A9E9F')}
+                ${topList(act.org, 5, 'Organisation type', '#B8860B')}
+            </div>
+            <div class="mb-6">${topList(act.courses, 10, 'What they take · top courses by enrolment', '#e57373')}</div>` : '';
+
+        return `
+            <div class="bg-white rounded-xl border shadow-sm border-l-4 border-l-rose-400 p-5 mb-6">
+                <div class="flex items-start justify-between gap-4 flex-wrap">
+                    <div class="min-w-0 flex-1">
+                        <h2 class="text-xl font-black text-gsf-prussian mb-1">Reach into conflict-affected settings</h2>
+                        <p class="text-sm text-slate-600">${fmt(b.total)} registered learners — <strong>${share.toFixed(1)}%</strong> of the platform — in ${b.rows.length} of the ${this.conflictList().length} countries on the ${esc(S.label)}${this.isConflictListCustom() ? ' <span class="text-amber-700 font-semibold">(edited locally)</span>' : ''}.</p>
+                    </div>
+                    <button onclick="App.view='methodology'; App.renderView()" class="shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold bg-white border border-slate-300 text-slate-600 hover:text-gsf-prussian hover:bg-slate-50">Source &amp; list &rarr;</button>
+                </div>
+            </div>
+            ${kpis}
+            ${growth}
+            ${map}
+            ${table}
+            ${profile}`;
+    },
+
+    // Charts for the tab — called after the DOM is in place.
+    _drawConflictCharts(audSnap) {
+        if (!window.google || !google.visualization || !window.Charts) return;
+        const tl = this.conflictTimeline(audSnap);
+        const b = this.conflictBreakdown(audSnap);
+
+        // 1. cumulative learners + share of platform (dual axis)
+        const el = document.getElementById('chart_conflict_growth');
+        if (el && tl) {
+            const pts = tl.cumulative.filter(p => p.conflict > 0);
+            if (pts.length) {
+                const dt = new google.visualization.DataTable();
+                dt.addColumn('string', 'Month');
+                dt.addColumn('number', 'Learners in conflict settings');
+                dt.addColumn('number', '% of all platform learners');
+                pts.forEach(p => dt.addRow([p.m, p.conflict, p.share]));
+                new google.visualization.ComboChart(el).draw(dt, {
+                    seriesType: 'area',
+                    series: { 0: { color: '#e57373', targetAxisIndex: 0 }, 1: { type: 'line', color: '#206095', targetAxisIndex: 1, lineWidth: 2 } },
+                    vAxes: { 0: { title: 'Learners', textStyle: { color: '#94a3b8', fontSize: 11 }, gridlines: { color: '#f1f5f9' } },
+                             1: { title: '% of platform', textStyle: { color: '#94a3b8', fontSize: 11 }, gridlines: { color: 'transparent' }, viewWindow: { min: 0 } } },
+                    hAxis: Charts.hAxisDefaults ? Charts.hAxisDefaults() : {},
+                    legend: { position: 'top', alignment: 'start', textStyle: { fontSize: 12 } },
+                    chartArea: { left: 70, right: 70, top: 40, bottom: 60 },
+                    backgroundColor: 'transparent'
+                });
+            } else { Charts.clearChart('chart_conflict_growth', 'No dated history for these countries yet.'); }
+        }
+
+        // 2. per-country monthly — reuse the app's own breakdown timeline
+        if (document.getElementById('chart_conflict_countries') && tl) {
+            const monthly = {};
+            tl.months.forEach(m => {
+                const row = {};
+                Object.keys(tl.byCountry).forEach(c => { const v = tl.byCountry[c][m]; if (v) row[c] = v; });
+                if (Object.keys(row).length) monthly[m] = row;
+            });
+            if (Object.keys(monthly).length) Charts.drawBreakdownTimeline('chart_conflict_countries', monthly, 8, null, false);
+            else Charts.clearChart('chart_conflict_countries', 'No dated history for these countries yet.');
+        }
+
+        // 3. map, restricted to the listed countries
+        const mapEl = document.getElementById('chart_conflict_map');
+        if (mapEl) {
+            if (b.rows.length) {
+                const dt = new google.visualization.DataTable();
+                dt.addColumn('string', 'Country');
+                dt.addColumn('number', 'Learners');
+                dt.addColumn({ type: 'string', role: 'tooltip', p: { html: true } });
+                b.rows.forEach(r => {
+                    const pct = b.total ? (r.n / b.total * 100).toFixed(1) : '0.0';
+                    dt.addRow([(window.countryToISO && window.countryToISO(r.name)) || r.name, r.n,
+                        '<div style="padding:8px 12px;font-size:12px"><strong>' + this.escapeHtml(r.name) + '</strong><br>' + this.formatNumber(r.n) + ' learners<br>' + pct + '% of the conflict total</div>']);
+                });
+                new google.visualization.GeoChart(mapEl).draw(dt, {
+                    colorAxis: { colors: ['#fde2e2', '#e57373', '#8b2020'], minValue: 0 },
+                    backgroundColor: 'transparent', datalessRegionColor: '#f1f5f9', defaultColor: '#f1f5f9',
+                    tooltip: { isHtml: true }, legend: { textStyle: { fontSize: 11 } }
+                });
+            } else { Charts.clearChart('chart_conflict_map', 'No learners from the listed countries yet.'); }
+        }
+    },
+});
