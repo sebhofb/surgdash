@@ -61,6 +61,22 @@ Object.assign(window.App, {
         return String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
     },
 
+    // Levenshtein, capped — just enough to catch a typo ("Isreal" → "Israel")
+    // so an added country that matches nothing can suggest what was meant.
+    _editDistance(a, b) {
+        if (a === b) return 0;
+        if (Math.abs(a.length - b.length) > 3) return 99;
+        let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+        for (let i = 1; i <= a.length; i++) {
+            const cur = [i];
+            for (let j = 1; j <= b.length; j++) {
+                cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+            }
+            prev = cur;
+        }
+        return prev[b.length];
+    },
+
     // The active list: the user's saved override if there is one, else the default.
     // Lazily loaded; triggers one re-render when it lands.
     conflictList() {
@@ -146,14 +162,48 @@ Object.assign(window.App, {
     },
 
     // Add a country that is not on the World Bank list (e.g. a GSF-specific
-    // judgement). Stored with the typed name as its own alias.
+    // judgement). Stored with the platform's own spelling as an alias, so it
+    // matches whatever the country data actually says.
+    // NOTE: uses App._textPrompt, not window.prompt — Electron does not implement
+    // prompt() at all, so a raw prompt() call silently does nothing.
     async addConflictCountry() {
-        const name = (prompt('Add a country to the conflict list.\n\nType it exactly as it appears in the platform’s country data (Learners tab → country table), e.g. "Israel".\n\nThis is outside the World Bank list, so the card will show the list as customised.') || '').trim();
+        const typed = await this._textPrompt(
+            'Add a country to the conflict list',
+            'Type the country name. This sits outside the ' + this.CONFLICT_SOURCE.label + ', so the KPI will be marked as edited.',
+            '');
+        const name = String(typed || '').trim();
         if (!name) return;
+
         const active = this.conflictList().slice();
-        if (active.some(c => this._conflictNorm(c.wb) === this._conflictNorm(name))) return this.showMsg('Already on the list.');
-        active.push({ wb: name, iso3: '', aliases: [], custom: true });
+        if (active.some(c => this._conflictNorm(c.wb) === this._conflictNorm(name)
+                || (c.aliases || []).some(a => this._conflictNorm(a) === this._conflictNorm(name)))) {
+            return this.showMsg('“' + name + '” is already on the list.');
+        }
+
+        // Resolve against the country names the platform data actually uses, so a
+        // typo lands as a warning now instead of a silent zero on the dashboard.
+        const aud = (this.userHistory || []).slice()
+            .reduce((a, b) => (a && String(a.Timestamp) > String(b.Timestamp) ? a : b), null);
+        let stats = {};
+        try { stats = aud && aud.AllCountryStats ? (typeof aud.AllCountryStats === 'string' ? JSON.parse(aud.AllCountryStats) : aud.AllCountryStats) : {}; } catch (e) {}
+        const keys = Object.keys(stats);
+        const exact = keys.find(k => this._conflictNorm(k) === this._conflictNorm(name));
+        const entry = { wb: exact || name, iso3: '', aliases: exact && exact !== name ? [name] : [], custom: true };
+
+        active.push(entry);
         await this.setConflictList(active);
+
+        if (exact) {
+            this.showMsg('Added ' + exact + ' — ' + this.formatNumber(stats[exact] || 0) + ' registered users. The KPI is now marked as edited.');
+        } else {
+            const n = this._conflictNorm(name);
+            const near = keys
+                .map(k => ({ k, d: this._editDistance(n, this._conflictNorm(k)) }))
+                .filter(x => x.d <= 2 || x.k.toLowerCase().startsWith(n.slice(0, 5)) || n.startsWith(this._conflictNorm(x.k).slice(0, 5)))
+                .sort((a, b) => a.d - b.d).slice(0, 4).map(x => x.k);
+            this.showMsg('Added “' + name + '”, but no country of that name is in the current data, so it counts 0 for now.'
+                + (near.length ? ' Did you mean: ' + near.join(', ') + '?' : ''), true);
+        }
     },
 
     async resetConflictList() {

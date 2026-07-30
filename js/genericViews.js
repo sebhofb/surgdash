@@ -4540,9 +4540,11 @@ window.GenericViews = {
             .filter(d => d.kpiId === kpiId && d.target !== null && d.target !== undefined)
             .sort((a, b) => (b.year * 10 + b.quarter) - (a.year * 10 + a.quarter))[0];
         const suggested = existing ? String(existing.target) : '';
-        const raw = prompt(
-            `Set the same target value for every year and quarter of "${kpiId}":\n\n` +
-            `Leave blank to clear all targets. This overwrites any existing values.`,
+        // App._textPrompt, not window.prompt — Electron does not implement prompt()
+        // (it throws), so this button did nothing at all.
+        const raw = await App._textPrompt(
+            `Set the target for every quarter of "${kpiId}"`,
+            'Leave blank to clear all targets. This overwrites any existing values.',
             suggested
         );
         if (raw === null) return; // cancel
