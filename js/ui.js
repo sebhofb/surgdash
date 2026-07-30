@@ -4846,6 +4846,18 @@ Object.assign(window.App, {
             }).catch(() => {});
         }
         const AI = this._improvementAi;
+        // Summaries written before the prompt was fixed call the two comparison sets
+        // "Group A" / "Group B" — labels that only ever existed inside the prompt and
+        // mean nothing on screen. Substitute the real names so an existing summary
+        // reads correctly without paying to regenerate it. New runs never produce
+        // these: the prompt now names the groups and forbids the A/B labels.
+        // Substitute a SINGULAR noun phrase for the singular "Group A", so the verb
+        // agreement in the original sentence still holds ("Group A ties…" must not
+        // become "LIC/LMIC learners ties…"), and keep the original capitalisation.
+        const fixGroups = (t) => String(t == null ? '' : t)
+            .replace(/\bGroup A\b/g, 'The LIC/LMIC group').replace(/\bgroup A\b/g, 'the LIC/LMIC group')
+            .replace(/\bGroup B\b/g, 'The UMIC/HIC group').replace(/\bgroup B\b/g, 'the UMIC/HIC group')
+            .replace(/\bGroups A and B\b/gi, 'both groups');
         const topicRows = C.topics.map(t => {
             const isOpen = open === t.topic;
             const sample = t.rows.slice(0, isOpen ? 25 : 0);
@@ -4863,9 +4875,9 @@ Object.assign(window.App, {
                         if (!ta) return '';
                         return `<div class="bg-white border-l-4 border-gsf-boston rounded-r-lg p-4 mb-3 shadow-sm">
                             <p class="text-[10px] font-bold uppercase tracking-wide text-gsf-boston mb-1.5">✨ What this bucket is asking for</p>
-                            <p class="text-sm text-slate-700 leading-relaxed">${this.escapeHtml(ta.summary)}</p>
-                            ${ta.asks && ta.asks.length ? `<ul class="mt-2.5 space-y-1">${ta.asks.map(a => `<li class="text-sm text-slate-600 flex items-start gap-2"><span class="text-gsf-boston font-bold shrink-0">&bull;</span><span>${this.escapeHtml(a.ask)}${a.weight ? ' <span class="text-[11px] text-slate-400">— ' + this.escapeHtml(a.weight) + '</span>' : ''}</span></li>`).join('')}</ul>` : ''}
-                            ${ta.quote ? `<p class="mt-2.5 text-[13px] text-slate-500 italic border-l-2 border-slate-200 pl-3">&ldquo;${this.escapeHtml(ta.quote)}&rdquo;</p>` : ''}
+                            <p class="text-sm text-slate-700 leading-relaxed">${this.escapeHtml(fixGroups(ta.summary))}</p>
+                            ${ta.asks && ta.asks.length ? `<ul class="mt-2.5 space-y-1">${ta.asks.map(a => `<li class="text-sm text-slate-600 flex items-start gap-2"><span class="text-gsf-boston font-bold shrink-0">&bull;</span><span>${this.escapeHtml(fixGroups(a.ask))}${a.weight ? ' <span class="text-[11px] text-slate-400">— ' + this.escapeHtml(a.weight) + '</span>' : ''}</span></li>`).join('')}</ul>` : ''}
+                            ${ta.quote ? `<p class="mt-2.5 text-[13px] text-slate-500 italic border-l-2 border-slate-200 pl-3">&ldquo;${this.escapeHtml(fixGroups(ta.quote))}&rdquo;</p>` : ''}
                             ${ta.sampled ? `<p class="text-[10px] text-slate-400 mt-2">From a representative sample of ${this.formatNumber(ta.sampled)} of ${this.formatNumber(ta.n)} comments.</p>` : ''}
                         </div>`;
                     })()}
@@ -4892,7 +4904,8 @@ Object.assign(window.App, {
         const topTopics = C.topics.filter(t => t.topic !== 'Uncategorised').slice(0, 5).map(t => t.topic);
         const equityTable = tiersWithData.length >= 2 ? `
             <div class="px-5 py-4 border-t bg-white">
-                <p class="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-2">What each group asks for &middot; share of that group's comments</p>
+                <p class="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">What each group asks for &middot; share of that group's comments</p>
+                <p class="text-[11px] text-slate-500 mb-2.5">Groups are the <strong>World Bank income classification</strong> of the learner's country: <strong>LIC</strong> low-income &middot; <strong>LMIC</strong> lower-middle &middot; <strong>UMIC</strong> upper-middle &middot; <strong>HIC</strong> high-income. LIC and LMIC together are the audience GSF exists to reach.</p>
                 <div class="overflow-x-auto"><table class="w-full text-xs border-collapse">
                     <thead><tr class="text-slate-400 border-b"><th class="text-left py-1.5 pr-3 font-medium">Income tier</th>${topTopics.map(t => '<th class="text-right py-1.5 px-2 font-medium whitespace-nowrap">' + this.escapeHtml(t) + '</th>').join('')}<th class="text-right py-1.5 pl-2 font-medium">Comments</th></tr></thead>
                     <tbody>${tiersWithData.map(tier => {
@@ -4907,19 +4920,20 @@ Object.assign(window.App, {
                 <p class="text-[10px] text-slate-400 mt-2">Country is known for ${this.formatNumber(C.withCountry)} of ${this.formatNumber(C.total)} comments, so tiers cover only that subset. Differences here point at what to fix for whom — a topic that dominates LIC/LMIC comments is a barrier for the audience GSF most wants to reach.</p>
                 ${(AI && AI.equity) ? `
                 <div class="mt-4 bg-emerald-50/60 border border-emerald-200 rounded-lg p-4">
-                    <p class="text-[10px] font-bold uppercase tracking-wide text-emerald-800 mb-1.5">✨ What LIC/LMIC learners ask for that HIC learners don't</p>
-                    <p class="text-sm text-slate-700 leading-relaxed">${this.escapeHtml(AI.equity.contrast)}</p>
+                    <p class="text-[10px] font-bold uppercase tracking-wide text-emerald-800 mb-1">✨ What LIC/LMIC learners ask for that UMIC/HIC learners don't</p>
+                    <p class="text-[11px] text-emerald-800/70 mb-2">Comparing the ${this.formatNumber((AI.equity.nLower || 0) + (AI.equity.nHigher || 0))} comments whose author's country is known: <strong>${this.formatNumber(AI.equity.nLower || 0)}</strong> from low / lower-middle-income countries against <strong>${this.formatNumber(AI.equity.nHigher || 0)}</strong> from upper-middle / high-income ones.</p>
+                    <p class="text-sm text-slate-700 leading-relaxed">${this.escapeHtml(fixGroups(AI.equity.contrast))}</p>
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
                         <div class="bg-white rounded-lg border border-emerald-100 p-3">
                             <p class="text-[10px] font-bold uppercase text-emerald-700 mb-1">LIC / LMIC <span class="font-normal text-slate-400">(${this.formatNumber(AI.equity.nLower || 0)} comments)</span></p>
-                            <p class="text-[13px] text-slate-600 leading-relaxed">${this.escapeHtml(AI.equity.lowerIncome)}</p>
+                            <p class="text-[13px] text-slate-600 leading-relaxed">${this.escapeHtml(fixGroups(AI.equity.lowerIncome))}</p>
                         </div>
                         <div class="bg-white rounded-lg border border-slate-200 p-3">
                             <p class="text-[10px] font-bold uppercase text-slate-500 mb-1">UMIC / HIC <span class="font-normal text-slate-400">(${this.formatNumber(AI.equity.nHigher || 0)} comments)</span></p>
-                            <p class="text-[13px] text-slate-600 leading-relaxed">${this.escapeHtml(AI.equity.higherIncome)}</p>
+                            <p class="text-[13px] text-slate-600 leading-relaxed">${this.escapeHtml(fixGroups(AI.equity.higherIncome))}</p>
                         </div>
                     </div>
-                    ${(AI.equity.actions && AI.equity.actions.length) ? `<div class="mt-3"><p class="text-[10px] font-bold uppercase text-emerald-800 mb-1">Would specifically help the LIC/LMIC audience</p><ul class="space-y-1">${AI.equity.actions.map(a => '<li class="text-[13px] text-slate-600 flex items-start gap-2"><span class="text-emerald-600 font-bold shrink-0">&bull;</span><span>' + this.escapeHtml(a) + '</span></li>').join('')}</ul></div>` : ''}
+                    ${(AI.equity.actions && AI.equity.actions.length) ? `<div class="mt-3"><p class="text-[10px] font-bold uppercase text-emerald-800 mb-1">Would specifically help the LIC/LMIC audience</p><ul class="space-y-1">${AI.equity.actions.map(a => '<li class="text-[13px] text-slate-600 flex items-start gap-2"><span class="text-emerald-600 font-bold shrink-0">&bull;</span><span>' + this.escapeHtml(fixGroups(a)) + '</span></li>').join('')}</ul></div>` : ''}
                 </div>` : ''}
             </div>` : '';
         // Overall AI summary — sits above the topic list, with an honest staleness note
@@ -4927,21 +4941,21 @@ Object.assign(window.App, {
         const drift = AI ? Math.abs(C.total - (AI.total || 0)) : 0;
         const stale = AI && AI.total && drift / AI.total > 0.05;
         const overallBlock = (AI && AI.overall) ? `
-            <div class="bg-gradient-to-br from-gsf-prussian to-[#0a3a57] text-white p-5 border-b">
-                <p class="text-[10px] font-bold uppercase tracking-widest text-amber-300 mb-2">✨ Overall</p>
-                <h3 class="text-lg font-black mb-2">${this.escapeHtml(AI.overall.headline)}</h3>
-                <p class="text-sm text-white/85 leading-relaxed">${this.escapeHtml(AI.overall.summary)}</p>
+            <div class="bg-white p-5 border-b border-l-4 border-l-gsf-boston">
+                <p class="text-[10px] font-bold uppercase tracking-widest text-gsf-boston mb-2">✨ Overall</p>
+                <h3 class="text-lg font-black text-gsf-prussian mb-2">${this.escapeHtml(fixGroups(AI.overall.headline))}</h3>
+                <p class="text-sm text-slate-600 leading-relaxed">${this.escapeHtml(fixGroups(AI.overall.summary))}</p>
                 ${(AI.overall.priorities && AI.overall.priorities.length) ? `
-                <div class="mt-4">
-                    <p class="text-[10px] font-bold uppercase tracking-wide text-amber-300 mb-2">Where fixing would remove the most friction</p>
-                    <ol class="space-y-2">${AI.overall.priorities.map((p, i) => `<li class="flex items-start gap-2.5">
-                        <span class="w-5 h-5 rounded-full bg-amber-400 text-gsf-prussian text-[11px] font-black flex items-center justify-center shrink-0 mt-0.5">${i + 1}</span>
-                        <span class="text-sm"><strong class="text-white">${this.escapeHtml(p.title)}</strong> <span class="text-white/70">— ${this.escapeHtml(p.why)}</span></span>
+                <div class="mt-4 bg-slate-50 border border-slate-200 rounded-lg p-4">
+                    <p class="text-[10px] font-bold uppercase tracking-wide text-slate-500 mb-2.5">Where fixing would remove the most friction</p>
+                    <ol class="space-y-2.5">${AI.overall.priorities.map((p, i) => `<li class="flex items-start gap-2.5">
+                        <span class="w-5 h-5 rounded-full bg-gsf-boston text-white text-[11px] font-black flex items-center justify-center shrink-0 mt-0.5">${i + 1}</span>
+                        <span class="text-sm"><strong class="text-gsf-prussian">${this.escapeHtml(fixGroups(p.title))}</strong> <span class="text-slate-500">— ${this.escapeHtml(fixGroups(p.why))}</span></span>
                     </li>`).join('')}</ol>
                 </div>` : ''}
-                <p class="text-[10px] text-white/40 mt-3">
+                <p class="text-[10px] text-slate-400 mt-3">
                     Written by ${this.escapeHtml(AI.model || 'Claude')} from ${this.formatNumber(AI.total || 0)} comments &middot; ${this.escapeHtml(AI.at || '')}
-                    ${stale ? ' &middot; <span class="text-amber-300 font-bold">' + this.formatNumber(C.total) + ' now — re-summarise to catch up</span>' : ''}
+                    ${stale ? ' &middot; <span class="text-amber-600 font-bold">' + this.formatNumber(C.total) + ' now — re-summarise to catch up</span>' : ''}
                 </p>
             </div>` : '';
         return `<div id="corpus-card" class="bg-white rounded-xl shadow-sm border overflow-hidden mb-8">
@@ -5053,20 +5067,20 @@ Object.assign(window.App, {
         const surveyRows = this._surveyInsightsRows(snapData);
         const pf = window.FeedbackIntel ? window.FeedbackIntel.extractPlatformFeedback(snapData) : null;
         return `
-                    <div class="bg-gradient-to-br from-gsf-prussian to-[#0a3a57] text-white rounded-xl shadow-sm p-6 mb-8">
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 border-l-4 border-l-gsf-boston p-6 mb-8">
                         <div class="flex items-start justify-between gap-4 flex-wrap">
                             <div class="min-w-0 flex-1">
-                                <p class="text-[10px] font-bold uppercase tracking-widest text-amber-300 mb-2">✨ The SURGhub story</p>
+                                <p class="text-[10px] font-bold uppercase tracking-widest text-gsf-boston mb-2">✨ The SURGhub story</p>
                                 ${st ? `
-                                    <h3 class="text-xl font-black mb-2">${this.escapeHtml(st.h)}</h3>
-                                    <p class="text-sm text-white/85 leading-relaxed whitespace-pre-line">${this.escapeHtml(st.s)}</p>
-                                    <ul class="mt-3 space-y-1">${(st.b || []).map(b => '<li class="text-sm text-amber-200 font-medium">&bull; ' + this.escapeHtml(b) + '</li>').join('')}</ul>
-                                    <p class="text-[10px] text-white/40 mt-3">AI-generated from current platform data &middot; ${this.escapeHtml(st.at || '')}</p>
-                                ` : '<p class="text-sm text-white/75">One concise, number-anchored narrative of why SURGhub matters — generated from the live platform data. Great for intros, funder emails and board slides.</p>'}
+                                    <h3 class="text-xl font-black text-gsf-prussian mb-2">${this.escapeHtml(st.h)}</h3>
+                                    <p class="text-sm text-slate-600 leading-relaxed whitespace-pre-line">${this.escapeHtml(st.s)}</p>
+                                    <ul class="mt-3 space-y-1.5">${(st.b || []).map(b => '<li class="text-sm text-slate-700 font-medium flex items-start gap-2"><span class="text-gsf-boston font-bold shrink-0">&bull;</span><span>' + this.escapeHtml(b) + '</span></li>').join('')}</ul>
+                                    <p class="text-[10px] text-slate-400 mt-3">AI-generated from current platform data &middot; ${this.escapeHtml(st.at || '')}</p>
+                                ` : '<p class="text-sm text-slate-500">One concise, number-anchored narrative of why SURGhub matters — generated from the live platform data. Great for intros, funder emails and board slides.</p>'}
                             </div>
                             <div class="flex flex-col gap-2 shrink-0">
-                                <button data-edit-only onclick="App.generatePlatformStory()" class="px-4 py-2 bg-amber-400 text-gsf-prussian font-bold rounded-lg text-sm hover:bg-amber-300 transition-colors">${st ? '↻ Regenerate' : '✨ Tell the story'}</button>
-                                ${st ? '<button onclick="App._copyAiStory(this)" class="px-4 py-2 bg-white/10 text-white font-bold rounded-lg text-sm hover:bg-white/20 transition-colors">Copy text</button>' : ''}
+                                <button data-edit-only onclick="App.generatePlatformStory()" class="px-4 py-2 bg-gsf-boston text-white font-bold rounded-lg text-sm hover:bg-gsf-prussian transition-colors">${st ? '↻ Regenerate' : '✨ Tell the story'}</button>
+                                ${st ? '<button onclick="App._copyAiStory(this)" class="px-4 py-2 bg-white border border-slate-300 text-slate-600 font-bold rounded-lg text-sm hover:bg-slate-50 hover:text-gsf-prussian transition-colors">Copy text</button>' : ''}
                             </div>
                         </div>
                     </div>
