@@ -1,5 +1,4 @@
 Object.assign(window.App, {
-    CONFLICT_COUNTRIES: ['Palestine', 'Sudan', 'Ukraine', 'Yemen', 'Israel', 'Somalia'],
 
     // ── Top Ambassadors — time-window filter ──────────────────────────────
     // Filters the "Top Ambassadors" bar chart on the Ambassadors tab by referral
@@ -142,21 +141,7 @@ Object.assign(window.App, {
             ${btn('wide','L','Full width')}
         </div>`;
     },
-    getConflictLearners(audSnap) {
-        if (!audSnap || !audSnap.AllCountryStats) return 0;
-        try {
-            const stats = typeof audSnap.AllCountryStats === 'string' ? JSON.parse(audSnap.AllCountryStats) : audSnap.AllCountryStats;
-            // Normalise both sides (lowercase, de-hyphen) so 'palestine' / 'Palestine'
-            // / 'PALESTINE' all match regardless of how the source cased it.
-            const norm = s => String(s || '').toLowerCase().replace(/[-_]/g, ' ').trim();
-            const conflictSet = new Set(this.CONFLICT_COUNTRIES.map(norm));
-            let sum = 0;
-            for (const [country, count] of Object.entries(stats)) {
-                if (conflictSet.has(norm(country))) sum += (Number(count) || 0);
-            }
-            return sum;
-        } catch(e) { return 0; }
-    },
+
     formatNumber(val) { return new Intl.NumberFormat('en-US').format(val || 0); },
     // Compute per-course learning minutes from anonymized user data
     getCourseLearningMinutes() {
@@ -3579,7 +3564,15 @@ Object.assign(window.App, {
                 { label: 'Countries', value: (audSnap && audSnap.KnownCountry) ? this.formatNumber(audSnap.KnownCountry) : '-', raw: (audSnap && audSnap.KnownCountry) || 0, color: '#5AA9E6', icon: 'globe' },
                 { label: 'Avg Rating', value: avgRat, color: '#D03734', icon: 'star' },
                 { label: 'Survey Responses', value: this.formatNumber(resp), raw: resp, color: '#E28743', icon: 'message-square' },
-                { label: 'Conflict Settings', value: this.formatNumber(this.getConflictLearners(audSnap)), raw: this.getConflictLearners(audSnap), color: '#e57373', icon: 'shield-alert', title: 'Learners from conflict-affected settings (' + this.CONFLICT_COUNTRIES.join(', ') + '). Extrapolated to the full user base — country is known for ' + (audSnap && audSnap.CountryKnownPct ? audSnap.CountryKnownPct : '?') + '% of learners, and that share is scaled up assuming the rest match the same country mix.' },
+                (() => {
+                    const cb = this.conflictBreakdown(audSnap);
+                    const share = totalAudience ? (cb.total / totalAudience * 100).toFixed(1) + '% of registered users' : '';
+                    return { label: 'Conflict Settings', value: this.formatNumber(cb.total), raw: cb.total, color: '#e57373', icon: 'shield-alert',
+                        title: 'Registered users whose country is on the ' + this.CONFLICT_SOURCE.label + (this.isConflictListCustom() ? ' (edited)' : '') + '. '
+                            + (share ? share + '. ' : '')
+                            + 'Country is known for ' + (audSnap && audSnap.CountryKnownPct != null ? audSnap.CountryKnownPct : '?') + '% of users and scaled up to the full base, so this is an estimate. '
+                            + 'Countries: ' + cb.rows.map(r => r.name).join(', ') + '.' };
+                })()
             ];
 
             const dt = this._dashTab || 'overview';
@@ -4165,19 +4158,7 @@ Object.assign(window.App, {
                         <p class="text-sm text-slate-600"><strong>Method:</strong> For each category (e.g., "India: 3,000 out of 25,000 surveyed"), the count is scaled by <code>total_users / surveyed_users</code>. Country data uses the combined survey+tracking sample; profession data uses survey-only.</p>
                     </div>
 
-                    <div class="bg-white rounded-xl border shadow-sm p-6">
-                        <h2 class="text-lg font-bold text-gsf-prussian mb-3 flex items-center gap-2"><i data-lucide="shield" width="20" class="text-gsf-boston"></i> Conflict Settings</h2>
-                        <p class="text-sm text-slate-600 mb-3">The <strong>"Conflict Settings"</strong> KPI on the Platform Overview shows the estimated number of learners from countries currently experiencing armed conflict or crisis. This metric supports GSF's mission to track reach in fragile and conflict-affected settings.</p>
-                        <p class="text-sm text-slate-600 mb-3"><strong>Included countries:</strong> ${this.CONFLICT_COUNTRIES.join(', ')}</p>
-                        <ul class="text-sm text-slate-600 space-y-1 list-disc list-inside mb-3">
-                            <li>The count sums extrapolated learner figures for each listed country from the combined country dataset (survey + browser tracking)</li>
-                            <li>Since country data is extrapolated (see above), the conflict-settings figure is an <strong>estimate</strong>, not an exact count</li>
-                            <li>A user is counted based on their country of nationality (from the profile survey) or, if unavailable, their browser-detected location — this may not reflect where the user is physically located</li>
-                        </ul>
-                        <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
-                            <strong>Note:</strong> The list of conflict-affected countries is maintained manually and may need periodic review as geopolitical situations evolve.
-                        </div>
-                    </div>
+                    ${this._conflictMethodologyHtml()}
 
                     <div class="bg-white rounded-xl border shadow-sm p-6">
                         <h2 class="text-lg font-bold text-gsf-prussian mb-3 flex items-center gap-2"><i data-lucide="bar-chart-2" width="20" class="text-gsf-boston"></i> Timeline Charts & Scale Factors</h2>

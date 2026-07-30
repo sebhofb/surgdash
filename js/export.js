@@ -458,18 +458,19 @@ Object.assign(window.App, {
             allFeedback.sort((a,b) => (b.d||'').localeCompare(a.d||''));
             const topFeedback = allFeedback.slice(0, 300);
 
-            // Compute conflict-settings learners from country stats
-            const conflictCountries = ['Palestine', 'Sudan', 'Ukraine', 'Yemen', 'Israel', 'Somalia'];
-            let conflictLearners = 0;
-            try {
-                const cStats = typeof audienceSnap.AllCountryStats === 'string' ? JSON.parse(audienceSnap.AllCountryStats || '{}') : (audienceSnap.AllCountryStats || {});
-                conflictLearners = conflictCountries.reduce((s, c) => s + (cStats[c] || 0), 0);
-            } catch(e) {}
+            // Conflict-settings users. The list and the matcher live in js/conflict.js —
+            // this used to keep its own copy of the country array AND its own exact-key
+            // lookup, so the two could disagree the moment either was edited.
+            const conflictBreakdown = this.conflictBreakdown(audienceSnap);
+            const conflictLearners = conflictBreakdown.total;
+            const conflictCountries = conflictBreakdown.rows.map(r => r.name);
+            const conflictSource = this.CONFLICT_SOURCE.label + (this.isConflictListCustom() ? ' (edited locally)' : '');
+            const conflictPct = totalUsers ? (conflictLearners / totalUsers * 100).toFixed(1) : null;
 
             const data = {
                 providers, courses, courseBlob, topFeedback,
                 totalLearners, totalCerts, totalResponses, totalUsers, conflictLearners,
-                totalCourseMinutes, conflictCountries,
+                totalCourseMinutes, conflictCountries, conflictSource, conflictPct,
                 avgRating: rCount > 0 ? (rSum/rCount).toFixed(2) : '0.00',
                 providerCount: providers.length, courseCount: snapData.length,
                 audience: {
@@ -955,7 +956,7 @@ function renderPlatform() {
             <div class="bg-white p-5 rounded-xl border shadow-sm"><p class="text-xs font-bold text-slate-400 uppercase mb-1">Learning Time</p><p class="text-2xl font-black" style="color:#5B8C5A">\${fmtTime(D.totalCourseMinutes)}</p></div>
             <div class="bg-white p-5 rounded-xl border shadow-sm"><p class="text-xs font-bold text-slate-400 uppercase mb-1">Avg Rating</p><p class="text-2xl font-black text-gsf-crimson">\${D.avgRating}</p></div>
             <div class="bg-white p-5 rounded-xl border shadow-sm"><p class="text-xs font-bold text-slate-400 uppercase mb-1">Survey Resp.</p><p class="text-2xl font-black text-gsf-prussian">\${fmt(D.totalResponses)}</p></div>
-            <div class="bg-white p-5 rounded-xl border shadow-sm" title="\${D.conflictCountries.join(', ')}"><p class="text-xs font-bold text-slate-400 uppercase mb-1">Conflict Settings</p><p class="text-2xl font-black text-gsf-tango">\${fmt(D.conflictLearners)}</p></div>
+            <div class="bg-white p-5 rounded-xl border shadow-sm" title="Registered users whose country is on the \${D.conflictSource}\${D.conflictPct ? ' — ' + D.conflictPct + '% of registered users' : ''}. Country is known for a subset of users and scaled up, so this is an estimate. Countries: \${D.conflictCountries.join(', ')}."><p class="text-xs font-bold text-slate-400 uppercase mb-1">Conflict Settings</p><p class="text-2xl font-black text-gsf-tango">\${fmt(D.conflictLearners)}</p></div>
         </div>
         <div class="bg-white p-6 rounded-xl shadow-sm border mb-8">
             <h3 class="text-lg font-bold mb-3 text-gsf-prussian">Platform Growth</h3>
@@ -1271,15 +1272,16 @@ function renderMethodology() {
 
             <div class="bg-white rounded-xl border shadow-sm p-6">
                 <h3 class="text-lg font-bold text-gsf-prussian mb-3">Conflict Settings</h3>
-                <p class="text-sm text-slate-600 mb-3">The <strong>&ldquo;Conflict Settings&rdquo;</strong> KPI on the Platform tab shows the estimated number of learners from countries currently experiencing armed conflict or crisis. This metric supports GSF&rsquo;s mission to track reach in fragile and conflict-affected settings.</p>
-                <p class="text-sm text-slate-600 mb-3"><strong>Included countries:</strong> \${D.conflictCountries.join(', ')}</p>
+                <p class="text-sm text-slate-600 mb-3">The <strong>&ldquo;Conflict Settings&rdquo;</strong> KPI on the Platform tab shows the estimated number of <strong>registered users</strong> whose recorded country is on a published conflict classification. It supports GSF&rsquo;s mission to track reach into fragile and conflict-affected settings.</p>
+                <p class="text-sm text-slate-600 mb-3"><strong>Source:</strong> \${D.conflictSource}</p>
+                <p class="text-sm text-slate-600 mb-3"><strong>Countries with learners:</strong> \${D.conflictCountries.join(', ')}</p>
                 <ul class="text-sm text-slate-600 space-y-1 list-disc list-inside mb-3">
-                    <li>The count sums extrapolated learner figures for each listed country from the combined country dataset (survey + browser tracking)</li>
-                    <li>Since country data is extrapolated (see above), the conflict-settings figure is an <strong>estimate</strong>, not an exact count</li>
-                    <li>A user is counted based on their country of nationality (from the profile survey) or, if unavailable, their browser-detected location &mdash; this may not reflect where the user is physically located</li>
+                    <li>Counts <strong>registered users</strong>, not enrolments &mdash; the &ldquo;Enrolled Learners&rdquo; figure counts course enrolments and is much larger, so the two must not be divided into each other</li>
+                    <li>Since country data is extrapolated (see above), this is an <strong>estimate</strong>, not an exact count</li>
+                    <li>The country recorded is where the learner says they are <strong>currently based</strong> (residence), not their nationality &mdash; a displaced clinician is counted where they now live</li>
                 </ul>
                 <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-800">
-                    <strong>Note:</strong> The list of conflict-affected countries is maintained manually and may need periodic review as geopolitical situations evolve.
+                    <strong>Note:</strong> The classification follows the published World Bank list, which is reissued each fiscal year. SURGdash ships the current one and lets the team adjust it; when it is adjusted, the source line above says so.
                 </div>
             </div>
 

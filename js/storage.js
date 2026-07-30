@@ -72,6 +72,7 @@
         if (key === 'surghub_survey_raw')    return path.join('surghub', 'survey_raw.json');
         if (key === 'surgdash_triage_silenced') return path.join('settings', 'triage_silenced.json');
         if (key === 'surgdash_sync_log')     return path.join('settings', 'sync_log.json');
+        if (key === 'surgdash_conflict_countries') return path.join('settings', 'conflict_countries.json');
         if (key === 'learnworlds_client_id')     return path.join('settings', 'learnworlds_client_id.json');
         if (key === 'learnworlds_api_token')     return path.join('settings', 'learnworlds_api_token.json');
         if (key === 'learnworlds_school_domain') return path.join('settings', 'learnworlds_school_domain.json');
@@ -121,6 +122,7 @@
                 'onboarding': 'surgdash_onboarding',
                 'edit_password': 'surgdash_edit_password',
                 'report_cover_path': 'report_cover_path', 'report_back_path': 'report_back_path',
+                'conflict_countries': 'surgdash_conflict_countries',
                 'report_period': 'report_period',
                 'report_data_through': 'report_data_through',
                 'last_seen_version': 'last_seen_version',
