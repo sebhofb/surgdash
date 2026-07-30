@@ -223,21 +223,11 @@ Object.assign(window.App, {
             || null;
         const b = this.conflictBreakdown(aud);
         const custom = this.isConflictListCustom();
-        const active = new Set(this.conflictList().map(c => c.iso3 || c.wb));
         const pct = (aud && aud.TotalUsers) ? (b.total / aud.TotalUsers * 100).toFixed(1) : null;
 
         const chips = b.rows.map(r => `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs bg-rose-50 text-rose-800 border border-rose-200">${esc(r.name)} <strong>${this.formatNumber(r.n)}</strong></span>`).join(' ');
         const none = b.unmatched.length
             ? `<p class="text-xs text-slate-400 mt-2">No learners recorded from: ${b.unmatched.map(esc).join(', ')}.</p>` : '';
-
-        // Editor: every World Bank country as a toggle, plus anything the user added.
-        const extra = this.conflictList().filter(c => !this.CONFLICT_DEFAULT.some(d => d.iso3 === c.iso3 && d.wb === c.wb));
-        const toggle = (c, isExtra) => {
-            const on = active.has(c.iso3 || c.wb);
-            return `<button onclick="App.toggleConflictCountry('${this.escapeJsArg(c.iso3 || c.wb)}')"
-                class="px-2.5 py-1 rounded-lg text-xs font-semibold border transition-colors ${on ? 'bg-gsf-boston text-white border-gsf-boston' : 'bg-white text-slate-400 border-slate-200 hover:border-slate-300'}"
-                title="${on ? 'Counted — click to exclude' : 'Not counted — click to include'}">${esc(c.wb)}${isExtra ? ' *' : ''}</button>`;
-        };
 
         return `
             <div class="bg-white rounded-xl border shadow-sm p-6">
@@ -266,20 +256,9 @@ Object.assign(window.App, {
                     <li>Matching is by explicit country name and alias, so a spelling the platform uses (&ldquo;DR Congo&rdquo;, &ldquo;Palestine&rdquo;) is mapped to its World Bank entry; any list entry with no match is listed above rather than silently counting zero</li>
                 </ul>
 
-                <div data-edit-only class="border-t border-slate-200 pt-4 mt-4">
-                    <div class="flex items-center justify-between flex-wrap gap-2 mb-2">
-                        <p class="text-xs font-bold uppercase tracking-wide text-slate-500">Edit the list</p>
-                        <div class="flex items-center gap-2">
-                            <button onclick="App.addConflictCountry()" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-white border border-slate-300 text-slate-600 hover:text-gsf-prussian hover:bg-slate-50">+ Add a country</button>
-                            ${custom ? '<button onclick="App.resetConflictList()" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-white border border-amber-300 text-amber-700 hover:bg-amber-50">Reset to World Bank list</button>' : ''}
-                        </div>
-                    </div>
-                    <p class="text-xs text-slate-500 mb-3">Click a country to include or exclude it. Blue = counted. Changes are saved on this machine and travel with your Google Sheets backup; the KPI and its tooltip update immediately and say when the list has been edited.</p>
-                    <div class="flex flex-wrap gap-1.5">
-                        ${this.CONFLICT_DEFAULT.map(c => toggle(c, false)).join('')}
-                        ${extra.map(c => toggle(c, true)).join('')}
-                    </div>
-                    ${extra.length ? '<p class="text-[11px] text-slate-400 mt-2">* added by you — outside the World Bank list.</p>' : ''}
+                <div class="border-t border-slate-200 pt-4 mt-4 flex items-center justify-between gap-3 flex-wrap">
+                    <p class="text-xs text-slate-500">The list is editable on the dashboard, next to the numbers it drives.</p>
+                    <button onclick="App.view='platform'; App._dashTab='conflict'; App.renderView()" class="shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold bg-white border border-slate-300 text-slate-600 hover:text-gsf-prussian hover:bg-slate-50">Open the Conflict Settings tab &rarr;</button>
                 </div>
             </div>`;
     },
@@ -525,7 +504,8 @@ Object.assign(window.App, {
             ${growth}
             ${map}
             ${table}
-            ${profile}`;
+            ${profile}
+            ${this._conflictListEditorHtml()}`;
     },
 
     // Charts for the tab — called after the DOM is in place.
@@ -589,5 +569,53 @@ Object.assign(window.App, {
                 });
             } else { Charts.clearChart('chart_conflict_map', 'No learners from the listed countries yet.'); }
         }
+    },
+});
+
+// The editable list. Lives on the Conflict Settings dashboard tab, next to the
+// numbers it drives — editing a classification while looking at its effect beats
+// editing it on a separate reference page.
+Object.assign(window.App, {
+    _conflictListEditorHtml() {
+        const S = this.CONFLICT_SOURCE;
+        const esc = (t) => this.escapeHtml(t);
+        const custom = this.isConflictListCustom();
+        const active = new Set(this.conflictList().map(c => c.iso3 || c.wb));
+        const extra = this.conflictList().filter(c => !this.CONFLICT_DEFAULT.some(d => d.iso3 === c.iso3 && d.wb === c.wb));
+        const toggle = (c, isExtra) => {
+            const on = active.has(c.iso3 || c.wb);
+            return `<button onclick="App.toggleConflictCountry('${this.escapeJsArg(c.iso3 || c.wb)}')"
+                class="px-2.5 py-1 rounded-lg text-xs font-semibold border transition-colors ${on ? 'bg-gsf-boston text-white border-gsf-boston' : 'bg-white text-slate-400 border-slate-200 hover:border-slate-300'}"
+                title="${on ? 'Counted — click to exclude' : 'Not counted — click to include'}">${esc(c.wb)}${isExtra ? ' *' : ''}</button>`;
+        };
+        return `
+            <div class="bg-white rounded-xl shadow-sm border overflow-hidden mb-6">
+                <div class="p-5 border-b bg-slate-50">
+                    <h3 class="text-lg font-bold text-gsf-prussian">The list &amp; where it comes from</h3>
+                    <p class="text-sm text-gsf-prussian font-bold mt-2">${esc(S.label)}${custom ? ' <span class="text-amber-700 font-semibold">— edited locally</span>' : ''}</p>
+                    <p class="text-xs text-slate-500 mt-1">Effective ${esc(S.effective)}. Inclusion criterion: ${esc(S.criterion)}</p>
+                    <p class="text-xs text-slate-500 mt-2">${esc(S.note)}</p>
+                    <div class="flex flex-wrap gap-3 mt-2">
+                        <a href="#" onclick="electronAPI.openExternal('${this.escapeJsArg(S.url)}'); return false" class="text-xs text-gsf-boston hover:underline font-medium">Open the list (PDF) &rarr;</a>
+                        <a href="#" onclick="electronAPI.openExternal('${this.escapeJsArg(S.home)}'); return false" class="text-xs text-gsf-boston hover:underline font-medium">How the World Bank builds it &rarr;</a>
+                        <button onclick="App.view='methodology'; App.renderView()" class="text-xs text-gsf-boston hover:underline font-medium">Full methodology &rarr;</button>
+                    </div>
+                </div>
+                <div data-edit-only class="p-5">
+                    <div class="flex items-center justify-between flex-wrap gap-2 mb-2">
+                        <p class="text-xs font-bold uppercase tracking-wide text-slate-500">Edit the list</p>
+                        <div class="flex items-center gap-2">
+                            <button onclick="App.addConflictCountry()" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-white border border-slate-300 text-slate-600 hover:text-gsf-prussian hover:bg-slate-50">+ Add a country</button>
+                            ${custom ? '<button onclick="App.resetConflictList()" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-white border border-amber-300 text-amber-700 hover:bg-amber-50">Reset to World Bank list</button>' : ''}
+                        </div>
+                    </div>
+                    <p class="text-xs text-slate-500 mb-3">Click a country to include or exclude it. Blue = counted. Every number on this page updates immediately, and the KPI card says when the list has been edited.</p>
+                    <div class="flex flex-wrap gap-1.5">
+                        ${this.CONFLICT_DEFAULT.map(c => toggle(c, false)).join('')}
+                        ${extra.map(c => toggle(c, true)).join('')}
+                    </div>
+                    ${extra.length ? '<p class="text-[11px] text-slate-400 mt-2">* added by you — outside the World Bank list.</p>' : ''}
+                </div>
+            </div>`;
     },
 });
