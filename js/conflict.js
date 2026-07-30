@@ -146,18 +146,26 @@ Object.assign(window.App, {
         this.renderView();
     },
 
-    // Toggle one World Bank country in or out of the active list.
-    async toggleConflictCountry(iso3) {
+    // Toggle one country in or out of the active list.
+    // The key is `iso3 || wb`, matching what the button sends — a country the user
+    // added has no ISO code, so keying on iso3 alone made its chip un-clickable:
+    // findIndex(c => c.iso3 === name) never matched (its iso3 is ''), and the add
+    // branch then looked it up in CONFLICT_DEFAULT, where it does not exist. Dead click.
+    async toggleConflictCountry(key) {
+        const k = String(key);
         const active = this.conflictList().slice();
-        const i = active.findIndex(c => c.iso3 === iso3);
-        if (i >= 0) active.splice(i, 1);
-        else {
-            const add = this.CONFLICT_DEFAULT.find(c => c.iso3 === iso3);
-            if (add) active.push(add);
+        const i = active.findIndex(c => (c.iso3 || c.wb) === k);
+        if (i >= 0) {
+            active.splice(i, 1);
+        } else {
+            const add = this.CONFLICT_DEFAULT.find(c => (c.iso3 || c.wb) === k);
+            if (!add) return;   // unknown key — do nothing rather than fail silently mid-list
+            active.push(add);
         }
-        // Keep default order so the list reads the same however it was edited.
-        const order = this.CONFLICT_DEFAULT.map(c => c.iso3);
-        active.sort((a, b) => order.indexOf(a.iso3) - order.indexOf(b.iso3));
+        // Keep World Bank order, with user-added countries after them.
+        const order = this.CONFLICT_DEFAULT.map(c => c.iso3 || c.wb);
+        const rank = (c) => { const r = order.indexOf(c.iso3 || c.wb); return r < 0 ? order.length : r; };
+        active.sort((a, b) => rank(a) - rank(b) || String(a.wb).localeCompare(String(b.wb)));
         await this.setConflictList(active);
     },
 
@@ -418,7 +426,8 @@ Object.assign(window.App, {
                     <h3 class="text-lg font-bold text-gsf-prussian">Growth by country</h3>
                     <p class="text-xs text-slate-400">Cumulative registered learners &middot; top 8 countries</p>
                 </div>
-                <p class="text-xs text-slate-500 mb-4">Each line is one country on the list, running total over time. A line that flattens is a country the platform has stopped reaching; a step up usually tracks a specific outreach push or partner cohort.</p>
+                <p class="text-xs text-slate-500 mb-3">Each line is one country on the list, running total over time. A line that flattens is a country the platform has stopped reaching; a step up usually tracks a specific outreach push or partner cohort.</p>
+                <div id="selector_selectedConflictCountries" class="mb-3">${this._conflictCountrySelector(audSnap)}</div>
                 <div id="chart_conflict_countries" style="width:100%;height:420px"></div>
             </div>` : '';
 
@@ -430,8 +439,32 @@ Object.assign(window.App, {
                 <div id="chart_conflict_map" style="width:100%;height:420px"></div>
             </div>`;
 
-        // ── per-country table, joining the estimate with the observed activity
-        const rows = b.rows.map(r => {
+        // ── per-country table, joining the estimate with the observed activity.
+        // Sortable: click a header to sort, click again to reverse.
+        const sort = this._conflictSort || { col: 'n', dir: 'desc' };
+        const sortVal = (r, col) => {
+            const a = act && act.per[r.name];
+            switch (col) {
+                case 'name':     return r.name.toLowerCase();
+                case 'learners': return a ? a.learners : -1;
+                case 'enrol':    return a ? a.enrol : -1;
+                case 'certs':    return a ? a.certs : -1;
+                case 'rate':     return a && a.enrol ? a.certs / a.enrol : -1;
+                case 'hours':    return a ? a.minutes : -1;
+                default:         return r.n;      // 'n' and 'share' rank identically
+            }
+        };
+        const sorted = b.rows.slice().sort((x, y) => {
+            const vx = sortVal(x, sort.col), vy = sortVal(y, sort.col);
+            const c = (typeof vx === 'string') ? vx.localeCompare(vy) : (vx - vy);
+            return sort.dir === 'asc' ? c : -c;
+        });
+        const th = (col, label, align, hint) => {
+            const on = sort.col === col;
+            return `<th class="py-2.5 px-4 text-${align} font-medium cursor-pointer select-none hover:text-gsf-prussian whitespace-nowrap ${on ? 'text-gsf-prussian' : ''}"
+                onclick="App._sortConflictTable('${col}')" title="Sort by ${esc(label)}">${label}${hint || ''}<span class="ml-1 text-[9px] ${on ? 'text-gsf-boston' : 'text-slate-300'}">${on ? (sort.dir === 'asc' ? '&#9650;' : '&#9660;') : '&#8645;'}</span></th>`;
+        };
+        const rows = sorted.map(r => {
             const a = act && act.per[r.name];
             const cr = a && a.enrol ? (a.certs / a.enrol * 100) : null;
             return `<tr class="border-b border-slate-100 hover:bg-slate-50">
@@ -456,14 +489,14 @@ Object.assign(window.App, {
                     <table class="w-full text-sm">
                         <thead class="text-slate-500 border-b bg-white">
                             <tr>
-                                <th class="py-2.5 px-4 text-left font-medium">Country</th>
-                                <th class="py-2.5 px-4 text-right font-medium">Registered <span class="text-[10px] text-slate-400">est.</span></th>
-                                <th class="py-2.5 px-4 text-right font-medium">Share</th>
-                                <th class="py-2.5 px-4 text-right font-medium">Enrolled <span class="text-[10px] text-slate-400">obs.</span></th>
-                                <th class="py-2.5 px-4 text-right font-medium">Enrolments</th>
-                                <th class="py-2.5 px-4 text-right font-medium">Certificates</th>
-                                <th class="py-2.5 px-4 text-right font-medium">Cert rate</th>
-                                <th class="py-2.5 px-4 text-right font-medium">Hours</th>
+                                ${th('name', 'Country', 'left')}
+                                ${th('n', 'Registered', 'right', ' <span class="text-[10px] text-slate-400">est.</span>')}
+                                ${th('share', 'Share', 'right')}
+                                ${th('learners', 'Enrolled', 'right', ' <span class="text-[10px] text-slate-400">obs.</span>')}
+                                ${th('enrol', 'Enrolments', 'right')}
+                                ${th('certs', 'Certificates', 'right')}
+                                ${th('rate', 'Cert rate', 'right')}
+                                ${th('hours', 'Hours', 'right')}
                             </tr>
                         </thead>
                         <tbody>${rows || '<tr><td colspan="8" class="py-8 text-center text-slate-400 italic">No learners recorded from the listed countries.</td></tr>'}</tbody>
@@ -562,7 +595,8 @@ Object.assign(window.App, {
                 Object.keys(tl.byCountry).forEach(c => { const v = tl.byCountry[c][m]; if (v) row[c] = v; });
                 if (Object.keys(row).length) monthly[m] = row;
             });
-            if (Object.keys(monthly).length) Charts.drawBreakdownTimeline('chart_conflict_countries', monthly, 8, null, false);
+            const sel = this.selectedConflictCountries || [];
+            if (Object.keys(monthly).length) Charts.drawBreakdownTimeline('chart_conflict_countries', monthly, 8, sel.length ? sel : null, false);
             else Charts.clearChart('chart_conflict_countries', 'No dated history for these countries yet.');
         }
 
@@ -985,5 +1019,31 @@ Object.assign(window.App, {
         if (!path) return;
         this._writeWorkbook(wb, path);
         this.showMsg('Saved ' + b.rows.length + ' countries → ' + path.split('/').pop());
+    },
+});
+
+Object.assign(window.App, {
+    // Click a header to sort the country table; click the same one again to reverse.
+    _sortConflictTable(col) {
+        const cur = this._conflictSort || { col: 'n', dir: 'desc' };
+        // Text sorts A→Z first; numbers sort biggest-first first — what you expect
+        // of each without having to click twice.
+        this._conflictSort = (cur.col === col)
+            ? { col, dir: cur.dir === 'asc' ? 'desc' : 'asc' }
+            : { col, dir: col === 'name' ? 'asc' : 'desc' };
+        this.renderView();
+    },
+
+    // Which countries the "Growth by country" chart draws. Reuses the app's own
+    // category selector (checkbox to remove, dropdown to add) so it behaves
+    // exactly like the one on the Geography tab.
+    _conflictCountrySelector(audSnap) {
+        const t = this.conflictTimeline(audSnap);
+        if (!t) return '';
+        const all = Object.keys(t.byCountry)
+            .sort((a, b) => Object.values(t.byCountry[b]).reduce((s, v) => s + v, 0) - Object.values(t.byCountry[a]).reduce((s, v) => s + v, 0));
+        if (!all.length) return '';
+        return this.buildCategorySelector(all, this.selectedConflictCountries || [], 'selectedConflictCountries',
+            'chart_conflict_countries', 'ConflictCountryTimeline', 8);
     },
 });

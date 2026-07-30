@@ -2607,6 +2607,20 @@ Object.assign(window.App, {
 
     // Get timeline data for a breakdown chart
     _getBreakdownTimelineData(dataAccessor) {
+        // Conflict tab: monthly per-country counts restricted to the active list.
+        if (dataAccessor === 'ConflictCountryTimeline') {
+            const aud = (this.userHistory || []).find(d => d.Timestamp === this.selectedDate)
+                || (this.userHistory || []).slice().reduce((a, b) => (a && String(a.Timestamp) > String(b.Timestamp) ? a : b), null);
+            const t = this.conflictTimeline ? this.conflictTimeline(aud) : null;
+            if (!t) return null;
+            const monthly = {};
+            t.months.forEach(m => {
+                const row = {};
+                Object.keys(t.byCountry).forEach(c => { const v = t.byCountry[c][m]; if (v) row[c] = v; });
+                if (Object.keys(row).length) monthly[m] = row;
+            });
+            return monthly;
+        }
         if (dataAccessor === 'PromoterTimeline') {
             const snap = this.ambassadorData || {};
             if (snap.PromoterTimeline && snap.TopPromoters) {
