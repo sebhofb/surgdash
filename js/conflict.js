@@ -373,6 +373,14 @@ Object.assign(window.App, {
         if (!act && this.ensureAnonLoaded && this._rawAnonymizedUsers == null) {
             this.ensureAnonLoaded().then(() => { if (this.view === 'platform' && this._dashTab === 'conflict') this.renderView(); });
         }
+        // "What they say" joins feedback to a country through the email→demographics
+        // map, which is also lazy.
+        if (!this._emailDemoMap && !this._conflictDemoKick) {
+            this._conflictDemoKick = true;
+            Storage.getItem('surghub_email_demo').then(v => {
+                if (v) { this._emailDemoMap = v; if (this.view === 'platform' && this._dashTab === 'conflict') this.renderView(); }
+            }).catch(() => {});
+        }
 
         const card = (label, value, sub, colour, icon) => `
             <div class="bg-white rounded-xl border shadow-sm overflow-hidden">
@@ -491,21 +499,30 @@ Object.assign(window.App, {
             <div class="mb-6">${topList(act.courses, 10, 'What they take · top courses by enrolment', '#e57373')}</div>` : '';
 
         return `
+            <div id="conflict-tab">
             <div class="bg-white rounded-xl border shadow-sm border-l-4 border-l-rose-400 p-5 mb-6">
                 <div class="flex items-start justify-between gap-4 flex-wrap">
                     <div class="min-w-0 flex-1">
                         <h2 class="text-xl font-black text-gsf-prussian mb-1">Reach into conflict-affected settings</h2>
                         <p class="text-sm text-slate-600">${fmt(b.total)} registered learners — <strong>${share.toFixed(1)}%</strong> of the platform — in ${b.rows.length} of the ${this.conflictList().length} countries on the ${esc(S.label)}${this.isConflictListCustom() ? ' <span class="text-amber-700 font-semibold">(edited locally)</span>' : ''}.</p>
                     </div>
-                    <button onclick="App.view='methodology'; App.renderView()" class="shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold bg-white border border-slate-300 text-slate-600 hover:text-gsf-prussian hover:bg-slate-50">Source &amp; list &rarr;</button>
+                    <div class="flex items-center gap-1.5 shrink-0">
+                        <button onclick="App.exportConflictXlsx()" title="Download this page as Excel — summary, countries, momentum, income comparison, gender, growth and quotes" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-white border border-slate-300 text-slate-600 hover:text-gsf-prussian hover:bg-slate-50 inline-flex items-center gap-1.5"><i data-lucide="file-spreadsheet" width="13"></i> Excel</button>
+                        <button onclick="App._copyEngagementSection('conflict-tab', this, true)" title="Copy the whole page as a PNG" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-white border border-slate-300 text-slate-600 hover:text-gsf-prussian hover:bg-slate-50 inline-flex items-center gap-1.5"><i data-lucide="copy" width="13"></i> PNG</button>
+                    </div>
                 </div>
             </div>
             ${kpis}
+            ${this._conflictBandsHtml()}
             ${growth}
+            ${this._conflictMomentumHtml(audSnap)}
             ${map}
             ${table}
+            ${this._conflictGenderHtml()}
             ${profile}
-            ${this._conflictListEditorHtml()}`;
+            ${this._conflictVoicesHtml(snapData)}
+            ${this._conflictListEditorHtml()}
+            </div>`;
     },
 
     // Charts for the tab — called after the DOM is in place.
@@ -617,5 +634,356 @@ Object.assign(window.App, {
                     ${extra.length ? '<p class="text-[11px] text-slate-400 mt-2">* added by you — outside the World Bank list.</p>' : ''}
                 </div>
             </div>`;
+    },
+});
+
+// ── Additional cuts for the Conflict Settings tab ────────────────────────────
+Object.assign(window.App, {
+
+    // Gender, career profile and engagement for the conflict list vs the rest of
+    // the platform. Deduplicated by user, because a learner enrolled in four
+    // courses is one person, not four.
+    conflictVsRest() {
+        const anon = this._rawAnonymizedUsers;
+        if (!Array.isArray(anon) || !anon.length) return null;
+        const map = this._conflictMatchMap();
+        const seen = { c: new Set(), r: new Set() };
+        const gender = { c: {}, r: {} };
+        let cU = 0, rU = 0;
+        anon.forEach(x => {
+            if (!x || !x.country || !x.user_uid) return;
+            const inConflict = !!map.get(this._conflictNorm(x.country));
+            const bucket = inConflict ? 'c' : 'r';
+            if (seen[bucket].has(x.user_uid)) return;
+            seen[bucket].add(x.user_uid);
+            if (inConflict) cU++; else rU++;
+            const g = String(x.gender || '').trim();
+            if (g && g.toLowerCase() !== 'no data') gender[bucket][g] = (gender[bucket][g] || 0) + 1;
+        });
+        if (!cU) return null;
+        const pcts = (o) => { const t = Object.values(o).reduce((s, v) => s + v, 0); return { total: t, rows: Object.entries(o).sort((a, b) => b[1] - a[1]).map(([k, v]) => ({ k, n: v, pct: t ? v / t * 100 : 0 })) }; };
+        return { conflictUsers: cU, restUsers: rU, gender: { conflict: pcts(gender.c), rest: pcts(gender.r) } };
+    },
+
+    // Three-way comparison so the conflict certification rate can be read
+    // correctly: most of these countries are low-income anyway, so the honest
+    // question is "conflict vs comparable-income", not "conflict vs everyone".
+    conflictIncomeBands() {
+        const anon = this._rawAnonymizedUsers;
+        if (!Array.isArray(anon) || !anon.length || !window.IncomeClassification) return null;
+        const map = this._conflictMatchMap();
+        const band = { conflict: null, lowIncome: null, other: null };
+        const mk = () => ({ enrol: 0, certs: 0, minutes: 0, users: new Set() });
+        const b = { conflict: mk(), lowIncome: mk(), other: mk() };
+        const tierCache = {};
+        anon.forEach(x => {
+            if (!x || !x.country) return;
+            let key;
+            if (map.get(this._conflictNorm(x.country))) key = 'conflict';
+            else {
+                let tier = tierCache[x.country];
+                if (tier === undefined) { try { tier = IncomeClassification.classify(x.country); } catch (e) { tier = 'Unknown'; } tierCache[x.country] = tier; }
+                key = (tier === 'LIC' || tier === 'LMIC') ? 'lowIncome' : 'other';
+            }
+            const t = b[key];
+            t.enrol++;
+            if (String(x.has_certificate) === 'Yes') t.certs++;
+            t.minutes += Number(x.course_minutes) || 0;
+            if (x.user_uid) t.users.add(x.user_uid);
+        });
+        Object.keys(b).forEach(k => {
+            const t = b[k], u = t.users.size;
+            band[k] = { enrol: t.enrol, certs: t.certs, minutes: t.minutes, learners: u,
+                certRate: t.enrol ? t.certs / t.enrol * 100 : 0,
+                coursesPerLearner: u ? t.enrol / u : 0,
+                minutesPerLearner: u ? t.minutes / u : 0 };
+        });
+        return band;
+    },
+
+    // Momentum: the last three complete months against the three before them.
+    // The share line shows the aggregate story; this says which countries are
+    // driving it and which have gone quiet.
+    conflictMomentum(audSnap) {
+        const tl = this.conflictTimeline(audSnap);
+        if (!tl) return null;
+        // Drop the current (incomplete) month so a part-month never reads as a fall.
+        const now = new Date();
+        const nowM = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+        const months = tl.months.filter(m => m < nowM);
+        if (months.length < 6) return null;
+        const recent = months.slice(-3), prior = months.slice(-6, -3);
+        const sum = (obj, ms) => ms.reduce((s, m) => s + (obj[m] || 0), 0);
+        const rows = Object.keys(tl.byCountry).map(c => {
+            const a = sum(tl.byCountry[c], recent), p = sum(tl.byCountry[c], prior);
+            return { name: c, recent: a, prior: p, delta: a - p, pct: p ? (a - p) / p * 100 : (a ? null : 0) };
+        }).filter(r => r.recent || r.prior).sort((a, b) => b.recent - a.recent);
+        return { recent, prior, rows,
+            totalRecent: sum(tl.totalByMonth, recent), totalPrior: sum(tl.totalByMonth, prior),
+            platformRecent: sum(tl.platformByMonth, recent), platformPrior: sum(tl.platformByMonth, prior) };
+    },
+
+    // Feedback written by learners in the listed countries: how they rate the
+    // courses, and their strongest comments.
+    conflictFeedback(snapData) {
+        const demo = this._emailDemoMap;
+        if (!demo || !this._djb2Hash) return null;
+        const map = this._conflictMatchMap();
+        const ai = this._aiScoreMap || {};
+        let n = 0, rN = 0, rSum = 0, allN = 0, allRN = 0, allRSum = 0;
+        const quotes = [];
+        (snapData || []).forEach(d => {
+            if (!d.FeedbackBank) return;
+            let fb; try { fb = JSON.parse(d.FeedbackBank); } catch (e) { return; }
+            if (!Array.isArray(fb)) return;
+            fb.forEach(f => {
+                if (!f) return;
+                const r = Number(f.r) || 0;
+                allN++; if (r >= 1 && r <= 5) { allRN++; allRSum += r; }
+                const dm = f.e ? demo[String(f.e).trim().toLowerCase()] : null;
+                const country = dm && dm.country;
+                if (!country || !map.get(this._conflictNorm(country))) return;
+                n++; if (r >= 1 && r <= 5) { rN++; rSum += r; }
+                const a = ai[this._djb2Hash(String(f.t || '').trim())];
+                const text = String((a && a.c) || f.t || '').trim();
+                if (a && a.q && a.s >= 7 && text.split(/\s+/).length >= 6) {
+                    quotes.push({ text, score: a.s, rating: r, course: d.Course || '',
+                        country, cadre: (dm && dm.profession && window.Taxonomy && window.Taxonomy.canonProf) ? (window.Taxonomy.canonProf(dm.profession) || '') : '' });
+                }
+            });
+        });
+        if (!n) return null;
+        // One quote per country first, so the panel is not four comments from Nigeria.
+        quotes.sort((a, b) => b.score - a.score || b.rating - a.rating);
+        const perCountry = [], used = new Set();
+        quotes.forEach(q => { if (!used.has(q.country)) { used.add(q.country); perCountry.push(q); } });
+        const top = perCountry.concat(quotes.filter(q => !perCountry.includes(q))).slice(0, 6);
+        return { n, avg: rN ? rSum / rN : 0, rated: rN,
+            platformAvg: allRN ? allRSum / allRN : 0, platformN: allN, quotes: top };
+    },
+});
+
+// ── UI blocks for the added cuts ─────────────────────────────────────────────
+Object.assign(window.App, {
+
+    _conflictBandsHtml() {
+        const b = this.conflictIncomeBands();
+        if (!b) return '';
+        const fmt = (n) => this.formatNumber(Math.round(n || 0));
+        const gap = b.conflict.certRate - b.lowIncome.certRate;
+        const row = (label, d, note, colour) => `
+            <tr class="border-b border-slate-100 last:border-0">
+                <td class="py-2.5 px-4"><span class="inline-flex items-center gap-2"><span class="w-2 h-2 rounded-full" style="background:${colour}"></span><span class="font-semibold text-gsf-prussian">${this.escapeHtml(label)}</span></span><br><span class="text-[11px] text-slate-400 ml-4">${this.escapeHtml(note)}</span></td>
+                <td class="py-2.5 px-4 text-right">${fmt(d.learners)}</td>
+                <td class="py-2.5 px-4 text-right font-bold" style="color:${colour}">${d.certRate.toFixed(1)}%</td>
+                <td class="py-2.5 px-4 text-right text-slate-500">${d.coursesPerLearner.toFixed(2)}</td>
+                <td class="py-2.5 px-4 text-right text-slate-500">${fmt(d.minutesPerLearner)}</td>
+            </tr>`;
+        return `
+            <div class="bg-white rounded-xl shadow-sm border overflow-hidden mb-6">
+                <div class="p-5 border-b bg-slate-50">
+                    <h3 class="text-lg font-bold text-gsf-prussian">Is it conflict, or is it income?</h3>
+                    <p class="text-xs text-slate-500 mt-1">Almost every country on the list is low- or lower-middle income, so comparing them with the whole platform confuses two things. The row that matters is the middle one: low-income countries <em>not</em> on the conflict list.</p>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="text-slate-500 border-b"><tr>
+                            <th class="py-2.5 px-4 text-left font-medium">Group</th>
+                            <th class="py-2.5 px-4 text-right font-medium">Learners</th>
+                            <th class="py-2.5 px-4 text-right font-medium">Certification rate</th>
+                            <th class="py-2.5 px-4 text-right font-medium">Courses / learner</th>
+                            <th class="py-2.5 px-4 text-right font-medium">Minutes / learner</th>
+                        </tr></thead>
+                        <tbody>
+                            ${row('Conflict-affected', b.conflict, 'on the list', '#e57373')}
+                            ${row('Low income, no conflict', b.lowIncome, 'LIC + LMIC, not on the list', '#B8860B')}
+                            ${row('Everywhere else', b.other, 'UMIC + HIC', '#4389C8')}
+                        </tbody>
+                    </table>
+                </div>
+                <p class="px-5 py-3 text-xs border-t ${Math.abs(gap) < 5 ? 'text-slate-600 bg-emerald-50/60' : 'text-slate-600'}">
+                    Against comparable-income countries the gap is <strong>${gap >= 0 ? '+' : ''}${gap.toFixed(1)} points</strong>, not the
+                    ${(b.conflict.certRate - b.other.certRate).toFixed(1)} points the platform average implies.
+                    ${Math.abs(gap) < 5 ? 'Most of the apparent shortfall is income, not conflict — and learners in these settings take <strong>more</strong> courses each than either comparison group.' : ''}
+                </p>
+            </div>`;
+    },
+
+    _conflictMomentumHtml(audSnap) {
+        const m = this.conflictMomentum(audSnap);
+        if (!m) return '';
+        const fmt = (n) => this.formatNumber(Math.round(n || 0));
+        const mName = (x) => { const d = new Date(x + '-02T12:00:00'); return isNaN(d) ? x : d.toLocaleDateString('en-GB', { month: 'short' }); };
+        const label = mName(m.recent[0]) + '–' + mName(m.recent[2]) + ' vs ' + mName(m.prior[0]) + '–' + mName(m.prior[2]);
+        const cPct = m.totalPrior ? (m.totalRecent - m.totalPrior) / m.totalPrior * 100 : null;
+        const pPct = m.platformPrior ? (m.platformRecent - m.platformPrior) / m.platformPrior * 100 : null;
+        const chip = (p) => p == null ? '<span class="text-slate-400">new</span>'
+            : `<span class="font-bold ${p >= 0 ? 'text-emerald-600' : 'text-rose-600'}">${p >= 0 ? '+' : ''}${p.toFixed(0)}%</span>`;
+        const rows = m.rows.slice(0, 12).map(r => `
+            <tr class="border-b border-slate-100 last:border-0">
+                <td class="py-2 px-4 font-medium text-gsf-prussian">${this.escapeHtml(r.name)}</td>
+                <td class="py-2 px-4 text-right text-slate-400">${fmt(r.prior)}</td>
+                <td class="py-2 px-4 text-right font-semibold">${fmt(r.recent)}</td>
+                <td class="py-2 px-4 text-right">${chip(r.pct)}</td>
+            </tr>`).join('');
+        return `
+            <div class="bg-white rounded-xl shadow-sm border overflow-hidden mb-6">
+                <div class="p-5 border-b bg-slate-50 flex items-start justify-between gap-3 flex-wrap">
+                    <div>
+                        <h3 class="text-lg font-bold text-gsf-prussian">Momentum</h3>
+                        <p class="text-xs text-slate-500 mt-1">New registered learners, last three complete months against the three before (${this.escapeHtml(label)}). The current month is excluded so a part-month never reads as a fall.</p>
+                    </div>
+                    <div class="text-right shrink-0">
+                        <p class="text-[10px] font-bold uppercase tracking-wide text-slate-400">Conflict ${chip(cPct)}</p>
+                        <p class="text-[10px] font-bold uppercase tracking-wide text-slate-400 mt-1">Platform ${chip(pPct)}</p>
+                    </div>
+                </div>
+                ${(cPct != null && pPct != null) ? `<p class="px-5 py-2.5 text-xs bg-slate-50/60 border-b text-slate-600">${cPct >= pPct
+                    ? 'Conflict settings are growing <strong>at least as fast</strong> as the platform this quarter, so their share is holding or rising.'
+                    : 'The platform grew faster than conflict settings this quarter (<strong>' + pPct.toFixed(0) + '%</strong> vs <strong>' + cPct.toFixed(0) + '%</strong>), which is why their share of all learners is falling.'}</p>` : ''}
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="text-slate-500 border-b"><tr>
+                            <th class="py-2.5 px-4 text-left font-medium">Country</th>
+                            <th class="py-2.5 px-4 text-right font-medium">Previous 3 months</th>
+                            <th class="py-2.5 px-4 text-right font-medium">Last 3 months</th>
+                            <th class="py-2.5 px-4 text-right font-medium">Change</th>
+                        </tr></thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>
+            </div>`;
+    },
+
+    _conflictGenderHtml() {
+        const vr = this.conflictVsRest();
+        if (!vr || !vr.gender.conflict.total) return '';
+        const bar = (data, colour) => `<div class="flex h-3 rounded-full overflow-hidden bg-slate-100">${data.rows.map((r, i) => `<div style="width:${r.pct}%;background:${i === 0 ? colour : (i === 1 ? colour + '88' : '#cbd5e1')}" title="${this.escapeHtml(r.k)} ${r.pct.toFixed(1)}%"></div>`).join('')}</div>
+            <div class="flex flex-wrap gap-x-3 gap-y-1 mt-2">${data.rows.map((r, i) => `<span class="text-[11px] text-slate-500"><span class="inline-block w-2 h-2 rounded-full mr-1" style="background:${i === 0 ? colour : (i === 1 ? colour + '88' : '#cbd5e1')}"></span>${this.escapeHtml(r.k)} <strong class="text-gsf-prussian">${r.pct.toFixed(0)}%</strong></span>`).join('')}</div>`;
+        const fem = (d) => (d.rows.find(r => /female/i.test(r.k)) || { pct: 0 }).pct;
+        const diff = fem(vr.gender.conflict) - fem(vr.gender.rest);
+        return `
+            <div class="bg-white p-5 rounded-xl shadow-sm border mb-6">
+                <h3 class="text-lg font-bold text-gsf-prussian mb-1">Who signs up — and who doesn't</h3>
+                <p class="text-xs text-slate-500 mb-4">Gender of learners with at least one enrolment, observed (not extrapolated). ${Math.abs(diff) >= 8 ? `Women are <strong>${Math.abs(diff).toFixed(0)} points ${diff < 0 ? 'less' : 'more'}</strong> represented in conflict-affected settings than across the rest of the platform.` : 'The split is close to the rest of the platform.'}</p>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                    <div>
+                        <p class="text-[10px] font-bold uppercase tracking-wide text-rose-700 mb-1.5">Conflict-affected &middot; ${this.formatNumber(vr.gender.conflict.total)} of ${this.formatNumber(vr.conflictUsers)} stated a gender</p>
+                        ${bar(vr.gender.conflict, '#e57373')}
+                    </div>
+                    <div>
+                        <p class="text-[10px] font-bold uppercase tracking-wide text-slate-500 mb-1.5">Rest of the platform &middot; ${this.formatNumber(vr.gender.rest.total)} of ${this.formatNumber(vr.restUsers)} stated a gender</p>
+                        ${bar(vr.gender.rest, '#4389C8')}
+                    </div>
+                </div>
+            </div>`;
+    },
+
+    _conflictVoicesHtml(snapData) {
+        const f = this.conflictFeedback(snapData);
+        if (!f) return '';
+        const esc = (t) => this.escapeHtml(t);
+        const delta = f.avg - f.platformAvg;
+        return `
+            <div class="bg-white rounded-xl shadow-sm border overflow-hidden mb-6">
+                <div class="p-5 border-b bg-slate-50 flex items-start justify-between gap-4 flex-wrap">
+                    <div class="min-w-0">
+                        <h3 class="text-lg font-bold text-gsf-prussian">What they say</h3>
+                        <p class="text-xs text-slate-500 mt-1">${this.formatNumber(f.n)} course-feedback comments from learners in the listed countries, of ${this.formatNumber(f.platformN)} platform-wide.</p>
+                    </div>
+                    <div class="text-right shrink-0">
+                        <p class="text-2xl font-black text-gsf-prussian leading-none">${f.avg.toFixed(2)}</p>
+                        <p class="text-[11px] text-slate-400 mt-1">avg rating &middot; platform ${f.platformAvg.toFixed(2)} <span class="${Math.abs(delta) < 0.1 ? 'text-slate-400' : (delta >= 0 ? 'text-emerald-600' : 'text-amber-600')} font-bold">(${delta >= 0 ? '+' : ''}${delta.toFixed(2)})</span></p>
+                    </div>
+                </div>
+                ${f.quotes.length ? `<div class="p-5 grid grid-cols-1 md:grid-cols-2 gap-3">
+                    ${f.quotes.map(q => `<div class="border border-slate-200 rounded-lg p-4">
+                        <p class="text-sm text-slate-700 leading-relaxed">&ldquo;${esc(q.text)}&rdquo;</p>
+                        <p class="text-[11px] text-slate-400 mt-2">${esc([q.cadre, q.country].filter(Boolean).join(', '))}${q.course ? ' &middot; ' + esc(q.course) : ''}${q.rating ? ' &middot; <span class="text-amber-500">' + '★'.repeat(Math.round(q.rating)) + '</span>' : ''}</p>
+                    </div>`).join('')}
+                </div>
+                <p class="px-5 pb-4 text-[11px] text-slate-400">Highest-rated comments, one per country before repeats. No names or contact details are stored with a comment.</p>` : ''}
+            </div>`;
+    },
+});
+
+// ── Export ───────────────────────────────────────────────────────────────────
+Object.assign(window.App, {
+    async exportConflictXlsx() {
+        if (this.ensureAnonLoaded) await this.ensureAnonLoaded();
+        if (!this._emailDemoMap) { try { this._emailDemoMap = (await Storage.getItem('surghub_email_demo')) || {}; } catch (e) {} }
+        const aud = (this.userHistory || []).find(d => d.Timestamp === this.selectedDate)
+            || (this.userHistory || []).slice().reduce((a, b) => (a && String(a.Timestamp) > String(b.Timestamp) ? a : b), null);
+        if (!aud) return alert('No audience data yet — run Sync Learners first.');
+        const snap = this.getAnalyticsSnap();
+        const b = this.conflictBreakdown(aud);
+        const act = this.conflictActivity();
+        const mo = this.conflictMomentum(aud);
+        const bands = this.conflictIncomeBands();
+        const vr = this.conflictVsRest();
+        const fb = this.conflictFeedback(snap);
+        const tl = this.conflictTimeline(aud);
+
+        const wb = XLSX.utils.book_new();
+        const nice = (ws, o) => (this._niceSheet ? this._niceSheet(ws, o) : ws);
+
+        const about = [
+            ['SURGhub — reach into conflict-affected settings'],
+            ['Generated', new Date().toISOString().slice(0, 10)],
+            ['Data through', String(aud.Timestamp || '').slice(0, 10)],
+            ['Classification', this.CONFLICT_SOURCE.label + (this.isConflictListCustom() ? ' (edited locally)' : '')],
+            ['Effective', this.CONFLICT_SOURCE.effective],
+            ['Criterion', this.CONFLICT_SOURCE.criterion],
+            ['Source', this.CONFLICT_SOURCE.url],
+            [''],
+            ['Registered learners (estimate)', b.total],
+            ['Share of all registered users', (aud.TotalUsers ? (b.total / aud.TotalUsers * 100).toFixed(1) : '') + '%'],
+            ['Countries on the list', this.conflictList().length],
+            ['Countries with learners', b.rows.length],
+            [''],
+            ['TWO BASES — DO NOT MIX', 'Registered learners and the monthly history are EXTRAPOLATED: country is known for ' + (aud.CountryKnownPct != null ? aud.CountryKnownPct : '~72') + '% of users and scaled up to the full base. Enrolments, certificates, learning time, gender and course choice are OBSERVED from the anonymised records and cover only learners with at least one enrolment. Dividing an observed column by an extrapolated one gives a wrong rate.'],
+        ];
+        if (act) about.push([''], ['Enrolments (observed)', act.enrol], ['Certificates (observed)', act.certs],
+            ['Certification rate', act.certRate.toFixed(1) + '%'], ['Platform certification rate', act.platformCertRate.toFixed(1) + '%'],
+            ['Learning hours (observed)', Math.round(act.minutes / 60)]);
+        XLSX.utils.book_append_sheet(wb, nice(XLSX.utils.aoa_to_sheet(about), { noFilter: true, widths: [{ wch: 34 }, { wch: 110 }] }), 'Summary');
+
+        XLSX.utils.book_append_sheet(wb, nice(XLSX.utils.json_to_sheet(b.rows.map(r => {
+            const a = act && act.per[r.name];
+            return { 'Country': r.name, 'Registered learners (est.)': r.n,
+                'Share of conflict total': b.total ? +(r.n / b.total * 100).toFixed(1) : 0,
+                'Learners with an enrolment (obs.)': a ? a.learners : '', 'Enrolments (obs.)': a ? a.enrol : '',
+                'Certificates (obs.)': a ? a.certs : '', 'Certification rate %': a && a.enrol ? +(a.certs / a.enrol * 100).toFixed(1) : '',
+                'Learning hours (obs.)': a ? Math.round(a.minutes / 60) : '' };
+        }))), 'By country');
+
+        if (mo) XLSX.utils.book_append_sheet(wb, nice(XLSX.utils.json_to_sheet(mo.rows.map(r => ({
+            'Country': r.name, ['Previous 3 months (' + mo.prior.join(', ') + ')']: r.prior,
+            ['Last 3 months (' + mo.recent.join(', ') + ')']: r.recent,
+            'Change': r.delta, 'Change %': r.pct == null ? 'new' : +r.pct.toFixed(1) })))), 'Momentum');
+
+        if (bands) XLSX.utils.book_append_sheet(wb, nice(XLSX.utils.json_to_sheet([
+            { Group: 'Conflict-affected (on the list)', ...bands.conflict },
+            { Group: 'Low income, not on the list (LIC + LMIC)', ...bands.lowIncome },
+            { Group: 'Everywhere else (UMIC + HIC)', ...bands.other },
+        ].map(r => ({ Group: r.Group, 'Learners (obs.)': r.learners, 'Enrolments': r.enrol, 'Certificates': r.certs,
+            'Certification rate %': +r.certRate.toFixed(1), 'Courses per learner': +r.coursesPerLearner.toFixed(2),
+            'Minutes per learner': Math.round(r.minutesPerLearner) })))), 'Income comparison');
+
+        if (vr) XLSX.utils.book_append_sheet(wb, nice(XLSX.utils.json_to_sheet(
+            [].concat(vr.gender.conflict.rows.map(r => ({ Group: 'Conflict-affected', Gender: r.k, Learners: r.n, 'Share %': +r.pct.toFixed(1) })),
+                      vr.gender.rest.rows.map(r => ({ Group: 'Rest of the platform', Gender: r.k, Learners: r.n, 'Share %': +r.pct.toFixed(1) }))))), 'Gender');
+
+        if (tl) XLSX.utils.book_append_sheet(wb, nice(XLSX.utils.json_to_sheet(tl.cumulative.map(p => ({
+            Month: p.m, 'Cumulative learners in conflict settings': p.conflict,
+            'Cumulative platform learners': p.platform, 'Share of platform %': p.share })))), 'Growth');
+
+        if (fb && fb.quotes.length) XLSX.utils.book_append_sheet(wb, nice(XLSX.utils.json_to_sheet(fb.quotes.map(q => ({
+            Country: q.country, Cadre: q.cadre, Course: q.course, Rating: q.rating || '', Comment: q.text }))), { maxWidth: 90 }), 'Voices');
+
+        const path = await electronAPI.invoke('pick-save-path', 'surghub_conflict_settings_' + new Date().toISOString().split('T')[0] + '.xlsx');
+        if (!path) return;
+        this._writeWorkbook(wb, path);
+        this.showMsg('Saved ' + b.rows.length + ' countries → ' + path.split('/').pop());
     },
 });
