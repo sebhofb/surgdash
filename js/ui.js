@@ -3597,6 +3597,7 @@ Object.assign(window.App, {
                 ['performance', 'Performance', 'award'],
                 ['feedback', 'Feedback', 'message-square'],
                 ['conflict', 'Conflict Settings', 'shield-alert'],
+                ['physicians', 'Physician Reach', 'stethoscope'],
                 ['health', 'Data Health', 'shield-check'],
             ].map(([k, l, ic]) => `<button onclick="App._dashTab='${k}'; App.renderView()" class="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-bold transition-colors ${dt === k ? 'bg-gsf-prussian text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100'}"><i data-lucide="${ic}" width="15"></i> ${l}</button>`).join('');
 
@@ -3606,6 +3607,7 @@ Object.assign(window.App, {
             else if (dt === 'performance') dashContent = this._dashPerformanceHtml(snapData);
             else if (dt === 'feedback') dashContent = this._dashFeedbackHtml(snapData);
             else if (dt === 'conflict') dashContent = this._dashConflictHtml(snapData, audSnap);
+            else if (dt === 'physicians') dashContent = this._dashPhysicianHtml(snapData, audSnap);
             else if (dt === 'health') dashContent = this._dashHealthHtml(snapData, audSnap);
             else dashContent = this._dashOverviewHtml(snapData, audSnap, kpiCards);
 
@@ -3654,6 +3656,7 @@ Object.assign(window.App, {
                     window.Charts.drawPlatform(this.getPlatformHistory(), platSnap);
                     if (audSnap && audSnap.TotalUsers) window.Charts.drawAudience(audSnap);
                     if (dt === 'conflict' && this._drawConflictCharts) this._drawConflictCharts(audSnap);
+                    if (dt === 'physicians' && this._drawPhysicianCharts) this._drawPhysicianCharts(audSnap);
                 };
                 setTimeout(_d, 80); setTimeout(_d, 400);
             }
