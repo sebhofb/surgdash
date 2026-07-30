@@ -537,6 +537,161 @@
             }
         },
 
+        // ── "What Learners Ask Us to Fix": AI summaries of the improvement corpus ──
+        // Three levels, because the raw 2,600-comment table answers "what did people
+        // say" but not "what should we do":
+        //   · overall — the headline pattern + the priorities it implies
+        //   · per topic — what learners in that bucket actually ask for
+        //   · equity — what LIC/LMIC learners ask for that HIC learners don't
+        // Only the comment text, its kind (issue/suggestion) and the income tier are
+        // sent. Never the email, name, course or country — the tier is all the equity
+        // comparison needs, and the corpus rows are the same ones already scored by
+        // the curation pass, so no new category of data leaves the machine.
+        MAX_CORPUS_PER_CALL: 500,
+
+        // Even sample that keeps the highest-scoring comments and spreads the rest,
+        // so a big bucket is represented rather than truncated to its loudest voices.
+        _corpusSample(rows, cap) {
+            if (rows.length <= cap) return { picked: rows, sampled: false };
+            const sorted = rows.slice().sort((a, b) => (b.score || 0) - (a.score || 0));
+            const head = sorted.slice(0, Math.floor(cap / 2));
+            const rest = sorted.slice(Math.floor(cap / 2));
+            const step = rest.length / Math.ceil(cap / 2);
+            const spread = [];
+            for (let i = 0; spread.length < cap - head.length && Math.floor(i * step) < rest.length; i++) {
+                spread.push(rest[Math.floor(i * step)]);
+            }
+            return { picked: head.concat(spread), sampled: true };
+        },
+
+        // One comment per line. Learner text often contains newlines, tabs and bullet
+        // glyphs; left alone, a single multi-line comment reads to the model as several
+        // separate items and inflates whatever it thinks the common asks are.
+        _corpusLines(rows) {
+            return rows.map(r => (r.kind === 'Issue' ? '[issue] ' : '[suggestion] ')
+                + String(r.text).replace(/\s+/g, ' ').trim()).join('\n');
+        },
+
+        async generateImprovementSummary() {
+            const apiKey = await this._getAnthropicKey();
+            if (!apiKey) return this.setAnthropicKey();
+            const snap = this.getAnalyticsSnap();
+            const C = this._improvementCorpus ? this._improvementCorpus(snap) : null;
+            if (!C || !C.rows.length) return alert('No improvement feedback to summarise yet — run the AI feedback scoring first (Feedback tab).');
+
+            const named = C.topics.filter(t => t.n >= 10);
+            const tiers = C.tiers.filter(t => C.equity[t].total >= 25);
+            const MODEL = 'claude-opus-4-8';
+            const calls = named.length + (tiers.length >= 2 ? 1 : 0) + 1;
+            if (!confirm('Summarise ' + this.formatNumber(C.total) + ' learner suggestions and issues with Claude (' + MODEL + ')?\n\n'
+                + '· one summary per topic (' + named.length + ')\n'
+                + (tiers.length >= 2 ? '· one comparison of what ' + tiers.join('/') + ' learners ask for\n' : '')
+                + '· one overall summary with priorities\n\n'
+                + calls + ' API calls, roughly a minute and well under a dollar.\n\nWhat is sent: the comment text, whether it is an issue or a suggestion, and the income tier of the writer\u2019s country. Nothing else is attached — no name, email, course, provider or country. (A learner who names a course in their own comment sends that word along with it.)\n\nContinue?')) return;
+
+            const TOPIC_SCHEMA = {
+                type: 'object', additionalProperties: false,
+                required: ['summary', 'asks'],
+                properties: {
+                    summary: { type: 'string' },
+                    asks: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['ask', 'weight'], properties: { ask: { type: 'string' }, weight: { type: 'string' } } } },
+                    quote: { type: 'string' }
+                }
+            };
+            const EQUITY_SCHEMA = {
+                type: 'object', additionalProperties: false,
+                required: ['contrast', 'lowerIncome', 'higherIncome'],
+                properties: {
+                    contrast: { type: 'string' }, lowerIncome: { type: 'string' }, higherIncome: { type: 'string' },
+                    actions: { type: 'array', items: { type: 'string' } }
+                }
+            };
+            const OVERALL_SCHEMA = {
+                type: 'object', additionalProperties: false,
+                required: ['headline', 'summary', 'priorities'],
+                properties: {
+                    headline: { type: 'string' }, summary: { type: 'string' },
+                    priorities: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['title', 'why'], properties: { title: { type: 'string' }, why: { type: 'string' } } } }
+                }
+            };
+            const VOICE = 'You analyse end-of-course feedback for SURGhub, the United Nations Global Surgery Learning Hub — free online surgical training used mostly by clinicians in low- and middle-income countries. The comments are suggestions and reported problems, already classified by an earlier pass. Report only what the comments actually say: no invented numbers, no hype, no restating the brief. Use "learners", British English, and prefer the concrete ("downloadable slides", "the quiz retake limit") over the abstract ("improved engagement"). Where comments contradict each other, say so.';
+
+            const out = { at: new Date().toISOString().slice(0, 10), model: MODEL, total: C.total, topics: {} };
+            this._showReportProgress('Reading ' + this.formatNumber(C.total) + ' comments…', false);
+            try {
+                // ── per topic
+                for (let i = 0; i < named.length; i++) {
+                    const t = named[i];
+                    this._showReportProgress('Summarising “' + t.topic + '” (' + (i + 1) + '/' + calls + ')…', false);
+                    const { picked, sampled } = this._corpusSample(t.rows, this.MAX_CORPUS_PER_CALL);
+                    const parsed = await this._claudeJSON(apiKey,
+                        VOICE + '\n\nYou are given every comment the classifier put in ONE topic bucket. summary: 2-3 sentences on what learners in this bucket are asking for and what is going wrong. asks: 3-5 distinct, actionable requests, most common first; each `ask` max 14 words, and `weight` a plain-language frequency grounded in what you can see ("raised repeatedly", "a handful of comments"), never a fabricated count. quote: one short verbatim comment that best represents the bucket, or an empty string if none stands out.',
+                        'TOPIC: ' + t.topic + '\nCOMMENTS IN THIS TOPIC: ' + t.n + ' (' + t.issues + ' reported issues, ' + t.sug + ' suggestions)'
+                        + (sampled ? '\nNOTE: showing a representative sample of ' + picked.length + ' of them.' : '')
+                        + '\n\n' + this._corpusLines(picked),
+                        TOPIC_SCHEMA, 1200, { model: MODEL });
+                    out.topics[t.topic] = {
+                        summary: String(parsed.summary || '').trim(),
+                        asks: (parsed.asks || []).slice(0, 5).map(a => ({ ask: String(a.ask || '').trim(), weight: String(a.weight || '').trim() })),
+                        quote: String(parsed.quote || '').trim(),
+                        n: t.n, sampled: sampled ? picked.length : 0
+                    };
+                    if (this._aiCancelled) { this._aiCancelled = false; break; }
+                }
+
+                // ── equity: what the lower-income tiers ask for that the higher ones don't
+                if (tiers.length >= 2) {
+                    this._showReportProgress('Comparing what LIC/LMIC learners ask for…', false);
+                    const lower = C.rows.filter(r => r.income === 'LIC' || r.income === 'LMIC');
+                    const higher = C.rows.filter(r => r.income === 'HIC' || r.income === 'UMIC');
+                    const lo = this._corpusSample(lower, 400), hi = this._corpusSample(higher, 400);
+                    const share = (rows) => {
+                        const by = {}; rows.forEach(r => { by[r.topic] = (by[r.topic] || 0) + 1; });
+                        return Object.entries(by).sort((a, b) => b[1] - a[1]).slice(0, 6)
+                            .map(([k, v]) => k + ' ' + Math.round(v / rows.length * 100) + '%').join(', ');
+                    };
+                    const parsed = await this._claudeJSON(apiKey,
+                        VOICE + '\n\nYou are given two sets of comments: from learners in low- and lower-middle-income countries, and from learners in upper-middle- and high-income countries. Find the REAL differences in what each group asks for — not the similarities, and not differences you cannot see in the text. contrast: 2-3 sentences naming what lower-income learners ask for that higher-income learners do not (or ask for far less). lowerIncome / higherIncome: 1-2 sentences each on that group\'s distinctive asks. actions: up to 4 changes that would specifically help the lower-income audience, each max 16 words. If the two sets look substantially the same, say that plainly instead of manufacturing a difference — that is a useful finding.',
+                        'GROUP A — low / lower-middle income (' + lower.length + ' comments; topic mix: ' + share(lower) + ')\n' + this._corpusLines(lo.picked)
+                        + '\n\n=====\n\nGROUP B — upper-middle / high income (' + higher.length + ' comments; topic mix: ' + share(higher) + ')\n' + this._corpusLines(hi.picked),
+                        EQUITY_SCHEMA, 1500, { model: MODEL });
+                    out.equity = {
+                        contrast: String(parsed.contrast || '').trim(),
+                        lowerIncome: String(parsed.lowerIncome || '').trim(),
+                        higherIncome: String(parsed.higherIncome || '').trim(),
+                        actions: (parsed.actions || []).slice(0, 4).map(a => String(a).trim()),
+                        nLower: lower.length, nHigher: higher.length
+                    };
+                }
+
+                // ── overall: synthesised from the topic summaries, not from raw text again
+                this._showReportProgress('Writing the overall summary…', false);
+                const digest = Object.entries(out.topics)
+                    .map(([topic, v]) => topic + ' (' + v.n + ' comments): ' + v.summary + ' Asks: ' + v.asks.map(a => a.ask).join('; '))
+                    .join('\n\n');
+                const overall = await this._claudeJSON(apiKey,
+                    VOICE + '\n\nYou are given per-topic summaries of the whole corpus. headline: one line, max 12 words, naming the dominant pattern. summary: one paragraph, ~90 words, on what learners are collectively asking for. priorities: 3-4 changes ranked by how much learner-reported friction they would remove; `title` max 10 words, `why` one sentence tied to the evidence above. Do not simply list the topics back.',
+                    'TOTAL COMMENTS: ' + C.total + ' (' + C.issues + ' reported issues, ' + (C.total - C.issues) + ' suggestions)\n'
+                    + 'Note: ' + Math.round(C.happy / C.total * 100) + '% come from learners who rated the course 4-5, so this is constructive input.\n\n'
+                    + digest + (out.equity ? '\n\nEQUITY FINDING: ' + out.equity.contrast : ''),
+                    OVERALL_SCHEMA, 1200, { model: MODEL });
+                out.overall = {
+                    headline: String(overall.headline || '').trim(),
+                    summary: String(overall.summary || '').trim(),
+                    priorities: (overall.priorities || []).slice(0, 4).map(p => ({ title: String(p.title || '').trim(), why: String(p.why || '').trim() }))
+                };
+
+                await Storage.setItem('surghub_improvement_ai', out);
+                this._improvementAi = out;
+                this._hideReportProgress();
+                this.showMsg('Summary ready ✓ — ' + Object.keys(out.topics).length + ' topics' + (out.equity ? ' + equity comparison' : ''));
+                this.renderView();
+            } catch (e) {
+                this._hideReportProgress();
+                alert('Summary failed: ' + e.message + '\n\nAnything already summarised was not saved — run it again.');
+            }
+        },
+
         cancelAiScoring() { this._aiCancelled = true; },
 
         // Main entry: score every unscored, non-junk feedback comment.

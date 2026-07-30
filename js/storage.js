@@ -48,6 +48,7 @@
             'surghub_completion':   path.join('surghub', 'completion.json'),
             'surghub_selected_testimonials': path.join('surghub', 'selected_testimonials.json'),
             'surghub_milestones':   path.join('surghub', 'milestones.json'),
+            'surghub_improvement_ai': path.join('surghub', 'improvement_ai.json'),
         };
         if (surghubMap[key]) return surghubMap[key];
 
@@ -104,7 +105,8 @@
                 'signup_survey_url': 'surghub_signup_survey_url',
                 'social': 'surghub_social', 'completion': 'surghub_completion',
                 'selected_testimonials': 'surghub_selected_testimonials',
-                'milestones': 'surghub_milestones'
+                'milestones': 'surghub_milestones',
+                'improvement_ai': 'surghub_improvement_ai'
             };
             return reverseMap[shMatch[1]] || null;
         }

@@ -4835,8 +4835,17 @@ Object.assign(window.App, {
         const C = this._improvementCorpus(snapData);
         if (!C) return '';
         this._lastCorpus = C.rows;
+        this._lastCorpusStats = C;
         const open = this._corpusOpen || '';
         const pct = (n, d) => d ? Math.round(n / d * 100) : 0;
+        // AI summaries, loaded once from disk (generateImprovementSummary writes them).
+        if (this._improvementAi === undefined) {
+            this._improvementAi = null;
+            Storage.getItem('surghub_improvement_ai').then(v => {
+                if (v && v.overall) { this._improvementAi = v; this.renderView(); }
+            }).catch(() => {});
+        }
+        const AI = this._improvementAi;
         const topicRows = C.topics.map(t => {
             const isOpen = open === t.topic;
             const sample = t.rows.slice(0, isOpen ? 25 : 0);
@@ -4849,6 +4858,17 @@ Object.assign(window.App, {
                     <span class="text-sm font-bold text-gsf-prussian w-10 text-right shrink-0">${t.n}</span>
                 </button>
                 ${isOpen ? `<div class="px-5 pb-4 space-y-2 bg-slate-50/60">
+                    ${(() => {
+                        const ta = AI && AI.topics && AI.topics[t.topic];
+                        if (!ta) return '';
+                        return `<div class="bg-white border-l-4 border-gsf-boston rounded-r-lg p-4 mb-3 shadow-sm">
+                            <p class="text-[10px] font-bold uppercase tracking-wide text-gsf-boston mb-1.5">✨ What this bucket is asking for</p>
+                            <p class="text-sm text-slate-700 leading-relaxed">${this.escapeHtml(ta.summary)}</p>
+                            ${ta.asks && ta.asks.length ? `<ul class="mt-2.5 space-y-1">${ta.asks.map(a => `<li class="text-sm text-slate-600 flex items-start gap-2"><span class="text-gsf-boston font-bold shrink-0">&bull;</span><span>${this.escapeHtml(a.ask)}${a.weight ? ' <span class="text-[11px] text-slate-400">— ' + this.escapeHtml(a.weight) + '</span>' : ''}</span></li>`).join('')}</ul>` : ''}
+                            ${ta.quote ? `<p class="mt-2.5 text-[13px] text-slate-500 italic border-l-2 border-slate-200 pl-3">&ldquo;${this.escapeHtml(ta.quote)}&rdquo;</p>` : ''}
+                            ${ta.sampled ? `<p class="text-[10px] text-slate-400 mt-2">From a representative sample of ${this.formatNumber(ta.sampled)} of ${this.formatNumber(ta.n)} comments.</p>` : ''}
+                        </div>`;
+                    })()}
                     ${sample.map(r => `<div class="text-sm bg-white border border-slate-200 rounded-lg p-3">
                         <div class="flex items-start gap-2">
                             <span class="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded shrink-0 ${r.kind === 'Issue' ? 'bg-rose-50 text-rose-700' : 'bg-violet-50 text-violet-700'}">${r.kind}</span>
@@ -4885,6 +4905,44 @@ Object.assign(window.App, {
                     }).join('')}</tbody>
                 </table></div>
                 <p class="text-[10px] text-slate-400 mt-2">Country is known for ${this.formatNumber(C.withCountry)} of ${this.formatNumber(C.total)} comments, so tiers cover only that subset. Differences here point at what to fix for whom — a topic that dominates LIC/LMIC comments is a barrier for the audience GSF most wants to reach.</p>
+                ${(AI && AI.equity) ? `
+                <div class="mt-4 bg-emerald-50/60 border border-emerald-200 rounded-lg p-4">
+                    <p class="text-[10px] font-bold uppercase tracking-wide text-emerald-800 mb-1.5">✨ What LIC/LMIC learners ask for that HIC learners don't</p>
+                    <p class="text-sm text-slate-700 leading-relaxed">${this.escapeHtml(AI.equity.contrast)}</p>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+                        <div class="bg-white rounded-lg border border-emerald-100 p-3">
+                            <p class="text-[10px] font-bold uppercase text-emerald-700 mb-1">LIC / LMIC <span class="font-normal text-slate-400">(${this.formatNumber(AI.equity.nLower || 0)} comments)</span></p>
+                            <p class="text-[13px] text-slate-600 leading-relaxed">${this.escapeHtml(AI.equity.lowerIncome)}</p>
+                        </div>
+                        <div class="bg-white rounded-lg border border-slate-200 p-3">
+                            <p class="text-[10px] font-bold uppercase text-slate-500 mb-1">UMIC / HIC <span class="font-normal text-slate-400">(${this.formatNumber(AI.equity.nHigher || 0)} comments)</span></p>
+                            <p class="text-[13px] text-slate-600 leading-relaxed">${this.escapeHtml(AI.equity.higherIncome)}</p>
+                        </div>
+                    </div>
+                    ${(AI.equity.actions && AI.equity.actions.length) ? `<div class="mt-3"><p class="text-[10px] font-bold uppercase text-emerald-800 mb-1">Would specifically help the LIC/LMIC audience</p><ul class="space-y-1">${AI.equity.actions.map(a => '<li class="text-[13px] text-slate-600 flex items-start gap-2"><span class="text-emerald-600 font-bold shrink-0">&bull;</span><span>' + this.escapeHtml(a) + '</span></li>').join('')}</ul></div>` : ''}
+                </div>` : ''}
+            </div>` : '';
+        // Overall AI summary — sits above the topic list, with an honest staleness note
+        // when the corpus has grown materially since it was written.
+        const drift = AI ? Math.abs(C.total - (AI.total || 0)) : 0;
+        const stale = AI && AI.total && drift / AI.total > 0.05;
+        const overallBlock = (AI && AI.overall) ? `
+            <div class="bg-gradient-to-br from-gsf-prussian to-[#0a3a57] text-white p-5 border-b">
+                <p class="text-[10px] font-bold uppercase tracking-widest text-amber-300 mb-2">✨ Overall</p>
+                <h3 class="text-lg font-black mb-2">${this.escapeHtml(AI.overall.headline)}</h3>
+                <p class="text-sm text-white/85 leading-relaxed">${this.escapeHtml(AI.overall.summary)}</p>
+                ${(AI.overall.priorities && AI.overall.priorities.length) ? `
+                <div class="mt-4">
+                    <p class="text-[10px] font-bold uppercase tracking-wide text-amber-300 mb-2">Where fixing would remove the most friction</p>
+                    <ol class="space-y-2">${AI.overall.priorities.map((p, i) => `<li class="flex items-start gap-2.5">
+                        <span class="w-5 h-5 rounded-full bg-amber-400 text-gsf-prussian text-[11px] font-black flex items-center justify-center shrink-0 mt-0.5">${i + 1}</span>
+                        <span class="text-sm"><strong class="text-white">${this.escapeHtml(p.title)}</strong> <span class="text-white/70">— ${this.escapeHtml(p.why)}</span></span>
+                    </li>`).join('')}</ol>
+                </div>` : ''}
+                <p class="text-[10px] text-white/40 mt-3">
+                    Written by ${this.escapeHtml(AI.model || 'Claude')} from ${this.formatNumber(AI.total || 0)} comments &middot; ${this.escapeHtml(AI.at || '')}
+                    ${stale ? ' &middot; <span class="text-amber-300 font-bold">' + this.formatNumber(C.total) + ' now — re-summarise to catch up</span>' : ''}
+                </p>
             </div>` : '';
         return `<div id="corpus-card" class="bg-white rounded-xl shadow-sm border overflow-hidden mb-8">
             <div class="bg-slate-50 border-b p-5 flex items-start justify-between gap-3 flex-wrap">
@@ -4893,29 +4951,102 @@ Object.assign(window.App, {
                     <p class="text-xs text-slate-500 mt-1">Every AI-classified suggestion and issue across the platform, bucketed by topic. <strong>${this.formatNumber(C.issues)}</strong> are reported problems &middot; <strong>${this.formatNumber(C.fromImproveQ)}</strong> came from the survey's own &ldquo;what could be improved&rdquo; question &middot; <strong>${pct(C.happy, C.total)}%</strong> come from learners who rated the course 4&ndash;5, so this is constructive input, not complaints from unhappy learners. Click a topic to read them.</p>
                 </div>
                 <div class="flex items-center gap-1 shrink-0">
+                    <button data-edit-only onclick="App.generateImprovementSummary()" title="Summarise these comments with Claude — overall, per topic, and LIC/LMIC vs HIC" class="px-3 py-1.5 rounded-lg bg-gsf-boston text-white text-xs font-bold hover:bg-gsf-prussian transition-colors whitespace-nowrap">${AI ? '↻ Re-summarise' : '✨ Summarise'}</button>
                     <button onclick="App._copyEngagementSection('corpus-card', this, true)" title="Copy as PNG" class="p-1.5 rounded hover:bg-slate-200 text-slate-400 hover:text-gsf-boston"><i data-lucide="copy" width="13"></i></button>
-                    <button onclick="App._exportImprovementCsv()" title="Download all comments as CSV" class="p-1.5 rounded hover:bg-slate-200 text-slate-400 hover:text-gsf-boston"><i data-lucide="file-spreadsheet" width="13"></i></button>
+                    <button onclick="App._exportImprovementXlsx()" title="Download as Excel — all comments, topic and income breakdowns, and the AI summary" class="p-1.5 rounded hover:bg-slate-200 text-slate-400 hover:text-gsf-boston"><i data-lucide="file-spreadsheet" width="13"></i></button>
                 </div>
             </div>
+            ${overallBlock}
             <div>${topicRows}</div>
             ${equityTable}
         </div>`;
     },
 
-    _exportImprovementCsv() {
+    // Excel export of the improvement corpus: the AI summary, every comment, and the
+    // topic / income breakdowns that are on screen.
+    // (Was a CSV that never downloaded: it handed a finished CSV *string* to
+    // _downloadCsv, which takes an array of row arrays and calls rows.map(r => r.map(…)),
+    // so the click threw "r.map is not a function" and nothing happened. Now it writes
+    // a real workbook through pick-save-path, like every other export in the app.)
+    async _exportImprovementXlsx() {
         const rows = this._lastCorpus || [];
+        const C = this._lastCorpusStats;
         if (!rows.length) return alert('No improvement feedback to export.');
-        const cols = ['kind', 'topic', 'text', 'course', 'provider', 'rating', 'country', 'income', 'cadre', 'lang', 'date', 'fromImproveQ', 'score'];
-        const head = ['Type', 'Topic', 'Comment', 'Course', 'Provider', 'Rating', 'Country', 'Income tier', 'Cadre', 'Language', 'Date', 'From "what could be improved"', 'AI score'];
-        const esc = v => { const s = String(v == null ? '' : v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
-        const csv = [head.join(','), ...rows.map(r => cols.map(c => esc(r[c])).join(','))].join('\n');
-        this._downloadCsv ? this._downloadCsv(csv, 'surghub_improvement_feedback') : (() => {
-            const a = document.createElement('a');
-            a.href = 'data:text/csv;charset=utf-8,﻿' + encodeURIComponent(csv);
-            a.download = 'surghub_improvement_feedback_' + new Date().toISOString().split('T')[0] + '.csv';
-            document.body.appendChild(a); a.click(); document.body.removeChild(a);
-        })();
+        const AI = this._improvementAi;
+        const wb = XLSX.utils.book_new();
+        const nice = (ws, opts) => (this._niceSheet ? this._niceSheet(ws, opts) : ws);
+
+        // ── Summary (AI if generated, plus the headline counts either way)
+        const about = [
+            ['What learners ask us to fix'],
+            ['Generated', new Date().toISOString().slice(0, 10)],
+            ['Comments', rows.length],
+            ['Reported issues', rows.filter(r => r.kind === 'Issue').length],
+            ['Suggestions', rows.filter(r => r.kind !== 'Issue').length],
+            ['From the survey’s "what could be improved" question', rows.filter(r => r.fromImproveQ).length],
+            ['From learners who rated the course 4–5', rows.filter(r => r.rating >= 4).length],
+            ['Country known for', rows.filter(r => r.country).length],
+            [''],
+            ['Source', 'Every AI-classified suggestion or complaint in course feedback, bucketed by topic keyword match. Comments shorter than 5 words are excluded.'],
+        ];
+        if (AI && AI.overall) {
+            about.push([''], ['AI SUMMARY', (AI.model || 'Claude') + ' · written ' + (AI.at || '') + ' from ' + (AI.total || 0) + ' comments']);
+            about.push(['Headline', AI.overall.headline], ['Overall', AI.overall.summary]);
+            (AI.overall.priorities || []).forEach((p, i) => about.push(['Priority ' + (i + 1), p.title + ' — ' + p.why]));
+            if (AI.equity) {
+                about.push([''], ['EQUITY', 'What LIC/LMIC learners ask for that UMIC/HIC learners don’t']);
+                about.push(['Contrast', AI.equity.contrast], ['LIC / LMIC', AI.equity.lowerIncome], ['UMIC / HIC', AI.equity.higherIncome]);
+                (AI.equity.actions || []).forEach((a, i) => about.push(['Would help LIC/LMIC ' + (i + 1), a]));
+            }
+        } else {
+            about.push([''], ['AI SUMMARY', 'Not generated yet — press "Summarise" on the card to add overall, per-topic and equity summaries here.']);
+        }
+        XLSX.utils.book_append_sheet(wb, nice(XLSX.utils.aoa_to_sheet(about), { noFilter: true, widths: [{ wch: 40 }, { wch: 110 }] }), 'Summary');
+
+        // ── Every comment
+        const comments = rows.map(r => ({
+            'Type': r.kind, 'Topic': r.topic, 'Comment': r.text,
+            'Course': r.course, 'Provider': r.provider, 'Rating': r.rating || '',
+            'Country': r.country, 'Income tier': r.income, 'Cadre': r.cadre,
+            'Language': r.lang, 'Date': r.date,
+            'From "what could be improved"': r.fromImproveQ ? 'Yes' : '',
+            'AI score': r.score
+        }));
+        XLSX.utils.book_append_sheet(wb, nice(XLSX.utils.json_to_sheet(comments), { maxWidth: 90 }), 'Comments');
+
+        // ── By topic, with the AI summary alongside each bucket
+        if (C && C.topics) {
+            const topicRows = C.topics.map(t => {
+                const ta = AI && AI.topics && AI.topics[t.topic];
+                return {
+                    'Topic': t.topic, 'Comments': t.n, 'Reported issues': t.issues, 'Suggestions': t.sug,
+                    'Share of all comments': Math.round(t.n / C.total * 100) + '%',
+                    'AI summary': ta ? ta.summary : '',
+                    'Top asks': ta ? (ta.asks || []).map(a => a.ask).join(' · ') : '',
+                    'Representative comment': ta ? ta.quote : ''
+                };
+            });
+            XLSX.utils.book_append_sheet(wb, nice(XLSX.utils.json_to_sheet(topicRows), { maxWidth: 80 }), 'By topic');
+
+            // ── Income tier x topic (the on-screen equity table, all topics)
+            const named = C.topics.map(t => t.topic);
+            const tierRows = C.tiers.filter(t => C.equity[t].total > 0).map(tier => {
+                const e = C.equity[tier];
+                const row = { 'Income tier': tier, 'Comments': e.total };
+                named.forEach(tp => { row[tp] = e.total ? Math.round((e.byTopic[tp] || 0) / e.total * 100) + '%' : ''; });
+                return row;
+            });
+            if (tierRows.length) XLSX.utils.book_append_sheet(wb, nice(XLSX.utils.json_to_sheet(tierRows)), 'By income tier');
+        }
+
+        const savePath = await electronAPI.invoke('pick-save-path', 'surghub_improvement_feedback_' + new Date().toISOString().split('T')[0] + '.xlsx');
+        if (!savePath) return;
+        this._writeWorkbook(wb, savePath);
+        this.showMsg('Saved ' + this.formatNumber(rows.length) + ' comments → ' + savePath.split('/').pop());
     },
+
+    // Kept so any older button/handler still works — same workbook.
+    _exportImprovementCsv() { return this._exportImprovementXlsx(); },
 
     _dashFeedbackHtml(snapData) {
         const st = this._aiStory;
