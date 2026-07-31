@@ -44,11 +44,31 @@ Object.assign(window.App, {
                    'clinical-officer', 'nurse', 'nursing', 'non-clinical'],
     },
 
-    PHYS_SOURCE: {
-        label: 'World Bank — Physicians (per 1,000 people), SH.MED.PHYS.ZS',
-        url: 'https://data.worldbank.org/indicator/SH.MED.PHYS.ZS',
-        note: 'Density x population, latest available year per country. The year varies by country and is shown on every row.',
+    // Two denominators, in preference order. WHO publishes the headcount directly, so
+    // no density x population arithmetic is needed — that arithmetic used to pair a
+    // stale density year with a 2024 population. The World Bank series is sourced from
+    // the same WHO NHWA reporting, so the fallback is a vintage difference, not a
+    // definitional one.
+    PHYS_SOURCES: {
+        who: {
+            key: 'who',
+            short: 'WHO',
+            label: 'WHO Global Health Observatory — Medical doctors (number), HWF_0002',
+            url: 'https://www.who.int/data/gho/data/indicators/indicator-details/GHO/medical-doctors-(number)',
+            densityUrl: 'https://www.who.int/data/gho/data/indicators/indicator-details/GHO/medical-doctors-(per-10-000-population)',
+            portalUrl: 'https://apps.who.int/nhwaportal/',
+            note: 'Headcount as reported by countries through the WHO NHWA portal (December 2025 update). Used wherever available.',
+        },
+        wb: {
+            key: 'wb',
+            short: 'World Bank',
+            label: 'World Bank — Physicians (per 1,000 people), SH.MED.PHYS.ZS',
+            url: 'https://data.worldbank.org/indicator/SH.MED.PHYS.ZS',
+            note: 'Density x population. Sourced from the same WHO NHWA reporting but on an older vintage — used only where WHO has no figure.',
+        },
     },
+    // Kept for older callers.
+    get PHYS_SOURCE() { return this.PHYS_SOURCES.who; },
 
     _physOpts() {
         return Object.assign({ scope: 'liclmic', basis: 'declared', trainees: false, medOfficer: true },
@@ -70,6 +90,24 @@ Object.assign(window.App, {
         if (opts.medOfficer && P.medicalOfficer.includes(t)) return true;
         if (opts.trainees && P.trainee.includes(t)) return true;
         return false;
+    },
+
+    // Resolve one country's physician denominator: WHO headcount if it has one,
+    // otherwise the World Bank density x population. Returns null when neither does,
+    // so the caller can report the country rather than drop it silently.
+    _physDenominator(iso) {
+        const WF = window.HEALTH_WORKFORCE, WHO = window.WHO_WORKFORCE;
+        const wf = WF && WF[iso];
+        if (!wf) return null;                       // no income group / population either
+        const w = WHO && WHO[iso];
+        if (w && w.physicians) {
+            return { source: 'who', wf, physicians: w.physicians, year: w.physiciansYear,
+                     per1000: w.per1000 != null ? w.per1000 : wf.physPer1000 };
+        }
+        if (wf.physicians) {
+            return { source: 'wb', wf, physicians: wf.physicians, year: wf.physYear, per1000: wf.physPer1000 };
+        }
+        return null;
     },
 
     // Per-country physician reach. Everything the tab needs, computed once.
@@ -100,20 +138,23 @@ Object.assign(window.App, {
             if (!declaredPhys) return;
             const iso = toISO(country);
             if (!iso) { unresolved.push({ country, n: declaredPhys }); return; }
-            const wf = WF[iso];
-            if (!wf || !wf.physicians) { noDenominator.push({ country, n: declaredPhys }); return; }
+            const den = this._physDenominator(iso);
+            if (!den) { noDenominator.push({ country, n: declaredPhys }); return; }
+            const wf = den.wf;
             // Each country's OWN declaration rate, not one global factor.
             const rate = p.all.size ? p.declared.size / p.all.size : 1;
             const estimated = rate > 0 ? Math.round(declaredPhys / rate) : declaredPhys;
             const certified = p.certPhys.size;
             const count = opts.basis === 'certified' ? certified : (opts.basis === 'estimated' ? estimated : declaredPhys);
             rows.push({
-                country, iso, income: wf.income, physicians: wf.physicians,
-                per1000: wf.physPer1000, year: wf.physYear, population: wf.population,
+                country, iso, income: wf.income, physicians: den.physicians,
+                per1000: den.per1000, year: den.year, population: wf.population,
+                source: den.source, sourceShort: this.PHYS_SOURCES[den.source].short,
+                wbPhysicians: wf.physicians, wbYear: wf.physYear,
                 declared: declaredPhys, estimated, certified, count,
                 declRate: rate * 100,
-                stale: (2026 - wf.physYear) >= 5,
-                reach: wf.physicians ? (count / wf.physicians) * 100 : 0,
+                stale: (2026 - den.year) >= 5,
+                reach: den.physicians ? (count / den.physicians) * 100 : 0,
                 certRate: declaredPhys ? (certified / declaredPhys) * 100 : 0,
                 per100k: wf.population ? (declaredPhys / wf.population) * 100000 : 0,
             });
@@ -161,6 +202,9 @@ Object.assign(window.App, {
                 oneInCertified: tot(r => r.certified) ? Math.round(totPhys / tot(r => r.certified)) : null,
                 oneInDeclared: tot(r => r.declared) ? Math.round(totPhys / tot(r => r.declared)) : null,
                 stale: scoped.filter(r => r.stale).length,
+                fromWho: scoped.filter(r => r.source === 'who').length,
+                fromWb: scoped.filter(r => r.source === 'wb').length,
+                whoPhysicians: scoped.filter(r => r.source === 'who').reduce((s2, r) => s2 + r.physicians, 0),
                 lostDeclared: unresolved.reduce((s, r) => s + r.n, 0) + noDenominator.reduce((s, r) => s + r.n, 0),
             },
         };
@@ -213,6 +257,7 @@ Object.assign(window.App, {
         const o = R.opts, T = R.totals;
         const esc = (t) => this.escapeHtml(t);
         const fmt = (n) => this.formatNumber(Math.round(n || 0));
+        const W = this.PHYS_SOURCES.who, B = this.PHYS_SOURCES.wb;
 
         const seg = (key, val, label, title) => `<button onclick="App.setPhysOpt('${key}','${val}')" title="${esc(title || '')}"
             class="px-3 py-1.5 text-xs font-bold rounded-lg transition-colors ${String(o[key]) === String(val) ? 'bg-gsf-boston text-white' : 'text-slate-500 hover:bg-slate-100'}">${label}</button>`;
@@ -306,7 +351,7 @@ Object.assign(window.App, {
                             ${th('count', 'On SURGhub', 'right', 'Physicians counted on the selected basis')}
                             ${th('physicians', 'Physicians', 'right', 'World Bank density x population')}
                             ${th('reach', 'Reach', 'right')}${th('certRate', 'Cert rate', 'right', 'Share of registered physicians here with at least one certificate')}
-                            ${th('per1000', 'Density', 'right', 'Physicians per 1,000 people')}${th('year', 'Data year', 'right')}
+                            ${th('per1000', 'Density', 'right', 'Physicians per 1,000 people')}${th('year', 'Data year', 'right')}${th('sourceShort', 'Source', 'left', 'Where this country\u2019s physician count comes from')}
                         </tr></thead>
                         <tbody>${sorted.map(r => `<tr class="border-b border-slate-100 last:border-0 hover:bg-slate-50">
                             <td class="py-2 px-3 font-medium text-gsf-prussian whitespace-nowrap">${esc(r.country)}</td>
@@ -317,6 +362,7 @@ Object.assign(window.App, {
                             <td class="py-2 px-3 text-right tabular-nums text-slate-500">${r.declared ? r.certRate.toFixed(0) + '%' : '–'}</td>
                             <td class="py-2 px-3 text-right tabular-nums text-slate-400">${r.per1000}</td>
                             <td class="py-2 px-3 text-right tabular-nums ${r.stale ? 'text-amber-600 font-bold' : 'text-slate-400'}" ${r.stale ? 'title="5 or more years old — the density is applied to a 2024 population, so this row is the least reliable"' : ''}>${r.year}${r.stale ? ' ⚠' : ''}</td>
+                            <td class="py-2 px-3 text-[10px] font-bold ${r.source === 'who' ? 'text-emerald-700' : 'text-amber-700'}" title="${r.source === 'who' ? 'WHO published headcount' : 'World Bank density x population — WHO has no figure for this country'}">${r.sourceShort}</td>
                         </tr>`).join('')}</tbody>
                     </table>
                 </div>
@@ -374,7 +420,19 @@ Object.assign(window.App, {
                         </ul>
                     </div>
                 </div>
-                <p class="text-[11px] text-slate-400 mt-3">Denominator: ${esc(this.PHYS_SOURCE.label)}. <a href="#" onclick="electronAPI.openExternal('${this.escapeJsArg(this.PHYS_SOURCE.url)}'); return false" class="text-gsf-boston hover:underline">Source &rarr;</a> ${esc(this.PHYS_SOURCE.note)}</p>
+                <div class="mt-4 pt-3 border-t border-slate-200">
+                    <p class="text-[10px] font-bold uppercase tracking-wide text-slate-500 mb-2">Where the physician counts come from</p>
+                    <p class="text-xs text-slate-600 leading-relaxed"><strong>${T.fromWho} of ${T.countries}</strong> countries use the WHO published headcount; <strong>${T.fromWb}</strong> fall back to the World Bank. Every row says which, and the Excel export carries both figures so the difference is auditable.</p>
+                    <ul class="mt-2 space-y-1.5 text-xs text-slate-600">
+                        <li><span class="font-bold text-emerald-700">WHO</span> &mdash; ${esc(W.label)}. ${esc(W.note)}
+                            <a href="#" onclick="electronAPI.openExternal('${this.escapeJsArg(W.url)}'); return false" class="text-gsf-boston hover:underline ml-1">Indicator &rarr;</a>
+                            <a href="#" onclick="electronAPI.openExternal('${this.escapeJsArg(W.densityUrl)}'); return false" class="text-gsf-boston hover:underline ml-1">Density &rarr;</a>
+                            <a href="#" onclick="electronAPI.openExternal('${this.escapeJsArg(W.portalUrl)}'); return false" class="text-gsf-boston hover:underline ml-1">NHWA portal &rarr;</a></li>
+                        <li><span class="font-bold text-amber-700">World Bank</span> &mdash; ${esc(B.label)}. ${esc(B.note)}
+                            <a href="#" onclick="electronAPI.openExternal('${this.escapeJsArg(B.url)}'); return false" class="text-gsf-boston hover:underline ml-1">Indicator &rarr;</a></li>
+                    </ul>
+                    <p class="text-[11px] text-slate-400 mt-2">Both series come from the same country reporting through WHO&rsquo;s NHWA platform, so the fallback is a difference of vintage, not of definition.</p>
+                </div>
             </div>`;
 
         return `<div id="phys-tab">${headline}${controls}${bands}${growth}${table}${target}${reliability}</div>`;
@@ -421,7 +479,11 @@ Object.assign(window.App, {
             [''],
             ['Numerator', 'Classified from the RAW signup-survey tag, not the canonical cadre: nurse anaesthetists and anaesthesia technicians are asked separately from anaesthesiologists and are NOT counted as physicians.'],
             ['Extrapolation', 'The Estimated basis grosses each country up by ITS OWN profession-declaration rate, not one global factor.'],
-            ['Denominator', this.PHYS_SOURCE.label + '. ' + this.PHYS_SOURCE.note],
+            ['Denominator (preferred)', this.PHYS_SOURCES.who.label + '. ' + this.PHYS_SOURCES.who.note],
+            ['Denominator source', this.PHYS_SOURCES.who.url],
+            ['Denominator (fallback)', this.PHYS_SOURCES.wb.label + '. ' + this.PHYS_SOURCES.wb.note],
+            ['Fallback source', this.PHYS_SOURCES.wb.url],
+            ['Provenance', T.fromWho + ' of ' + T.countries + ' countries use the WHO headcount; ' + T.fromWb + ' fall back to the World Bank. The By-country sheet carries both figures for comparison.'],
             ['Vintage', T.stale + ' of ' + T.countries + ' rows use a density 5+ years old — see the Data year column.'],
             ['Country', 'Residence as stated by the learner, not nationality.'],
             ['Excluded', T.lostDeclared + ' physicians sit in places with no workforce figure and are left out rather than absorbed.'],
@@ -430,8 +492,11 @@ Object.assign(window.App, {
         XLSX.utils.book_append_sheet(wb, nice(XLSX.utils.json_to_sheet(R.rows.map(r => ({
             Country: r.country, 'Income group': r.income,
             'Physicians on SURGhub (selected basis)': r.count, 'Certified': r.certified, 'Registered': r.declared, 'Estimated': r.estimated,
-            'Physician workforce': r.physicians, 'Reach %': +r.reach.toFixed(3),
-            'Certification rate %': +r.certRate.toFixed(1), 'Physicians per 1,000': r.per1000, 'Density data year': r.year,
+            'Physician workforce': r.physicians, 'Workforce source': this.PHYS_SOURCES[r.source].short,
+            'Workforce data year': r.year,
+            'World Bank figure (for comparison)': r.wbPhysicians || '', 'World Bank data year': r.wbYear || '',
+            'Reach %': +r.reach.toFixed(3),
+            'Certification rate %': +r.certRate.toFixed(1), 'Physicians per 1,000': r.per1000,
             'Density 5+ years old': r.stale ? 'yes' : '', 'Profession declaration rate %': +r.declRate.toFixed(1),
             'Physicians on SURGhub per 100k population': +r.per100k.toFixed(3),
         })))), 'By country');
