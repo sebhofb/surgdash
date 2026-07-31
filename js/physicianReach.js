@@ -70,9 +70,32 @@ Object.assign(window.App, {
     // Kept for older callers.
     get PHYS_SOURCE() { return this.PHYS_SOURCES.who; },
 
+    // stage: which career stages belong in the numerator.
+    //   'practising'  — "In practice" only. What the WHO/World Bank series counts, and the
+    //                   default: their denominator is practising doctors, so students,
+    //                   retirees and academics do not belong in the numerator.
+    //   'plusTraining' — adds doctors in postgraduate clinical training, who most national
+    //                   reporting does include as practising practitioners.
+    //   'all'         — everyone with a doctor profession, whatever their stage. What this
+    //                   tab used to do, kept so the old figures are reproducible.
     _physOpts() {
-        return Object.assign({ scope: 'liclmic', basis: 'declared', trainees: false, medOfficer: true },
+        return Object.assign({ scope: 'liclmic', basis: 'declared', stage: 'practising', medOfficer: true },
             this._physReachOpts || {});
+    },
+
+    PHYS_STAGES: {
+        practising:   { label: 'In practice', stages: ['In practice'],
+                        note: 'Matches the source: WHO counts practising doctors.' },
+        plusTraining: { label: '+ in training', stages: ['In practice', 'Postgraduate clinical'],
+                        note: 'Adds postgraduate clinical trainees, whom most national reporting counts as practitioners.' },
+        all:          { label: 'Any stage', stages: null,
+                        note: 'Everyone with a doctor profession, including undergraduates and the retired — not comparable with the denominator.' },
+    },
+
+    _physStageOk(stage, opts) {
+        const spec = this.PHYS_STAGES[opts.stage] || this.PHYS_STAGES.practising;
+        if (!spec.stages) return true;
+        return spec.stages.indexOf(String(stage || '').trim()) >= 0;
     },
     setPhysOpt(k, v) {
         const o = this._physOpts();
@@ -88,7 +111,9 @@ Object.assign(window.App, {
         if (P.excluded.includes(t)) return false;
         if (P.physician.includes(t)) return true;
         if (opts.medOfficer && P.medicalOfficer.includes(t)) return true;
-        if (opts.trainees && P.trainee.includes(t)) return true;
+        // A 'resident' profession tag is a doctor in training — governed by the stage
+        // control, not a separate switch, so the two cannot disagree.
+        if (P.trainee.includes(t)) return opts.stage !== 'practising';
         return false;
     },
 
@@ -100,12 +125,15 @@ Object.assign(window.App, {
         const wf = WF && WF[iso];
         if (!wf) return null;                       // no income group / population either
         const w = WHO && WHO[iso];
+        const reg = w ? w.region : null;
+        const regName = w ? w.regionName : null;
         if (w && w.physicians) {
             return { source: 'who', wf, physicians: w.physicians, year: w.physiciansYear,
-                     per1000: w.per1000 != null ? w.per1000 : wf.physPer1000 };
+                     per1000: w.per1000 != null ? w.per1000 : wf.physPer1000, region: reg, regionName: regName };
         }
         if (wf.physicians) {
-            return { source: 'wb', wf, physicians: wf.physicians, year: wf.physYear, per1000: wf.physPer1000 };
+            return { source: 'wb', wf, physicians: wf.physicians, year: wf.physYear, per1000: wf.physPer1000,
+                     region: reg, regionName: regName };
         }
         return null;
     },
@@ -126,7 +154,7 @@ Object.assign(window.App, {
             const p = per[r.country] || (per[r.country] = { all: new Set(), declared: new Set(), phys: new Set(), certPhys: new Set() });
             p.all.add(r.user_uid);
             if (r.profession) p.declared.add(r.user_uid);
-            if (this._physIsCounted(r.profession, opts)) {
+            if (this._physIsCounted(r.profession, opts) && this._physStageOk(r.career_stage, opts)) {
                 p.phys.add(r.user_uid);
                 if (String(r.has_certificate) === 'Yes') p.certPhys.add(r.user_uid);
             }
@@ -150,6 +178,7 @@ Object.assign(window.App, {
                 country, iso, income: wf.income, physicians: den.physicians,
                 per1000: den.per1000, year: den.year, population: wf.population,
                 source: den.source, sourceShort: this.PHYS_SOURCES[den.source].short,
+                region: den.region, regionName: den.regionName,
                 wbPhysicians: wf.physicians, wbYear: wf.physYear,
                 declared: declaredPhys, estimated, certified, count,
                 declRate: rate * 100,
@@ -172,6 +201,21 @@ Object.assign(window.App, {
         };
         const byIncome = {};
         ['LIC', 'LMIC', 'UMIC', 'HIC'].forEach(k => { byIncome[k] = band(rows.filter(r => r.income === k)); });
+
+        // WHO region — the reporting unit a UN hub's funders actually use. Comes straight
+        // off ParentLocationCode in the WHO records, so there is no extra mapping to drift.
+        const REG = window.WHO_REGIONS || {};
+        const byRegion = Object.keys(REG)
+            .map(code => Object.assign({ code, name: REG[code] }, band(scoped.filter(r => r.region === code))))
+            .filter(b => b.n).sort((a, b) => b.count - a.count);
+
+        // Overlap with the conflict list, so the two tabs can be read together.
+        let conflict = null;
+        if (Array.isArray(this.CONFLICT_DEFAULT)) {
+            const iso3s = new Set(this.CONFLICT_DEFAULT.map(c => c.iso3).filter(Boolean));
+            const list = rows.filter(r => { const w = (window.WHO_WORKFORCE || {})[r.iso]; return w && iso3s.has(w.iso3); });
+            if (list.length) conflict = Object.assign({ countries: list.length, total: iso3s.size }, band(list));
+        }
         const DENSITY_BANDS = [
             { label: 'Under 0.2', test: (r) => r.per1000 < 0.2 },
             { label: '0.2 – 0.5', test: (r) => r.per1000 >= 0.2 && r.per1000 < 0.5 },
@@ -192,7 +236,7 @@ Object.assign(window.App, {
         missing.sort((a, b) => b.physicians - a.physicians);
 
         return {
-            rows: scoped, allRows: rows, opts, byIncome, densityBands: DENSITY_BANDS, missing,
+            rows: scoped, allRows: rows, opts, byIncome, byRegion, conflict, densityBands: DENSITY_BANDS, missing,
             unresolved: unresolved.sort((a, b) => b.n - a.n), noDenominator,
             totals: {
                 countries: scoped.length, physicians: totPhys, count: totCount,
@@ -220,7 +264,7 @@ Object.assign(window.App, {
         // ActivityTimeline is keyed by display label, so map back through canonProf:
         // a label counts if its canonical cadre is one a raw physician tag maps to.
         const physCadres = new Set(this.PHYS_TAGS.physician.concat(opts.medOfficer ? this.PHYS_TAGS.medicalOfficer : [],
-            opts.trainees ? this.PHYS_TAGS.trainee : []).map(t => canon ? canon(t) : t).filter(Boolean));
+            opts.stage !== 'practising' ? this.PHYS_TAGS.trainee : []).map(t => canon ? canon(t) : t).filter(Boolean));
         const months = Object.keys(tl).filter(m => /^\d{4}-\d{2}$/.test(m)).sort();
         if (!months.length) return null;
         const now = new Date();
@@ -285,9 +329,9 @@ Object.assign(window.App, {
                     ${seg('basis', 'declared', 'Has an account', 'Physicians who registered and told us their profession. Counted, not modelled.')}
                     ${seg('basis', 'estimated', 'Estimated', 'Grossed up for physicians who never stated a profession, using the declaration rate of each country itself.')}
                 </div>
-                <label class="inline-flex items-center gap-2 text-xs text-slate-600 cursor-pointer bg-white border rounded-lg px-3 py-1.5">
-                    <input type="checkbox" data-viewer-allowed ${o.trainees ? 'checked' : ''} onchange="App.setPhysOpt('trainees', this.checked ? 'true' : 'false')"> Include doctors in training
-                </label>
+                <div class="flex items-center gap-1 bg-white border rounded-lg p-0.5" title="Which career stages count. The WHO denominator is practising doctors.">
+                    ${Object.entries(this.PHYS_STAGES).map(([k, v]) => seg('stage', k, v.label, v.note)).join('')}
+                </div>
                 <label class="inline-flex items-center gap-2 text-xs text-slate-600 cursor-pointer bg-white border rounded-lg px-3 py-1.5">
                     <input type="checkbox" data-viewer-allowed ${o.medOfficer ? 'checked' : ''} onchange="App.setPhysOpt('medOfficer', this.checked ? 'true' : 'false')"> Include medical officers
                 </label>
@@ -311,6 +355,7 @@ Object.assign(window.App, {
                       </div>`).join('')}
                 </div>
                 <p class="text-[11px] text-slate-400 mt-3">The three differ only in who counts. Quote the one whose assumption you are willing to defend — the left-hand figure needs none.</p>
+                <p class="text-[11px] text-slate-500 mt-2 pt-2 border-t border-slate-100"><strong>Career stage: ${esc((this.PHYS_STAGES[o.stage] || {}).label || '')}.</strong> ${esc((this.PHYS_STAGES[o.stage] || {}).note || '')}${o.stage === 'practising' ? ' Undergraduates, academics and retired doctors are excluded because they are not in the denominator either.' : ''}</p>
             </div>`;
 
         const bandCard = (title, sub, list, keyFn) => `
@@ -333,6 +378,20 @@ Object.assign(window.App, {
                     (b) => ({ LIC: 'Low income', LMIC: 'Lower-middle', UMIC: 'Upper-middle', HIC: 'High income' })[b.k])}
                 ${bandCard('By physician density', 'Physicians per 1,000 people in the country', R.densityBands.filter(b => b.n), (b) => b.label + ' / 1,000')}
             </div>
+            ${R.byRegion && R.byRegion.length ? `
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+                ${bandCard('By WHO region', 'The unit WHO and most funders report in', R.byRegion, (b) => b.name.replace(' Region', ''))}
+                ${R.conflict ? `
+                <div class="bg-white rounded-xl shadow-sm border overflow-hidden">
+                    <div class="p-4 border-b bg-slate-50"><h3 class="font-bold text-gsf-prussian">Conflict-affected countries</h3><p class="text-[11px] text-slate-500 mt-0.5">The ${R.conflict.total} on the World Bank FCV list — see the Conflict Settings tab</p></div>
+                    <div class="p-4">
+                        <p class="text-2xl font-black text-gsf-prussian leading-none">1 in ${R.conflict.oneIn || '—'}</p>
+                        <p class="text-xs text-slate-500 mt-1">${fmt(R.conflict.count)} of ${fmt(R.conflict.physicians)} physicians across ${R.conflict.countries} of those countries, on the basis selected above.</p>
+                        <p class="text-[11px] text-slate-400 mt-2">Compare with 1 in ${T.oneIn || '—'} across all ${T.countries} countries in scope.</p>
+                        <button onclick="App._dashTab='conflict'; App.renderView()" class="mt-3 px-3 py-1.5 rounded-lg text-xs font-bold bg-white border border-slate-300 text-slate-600 hover:text-gsf-prussian hover:bg-slate-50">Open the Conflict tab &rarr;</button>
+                    </div>
+                </div>` : ''}
+            </div>` : ''}
             <p class="text-[11px] text-slate-400 -mt-4 mb-6">A country with few physicians reaches a high percentage more easily — the right-hand table is a fact about ratios, not evidence of deliberate targeting. Learner counts themselves are essentially uncorrelated with physician density.</p>`;
 
         // ── main table
@@ -386,7 +445,7 @@ Object.assign(window.App, {
                             ${th('count', 'On SURGhub', 'right', 'Physicians counted on the selected basis')}
                             ${th('physicians', 'Physicians', 'right', 'World Bank density x population')}
                             ${th('reach', 'Reach', 'right')}${th('certRate', 'Cert rate', 'right', 'Share of registered physicians here with at least one certificate')}
-                            ${th('per1000', 'Density', 'right', 'Physicians per 1,000 people')}${th('year', 'Data year', 'right')}${th('sourceShort', 'Source', 'left', 'Where this country\u2019s physician count comes from')}
+                            ${th('per1000', 'Density', 'right', 'Physicians per 1,000 people')}${th('year', 'Data year', 'right')}${th('per100k', 'Per 100k pop', 'right', 'Physicians on SURGhub per 100,000 people \u2014 a check that does not use the workforce denominator at all')}${th('sourceShort', 'Source', 'left', 'Where this country\u2019s physician count comes from')}
                         </tr></thead>
                         <tbody>${sorted.map(r => `<tr class="border-b border-slate-100 last:border-0 hover:bg-slate-50">
                             <td class="py-2 px-3 font-medium text-gsf-prussian whitespace-nowrap">${esc(r.country)}</td>
@@ -397,6 +456,7 @@ Object.assign(window.App, {
                             <td class="py-2 px-3 text-right tabular-nums text-slate-500">${r.declared ? r.certRate.toFixed(0) + '%' : '–'}</td>
                             <td class="py-2 px-3 text-right tabular-nums text-slate-400">${r.per1000}</td>
                             <td class="py-2 px-3 text-right tabular-nums ${r.stale ? 'text-amber-600 font-bold' : 'text-slate-400'}" ${r.stale ? 'title="5 or more years old — the density is applied to a 2024 population, so this row is the least reliable"' : ''}>${r.year}${r.stale ? ' ⚠' : ''}</td>
+                            <td class="py-2 px-3 text-right tabular-nums text-slate-400" title="Independent of the physician denominator">${r.per100k.toFixed(2)}</td>
                             <td class="py-2 px-3 text-[10px] font-bold ${r.source === 'who' ? 'text-emerald-700' : 'text-amber-700'}" title="${r.source === 'who' ? 'WHO published headcount' : 'World Bank density x population — WHO has no figure for this country'}">${r.sourceShort}</td>
                         </tr>`).join('')}</tbody>
                     </table>
@@ -441,9 +501,9 @@ Object.assign(window.App, {
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-slate-600 leading-relaxed">
                     <div>
                         <p class="font-bold text-gsf-prussian mb-1">Counted as physicians</p>
-                        <p>Doctors, surgeons, anaesthesiologists, obstetricians and gynaecologists, emergency physicians${o.medOfficer ? ', general medical officers' : ''}${o.trainees ? ', and doctors in training' : ''}.</p>
+                        <p>Doctors, surgeons, anaesthesiologists, obstetricians and gynaecologists, emergency physicians${o.medOfficer ? ', general medical officers' : ''}${o.stage !== 'practising' ? ', and doctors in training' : ''} — restricted to ${esc((this.PHYS_STAGES[o.stage] || {}).label || '').toLowerCase()}.</p>
                         <p class="font-bold text-gsf-prussian mt-2 mb-1">Deliberately excluded</p>
-                        <p><strong>Nurse anaesthetists and anaesthesia technicians</strong> — the signup survey asks these separately from anaesthesiologists, and they are not physicians. ${o.trainees ? '' : 'Doctors in training are excluded on this setting. '}Nurses, clinical officers, technicians and non-clinical staff never count.</p>
+                        <p><strong>Nurse anaesthetists and anaesthesia technicians</strong> — the signup survey asks these separately from anaesthesiologists, and they are not physicians. ${o.stage === 'practising' ? 'Doctors in training, undergraduates, academics and the retired are excluded on this setting, because the denominator counts practising doctors. ' : ''}Nurses, clinical officers, technicians and non-clinical staff never count.</p>
                     </div>
                     <div>
                         <p class="font-bold text-gsf-prussian mb-1">Known limits</p>
@@ -451,7 +511,7 @@ Object.assign(window.App, {
                             <li>Country is where a learner says they are <strong>based</strong>, not their nationality — a doctor who trained in Sudan and works in the Gulf counts in the Gulf.</li>
                             <li>The denominator's year varies by country. <strong>${T.stale} of ${T.countries}</strong> rows here are 5+ years old and marked ⚠ in the table.</li>
                             ${T.lostDeclared ? `<li><strong>${fmt(T.lostDeclared)}</strong> physicians sit in ${R.unresolved.length + R.noDenominator.length} places with no workforce figure${R.unresolved.length ? ' (' + R.unresolved.slice(0, 4).map(u => esc(u.country)).join(', ') + (R.unresolved.length > 4 ? '…' : '') + ')' : ''} and are excluded rather than silently absorbed.</li>` : ''}
-                            <li>Only about half of the physicians counted say they are in practice; the rest are students, trainees or academics who are not all in the World Bank denominator.</li>
+                            <li>Career stage is set to <strong>${esc((this.PHYS_STAGES[o.stage] || {}).label || '')}</strong>. Stage is declared for 97% of physicians here, so this filter is well covered rather than guesswork.</li>
                         </ul>
                     </div>
                 </div>
@@ -557,7 +617,9 @@ Object.assign(window.App, {
             ['SURGhub — physician-workforce reach'],
             ['Generated', new Date().toISOString().slice(0, 10)],
             ['Scope', o.scope === 'all' ? 'All incomes' : 'LIC / LMIC'],
-            ['Basis', o.basis], ['Doctors in training included', o.trainees ? 'yes' : 'no'], ['Medical officers included', o.medOfficer ? 'yes' : 'no'],
+            ['Basis', o.basis],
+            ['Career stage counted', (this.PHYS_STAGES[o.stage] || {}).label + ' — ' + (this.PHYS_STAGES[o.stage] || {}).note],
+            ['Medical officers included', o.medOfficer ? 'yes' : 'no'],
             [''],
             ['Physicians on SURGhub (selected basis)', T.count], ['Physician workforce in scope', T.physicians],
             ['Reach', (T.reach || 0).toFixed(3) + '%'], ['One in', T.oneIn],
