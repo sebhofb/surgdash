@@ -423,7 +423,7 @@ Object.assign(window.App, {
                         ${serBtn('estimated', 'Estimated', '#B8860B')}
                     </div>
                 </div>
-                <div id="chart_phys_top10" style="width:100%;height:380px"></div>
+                <div id="chart_phys_top10" style="width:100%;height:420px"></div>
             </div>`;
 
         const table = `
@@ -556,8 +556,8 @@ Object.assign(window.App, {
                     dt.addColumn('number', c.label);
                     dt.addColumn({ type: 'string', role: 'tooltip', p: { html: true } });
                 });
-                // Rank order — Google's BarChart puts the FIRST row at the top, which is
-                // where the highest-reach country belongs.
+                // Rank order — a ColumnChart draws the first row leftmost, so the
+                // highest-reach country leads.
                 rows.forEach(r => {
                     const cells = [r.country];
                     cols.forEach(c => {
@@ -571,16 +571,17 @@ Object.assign(window.App, {
                     });
                     dt.addRow(cells);
                 });
-                new google.visualization.BarChart(top).draw(dt, {
+                new google.visualization.ColumnChart(top).draw(dt, {
                     colors: cols.map(c => c.colour),
-                    bar: { groupWidth: '72%' },
-                    hAxis: { title: '% of the country\u2019s physicians', minValue: 0,
+                    bar: { groupWidth: '70%' },
+                    hAxis: { textStyle: { color: '#475569', fontSize: 11 }, slantedText: true, slantedTextAngle: 45,
+                             gridlines: { color: 'transparent' }, baselineColor: '#e2e8f0' },
+                    vAxis: { title: '% of the country\u2019s physicians', minValue: 0,
                              textStyle: { color: '#94a3b8', fontSize: 11 }, titleTextStyle: { color: '#94a3b8', fontSize: 11, italic: false },
                              gridlines: { color: '#f1f5f9' } },
-                    vAxis: { textStyle: { color: '#475569', fontSize: 12 } },
                     legend: { position: 'top', alignment: 'start', textStyle: { fontSize: 12 } },
                     tooltip: { isHtml: true },
-                    chartArea: { left: 140, right: 30, top: 40, bottom: 50 },
+                    chartArea: { left: 70, right: 20, top: 40, bottom: 110 },
                     backgroundColor: 'transparent',
                 });
             }

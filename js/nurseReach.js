@@ -203,7 +203,7 @@ Object.assign(window.App, {
             <div class="bg-white p-6 rounded-xl shadow-sm border mb-6">
                 <h3 class="text-lg font-bold text-gsf-prussian">Top 10 countries by nursing reach</h3>
                 <p class="text-xs text-slate-500 mt-1 mb-3">Share of each country&rsquo;s nursing workforce with a SURGhub account, on the basis selected above.</p>
-                <div id="chart_nurse_top10" style="width:100%;height:360px"></div>
+                <div id="chart_nurse_top10" style="width:100%;height:400px"></div>
             </div>`;
 
         const sort = this._nurseSort || { col: 'reach', dir: 'desc' };
@@ -298,13 +298,14 @@ Object.assign(window.App, {
             '<div style="padding:8px 12px;font-size:12px;line-height:1.5"><strong>' + this.escapeHtml(r.country) + '</strong><br>'
             + this.formatNumber(r.count) + ' of ' + this.formatNumber(r.nurses) + ' nurses = <strong>' + r.reach.toFixed(2) + '%</strong><br>'
             + '<span style="color:#94a3b8">1 in ' + (r.count ? Math.round(r.nurses / r.count) : '—') + ' &middot; WHO ' + r.year + '</span></div>']));
-        new google.visualization.BarChart(el).draw(dt, {
-            colors: ['#3FB984'], bar: { groupWidth: '68%' },
-            hAxis: { title: '% of the country’s nurses', minValue: 0, textStyle: { color: '#94a3b8', fontSize: 11 },
+        new google.visualization.ColumnChart(el).draw(dt, {
+            colors: ['#3FB984'], bar: { groupWidth: '66%' },
+            hAxis: { textStyle: { color: '#475569', fontSize: 11 }, slantedText: true, slantedTextAngle: 45,
+                     gridlines: { color: 'transparent' }, baselineColor: '#e2e8f0' },
+            vAxis: { title: '% of the country’s nurses', minValue: 0, textStyle: { color: '#94a3b8', fontSize: 11 },
                      titleTextStyle: { color: '#94a3b8', fontSize: 11, italic: false }, gridlines: { color: '#f1f5f9' } },
-            vAxis: { textStyle: { color: '#475569', fontSize: 12 } },
             legend: { position: 'none' }, tooltip: { isHtml: true },
-            chartArea: { left: 140, right: 30, top: 20, bottom: 50 }, backgroundColor: 'transparent',
+            chartArea: { left: 70, right: 20, top: 20, bottom: 110 }, backgroundColor: 'transparent',
         });
     },
 
