@@ -9,6 +9,15 @@
     // this is shown to the team, not to developers. Update this list per release.
     const RELEASES = [
         {
+            v: '2.0.13',
+            date: 'July 2026',
+            items: [
+                { t: 'Fixed: sync could hang on \u201cFinalising\u2026\u201d', d: 'A last bookkeeping call had no timeout, so a server that went quiet left the app stuck behind the sync box with no way out. Every network call is now time-limited, and the box offers a way to close it if something takes too long. Your local data was never at risk.' },
+                { t: 'Much lower CPU and battery use', d: 'Two things animated continuously whether or not anything was happening \u2014 the sidebar status dot and, when a sync stalled, a full-screen blurred overlay. Both kept the graphics chip busy and the laptop warm. They are now static.' },
+                { t: 'Better behaviour when LearnWorlds rate-limits', d: 'The app can now read the server\u2019s own \u201cwait this long\u201d instruction instead of guessing, which should make Sync Learners far less likely to give up.' }
+            ]
+        },
+        {
             v: '2.0.12',
             date: 'July 2026',
             items: [
