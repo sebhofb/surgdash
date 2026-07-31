@@ -9,6 +9,18 @@
     // this is shown to the team, not to developers. Update this list per release.
     const RELEASES = [
         {
+            v: '2.0.12',
+            date: 'July 2026',
+            items: [
+                { t: 'Physician Reach tab', d: 'A new Dashboard tab: what share of each country\u2019s physicians SURGhub has reached, against the World Bank workforce. Three headline bases \u2014 certified, has an account, estimated \u2014 so you can quote the one whose assumption you are willing to defend. Includes a \u201cwhere SURGhub is not yet\u201d target list. The old version counted nurse anaesthetists and anaesthesia technicians as doctors; it no longer does.' },
+                { t: 'Conflict Settings tab', d: 'Reach into conflict-affected settings, now on the World Bank FY2027 FCV list instead of six hardcoded countries \u2014 8,570 learners rather than 2,586. Growth over time, momentum by country, an income comparison that separates conflict from poverty, gender, learner voices, a map and an Excel export. The country list is editable on the tab itself.' },
+                { t: 'What learners ask us to fix \u2014 AI summaries', d: 'Press Summarise on the Feedback tab for an overall read, a summary per topic, and what LIC/LMIC learners ask for that higher-income learners do not. The Excel download from that card works again \u2014 it had been silently failing on every click.' },
+                { t: 'SURGhub Milestones', d: 'A new tab to record the moments the numbers do not show \u2014 partnerships, launches, grants, recognition \u2014 with suggestions drawn from thresholds your data has already crossed. They travel with the shared snapshot.' },
+                { t: 'Data Sync cards show when they last ran', d: 'Each card now says \u201clast run 3 days ago\u201d and turns amber when it is overdue, so a stale course sync stops quietly distorting the certificate count.' },
+                { t: 'Fixes', d: 'Tags on project milestones are no longer deleted when a project loads. Two buttons that did nothing \u2014 \u201cAdd a country\u201d and the bulk quality-target setter \u2014 now work.' }
+            ]
+        },
+        {
             v: '2.0.11',
             date: 'July 2026',
             items: [
