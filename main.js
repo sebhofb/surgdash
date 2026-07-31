@@ -617,12 +617,27 @@ ipcMain.handle('pick-save-path', async (event, defaultName) => {
 
 // ===== IPC: HTTP request (replaces renderer-side require('https')) =====
 
-ipcMain.handle('http-request', async (event, { url, method, headers, body }) => {
+ipcMain.handle('http-request', async (event, { url, method, headers, body, timeoutMs }) => {
   return new Promise((resolve) => {
     let settled = false;
-    const done = (result) => { if (!settled) { settled = true; resolve(result); } };
+    let timer = null;
+    const done = (result) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      resolve(result);
+    };
     try {
       const request = net.request({ url, method: method || 'GET', redirect: 'follow' });
+      // Electron's net.request has NO default timeout. If a server accepts the
+      // connection and then goes quiet, none of the handlers below ever fire and the
+      // renderer's await hangs for good — which is how a sync could sit on
+      // "Finalising…" indefinitely behind a modal overlay. Always bound it.
+      const capMs = Number(timeoutMs) > 0 ? Number(timeoutMs) : 120000;
+      timer = setTimeout(() => {
+        try { request.abort(); } catch (_) {}
+        done({ statusCode: 0, body: '', error: 'Timed out after ' + Math.round(capMs / 1000) + 's with no response' });
+      }, capMs);
       if (headers) {
         Object.entries(headers).forEach(([k, v]) => request.setHeader(k, v));
       }
@@ -630,7 +645,7 @@ ipcMain.handle('http-request', async (event, { url, method, headers, body }) => 
         let data = '';
         response.on('data', chunk => { data += chunk.toString(); });
         response.on('end', () => {
-          done({ statusCode: response.statusCode, body: data });
+          done({ statusCode: response.statusCode, body: data, headers: response.headers || {} });
         });
         // Response stream errors (e.g. QUIC protocol mid-stream failures) — must
         // be caught explicitly or they propagate as uncaughtException dialogs.

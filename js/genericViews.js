@@ -14342,7 +14342,7 @@ function _writeProject(ss, d) {
         if (document.getElementById('sync-progress-overlay')) return;
         const overlay = document.createElement('div');
         overlay.id = 'sync-progress-overlay';
-        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,0.55);backdrop-filter:blur(2px);z-index:10000;display:flex;align-items:center;justify-content:center;';
+        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,0.55);z-index:10000;display:flex;align-items:center;justify-content:center;';
         overlay.innerHTML = `
             <div style="background:#fff;border-radius:16px;padding:28px 36px;width:420px;max-width:92vw;box-shadow:0 12px 48px rgba(0,0,0,0.25);text-align:center;">
                 <div style="width:48px;height:48px;border:4px solid #4389C8;border-top-color:transparent;border-radius:50%;margin:0 auto 18px;animation:spin 0.8s linear infinite;"></div>
@@ -14351,9 +14351,20 @@ function _writeProject(ss, d) {
                 <div style="width:100%;height:6px;background:#f1f5f9;border-radius:6px;overflow:hidden;">
                     <div id="sync-progress-bar" style="width:5%;height:100%;background:linear-gradient(90deg,#4389C8,#002F4C);border-radius:6px;transition:width 0.3s ease;"></div>
                 </div>
-                <p style="font-size:11px;color:#94a3b8;margin:14px 0 0;">Please don't close the app until this finishes.</p>
+                <p id="sync-progress-note" style="font-size:11px;color:#94a3b8;margin:14px 0 0;">Please don't close the app until this finishes.</p>
+                <button id="sync-progress-escape" onclick="GenericViews._hideSyncOverlay()" style="display:none;margin-top:14px;padding:8px 18px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;color:#475569;font-weight:700;font-size:13px;cursor:pointer;">Close this box</button>
             </div>`;
         document.body.appendChild(overlay);
+        // Never trap the window. A network call with no timeout used to leave this
+        // overlay up for good — spinner running, whole app blocked. After two minutes
+        // offer a way out and say plainly that closing it is safe.
+        clearTimeout(this._syncOverlayEscape);
+        this._syncOverlayEscape = setTimeout(() => {
+            const b = document.getElementById('sync-progress-escape');
+            const n = document.getElementById('sync-progress-note');
+            if (b) b.style.display = 'inline-block';
+            if (n) n.textContent = 'This is taking longer than expected. Your local data is safe — closing this box does not cancel or corrupt anything.';
+        }, 120000);
     },
     _updateSyncOverlay(text, pct) {
         const t = document.getElementById('sync-progress-text');
@@ -14362,6 +14373,7 @@ function _writeProject(ss, d) {
         if (b && typeof pct === 'number') b.style.width = Math.min(100, Math.max(0, pct)) + '%';
     },
     _hideSyncOverlay() {
+        clearTimeout(this._syncOverlayEscape);
         const o = document.getElementById('sync-progress-overlay');
         if (o) o.remove();
     },

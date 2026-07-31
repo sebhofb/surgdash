@@ -773,7 +773,9 @@ window.App = {
         if (!url) return { ok: false, reason: 'nourl' };
         const metaUrl = url + (url.indexOf('?') >= 0 ? '&' : '?') + 'meta=1';
         let res;
-        try { res = await electronAPI.invoke('http-request', { url: metaUrl, method: 'GET' }); }
+        // Best-effort, and on the critical path of the sync overlay (it is awaited at
+        // "Finalising…"). Keep it on a short leash so a silent server cannot strand the sync.
+        try { res = await electronAPI.invoke('http-request', { url: metaUrl, method: 'GET', timeoutMs: 15000 }); }
         catch (e) { return { ok: false, reason: 'neterr', error: String((e && e.message) || e) }; }
         if (!res || res.error || !res.body) return { ok: false, reason: 'neterr', error: (res && res.error) || 'no response' };
         let r; try { r = JSON.parse(res.body); } catch (_) { return { ok: false, reason: 'badresp' }; }
