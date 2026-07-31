@@ -13082,9 +13082,13 @@ ${additionalPages.map((inner, i) => `
         const hint = document.getElementById('save-settings-hint');
         const saveBtn = document.getElementById('save-settings-btn');
         if (hint && saveBtn) {
+            // Ring, not a pulse. An infinite animation on a permanently-mounted
+            // element keeps the compositor awake for as long as the view is open,
+            // and this one was never removed once added — it pulsed until you
+            // navigated away.
             const showDirty = () => {
                 hint.classList.remove('hidden');
-                saveBtn.classList.add('animate-pulse');
+                saveBtn.classList.add('ring-2', 'ring-amber-400');
             };
             main.querySelectorAll('input, textarea, select').forEach(el => {
                 el.addEventListener('input', showDirty);
