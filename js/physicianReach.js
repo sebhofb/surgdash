@@ -240,6 +240,20 @@ Object.assign(window.App, {
 
 // ── Dashboard › Physician-workforce reach ────────────────────────────────────
 Object.assign(window.App, {
+    // Which of the three bases the top-10 chart draws. All on by default so the
+    // spread between "certified" and "estimated" is visible without clicking.
+    _physSeries() {
+        return Object.assign({ certified: true, declared: true, estimated: true }, this._physSeriesOn || {});
+    },
+    togglePhysSeries(key) {
+        const s = this._physSeries();
+        // Never leave the chart empty — the last remaining series stays on.
+        if (s[key] && Object.values(s).filter(Boolean).length === 1) return;
+        s[key] = !s[key];
+        this._physSeriesOn = s;
+        this.renderView();
+    },
+
     _sortPhysTable(col) {
         const cur = this._physSort || { col: 'reach', dir: 'desc' };
         this._physSort = (cur.col === col) ? { col, dir: cur.dir === 'asc' ? 'desc' : 'asc' }
@@ -253,6 +267,7 @@ Object.assign(window.App, {
             return '<div class="bg-white p-12 text-center text-slate-400 italic rounded-xl border">Loading learner records…</div>';
         }
         const R = this.physicianReach();
+        this._lastPhysReach = R;   // the chart drawer reuses this rather than re-aggregating 96k rows
         if (!R) return '<div class="bg-white p-12 text-center text-slate-500 italic rounded-xl border">No learner data yet — run <strong>Sync Learners</strong> on the Data Sync page.</div>';
         const o = R.opts, T = R.totals;
         const esc = (t) => this.escapeHtml(t);
@@ -332,6 +347,26 @@ Object.assign(window.App, {
             const on = sort.col === col;
             return `<th class="py-2.5 px-3 text-${align} font-medium cursor-pointer select-none hover:text-gsf-prussian whitespace-nowrap ${on ? 'text-gsf-prussian' : ''}" onclick="App._sortPhysTable('${col}')" title="${esc(hint || label)}">${label}<span class="ml-1 text-[9px] ${on ? 'text-gsf-boston' : 'text-slate-300'}">${on ? (sort.dir === 'asc' ? '&#9650;' : '&#9660;') : '&#8645;'}</span></th>`;
         };
+        const ser = this._physSeries();
+        const serBtn = (k, label, colour) => `<button onclick="App.togglePhysSeries('${k}')"
+            class="px-2.5 py-1 rounded-lg text-xs font-bold border transition-colors ${ser[k] ? 'text-white' : 'bg-white text-slate-400 border-slate-200 hover:border-slate-300'}"
+            style="${ser[k] ? 'background:' + colour + ';border-color:' + colour : ''}">${label}</button>`;
+        const chart = `
+            <div class="bg-white p-6 rounded-xl shadow-sm border mb-6">
+                <div class="flex items-start justify-between gap-3 flex-wrap mb-1">
+                    <div>
+                        <h3 class="text-lg font-bold text-gsf-prussian">Top 10 countries by physician reach</h3>
+                        <p class="text-xs text-slate-500 mt-1">Ranked by the basis selected above (${o.basis === 'certified' ? 'certified' : o.basis === 'estimated' ? 'estimated' : 'has an account'}). Each bar shows all three so you can see the spread — click a chip to hide one.</p>
+                    </div>
+                    <div class="flex items-center gap-1.5 shrink-0">
+                        ${serBtn('certified', 'Certified', '#5B8C5A')}
+                        ${serBtn('declared', 'Has an account', '#4389C8')}
+                        ${serBtn('estimated', 'Estimated', '#B8860B')}
+                    </div>
+                </div>
+                <div id="chart_phys_top10" style="width:100%;height:380px"></div>
+            </div>`;
+
         const table = `
             <div class="bg-white rounded-xl shadow-sm border overflow-hidden mb-6">
                 <div class="p-5 border-b bg-slate-50 flex items-start justify-between gap-3 flex-wrap">
@@ -435,11 +470,62 @@ Object.assign(window.App, {
                 </div>
             </div>`;
 
-        return `<div id="phys-tab">${headline}${controls}${bands}${growth}${table}${target}${reliability}</div>`;
+        return `<div id="phys-tab">${headline}${controls}${bands}${chart}${growth}${table}${target}${reliability}</div>`;
     },
 
     _drawPhysicianCharts(audSnap) {
         if (!window.google || !google.visualization || !window.Charts) return;
+
+        // ── Top 10 by reach, one grouped bar per country, three bases side by side.
+        const top = document.getElementById('chart_phys_top10');
+        if (top) {
+            const R = this._lastPhysReach || this.physicianReach();
+            const ser = this._physSeries();
+            const rows = R ? R.rows.slice(0, 10) : [];
+            if (!rows.length) {
+                Charts.clearChart('chart_phys_top10', 'No countries with a physician workforce yet.');
+            } else {
+                const cols = [
+                    { key: 'certified', label: 'Certified', colour: '#5B8C5A' },
+                    { key: 'declared',  label: 'Has an account', colour: '#4389C8' },
+                    { key: 'estimated', label: 'Estimated', colour: '#B8860B' },
+                ].filter(c => ser[c.key]);
+                const dt = new google.visualization.DataTable();
+                dt.addColumn('string', 'Country');
+                cols.forEach(c => {
+                    dt.addColumn('number', c.label);
+                    dt.addColumn({ type: 'string', role: 'tooltip', p: { html: true } });
+                });
+                // Rank order — Google's BarChart puts the FIRST row at the top, which is
+                // where the highest-reach country belongs.
+                rows.forEach(r => {
+                    const cells = [r.country];
+                    cols.forEach(c => {
+                        const n = r[c.key] || 0;
+                        const pct = r.physicians ? (n / r.physicians * 100) : 0;
+                        cells.push(+pct.toFixed(2));
+                        cells.push('<div style="padding:8px 12px;font-size:12px;line-height:1.5">'
+                            + '<strong>' + this.escapeHtml(r.country) + '</strong> &middot; ' + this.escapeHtml(c.label) + '<br>'
+                            + this.formatNumber(n) + ' of ' + this.formatNumber(r.physicians) + ' physicians = <strong>' + pct.toFixed(2) + '%</strong><br>'
+                            + '<span style="color:#94a3b8">1 in ' + (n ? Math.round(r.physicians / n) : '—') + ' &middot; workforce from ' + this.escapeHtml(r.sourceShort) + ' ' + r.year + '</span></div>');
+                    });
+                    dt.addRow(cells);
+                });
+                new google.visualization.BarChart(top).draw(dt, {
+                    colors: cols.map(c => c.colour),
+                    bar: { groupWidth: '72%' },
+                    hAxis: { title: '% of the country\u2019s physicians', minValue: 0,
+                             textStyle: { color: '#94a3b8', fontSize: 11 }, titleTextStyle: { color: '#94a3b8', fontSize: 11, italic: false },
+                             gridlines: { color: '#f1f5f9' } },
+                    vAxis: { textStyle: { color: '#475569', fontSize: 12 } },
+                    legend: { position: 'top', alignment: 'start', textStyle: { fontSize: 12 } },
+                    tooltip: { isHtml: true },
+                    chartArea: { left: 140, right: 30, top: 40, bottom: 50 },
+                    backgroundColor: 'transparent',
+                });
+            }
+        }
+
         const el = document.getElementById('chart_phys_growth');
         if (!el) return;
         const g = this.physicianGrowth(audSnap);
