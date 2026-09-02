@@ -197,7 +197,9 @@ Object.assign(window.App, {
         if (!window.Charts) return;
         const monthly = this._instTimeline(); if (!monthly) return;
         const sel = this.selectedInstitutions || [];
-        Charts.drawBreakdownTimeline('chart_inst_timeline', monthly, 6, sel.length ? sel : null, false, this.instMonths || 'all');
+        const mode = this.instViewMode === 'monthly' ? 'monthly' : 'cumulative';
+        this._chartViewMode = this._chartViewMode || {}; this._chartViewMode['chart_inst_timeline'] = mode;
+        Charts.drawBreakdownTimeline('chart_inst_timeline', monthly, 6, sel.length ? sel : null, false, this.instMonths || 'all', false, mode);
     },
 
     setInstOpt(k, v) {
@@ -290,7 +292,7 @@ Object.assign(window.App, {
         const tableHtml = `
             <div class="bg-white rounded-xl border shadow-sm overflow-hidden mb-6">
                 <div class="bg-slate-50 border-b p-5 flex items-center justify-between gap-3 flex-wrap">
-                    <div><h3 class="font-bold text-lg text-gsf-prussian">Institution by institution</h3>
+                    <div><h3 class="font-bold text-lg text-gsf-prussian">Institutions</h3>
                         <p class="text-xs text-slate-500">Email domains with at least ${this.INST_MIN_LEARNERS} learners · ${rows.length} institutions · top 40 shown, all in the export${idx.hasDemo ? '' : ' · top country appears once the demographics map has loaded'}</p></div>
                     <button onclick="App.exportInstitutionsXlsx()" class="flex items-center gap-1.5 px-3 py-2 border rounded-lg text-xs font-bold text-slate-600 hover:text-gsf-boston hover:bg-slate-50"><i data-lucide="download" width="14"></i> Excel</button>
                 </div>
@@ -311,13 +313,23 @@ Object.assign(window.App, {
                 </table></div>
             </div>`;
 
+        // Chart view: cumulative (default) or each month's own count. Registered per
+        // chart so the category picker's redraws keep the chosen view.
+        const monthlyView = this.instViewMode === 'monthly';
+        this._chartViewMode = this._chartViewMode || {};
+        this._chartViewMode['chart_inst_timeline'] = monthlyView ? 'monthly' : 'cumulative';
         const cats = this._instCategoryList(idx);
         const selector = cats.length ? this.buildCategorySelector(cats, this.selectedInstitutions || [], 'selectedInstitutions', 'chart_inst_timeline', 'InstitutionTimeline', 6) : '';
         const chartHtml = `
             <div class="bg-white p-6 rounded-xl shadow-sm border mb-6">
-                <h3 class="text-lg font-bold mb-1 flex items-center gap-2 text-gsf-prussian"><i data-lucide="trending-up" class="text-gsf-boston"></i> Courses started per month, by institution ${this._chartBtns ? this._chartBtns('chart_inst_timeline', 'Institutions_Growth') : ''}</h3>
-                <p class="text-xs text-slate-500 mb-3">The 12 largest institutions plus "Other institutions"; personal email is off by default because it dwarfs everything else.</p>
+                <h3 class="text-lg font-bold mb-1 flex items-center gap-2 text-gsf-prussian"><i data-lucide="trending-up" class="text-gsf-boston"></i> ${monthlyView ? 'Courses started each month, by institution' : 'Courses started to date, by institution (cumulative)'} ${this._chartBtns ? this._chartBtns('chart_inst_timeline', monthlyView ? 'Institutions_Monthly' : 'Institutions_Growth') : ''}</h3>
+                <p class="text-xs text-slate-500 mb-3">${monthlyView ? 'Each point is that month\'s courses started — a rollout shows as a spike.' : 'Each point is the running total of courses started — a rollout shows as a step.'} The 12 largest institutions plus "Other institutions"; personal email is off by default because it dwarfs everything else.</p>
                 <div class="mb-3 flex flex-wrap gap-4 items-center">
+                    <label class="inline-flex items-center gap-2 text-sm text-slate-600"><span class="text-xs font-semibold text-slate-400 uppercase">View</span>
+                        <select data-viewer-allowed onchange="App.setInstOpt('instViewMode', this.value)" class="bg-white border rounded px-2 py-1 text-slate-700 outline-none text-xs">
+                            <option value="cumulative" ${!monthlyView ? 'selected' : ''}>Cumulative</option>
+                            <option value="monthly" ${monthlyView ? 'selected' : ''}>Monthly</option>
+                        </select></label>
                     <label class="inline-flex items-center gap-2 text-sm text-slate-600"><span class="text-xs font-semibold text-slate-400 uppercase">Period</span>
                         <select data-viewer-allowed onchange="App.setInstOpt('instMonths', this.value)" class="bg-white border rounded px-2 py-1 text-slate-700 outline-none text-xs">
                             ${[['6', 'Last 6 mo'], ['12', 'Last 12 mo'], ['24', 'Last 24 mo'], ['all', 'All time']].map(([v, l]) => `<option value="${v}" ${String(this.instMonths || 'all') === v ? 'selected' : ''}>${l}</option>`).join('')}

@@ -26,7 +26,7 @@ Object.assign(window.App, {
         'countryTimelineRange', 'profTimelineRange', 'activityTimelineRange',
         'careerTimelineRange', 'topicTimelineRange', 'ambassadorsTimelineRange',
         'joinersPeriodDays',
-        'instThreshold', 'instMonths', 'instShowPersonal',
+        'instThreshold', 'instMonths', 'instShowPersonal', 'instViewMode',
         'cmpPreset', 'cmpAStart', 'cmpAEnd', 'cmpBStart', 'cmpBEnd', 'cmpCohortMode', 'cmpCohortDomain',
         'anomalyCollapsed',
     ],

@@ -665,8 +665,16 @@ window.Charts = {
     // selectedCategories = array of selected names; if empty, use top N
     // monthLimit = number of recent months to display ('all' or a positive integer)
     // showBars = if true, also overlay monthly bars (sum across selected categories)
-    drawBreakdownTimeline: function(elementId, monthlyBreakdown, topN, selectedCategories, showBars, monthLimit, trimYAxis) {
-        if (this._deferIfNotReady('drawBreakdownTimeline', [elementId, monthlyBreakdown, topN, selectedCategories, showBars, monthLimit, trimYAxis])) return;
+    // viewMode = 'cumulative' (default — running total, the "growth" view every
+    //   existing caller expects) or 'monthly' (each month's own count; tooltip %
+    //   is the share of that month). When omitted, a per-chart preference set by
+    //   the owning tab in App._chartViewMode[elementId] is honoured, so redraws
+    //   from the category picker keep the chosen view.
+    drawBreakdownTimeline: function(elementId, monthlyBreakdown, topN, selectedCategories, showBars, monthLimit, trimYAxis, viewMode) {
+        if (this._deferIfNotReady('drawBreakdownTimeline', [elementId, monthlyBreakdown, topN, selectedCategories, showBars, monthLimit, trimYAxis, viewMode])) return;
+        if (!viewMode && window.App && window.App._chartViewMode && window.App._chartViewMode[elementId]) viewMode = window.App._chartViewMode[elementId];
+        const monthlyView = viewMode === 'monthly';
+        if (monthlyView) showBars = false;   // the bars ARE the monthly total — redundant in this view
         const el = document.getElementById(elementId);
         if (!el) return;
 
@@ -721,6 +729,15 @@ window.Charts = {
             cumAllUpTo[m] = { ...runningAll };
         });
 
+        // What each point displays: the running total (default) or the month's own count.
+        const displayUpTo = {}, displayAllUpTo = {};
+        allMonths.forEach(m => {
+            if (monthlyView) {
+                const row = {}; categories.forEach(cat => { row[cat] = monthlyBreakdown[m][cat] || 0; }); displayUpTo[m] = row;
+                const all = {}; allCatsForPct.forEach(cat => { all[cat] = monthlyBreakdown[m][cat] || 0; }); displayAllUpTo[m] = all;
+            } else { displayUpTo[m] = cumulativeUpTo[m]; displayAllUpTo[m] = cumAllUpTo[m]; }
+        });
+
         // Apply month limit (default: all)
         let monthsToShow = allMonths;
         const limit = monthLimit;
@@ -741,9 +758,9 @@ window.Charts = {
         }
 
         monthsToShow.forEach(m => {
-            const cum = cumulativeUpTo[m];
+            const cum = displayUpTo[m];
             let grandTotal = 0;
-            const cumAll = cumAllUpTo[m] || {};
+            const cumAll = displayAllUpTo[m] || {};
             allCatsForPct.forEach(cat => { grandTotal += (cumAll[cat] || 0); });
             let row = [this.formatDate(m + '-01')];
             categories.forEach(cat => {
@@ -769,8 +786,8 @@ window.Charts = {
             const lastM = monthsToShow[monthsToShow.length - 1];
             let lowestFirst = Infinity, highestLast = 0;
             categories.forEach(cat => {
-                const fv = cumulativeUpTo[firstM][cat] || 0;
-                const lv = cumulativeUpTo[lastM][cat] || 0;
+                const fv = displayUpTo[firstM][cat] || 0;
+                const lv = displayUpTo[lastM][cat] || 0;
                 if (fv < lowestFirst) lowestFirst = fv;
                 if (lv > highestLast) highestLast = lv;
             });
