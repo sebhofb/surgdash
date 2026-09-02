@@ -3,86 +3,77 @@
 Working list of what to build next. Keep entries short; link to code when a
 decision is made. Items move to `js/whatsnew.js` when they ship.
 
+## Done — 2 September 2026 feature pass
+
+The five features from the August review, all on `main`:
+
+- **Persist UI state** (`js/uiState.js`, commit b241fcf). Dashboard tab,
+  partial-month toggle, chart widths, trim/range toggles, category pickers,
+  reach options and the new tabs' controls survive a restart, per device.
+  Scalars are accessor-backed (no call-site changes); object prefs are
+  snapshotted on `renderView()`. Stored at `settings/ui_state.json`, key
+  `surgdash_ui_state` — forward-mapped only (never enumerated, pushed or
+  exported) and in `NAV_KEYS` so a click never trips the unsynced banner.
+  "↺ Reset view preferences" sits in the overview's Data-through line.
+- **Institutions & cohorts tab** (`js/institutions.js`, b241fcf). Learners
+  grouped by email domain from the completion records; webmail and relay
+  domains pooled as "Personal email". KPI strip, dominance flags (months where
+  one institution exceeded a chosen share — default 15% — of courses started
+  or certificates; seha.ae is caught at 43%/47% in May/June 2026), sortable
+  institution table, courses-started-per-month chart with the category
+  picker, Excel export. Domains and counts only; no email is rendered.
+- **Email-domain hygiene** (same file). Conservative typo detector: same
+  registrable label with a different ending on tiny domains (seha.e / .ar /
+  .a / .se → seha.ae), one- or two-edit near-misses of institutions whose
+  label has ≥ 4 chars, webmail near-misses (gmil.com → gmail.com). nhs.scot
+  and two-letter university domains are deliberately not flagged. 66 suspects
+  on current data.
+- **Compare periods tab** (`js/compare.js`, fcec8e9). Two month-aligned
+  periods side by side — activity, per-day rates, certificates ÷ starts and a
+  true cohort completion rate, survey volume and mean, reach shares, and the
+  platform at each period end — with presets (last 12 complete months, July–
+  June years, calendar years, custom) and an optional only/exclude filter on
+  one institution for the completion-based metrics. Excel export. Reproduces
+  the September director figures exactly on the same data.
+- **Anomaly flags** (`js/anomalies.js`, fcec8e9). "Worth a look" strip above
+  the overview KPIs: a source > 7 days behind the newest (with a Data Sync
+  action), one institution dominating the latest complete month, a KPI > 2σ
+  from its trailing-12 mean, a month with starts but no certificates, a
+  country suddenly dominating sign-ups, registrations under half the prior
+  3-month mean. Uses only sources already in memory; collapsible.
+
+Definitions these tabs share (keep them consistent when adding more):
+"courses started" = enrolments the learner opened (start date present; ~13% of
+enrolments are never opened and carry no date); "survey responses" = submissions
+with a 1–5 rating (submissions without a rating are shown separately); the
+institution filter is exact-domain (typo variants are listed in the hygiene
+panel, not swept in); "joined" on the Institutions tab = month of first course
+start, because no per-email registration date is held.
+
 ## Done — August 2026 hardening pass
 
-From the security / stability review of 12 Aug 2026:
+- Preload filesystem bridge path-guarded; salted PBKDF2 role passwords kept
+  out of the Sheets push (d6632d9).
+- Renderer-wide error capture (`js/errors.js`), full pre-sync backup with
+  hard-link dedupe, KPI units, "Data through" freshness line (05a1a33).
+- `Retry-After` honoured; CSP trimmed to gstatic + Google Fonts; Sync
+  Everything states the age of the card-2 upload; pending submissions indexed
+  (5d77936).
+- One ISO pivot for country names: `countryToISO()` completed (246 codes, 75
+  aliases) with ISO fallbacks in the income classifier, Lancet list and
+  conflict matcher (ed09aaf).
 
-- Preload filesystem bridge is path-guarded (reads: `$HOME`, tmp, data dir, app
-  bundle, dialog-picked files; writes: `$HOME`, tmp, data dir, dialog-picked
-  folders / save paths; recursive delete refuses root directories).
-- Role passwords are salted PBKDF2-SHA256 records and excluded from the Sheets
-  push; legacy unsalted hashes upgrade themselves on the next successful login.
-- Renderer-wide error capture (`js/errors.js`): uncaught errors and unhandled
-  rejections → console, a throttled toast, and a rolling
-  `settings/error_log.json`. Former empty `catch {}` blocks route through the
-  throttled `__swallowed()` sink.
-- Pre-sync backup covers every `surghub/*.json` (completion + anon_users
-  included), hard-linking unchanged files so it costs little disk.
-- KPI tiles state their unit; the dashboard shows a "Data through" freshness
-  line per source and flags one trailing the others by more than 7 days.
-- LearnWorlds 429 handling honours the server's `Retry-After` header
-  (seconds or HTTP-date, capped at 60 s) before the 2/4/8 s fallback.
-- CSP no longer lists the four CDN hosts that were vendored months ago; only
-  Google Charts (gstatic) and Google Fonts remain remote. `unsafe-eval` stays
-  until Tailwind is built statically.
-- "Sync Everything" states that per-learner enrolment/certificate dates come
-  only from the card-2 User Progress upload, and how old that upload is.
-- `surgdash_pending_submissions` is indexed by `Storage.keys()` again, so the
-  colleague-submission queue is included in full backups and exports.
-- **Country names have one pivot: ISO alpha-2 via `countryToISO()`.**
-  `COUNTRY_CODE_MAP` was completed (146 → 246 codes; Malta, Israel, Bahrain,
-  Latvia … were simply absent, so 956 learners fell out of GeoCharts and the
-  per-100k tabs) and 75 World-Bank / verbose aliases added. The income
-  classifier, `isLancetPriority()` and the conflict matcher now fall back to
-  ISO equality when an exact name misses — so "Palestine", "Yemen",
-  "DR Congo", "Azerbaidjan", "Türkiye" all land correctly. Every name in both
-  tables and every spelling in the live data resolves. Hand-rolled name
-  matching (which undercounted conflict learners by 885) is no longer needed.
+## Later — follow-ups surfaced while building
 
-## Later — new features
-
-### Institution and cohort view
-Group learners by email domain (and, where known, organisation) and surface the
-largest cohorts per month. Flag any domain exceeding ~15% of a month's
-registrations or certificates. Motivation: in June 2026 a single institutional
-rollout (`seha.ae`, 3,898 accounts, ~3,150 nurses) produced 47% of the month's
-certificates and half the year's nursing growth, and nothing in the app showed
-it. Should feed the period comparison below so "with / without cohort X" is one
-click.
-
-### Period comparison
-A dashboard panel that takes two date ranges and reports, side by side: new
-registrations, courses started, certificates, learners enrolling, certificates
-per enrolment, survey volume and satisfaction, plus reach shares (income group,
-Lancet-priority, conflict settings, cadre, gender) in both flow (activity in
-the window) and stock (cumulative at window end) terms, with per-day rates.
-Everything the Aug 2026 director summary needed was hand-built in Node; this
-makes it repeatable and keeps the methodology consistent. Should also compute a
-true cohort completion rate (each started enrolment tracked to its outcome)
-alongside the existing certificates ÷ enrolments ratio.
-
-### Anomaly flags
-Cheap checks, shown as a small "worth a look" strip on the overview:
-- one email domain, course or country dominating a month (see cohort view);
-- a data source older than its siblings (already partly covered by the
-  "Data through" line — extend to per-tile stamps);
-- a KPI moving more than ~2σ against its trailing 12-month distribution;
-- a month with certificates but no enrolments (or vice versa) — a sync gap.
-
-### Persist UI state
-Remember per-device view preferences across restarts: the partial-month
-toggle, chart width / trim settings, selected dashboard tab, top-N selectors,
-country pickers on the growth charts. Store under `settings/ui_state.json`
-(no storage key → never pushed to Sheets).
-
-### Email-domain hygiene
-Detect near-miss domain typos at import and in the learner table (`seha.e`,
-`seha.ar`, `seha.a`, `seha.se` were all present for `seha.ae`), suggest the
-canonical domain, and count them in the cohort view. Optionally warn before a
-send list is exported.
-
-## Also noted in the review, not yet scheduled
-
+- Institution filter: option to include a domain's detected typo variants
+  (the 13 `seha.*` accounts hold ~8 certificates).
+- Registrations by institution need a per-email registration date; the
+  LearnWorlds `/users` pull has `created` but the app only keeps it in raw
+  receipts. Persisting `email → created` (locally, never exported) would add
+  "registered per month" to the Institutions tab and a domain filter to
+  registrations in Compare.
+- Per-tile "data through" stamps on the overview (the line covers sources,
+  not tiles).
 - Investigate whether the LearnWorlds API exposes per-user enrolment
   timestamps, to remove the dependency on the manual User-Progress xlsx.
 - Build Tailwind to a static stylesheet instead of shipping the Play-CDN JIT
