@@ -277,7 +277,7 @@ window.FeedbackIntel = {
                         _provider: course.Provider || 'Unknown'
                     });
                 }
-            } catch (e) {}
+            } catch (e) { __swallowed(e); }
         }
 
         // Score all feedback

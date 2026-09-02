@@ -153,7 +153,7 @@
         ['gsf_logo_white.png', 'gsf_logo_symbol.png', 'Global Surgery Foundation_logo_symbol.png', 'gsf_logo_full.png'].some(f => (gsf = read(f)));
         ['surghub_logo_white.png', 'SURGhub_app_square_white.png', 'surghub_logo_color.png', 'surghub_logo.png', 'surghub_white.png'].some(f => (surghub = read(f)));
         ['surghub_ambassadors.png', 'SURGhub_Ambassadors.png', 'surghub_ambassadors_logo.png', 'surghub_ambassador.png'].some(f => (ambl = read(f)));
-      } catch (e) {}
+      } catch (e) { __swallowed(e); }
 
       // Best-effort: pull each linked article's social/hero image (og:image) so the story + feature
       // cards show a real photo. Remote URL (loads when the page is opened online; the card falls back
@@ -187,7 +187,7 @@
         ];
         const og = await Promise.all(SRC.map(s => ogImage(s[1], s[2])));
         SRC.forEach((s, i) => { storyImgs[s[0]] = og[i]; });
-      } catch (e) {}
+      } catch (e) { __swallowed(e); }
 
       const minutesToHours = Math.round(minutes / 60);
       const certRate = (App.formatCertRate ? App.formatCertRate(certs, enrol, { asNumber: true }) : (enrol > 0 ? +(certs / enrol * 100).toFixed(1) : null));
@@ -553,7 +553,7 @@
         function countUp(el) { var to = +el.getAttribute('data-to'), suf = el.getAttribute('data-suffix') || ''; if (reduce) { el.textContent = fmt(to) + suf; return; } var st = null; function step(ts) { st = st || ts; var p = Math.min((ts - st) / 1400, 1), e = 1 - Math.pow(1 - p, 4); el.textContent = fmt(Math.round(to * e)) + suf; if (p < 1) requestAnimationFrame(step); else if (!el.ownerSVGElement) { el.classList.add('pop'); setTimeout(function () { el.classList.remove('pop'); }, 420); } } requestAnimationFrame(step); }
 
         // split a kinetic headline into word spans (line breaks preserved) so they can rise in one-by-one.
-        function wrapWords(el) { try { var parts = el.innerHTML.split(/<br\s*\/?>/i); el.innerHTML = parts.map(function (seg) { return seg.split(/\s+/).filter(Boolean).map(function (w) { return '<span class="w">' + w + '</span>'; }).join(' '); }).join('<br>'); } catch (e) {} }
+        function wrapWords(el) { try { var parts = el.innerHTML.split(/<br\s*\/?>/i); el.innerHTML = parts.map(function (seg) { return seg.split(/\s+/).filter(Boolean).map(function (w) { return '<span class="w">' + w + '</span>'; }).join(' '); }).join('<br>'); } catch (e) { __swallowed(e); } }
         [].slice.call(document.querySelectorAll('.kin')).forEach(wrapWords);
 
         function buildDial(d) {
@@ -638,7 +638,7 @@
             if (canLog) { var rr = maxPct / lo; for (var ci = 0; ci < ramp.length; ci++) values.push(lo * Math.pow(rr, ci / (ramp.length - 1))); }
             var colorAxis = canLog ? { values: values, colors: ramp } : { minValue: 0, colors: ['#1d5e90', '#74bce9'] };
             var opts = { backgroundColor: 'transparent', datalessRegionColor: '#0b2c46', defaultColor: '#0b2c46', colorAxis: colorAxis, legend: 'none', keepAspectRatio: true, tooltip: { textStyle: { color: '#06243a', fontSize: 12 } } };
-            try { new google.visualization.GeoChart(el).draw(dt, opts); } catch (e) {}
+            try { new google.visualization.GeoChart(el).draw(dt, opts); } catch (e) { __swallowed(e); }
             var fp = function (p) { return p >= 10 ? Math.round(p) + '%' : (p >= 1 ? p.toFixed(1) + '%' : p.toFixed(2) + '%'); };
             var leg = document.getElementById('map-legend');
             if (leg) leg.innerHTML = '<div style="display:flex;align-items:center;gap:10px;max-width:440px;margin:14px auto 0"><span class="mono">0%<\/span><span style="flex:1;height:9px;border-radius:99px;background:linear-gradient(90deg,' + ramp.join(',') + ')"><\/span><span class="mono">' + fp(maxPct) + '<\/span><\/div><p class="mono" style="text-align:center;margin:8px 0 0">Share of total learners<\/p>';

@@ -70,7 +70,7 @@ Object.assign(window.App, {
             // Load email-to-demographics map for direct per-user lookup
             let emailDemo = this._emailDemoMap;
             if (!emailDemo) {
-                try { emailDemo = await Storage.getItem('surghub_email_demo'); } catch(e) {}
+                try { emailDemo = await Storage.getItem('surghub_email_demo'); } catch (e) { __swallowed(e); }
             }
 
             const wb = XLSX.utils.book_new();
@@ -207,7 +207,7 @@ Object.assign(window.App, {
         try {
             let anonUsers = this._rawAnonymizedUsers;
             if (!anonUsers) {
-                try { anonUsers = await Storage.getItem('surghub_anon_users'); } catch(e) {}
+                try { anonUsers = await Storage.getItem('surghub_anon_users'); } catch (e) { __swallowed(e); }
             }
             if (!anonUsers || anonUsers.length === 0) {
                 return alert('No anonymized user data available.\n\nRun "Sync Growth Timelines" once, then "Sync Learners & Ambassadors" (Data Sync) \u2014 or upload the Step 4 Users CSV.');
@@ -289,7 +289,7 @@ Object.assign(window.App, {
 
             let anonUsers = this._rawAnonymizedUsers;
             if (!anonUsers) {
-                try { anonUsers = await Storage.getItem('surghub_anon_users'); } catch(e) {}
+                try { anonUsers = await Storage.getItem('surghub_anon_users'); } catch (e) { __swallowed(e); }
             }
             if (!anonUsers || anonUsers.length === 0) {
                 return alert('No anonymized user data available.\n\nRun "Sync Growth Timelines" once, then "Sync Learners & Ambassadors" (Data Sync) \u2014 or upload the Step 4 Users CSV.');
@@ -402,7 +402,7 @@ Object.assign(window.App, {
             try {
                 const logoPath = path.join(electronAPI.appPath, 'build', 'Global Surgery Foundation_logo_symbol.png');
                 logoDataUrl = 'data:image/png;base64,' + electronAPI.fs.readFileBase64(logoPath);
-            } catch(e) {}
+            } catch (e) { __swallowed(e); }
 
             const snapData = this.getAnalyticsSnap();
             if (!snapData || snapData.length === 0) return alert('No course data available. Run an update first.');
@@ -453,7 +453,7 @@ Object.assign(window.App, {
                 try {
                     const fb = JSON.parse(c.FeedbackBank);
                     if (Array.isArray(fb)) fb.forEach(f => allFeedback.push({ ...f, course: c.Course, provider: c.Provider }));
-                } catch(e) {}
+                } catch (e) { __swallowed(e); }
             });
             allFeedback.sort((a,b) => (b.d||'').localeCompare(a.d||''));
             const topFeedback = allFeedback.slice(0, 300);
@@ -800,7 +800,7 @@ function drawFeedbackChart(elementId, courses) {
                 fb.forEach(f => { if (!f.d) return; const m = f.d.substring(0,7); allDates.add(m);
                     if (!agg[m]) agg[m]={vol:0,rSum:0,rCnt:0}; agg[m].vol++;
                     if (f.r) { agg[m].rSum += Number(f.r); agg[m].rCnt++; } });
-            } catch(e) {}
+            } catch (e) {}
         });
     }
     const sorted = Array.from(allDates).sort();
@@ -1042,7 +1042,7 @@ function renderProvider() {
     pCourses.forEach(c => { pLrn+=c.Learners; pCert+=c.Certificates; pResp+=c.Responses; if(c.Rating>0){pRSum+=c.Rating;pRCnt++;} });
     const pAvg = pRCnt>0 ? (pRSum/pRCnt).toFixed(2) : '0.00';
     let provFB = [];
-    pCourses.forEach(c => { if(!c.FeedbackBank) return; try { const fb=JSON.parse(c.FeedbackBank); if(Array.isArray(fb)) fb.forEach(f=>provFB.push({...f,course:c.Course})); } catch(e){} });
+    pCourses.forEach(c => { if(!c.FeedbackBank) return; try { const fb=JSON.parse(c.FeedbackBank); if(Array.isArray(fb)) fb.forEach(f=>provFB.push({...f,course:c.Course})); } catch (e) {} });
     provFB.sort((a,b)=>(b.d||'').localeCompare(a.d||''));
 
     const el = document.getElementById('tab-provider');
@@ -1097,7 +1097,7 @@ function renderProvider() {
 function renderCourse() {
     const c = D.courseBlob.find(x => x.Course === selectedCourse) || {};
     let courseFB = [];
-    if (c.FeedbackBank) { try { const fb=JSON.parse(c.FeedbackBank); if(Array.isArray(fb)) courseFB=fb; } catch(e){} }
+    if (c.FeedbackBank) { try { const fb=JSON.parse(c.FeedbackBank); if(Array.isArray(fb)) courseFB=fb; } catch (e) {} }
     courseFB.sort((a,b)=>(b.d||'').localeCompare(a.d||''));
 
     const el = document.getElementById('tab-course');
@@ -1432,7 +1432,7 @@ renderPlatform();
         });
 
         // ── Courses ──
-        let awards = null; try { awards = this.computeAwards ? this.computeAwards() : null; } catch (e) {}
+        let awards = null; try { awards = this.computeAwards ? this.computeAwards() : null; } catch (e) { __swallowed(e); }
         const courseMins = this.getCourseLearningMinutes ? this.getCourseLearningMinutes() : {};
         const anonByCourse = {};
         anon.forEach(r => (anonByCourse[r.course] = anonByCourse[r.course] || []).push(r));
@@ -1449,7 +1449,7 @@ renderPlatform();
                 if (c) cadreCount[c] = (cadreCount[c] || 0) + 1;
             });
             const topCadre = Object.entries(cadreCount).sort((a, b) => b[1] - a[1])[0];
-            let si = null; try { si = (typeof this._surveyImpactStats === 'function') ? this._surveyImpactStats([d]) : null; } catch (e) {}
+            let si = null; try { si = (typeof this._surveyImpactStats === 'function') ? this._surveyImpactStats([d]) : null; } catch (e) { __swallowed(e); }
             const fb = d.FeedbackBank ? parse(d.FeedbackBank) : [];
             const lrn = Number(d.Learners) || 0, cert = Number(d.Certificates) || 0, resp = Number(d.Responses) || 0;
             return {
@@ -1582,8 +1582,8 @@ renderPlatform();
             this._showReportProgress && this._showReportProgress('Building master workbook…');
             if (this.ensureAnonLoaded) await this.ensureAnonLoaded();
             if (this.ensureCompletionLoaded) await this.ensureCompletionLoaded();   // Name + Email join source
-            if (!this._emailDemoMap) { try { this._emailDemoMap = (await Storage.getItem('surghub_email_demo')) || {}; } catch (e) {} }
-            if (this.getMilestones) { try { await this.getMilestones(); } catch (e) {} }   // warm the cache — the row builder is sync
+            if (!this._emailDemoMap) { try { this._emailDemoMap = (await Storage.getItem('surghub_email_demo')) || {}; } catch (e) { __swallowed(e); } }
+            if (this.getMilestones) { try { await this.getMilestones(); } catch (e) { __swallowed(e); } }   // warm the cache — the row builder is sync
             const D = this._buildMasterWorkbookData();
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, this._niceSheet(XLSX.utils.aoa_to_sheet(D.about), { noFilter: true, widths: [{ wch: 26 }, { wch: 110 }] }), 'About');

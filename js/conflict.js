@@ -193,7 +193,7 @@ Object.assign(window.App, {
         const aud = (this.userHistory || []).slice()
             .reduce((a, b) => (a && String(a.Timestamp) > String(b.Timestamp) ? a : b), null);
         let stats = {};
-        try { stats = aud && aud.AllCountryStats ? (typeof aud.AllCountryStats === 'string' ? JSON.parse(aud.AllCountryStats) : aud.AllCountryStats) : {}; } catch (e) {}
+        try { stats = aud && aud.AllCountryStats ? (typeof aud.AllCountryStats === 'string' ? JSON.parse(aud.AllCountryStats) : aud.AllCountryStats) : {}; } catch (e) { __swallowed(e); }
         const keys = Object.keys(stats);
         const exact = keys.find(k => this._conflictNorm(k) === this._conflictNorm(name));
         const entry = { wb: exact || name, iso3: '', aliases: exact && exact !== name ? [name] : [], custom: true };
@@ -945,7 +945,7 @@ Object.assign(window.App, {
 Object.assign(window.App, {
     async exportConflictXlsx() {
         if (this.ensureAnonLoaded) await this.ensureAnonLoaded();
-        if (!this._emailDemoMap) { try { this._emailDemoMap = (await Storage.getItem('surghub_email_demo')) || {}; } catch (e) {} }
+        if (!this._emailDemoMap) { try { this._emailDemoMap = (await Storage.getItem('surghub_email_demo')) || {}; } catch (e) { __swallowed(e); } }
         const aud = (this.userHistory || []).find(d => d.Timestamp === this.selectedDate)
             || (this.userHistory || []).slice().reduce((a, b) => (a && String(a.Timestamp) > String(b.Timestamp) ? a : b), null);
         if (!aud) return alert('No audience data yet — run Sync Learners first.');

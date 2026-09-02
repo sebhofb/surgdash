@@ -99,7 +99,7 @@ Object.assign(window.App, {
                 const counts = this.aggregateCourseCountries([rec || {}]).counts;
                 if (Object.keys(counts).length) out['chart_course_map'] = toIso(counts);
             }
-        } catch (e) {}
+        } catch (e) { __swallowed(e); }
         return out;
     },
 
@@ -247,7 +247,7 @@ Object.assign(window.App, {
         try {
             const p = electronAPI.path.join(electronAPI.appPath, 'build', 'Global Surgery Foundation_logo_symbol.png');
             logoDataUrl = 'data:image/png;base64,' + electronAPI.fs.readFileBase64(p);
-        } catch (e) {}
+        } catch (e) { __swallowed(e); }
 
         const generatedAt = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
         const safeTitle = this.escapeHtml(title.trim());

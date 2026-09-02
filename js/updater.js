@@ -232,7 +232,7 @@ Object.assign(window.App, {
             await Storage.setItem('surgdash_sync_log', log);
             this._syncLog = log;
             this._syncRunCache = null;
-        } catch (e) {}
+        } catch (e) { __swallowed(e); }
     },
 
     async syncGrowthTimelinesFromApi(opts) {
@@ -250,7 +250,7 @@ Object.assign(window.App, {
             this._showApiSyncOverlay('Sync Growth Timelines');
         }
         try {
-            try { window.LearnWorlds.startRawPull('growth-timelines'); } catch (e) {}
+            try { window.LearnWorlds.startRawPull('growth-timelines'); } catch (e) { __swallowed(e); }
             const { timelines, userCourses, userCerts } = await window.LearnWorlds.fetchCourseTimelines(p => {
                 const text = p.phase === 'courses'
                     ? `Listing courses (${p.current})…`
@@ -258,7 +258,7 @@ Object.assign(window.App, {
                 const pct = p.phase === 'courses' ? 5 : (p.current / Math.max(1, p.total)) * 92;
                 this._updateApiSyncOverlay(text, pct);
             });
-            try { window.LearnWorlds.finishRawPull(true); } catch (e) {}
+            try { window.LearnWorlds.finishRawPull(true); } catch (e) { __swallowed(e); }
             // Persist user→courses / user→certs maps (collected in the same pass, no
             // extra API calls). The Learners sync joins these onto user rows so the
             // anonymized per-course records exist without the slow deep-cert fetch.
@@ -451,7 +451,7 @@ Object.assign(window.App, {
     // existing (API-built) timeline so freshness isn't lost.
     async _rebuildTimelinesFromCompletion() {
         let recs = this._rawCompletion;
-        if (!recs || !recs.length) { try { recs = await Storage.getItem('surghub_completion'); } catch (e) {} }
+        if (!recs || !recs.length) { try { recs = await Storage.getItem('surghub_completion'); } catch (e) { __swallowed(e); } }
         if (!recs || !recs.length) return 0;
         const byCourse = {};
         recs.forEach(r => { if (r && r.course) (byCourse[r.course] = byCourse[r.course] || []).push(r); });
@@ -484,7 +484,7 @@ Object.assign(window.App, {
                             if (m > maxM && v && typeof v === 'object') { tl[m] = { e: v.e || 0, c: v.c || 0 }; tE += tl[m].e; tC += tl[m].c; }
                         });
                     }
-                } catch (e) {}
+                } catch (e) { __swallowed(e); }
             }
             d.CourseTimeline = JSON.stringify({ totalE: tE, totalC: tC, timeline: tl, scale: { enrollScale: 1, certScale: 1 }, src: 'completion' });
             rebuilt++;
@@ -575,35 +575,71 @@ Object.assign(window.App, {
     // never block or break a sync. The big, re-fetchable files (anon_users ~33MB,
     // completion ~38MB) are intentionally excluded to keep this cheap; full backups
     // still go via Google Sheets / the manual backup.
+    // Snapshot EVERY SURGhub dataset before a sync can touch it — completion.json
+    // and anon_users.json included. (Previously only data/history/ambassadors were
+    // saved, yet the sync also rewrites anon_users, and completion.json is
+    // irreplaceable whenever the LearnWorlds User-Progress export is unavailable.)
+    // A file unchanged since the previous snapshot (same size + mtime, recorded in
+    // that snapshot's manifest.json) is HARD-LINKED to the earlier copy instead of
+    // duplicated, so a 40 MB dataset that hasn't moved costs no extra disk while
+    // every snapshot directory stays complete for restore.
     async _backupSurghubBeforeSync() {
         try {
             const fs = electronAPI.fs, path = electronAPI.path;
             const root = Storage.DATA_DIR;
-            const names = ['data.json', 'history.json', 'ambassadors.json'];
+            const srcDir = path.join(root, 'surghub');
+            if (!fs.existsSync(srcDir)) return;
+            const backupsDir = path.join(root, 'backups');
             const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-            const destDir = path.join(root, 'backups', 'presync_' + stamp);
-            let copied = 0;
-            for (const name of names) {
-                const src = path.join(root, 'surghub', name);
-                try {
-                    if (fs.existsSync(src)) {
-                        if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
-                        fs.writeFileSync(path.join(destDir, name), fs.readFileSync(src, 'utf8'), 'utf8');
-                        copied++;
-                    }
-                } catch (e) { /* per-file best-effort */ }
-            }
-            if (copied) console.log('[presync-backup] saved ' + copied + ' file(s) →', destDir);
-            // Rotate: keep only the 15 most recent presync_ snapshots
+            const destDir = path.join(backupsDir, 'presync_' + stamp);
+            const names = fs.readdirSync(srcDir).filter(n => /\.json$/.test(n));
+
+            // Most recent previous snapshot + its manifest, for the unchanged-file shortcut.
+            let prevDir = null, prevMan = {};
             try {
-                const backupsDir = path.join(root, 'backups');
+                const dirs = fs.readdirSync(backupsDir, { withFileTypes: true })
+                    .filter(e => e.isDirectory && /^presync_/.test(e.name)).map(e => e.name).sort();
+                if (dirs.length) {
+                    prevDir = path.join(backupsDir, dirs[dirs.length - 1]);
+                    try { prevMan = JSON.parse(fs.readFileSync(path.join(prevDir, 'manifest.json'), 'utf8')) || {}; } catch (e) { prevMan = {}; }
+                }
+            } catch (e) { /* no backups yet */ }
+
+            const manifest = {};
+            let copied = 0, linked = 0, bytes = 0;
+            for (const name of names) {
+                const src = path.join(srcDir, name);
+                try {
+                    const st = fs.statSync(src);
+                    if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
+                    const dest = path.join(destDir, name);
+                    const p = prevMan[name];
+                    let done = false;
+                    if (p && p.size === st.size && p.mtimeMs === st.mtimeMs && prevDir && fs.linkSync && fs.existsSync(path.join(prevDir, name))) {
+                        try { fs.linkSync(path.join(prevDir, name), dest); linked++; done = true; } catch (e) { /* cross-device etc. → fall through to copy */ }
+                    }
+                    if (!done) {
+                        if (fs.copyFileSync) fs.copyFileSync(src, dest);
+                        else fs.writeFileSync(dest, fs.readFileSync(src, 'utf8'), 'utf8');
+                        copied++; bytes += st.size;
+                    }
+                    manifest[name] = { size: st.size, mtimeMs: st.mtimeMs };
+                } catch (e) { console.warn('[presync-backup] could not save ' + name + ':', e && e.message); }
+            }
+            if (copied || linked) {
+                try { fs.writeFileSync(path.join(destDir, 'manifest.json'), JSON.stringify(manifest), 'utf8'); } catch (e) { console.warn('[presync-backup] manifest:', e && e.message); }
+                console.log('[presync-backup] ' + copied + ' copied (' + (bytes / 1048576).toFixed(1) + ' MB), ' + linked + ' unchanged (linked) →', destDir);
+            }
+            // Rotate: keep the 15 most recent snapshots. With hard links a large file
+            // only frees disk once the last snapshot referencing it is removed.
+            try {
                 const dirs = fs.readdirSync(backupsDir, { withFileTypes: true })
                     .filter(e => e.isDirectory && /^presync_/.test(e.name))
                     .map(e => e.name).sort();
                 for (let i = 0; i < dirs.length - 15; i++) {
-                    try { fs.rmSync(path.join(backupsDir, dirs[i]), { recursive: true, force: true }); } catch (e) {}
+                    try { fs.rmSync(path.join(backupsDir, dirs[i]), { recursive: true, force: true }); } catch (e) { console.warn('[presync-backup] rotate:', e && e.message); }
                 }
-            } catch (e) {}
+            } catch (e) { /* backups dir missing — nothing to rotate */ }
         } catch (e) {
             console.warn('[presync-backup] skipped:', e && e.message);
         }
@@ -631,7 +667,7 @@ Object.assign(window.App, {
         )) return;
         if (this._apiSyncInFlight) { this.showMsg('⚠ A sync is already running — let it finish or Cancel it first.'); return; }
         this._apiSyncInFlight = true;
-        try { await this._backupSurghubBeforeSync(); } catch (e) {}
+        try { await this._backupSurghubBeforeSync(); } catch (e) { __swallowed(e); }
 
         this._showApiSyncOverlay('Sync Everything');
         this._updateApiSyncOverlay('Starting…', 0);
@@ -734,7 +770,7 @@ Object.assign(window.App, {
             }
             throw new Error('No LearnWorlds credentials');
         }
-        if (!this._apiSyncInFlight) { try { await this._backupSurghubBeforeSync(); } catch (e) {} }
+        if (!this._apiSyncInFlight) { try { await this._backupSurghubBeforeSync(); } catch (e) { __swallowed(e); } }
         if (!opts.silent) {
             if (this._apiSyncInFlight) { this.showMsg('⚠ A sync is already running — let it finish or Cancel it first.'); throw new Error('Sync already running'); }
             this._apiSyncInFlight = true;
@@ -742,7 +778,7 @@ Object.assign(window.App, {
         }
         this._updateApiSyncOverlay('Connecting to LearnWorlds…', 0);
         try {
-            try { window.LearnWorlds.startRawPull('course-foundation'); } catch (e) {}
+            try { window.LearnWorlds.startRawPull('course-foundation'); } catch (e) { __swallowed(e); }
             const masterRows = await window.LearnWorlds.fetchCourseFoundation(p => {
                 let text, pct;
                 if (p.phase === 'list') {
@@ -756,7 +792,7 @@ Object.assign(window.App, {
                 }
                 this._updateApiSyncOverlay(text, pct);
             });
-            try { window.LearnWorlds.finishRawPull(true); } catch (e) {}
+            try { window.LearnWorlds.finishRawPull(true); } catch (e) { __swallowed(e); }
             // Provider/links enrichment: prefer a freshly-attached file, else
             // fall back to the PERSISTED mapping (uploaded once, auto-applied
             // on every sync). This is why providers survive API course refreshes.
@@ -1036,7 +1072,7 @@ Object.assign(window.App, {
             try { this._rawSurveyResponses = (await Storage.getItem('surghub_survey_raw')) || {}; } catch (e) { this._rawSurveyResponses = {}; }
         }
         if (!this._emailDemoMap) {
-            try { this._emailDemoMap = (await Storage.getItem('surghub_email_demo')) || {}; } catch (e) {}
+            try { this._emailDemoMap = (await Storage.getItem('surghub_email_demo')) || {}; } catch (e) { __swallowed(e); }
         }
         for (let i = 0; i < this.updateQueue.length; i++) {
             const course = this.updateQueue[i];
@@ -2619,7 +2655,7 @@ Object.assign(window.App, {
         // Merge into the existing map (never replace): if LearnWorlds caps or
         // truncates an export, previously captured learners must survive.
         let demo = {};   // emailLower -> { gender, organisation_type }
-        try { const prev = await Storage.getItem('surghub_signup_demo'); if (prev && typeof prev === 'object') demo = prev; } catch (e) {}
+        try { const prev = await Storage.getItem('surghub_signup_demo'); if (prev && typeof prev === 'object') demo = prev; } catch (e) { __swallowed(e); }
         Object.entries(parsed.demo).forEach(([email, d]) => {
             const prev = demo[email] || {};
             demo[email] = { gender: d.gender || prev.gender || '', organisation_type: d.organisation_type || prev.organisation_type || '' };
@@ -2632,7 +2668,7 @@ Object.assign(window.App, {
         const byUid = {};
         Object.entries(demo).forEach(([email, d]) => { byUid[this._djb2Hash(email)] = d; });
         let anon = this._rawAnonymizedUsers;
-        if (!anon || !anon.length) { try { anon = await Storage.getItem('surghub_anon_users'); } catch (e) {} }
+        if (!anon || !anon.length) { try { anon = await Storage.getItem('surghub_anon_users'); } catch (e) { __swallowed(e); } }
         if (anon && anon.length) {
             anon.forEach(u => {
                 const d = u.user_uid ? byUid[u.user_uid] : null;
@@ -2890,7 +2926,7 @@ Object.assign(window.App, {
             if (!opts.silent) this.showMsg('⚠ Add LearnWorlds API credentials first');
             throw new Error('No LearnWorlds credentials');
         }
-        if (!this._apiSyncInFlight) { try { await this._backupSurghubBeforeSync(); } catch (e) {} }
+        if (!this._apiSyncInFlight) { try { await this._backupSurghubBeforeSync(); } catch (e) { __swallowed(e); } }
         if (!opts.silent) this._showApiSyncOverlay('Ambassadors');
         this._updateApiSyncOverlay('Probing global lead total…', 0);
         try {
@@ -2908,7 +2944,7 @@ Object.assign(window.App, {
             }
 
             this._updateApiSyncOverlay('Connecting to LearnWorlds…', 5);
-            try { window.LearnWorlds.startRawPull('ambassadors'); } catch (e) {}
+            try { window.LearnWorlds.startRawPull('ambassadors'); } catch (e) { __swallowed(e); }
             const { leads: leadsJson, mode, totalClicks: ambClicks, clicksByPromoter: ambClicksByPromoter, tierTagsByPromoter: ambTierTags } = await window.LearnWorlds.fetchAmbassadorLeads(p => {
                 let text, pct;
                 if (p.phase === 'list') {
@@ -2922,7 +2958,7 @@ Object.assign(window.App, {
                 }
                 this._updateApiSyncOverlay(text, pct);
             });
-            try { window.LearnWorlds.finishRawPull(true); } catch (e) {}
+            try { window.LearnWorlds.finishRawPull(true); } catch (e) { __swallowed(e); }
             console.log(`[LearnWorlds] Ambassadors mode: ${mode}, ${leadsJson.length} lead rows`);
 
             // Run the SAME aggregation as the CSV path (copy-paste safe), with
@@ -3051,17 +3087,17 @@ Object.assign(window.App, {
             if (!opts.silent) this.showMsg('⚠ Add LearnWorlds API credentials first');
             throw new Error('No LearnWorlds credentials');
         }
-        if (!this._apiSyncInFlight) { try { await this._backupSurghubBeforeSync(); } catch (e) {} }
+        if (!this._apiSyncInFlight) { try { await this._backupSurghubBeforeSync(); } catch (e) { __swallowed(e); } }
         if (!opts.silent) this._showApiSyncOverlay('Step 4: Demographics');
         this._updateApiSyncOverlay('Fetching users…', 0);
         try {
-            try { window.LearnWorlds.startRawPull('demographics'); } catch (e) {}
+            try { window.LearnWorlds.startRawPull('demographics'); } catch (e) { __swallowed(e); }
             const { users: usersJson, leadAttribution } = await window.LearnWorlds.fetchAllUsers(p => {
                 const text = `Fetching users (page ${p.current}/${p.total}, ${p.count.toLocaleString()} so far, ${p.totalLeadsSoFar.toLocaleString()} leads)…`;
                 const pct = (p.current / Math.max(1, p.total)) * 90;
                 this._updateApiSyncOverlay(text, pct);
             });
-            try { window.LearnWorlds.finishRawPull(true); } catch (e) {}
+            try { window.LearnWorlds.finishRawPull(true); } catch (e) { __swallowed(e); }
             console.log(`[LearnWorlds] Fetched ${usersJson.length.toLocaleString()} users; first row keys:`, Object.keys(usersJson[0] || {}));
 
             // ── Join enrolment + certificate course lists collected by the Growth

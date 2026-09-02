@@ -531,6 +531,13 @@ window.Charts = {
         let sortedDates = Array.from(allDates).sort();
         if (sortedDates.length === 0) { this.clearChart(elementId, "No survey/feedback history available. Run Step 2 to fetch survey data."); return; }
 
+        // Drop the current incomplete month unless the user opted in — same rule as the growth
+        // charts. A half-finished month has few responses, so its average rating swings wildly.
+        if (this._isPartialMonth(sortedDates[sortedDates.length - 1]) && !this._shouldIncludePartial()) {
+            sortedDates = sortedDates.slice(0, -1);
+            if (sortedDates.length === 0) { this.clearChart(elementId, "No complete months yet — toggle 'Include current month' to see partial data."); return; }
+        }
+
         let dataTable = new google.visualization.DataTable();
         dataTable.addColumn('string', 'Month');
         if (showBars) dataTable.addColumn('number', 'Survey Responses');
@@ -975,7 +982,7 @@ window.Charts = {
                 Object.entries(cs).forEach(([k, v]) => {
                     if (k && k !== 'Unknown' && k !== 'nan') { countryCounts[k] = (countryCounts[k] || 0) + v; usedCountryStats = true; }
                 });
-            } catch (e) {}
+            } catch (e) { __swallowed(e); }
         });
 
         // FALLBACK (CSV path): derive from anonymized per-user records.
@@ -1049,7 +1056,7 @@ window.Charts = {
             try {
                 const cs = JSON.parse(rec.CountryStats);
                 Object.entries(cs).forEach(([k, v]) => { if (k && k !== 'Unknown' && k !== 'nan') { countryCounts[k] = (countryCounts[k] || 0) + v; used = true; } });
-            } catch (e) {}
+            } catch (e) { __swallowed(e); }
         }
         if (!used) {
             const anon = window.App._rawAnonymizedUsers || [];

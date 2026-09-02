@@ -173,9 +173,9 @@ window.LearnWorlds = (function () {
                 .forEach(e => { const label = e.name.slice(0, e.name.lastIndexOf('__')); (byLabel[label] = byLabel[label] || []).push(e.name); });
             for (const label of Object.keys(byLabel)) {
                 const dirs = byLabel[label].sort();
-                for (let i = 0; i < dirs.length - keep; i++) { try { fs.rmSync(path.join(dir, dirs[i]), { recursive: true, force: true }); } catch (e) {} }
+                for (let i = 0; i < dirs.length - keep; i++) { try { fs.rmSync(path.join(dir, dirs[i]), { recursive: true, force: true }); } catch (e) { __swallowed(e); } }
             }
-        } catch (e) {}
+        } catch (e) { __swallowed(e); }
     }
     // Open a new pull (finalising any dangling one conservatively as incomplete).
     function startRawPull(label) {
@@ -226,8 +226,8 @@ window.LearnWorlds = (function () {
                 const dirs = fs.readdirSync(dir, { withFileTypes: true })
                     .filter(e => e.isDirectory && e.name.indexOf(lbl + '__') === 0 && /__\d{8}-\d{6}$/.test(e.name))
                     .map(e => e.name).sort();
-                for (let i = 0; i < dirs.length - 3; i++) { try { fs.rmSync(path.join(dir, dirs[i]), { recursive: true, force: true }); } catch (e) {} }
-            } catch (e) {}
+                for (let i = 0; i < dirs.length - 3; i++) { try { fs.rmSync(path.join(dir, dirs[i]), { recursive: true, force: true }); } catch (e) { __swallowed(e); } }
+            } catch (e) { __swallowed(e); }
             return pullId;
         } catch (e) { console.warn('[raw] captureRawArtifact failed:', e && e.message); return null; }
     }
@@ -244,7 +244,7 @@ window.LearnWorlds = (function () {
             if (!latest) return [];
             const txt = String(fs.readFileSync(path.join(dir, latest, filename || 'rows.jsonl'), 'utf8'));
             const out = [];
-            for (const ln of txt.split('\n')) { if (!ln) continue; try { out.push(JSON.parse(ln)); } catch (e) {} }
+            for (const ln of txt.split('\n')) { if (!ln) continue; try { out.push(JSON.parse(ln)); } catch (e) { __swallowed(e); } }
             return out;
         } catch (e) { return []; }
     }

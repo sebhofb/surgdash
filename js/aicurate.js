@@ -498,7 +498,7 @@
                     const m = (((eng.byIncome.LIC || {}).enrolls) || 0) + (((eng.byIncome.LMIC || {}).enrolls) || 0);
                     if (tot > 0) missionShare = +((m / tot) * 100).toFixed(0);
                 }
-            } catch (e) {}
+            } catch (e) { __swallowed(e); }
             const facts = {
                 totalRegisteredUsers: aud.TotalUsers || 0,
                 countriesReached: aud.KnownCountry || 0,
@@ -707,7 +707,7 @@
                     (JSON.parse(c.FeedbackBank) || []).forEach(f => {
                         if (f && f.t && String(f.t).trim().length > 0) texts.add(String(f.t).trim());
                     });
-                } catch (e) {}
+                } catch (e) { __swallowed(e); }
             });
 
             const scores = await this._getAiScores();
@@ -953,7 +953,7 @@
                 try {
                     const list = (JSON.parse(d.FeedbackBank) || []).filter(f => f && f.t && String(f.t).trim().length > 0);
                     if (list.length) out[d.Course] = { provider: d.Provider, items: list };
-                } catch (e) {}
+                } catch (e) { __swallowed(e); }
             });
             return out;
         },
@@ -971,7 +971,7 @@
             const maxX = Math.max(1, Math.min(20, parseInt(xRaw, 10) || 3));
             const minY = Math.max(0, Math.min(10, parseInt(yRaw, 10) || 7));
             // Remember the bar — report Suggestions/Improvement sections use the same one
-            try { await Storage.setItem('surghub_ai_prefs', { maxPerCourse: maxX, minScore: minY }); } catch (e) {}
+            try { await Storage.setItem('surghub_ai_prefs', { maxPerCourse: maxX, minScore: minY }); } catch (e) { __swallowed(e); }
             const byCourse = this._feedbackByCourse(providerName || null);
             const sel = (await Storage.getItem('surghub_selected_testimonials')) || {};
             let courses = 0, picked = 0;

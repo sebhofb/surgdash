@@ -177,11 +177,11 @@
                 fs.writeFileSync(filePath, data, 'utf8');
             } catch (writeErr) {
                 // Clean up .tmp if it exists
-                try { if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch (_) {}
+                try { if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch (_) { __swallowed(_); }
                 throw writeErr;
             }
             // Clean up .tmp if direct write succeeded
-            try { if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch (_) {}
+            try { if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath); } catch (_) { __swallowed(_); }
         }
     }
 
@@ -194,12 +194,12 @@
             const raw = fs.readFileSync(tmpPath, 'utf8');
             const parsed = JSON.parse(raw);
             // .tmp is valid — promote it to the real file
-            try { fs.renameSync(tmpPath, filePath); } catch (_) {}
+            try { fs.renameSync(tmpPath, filePath); } catch (_) { __swallowed(_); }
             console.warn(`Storage: recovered "${key}" from .tmp file`);
             return parsed;
         } catch (e) {
             // .tmp is also corrupt — clean it up
-            try { fs.unlinkSync(tmpPath); } catch (_) {}
+            try { fs.unlinkSync(tmpPath); } catch (_) { __swallowed(_); }
             return null;
         }
     }

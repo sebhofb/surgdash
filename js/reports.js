@@ -16,7 +16,7 @@
                 const back = await Storage.getItem('report_back_path');
                 if (cover) this.reportCoverPath = cover;
                 if (back) this.reportBackPath = back;
-            } catch(e) {}
+            } catch (e) { __swallowed(e); }
         },
 
         async pickCoverPdf() {
@@ -62,18 +62,18 @@
         reportDataThrough: '',   // 'YYYY-MM' — clip all report timelines at/after this month (exclude incomplete recent months)
         async setReportDataThrough(value) {
             this.reportDataThrough = value || '';
-            try { await Storage.setItem('report_data_through', this.reportDataThrough); } catch (e) {}
+            try { await Storage.setItem('report_data_through', this.reportDataThrough); } catch (e) { __swallowed(e); }
             this.renderView();
         },
         async setReportPeriod(which, value) {
             if (which === 'from') this.reportPeriodFrom = value || '';
             else this.reportPeriodTo = value || '';
-            try { await Storage.setItem('report_period', { from: this.reportPeriodFrom, to: this.reportPeriodTo }); } catch (e) {}
+            try { await Storage.setItem('report_period', { from: this.reportPeriodFrom, to: this.reportPeriodTo }); } catch (e) { __swallowed(e); }
             this.renderView();
         },
         async clearReportPeriod() {
             this.reportPeriodFrom = ''; this.reportPeriodTo = '';
-            try { await Storage.removeItem('report_period'); } catch (e) {}
+            try { await Storage.removeItem('report_period'); } catch (e) { __swallowed(e); }
             this.renderView();
         },
         _periodLabel() {
@@ -318,14 +318,14 @@
                                 gq[k].sum += (s.avg || 0) * s.n; gq[k].n += s.n;
                                 gq[k].hi += (s.dist ? ((s.dist[4] || 0) + (s.dist[5] || 0)) : 0);
                             });
-                        } catch (e) {}
+                        } catch (e) { __swallowed(e); }
                     }
                     if (d.CountryStats) {
                         try {
                             Object.entries(JSON.parse(d.CountryStats)).forEach(([k, v]) => {
                                 if (k && k !== 'Unknown' && k !== 'nan') { gCountries[k] = (gCountries[k] || 0) + v; gCountryTotal += v; }
                             });
-                        } catch (e) {}
+                        } catch (e) { __swallowed(e); }
                     }
                 });
                 const questions = {};
@@ -350,7 +350,7 @@
                             courseCountryData[course.Course] = { top10: sorted, totalWithCountry, totalUsers: totalWithCountry, learners: Number(course.Learners) || 0 };
                             return;
                         }
-                    } catch (e) {}
+                    } catch (e) { __swallowed(e); }
                 }
                 // Fallback: anonymized user CSV
                 if (!anonUsers || anonUsers.length === 0) return;
@@ -389,7 +389,7 @@
                     Object.entries(cs).forEach(([k, v]) => {
                         if (k && k !== 'Unknown' && k !== 'nan') { providerCountryData[k] = (providerCountryData[k] || 0) + v; _usedCountryStats = true; }
                     });
-                } catch (e) {}
+                } catch (e) { __swallowed(e); }
             });
             if (!_usedCountryStats && anonUsers && anonUsers.length > 0) {
                 const provCourseNames = coursesSorted.map(c => c.Course);
@@ -430,7 +430,7 @@
                             allFeedbackRaw.push({ ...f, _course: c.Course });
                         }
                     });
-                } catch(e) {}
+                } catch (e) { __swallowed(e); }
             });
 
             // Overall learner-rating distribution (every star rating, with or without a
@@ -443,7 +443,7 @@
                     const fb = JSON.parse(c.FeedbackBank);
                     if (!Array.isArray(fb)) return;
                     fb.forEach(f => { const r = Number(f && f.r) || 0; if (r >= 1 && r <= 5) { rbTotal++; rbSum += r; if (r >= 4) rb45++; } });
-                } catch (e) {}
+                } catch (e) { __swallowed(e); }
             });
             const ratingBand = rbTotal >= 10 ? { avg: +(rbSum / rbTotal).toFixed(1), pct45: Math.round(rb45 / rbTotal * 100), n: rbTotal } : null;
 
@@ -490,7 +490,7 @@
                     // comments submitted to sibling courses appear once); AI
                     // cleaned text with deterministic polish.
                     let minScore = 7;
-                    try { const prefs = (await Storage.getItem('surghub_ai_prefs')) || {}; if (Number(prefs.minScore) >= 1) minScore = Number(prefs.minScore); } catch (e) {}
+                    try { const prefs = (await Storage.getItem('surghub_ai_prefs')) || {}; if (Number(prefs.minScore) >= 1) minScore = Number(prefs.minScore); } catch (e) { __swallowed(e); }
                     const seenThemed = new Set();
                     // Suggestions and complaints are gated on THEME + a minimum length, not on
                     // the testimonial-quality score. The AI is instructed to score complaints and
@@ -627,7 +627,7 @@
                     const hit = PROVIDER_PAGES.find(([tok]) => pn.includes(tok));
                     if (hit) providerUrl = 'https://www.surghub.org/' + hit[1];
                 }
-            } catch (e) {}
+            } catch (e) { __swallowed(e); }
 
             let providerAwards = [], providerCountryAwards = [], courseAwardMap = {};
             try {
@@ -641,7 +641,7 @@
                     }
                     pSnap.forEach(d => { const ca = aw.course[d.Course]; if (ca && ca.length) courseAwardMap[d.Course] = ca; });
                 }
-            } catch (e) {}
+            } catch (e) { __swallowed(e); }
             const awardsAsOf = this._currentQuarterLabel ? this._currentQuarterLabel() : '';
 
             // Platform mode: per-provider roll-up (Top Providers section) + provider count.
@@ -668,7 +668,7 @@
                     const cid = pSnap[0] && pSnap[0].CourseId;
                     const cu = (cid && this._courseSurghubUrl) ? this._courseSurghubUrl(cid) : '';
                     providerUrl = cu || providerUrl;
-                } catch (e) {}
+                } catch (e) { __swallowed(e); }
             }
 
             return {
@@ -1136,8 +1136,8 @@ function drawCharts() {
                     const hit = files.find(f => /\.(png|jpe?g)$/i.test(f) && norm(f.replace(/\.[^.]+$/, '')) === provNorm)
                         || files.find(f => /\.(png|jpe?g)$/i.test(f) && (provNorm.includes(norm(f.replace(/\.[^.]+$/, ''))) || norm(f.replace(/\.[^.]+$/, '')).includes(provNorm)) && norm(f.replace(/\.[^.]+$/, '')).length >= 3);
                     if (hit) provLogo = read('provider_logos/' + hit);
-                } catch (e) {}
-            } catch (e) {}
+                } catch (e) { __swallowed(e); }
+            } catch (e) { __swallowed(e); }
 
             // Subtle "vs platform" delta chip. dec = decimals, pts = unit label.
             const B = D.benchmarks || {};
@@ -1848,7 +1848,7 @@ var GRID='rgba(255,255,255,0.06)',TICK='#6d8ba3';
 if(typeof Chart!=='undefined'){
   Chart.defaults.devicePixelRatio=3;
   // Reserve a strip beneath the x-axis labels so the period plugin can label the band there.
-  try{Chart.defaults.layout.padding=Object.assign({},Chart.defaults.layout.padding,{bottom:20});}catch(e){}
+  try{Chart.defaults.layout.padding=Object.assign({},Chart.defaults.layout.padding,{bottom:20});}catch (e) {}
   // Reporting-period overlay: charts always show the FULL timeline; the selected
   // period is marked with a soft band + dashed boundary lines instead of clipping
   // the axes. Each timeline chart stashes its raw YYYY-MM months on the canvas
@@ -2038,7 +2038,7 @@ function dlChart(id,title){
     x.fillStyle='#FFC145';x.font='700 15px Arial';x.fillText(tTrunc(x,(title+' — '+PROV).toUpperCase(),w-320),28,40);
     x.drawImage(img,28,62,sw,sh);
   },PROV+' - '+title,function(){
-    if(tmp){try{tmp.destroy();}catch(e){}}
+    if(tmp){try{tmp.destroy();}catch (e) {}}
     if(off&&off.parentNode)off.parentNode.removeChild(off);
   });
 }
@@ -2342,8 +2342,8 @@ if(Object.keys(GEO).length){
     var norm=function(s){return String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/ & /g,' and ').replace(/[’']/g,'').replace(/\\bst\\.? /g,'saint ');};
     try{
       var dn=new Intl.DisplayNames(['en'],{type:'region'});
-      for(var i=0;i<26;i++)for(var j=0;j<26;j++){var code=A[i]+A[j];try{var nm=dn.of(code);if(nm&&nm!==code)REV[norm(nm)]=code;}catch(e){}}
-    }catch(e){}
+      for(var i=0;i<26;i++)for(var j=0;j<26;j++){var code=A[i]+A[j];try{var nm=dn.of(code);if(nm&&nm!==code)REV[norm(nm)]=code;}catch (e) {}}
+    }catch (e) {}
     var FIX={'azerbaidjan':'AZ','guinea bissau':'GW','aland islands':'AX','turkiye':'TR','dr congo':'CD','drc':'CD','democratic republic of the congo':'CD','republic of the congo':'CG','ivory coast':'CI','cape verde':'CV','swaziland':'SZ','east timor':'TL','timor leste':'TL','macedonia':'MK','burma':'MM','antarctica':'AQ','kosovo':'XK','virgin islands us':'VI','virgin islands british':'VG','us virgin islands':'VI','british virgin islands':'VG','saint vincent and grenadines':'VC','micronesia':'FM','vatican':'VA','palestine':'PS','curacao':'CW','reunion':'RE','saint martin':'MF','sint maarten':'SX','brunei':'BN','laos':'LA','syria':'SY','russia':'RU','south korea':'KR','north korea':'KP','iran':'IR','venezuela':'VE','bolivia':'BO','tanzania':'TZ','vietnam':'VN','moldova':'MD','czech republic':'CZ'};
     Object.keys(GEO).forEach(function(k){
       var c=/^[A-Z]{2}$/.test(k)?k:(FIX[norm(k)]||REV[norm(k)]||null);
@@ -2368,7 +2368,7 @@ if(Object.keys(GEO).length){
     window._geoLeg={lo:lo,max:maxPct,ramp:ramp};
   });
 }
-${platform && globeCountryCount > 0 ? ('\nvar LAND=' + _globeGeo.LAND + ';var CENTROIDS=' + _globeGeo.CENT + ';var GLB_CN=' + globeCountryCount + ';\nif(document.getElementById(\'globe\')){try{initGlobe();}catch(e){}}\n') : ''}
+${platform && globeCountryCount > 0 ? ('\nvar LAND=' + _globeGeo.LAND + ';var CENTROIDS=' + _globeGeo.CENT + ';var GLB_CN=' + globeCountryCount + ';\nif(document.getElementById(\'globe\')){try{initGlobe();}catch (e) {}}\n') : ''}
 <\/script>
 </body></html>`;
         },
@@ -2506,7 +2506,7 @@ ${platform && globeCountryCount > 0 ? ('\nvar LAND=' + _globeGeo.LAND + ';var CE
         async _getAnonUsers() {
             let anonUsers = this._rawAnonymizedUsers;
             if (!anonUsers || anonUsers.length === 0) {
-                try { anonUsers = await Storage.getItem('surghub_anon_users'); } catch (e) {}
+                try { anonUsers = await Storage.getItem('surghub_anon_users'); } catch (e) { __swallowed(e); }
             }
             return anonUsers || [];
         },
@@ -2659,7 +2659,7 @@ ${platform && globeCountryCount > 0 ? ('\nvar LAND=' + _globeGeo.LAND + ';var CE
             const safeName = providerName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
             const suffix = '_' + dateStr + this._periodFileSuffix();
             const provDir = path.join(baseFolder, safeName);
-            try { electronAPI.fs.mkdirSync(provDir, { recursive: true }); } catch (e) {}
+            try { electronAPI.fs.mkdirSync(provDir, { recursive: true }); } catch (e) { __swallowed(e); }
             const status = { pdf: false, html: false, users: false, feedback: false };
 
             try {
@@ -2762,7 +2762,7 @@ ${platform && globeCountryCount > 0 ? ('\nvar LAND=' + _globeGeo.LAND + ';var CE
             const safeCourse = courseName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
             const suffix = '_' + dateStr + this._periodFileSuffix();
             const courseDir = path.join(baseFolder, safeProv, safeCourse);
-            try { electronAPI.fs.mkdirSync(courseDir, { recursive: true }); } catch (e) {}
+            try { electronAPI.fs.mkdirSync(courseDir, { recursive: true }); } catch (e) { __swallowed(e); }
             const status = { pdf: false, html: false, users: false, feedback: false };
 
             try {

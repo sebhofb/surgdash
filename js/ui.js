@@ -260,7 +260,7 @@ Object.assign(window.App, {
                 Object.entries(cs).forEach(([k, v]) => {
                     if (k && k !== 'Unknown' && k !== 'nan') { counts[k] = (counts[k] || 0) + (Number(v) || 0); usedStats = true; }
                 });
-            } catch (e) {}
+            } catch (e) { __swallowed(e); }
         });
         // FALLBACK (mirrors the provider report): when NO course here has CountryStats,
         // tally distinct countries from the anonymized-user CSV scoped to these courses,
@@ -590,7 +590,7 @@ Object.assign(window.App, {
         const fs = electronAPI.fs, path = electronAPI.path;
         const rawDir = path.join(Storage.DATA_DIR, 'surghub', 'raw');
         let demoDir = null;
-        try { demoDir = fs.readdirSync(rawDir, { withFileTypes: true }).filter(e => e.isDirectory && /^demographics__/.test(e.name)).map(e => e.name).sort().pop(); } catch (e) {}
+        try { demoDir = fs.readdirSync(rawDir, { withFileTypes: true }).filter(e => e.isDirectory && /^demographics__/.test(e.name)).map(e => e.name).sort().pop(); } catch (e) { __swallowed(e); }
         if (!demoDir) { if (!silent) this.showMsg('⚠ No demographics raw capture yet — run a Learners / Demographics sync first.'); return; }
         if (!(window.LearnWorlds && window.LearnWorlds.flattenUsersFromRawPages) || !this.runAudienceAggregation) { if (!silent) this.showMsg('⚠ Derive engine unavailable.'); return; }
         if (!silent) this.showMsg('Re-deriving the snapshot from raw…');
@@ -599,7 +599,7 @@ Object.assign(window.App, {
             for (const ln of String(fs.readFileSync(path.join(rawDir, demoDir, 'pull.jsonl'), 'utf8')).split('\n')) {
                 if (!ln) continue; let r; try { r = JSON.parse(ln); } catch (e) { continue; }
                 if (!/^\/users(\?|$)/.test(r.path)) continue;
-                try { bodies.push(JSON.parse(r.body)); } catch (e) {}
+                try { bodies.push(JSON.parse(r.body)); } catch (e) { __swallowed(e); }
             }
             const usersJson = window.LearnWorlds.flattenUsersFromRawPages(bodies);
             const derived = this.runAudienceAggregation(usersJson);
@@ -663,7 +663,7 @@ Object.assign(window.App, {
             try { const ac = await this._verifyAmbassadorMetricsFromRaw(usersJson); if (ac && ac.length) checks.push(...ac); } catch (e) { console.warn('[derive-verify] ambassador check skipped:', e && e.message); }
             try { const tc = await this._verifyTimelineConsistency(); if (tc && tc.length) checks.push(...tc); } catch (e) { console.warn('[derive-verify] timeline check skipped:', e && e.message); }
             this._deriveVerify = { builtAt: new Date().toISOString(), fromPull: demoDir, checks };
-            try { await Storage.setItem('surghub_derive_verify', this._deriveVerify, { internal: true }); } catch (e) {}
+            try { await Storage.setItem('surghub_derive_verify', this._deriveVerify, { internal: true }); } catch (e) { __swallowed(e); }
             if (!silent) this.showMsg('Re-derive check complete ✓');
             this.renderView();
         } catch (e) { console.error('[derive-verify]', e); if (!silent) this.showMsg('⚠ Re-derive failed: ' + (e && e.message)); }
@@ -714,11 +714,11 @@ Object.assign(window.App, {
         const num = v => Number(v) || 0;
         // Same included set as the headline (mirrors _verifyCourseMetricsFromRaw).
         let snap = [];
-        try { if (typeof this.getPlatformSnap === 'function' && Array.isArray(this.data) && this.data.length) snap = this.getPlatformSnap() || []; } catch (e) {}
+        try { if (typeof this.getPlatformSnap === 'function' && Array.isArray(this.data) && this.data.length) snap = this.getPlatformSnap() || []; } catch (e) { __swallowed(e); }
         if (!snap.length) {
             const data = (await Storage.getItem('surghub_data')) || [];
             if (!Array.isArray(data) || !data.length) return null;
-            let exProv = []; try { exProv = (await Storage.getItem('surghub_excluded_providers')) || []; } catch (e) {}
+            let exProv = []; try { exProv = (await Storage.getItem('surghub_excluded_providers')) || []; } catch (e) { __swallowed(e); }
             const exP = new Set(exProv);
             const all = data.filter(d => d && !d.IsShell && !exP.has(d.Provider));
             const latest = {};
@@ -805,11 +805,11 @@ Object.assign(window.App, {
         // KPI sums — faithful by construction. Fall back to replicating it from
         // surghub_data only if this.data isn't loaded.
         let snap = [];
-        try { if (typeof this.getPlatformSnap === 'function' && Array.isArray(this.data) && this.data.length) snap = this.getPlatformSnap() || []; } catch (e) {}
+        try { if (typeof this.getPlatformSnap === 'function' && Array.isArray(this.data) && this.data.length) snap = this.getPlatformSnap() || []; } catch (e) { __swallowed(e); }
         if (!snap.length) {
             const data = (await Storage.getItem('surghub_data')) || [];
             if (!Array.isArray(data) || !data.length) return null;
-            let exProv = []; try { exProv = (await Storage.getItem('surghub_excluded_providers')) || []; } catch (e) {}
+            let exProv = []; try { exProv = (await Storage.getItem('surghub_excluded_providers')) || []; } catch (e) { __swallowed(e); }
             const exP = new Set(exProv);
             const all = data.filter(d => d && !d.IsShell && !exP.has(d.Provider));
             const latest = {};
@@ -826,7 +826,7 @@ Object.assign(window.App, {
         // when a pull reports 0 / can't refresh), so a course's number can be
         // backed by an EARLIER retained pull — merge them, newest usable wins.
         let cfDirs = [];
-        try { cfDirs = fs.readdirSync(rawDir, { withFileTypes: true }).filter(e => e.isDirectory && /^course-foundation__/.test(e.name)).map(e => e.name).sort().reverse(); } catch (e) {}
+        try { cfDirs = fs.readdirSync(rawDir, { withFileTypes: true }).filter(e => e.isDirectory && /^course-foundation__/.test(e.name)).map(e => e.name).sort().reverse(); } catch (e) { __swallowed(e); }
         if (!cfDirs.length) {
             const nr = 'no course-foundation receipt yet — run Sync Courses to capture one';
             return [
@@ -919,7 +919,7 @@ Object.assign(window.App, {
         const sClicks = Number(stored.TotalClicks) || 0;
         const tolOf = s => Math.max(2, s * 0.005);
         let ambDir = null;
-        try { ambDir = fs.readdirSync(rawDir, { withFileTypes: true }).filter(e => e.isDirectory && /^ambassadors__/.test(e.name)).map(e => e.name).sort().pop(); } catch (e) {}
+        try { ambDir = fs.readdirSync(rawDir, { withFileTypes: true }).filter(e => e.isDirectory && /^ambassadors__/.test(e.name)).map(e => e.name).sort().pop(); } catch (e) { __swallowed(e); }
         if (!ambDir) {
             const nr = 'no ambassadors receipt yet — run Sync Ambassadors to capture one';
             return [
@@ -1477,10 +1477,10 @@ Object.assign(window.App, {
                             const name = String(a.username || ((a.first_name || '') + ' ' + (a.last_name || ''))).trim();
                             if (name && a.email) map[name] = String(a.email).trim();
                         });
-                    } catch (e) {}
+                    } catch (e) { __swallowed(e); }
                 });
             }
-        } catch (e) {}
+        } catch (e) { __swallowed(e); }
         this._ambEmailMap = map;
         return map;
     },
@@ -1879,6 +1879,52 @@ Object.assign(window.App, {
     //     immediately instead of blank until each step runs once.
     // Deliberately not derived from record timestamps: a course's Timestamp only moves
     // when its metrics change, so "latest record" reads older than the actual sync.
+    // Unit shown under each KPI tile, keyed by tile label. Exists so "Registered
+    // Users" (accounts) is never read as "Enrolled Learners" (course enrolments,
+    // not people), and the Conflict Settings estimate (accounts) is never confused
+    // with the Conflict tab's learner counts. Tiles may also carry their own `unit`.
+    _KPI_UNITS: {
+        'Providers':          'partner organisations',
+        'Courses':            'courses on the platform',
+        'Registered Users':   'accounts — people, not enrolments',
+        'Active (30 days)':   'accounts that logged in',
+        'Enrolled Learners':  'course enrolments — not people',
+        'Certificates':       'certificates issued',
+        'Certification Rate': 'certificates ÷ enrolments',
+        'Learning Time':      'learner-years of study',
+        'Countries':          'countries with ≥1 account',
+        'Avg Rating':         'out of 5 · survey mean',
+        'Survey Responses':   'survey submissions',
+        'Conflict Settings':  'accounts (estimate) — not learners',
+    },
+
+    // One line above the KPI grid stating how fresh each source is. The sources
+    // feed different tiles — enrolments and certificates come ONLY from the
+    // User-Progress upload — so a source trailing the newest by >7 days is flagged.
+    // (This is what would have surfaced a 14-day-stale completion.json instead of
+    // letting it read as a real July dip.)
+    _dataThroughNote() {
+        let log = {};
+        try { log = this._syncRunLog() || {}; } catch (e) { return ''; }
+        const SRC = [
+            ['courses',  'courses & providers'],
+            ['learners', 'accounts & demographics'],
+            ['progress', 'enrolments & certificates'],
+            ['surveys',  'ratings & feedback'],
+        ];
+        const rows = SRC.map(([k, l]) => ({ k, l, t: log[k] ? Date.parse(log[k]) : NaN })).filter(r => !isNaN(r.t));
+        if (!rows.length) return '';
+        const newest = Math.max(...rows.map(r => r.t));
+        const fmt = t => new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+        const parts = rows.map(r => {
+            const days = Math.round((newest - r.t) / 86400000);
+            const stale = days > 7;
+            const tip = r.l + ': last refreshed ' + new Date(r.t).toLocaleString() + (stale ? ' — ' + days + ' days behind the newest source' : '');
+            return `<span class="${stale ? 'text-amber-700 font-semibold' : ''}" title="${this.escapeHtml(tip)}">${this.escapeHtml(r.l)} <span class="font-mono">${fmt(r.t)}</span>${stale ? ' ⚠' : ''}</span>`;
+        });
+        return `<p class="text-[11px] text-slate-500 mb-3 flex flex-wrap gap-x-4 gap-y-1 items-center"><span class="uppercase tracking-wide font-bold text-slate-400">Data through</span>${parts.join('')}</p>`;
+    },
+
     _syncRunLog() {
         if (this._syncRunCache) return this._syncRunCache;
         const out = {};
@@ -1891,7 +1937,8 @@ Object.assign(window.App, {
             Storage.getItem('surgdash_sync_log').then(v => {
                 this._syncLog = (v && typeof v === 'object') ? v : {};
                 this._syncRunCache = null;
-                if (this.view === 'upload') this.renderView();
+                // The dashboard's "Data through" line reads these stamps too.
+                if (this.view === 'upload' || this.view === 'platform') this.renderView();
             }).catch(() => { this._syncLog = {}; });
         }
         // Raw captures
@@ -1905,14 +1952,14 @@ Object.assign(window.App, {
                 if (!m || !map[m[1]]) return;
                 put(map[m[1]], m[2] + '-' + m[3] + '-' + m[4]);
             });
-        } catch (e) {}
+        } catch (e) { __swallowed(e); }
         // Upload stores: fall back to the file's own write time
         try {
             const fs = electronAPI.fs, path = electronAPI.path;
             const st = fs.statSync(path.join(Storage.DATA_DIR, 'surghub', 'completion.json'));
             const mt = st && (st.mtime || st.mtimeMs);
             if (mt) put('progress', new Date(mt).toISOString().slice(0, 10));
-        } catch (e) {}
+        } catch (e) { __swallowed(e); }
         this._syncRunCache = out;
         return out;
     },
@@ -2061,7 +2108,7 @@ Object.assign(window.App, {
         const list = this._triageSilenced || [];
         if (list.indexOf(courseName) < 0) list.push(courseName);
         this._triageSilenced = list;
-        try { await Storage.setItem('surgdash_triage_silenced', list); } catch (e) {}
+        try { await Storage.setItem('surgdash_triage_silenced', list); } catch (e) { __swallowed(e); }
         this.renderView();
     },
     async _unsilenceTriage(j) {
@@ -2069,7 +2116,7 @@ Object.assign(window.App, {
         if (j < 0 || j >= list.length) return;
         list.splice(j, 1);
         this._triageSilenced = list;
-        try { await Storage.setItem('surgdash_triage_silenced', list); } catch (e) {}
+        try { await Storage.setItem('surgdash_triage_silenced', list); } catch (e) { __swallowed(e); }
         this.renderView();
     },
 
@@ -3860,7 +3907,7 @@ Object.assign(window.App, {
             const pCountries = this.aggregateCourseCountries(pSnap).countryCount;
 
             let provFeedbackBank = [];
-            pSnap.forEach(c => { if(c.FeedbackBank) { try { let fb = JSON.parse(c.FeedbackBank); if(Array.isArray(fb)) fb.forEach(f => provFeedbackBank.push({ ...f, _course: c.Course })); } catch(e){} } });
+            pSnap.forEach(c => { if(c.FeedbackBank) { try { let fb = JSON.parse(c.FeedbackBank); if(Array.isArray(fb)) fb.forEach(f => provFeedbackBank.push({ ...f, _course: c.Course })); } catch (e) { __swallowed(e); } } });
             provFeedbackBank.sort((a,b) => (b.d||'').localeCompare(a.d||''));
             const provCourseNames = [...new Set(provFeedbackBank.map(f => f._course).filter(Boolean))].sort();
             // All of this provider's courses INCLUDING course-level-excluded ones,
@@ -3915,7 +3962,7 @@ Object.assign(window.App, {
                             <div class="h-1" style="background:${k.color}"></div>
                             <div class="p-4 pb-5">
                                 <div class="flex items-center gap-1.5 mb-2"><i data-lucide="${k.icon}" width="13" style="color:${k.color}" class="shrink-0"></i><p class="text-[10px] font-bold text-slate-400 uppercase tracking-wide">${k.label}</p></div>
-                                <p class="text-[30px] font-bold leading-none tracking-tight" style="color:${k.color};font-family:var(--num)">${k.value}</p>
+                                <p class="text-[30px] font-bold leading-none tracking-tight" style="color:${k.color};font-family:var(--num)">${k.value}</p>${(k.unit || this._KPI_UNITS[k.label]) ? '<p class="text-[10px] text-slate-400 mt-1.5 leading-tight">' + this.escapeHtml(k.unit || this._KPI_UNITS[k.label]) + '</p>' : ''}
                             </div>
                             <div class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"><i data-lucide="copy" width="10" class="text-slate-300"></i></div>
                         </div>`).join('')}
@@ -3941,10 +3988,12 @@ Object.assign(window.App, {
                             <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed checked onchange="if(window.Charts) window.Charts.redrawProviderGrowth(App.getAnalyticsHistory(), App.selectedProvider)" data-series="prov-enroll"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#1a5276"></span> Enrolled Learners</label>
                             <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed checked onchange="if(window.Charts) window.Charts.redrawProviderGrowth(App.getAnalyticsHistory(), App.selectedProvider)" data-series="prov-cert"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#4389C8"></span> Certificates</label>
                             <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed id="toggle-prov-growth-bars" onchange="if(window.Charts) window.Charts.redrawProviderGrowth(App.getAnalyticsHistory(), App.selectedProvider)"> Show monthly bars</label>
+                            ${this._partialMonthToggle()}
                         </div>
                         <div style="${this._chartWidthStyle('chart_growth')}">
                             <div id="chart_growth" style="width: 100%; height: 500px;"></div>
                         </div>
+                        ${this._partialMonthCaption()}
                     </div>
 
                     <div class="bg-white p-6 rounded-xl shadow-sm border mb-8">
@@ -3952,8 +4001,10 @@ Object.assign(window.App, {
                         <div class="mb-3 flex flex-wrap gap-4">
                             <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed checked onchange="if(window.Charts) window.Charts.redrawProviderFeedback(App.getAnalyticsHistory(), App.selectedProvider, document.getElementById('toggle-prov-fb-bars').checked)" data-series="prov-rating"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#D03734"></span> Avg Rating</label>
                             <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed id="toggle-prov-fb-bars" onchange="if(window.Charts) window.Charts.redrawProviderFeedback(App.getAnalyticsHistory(), App.selectedProvider, this.checked)"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#85c1e9"></span> Survey Volume</label>
+                            ${this._partialMonthToggle()}
                         </div>
                         <div id="chart_feedback_growth" style="width: 100%; height: 400px;"></div>
+                        ${this._partialMonthCaption()}
                     </div>
 
                     <div class="bg-white p-6 rounded-xl shadow-sm border mb-8">
@@ -4004,7 +4055,7 @@ Object.assign(window.App, {
             }
 
             let courseFeedbackBank = [];
-            if(cSnap.FeedbackBank) { try { let fb = JSON.parse(cSnap.FeedbackBank); if(Array.isArray(fb)) courseFeedbackBank = fb.map(f => ({ ...f, _course: this.selectedCourse })); } catch(e){} }
+            if(cSnap.FeedbackBank) { try { let fb = JSON.parse(cSnap.FeedbackBank); if(Array.isArray(fb)) courseFeedbackBank = fb.map(f => ({ ...f, _course: this.selectedCourse })); } catch (e) { __swallowed(e); } }
             courseFeedbackBank.sort((a,b) => (b.d||'').localeCompare(a.d||''));
 
             body.innerHTML = `
@@ -4046,7 +4097,7 @@ Object.assign(window.App, {
                             <div class="h-1" style="background:${k.color}"></div>
                             <div class="p-4 pb-5">
                                 <div class="flex items-center gap-1.5 mb-2"><i data-lucide="${k.icon}" width="13" style="color:${k.color}" class="shrink-0"></i><p class="text-[10px] font-bold text-slate-400 uppercase tracking-wide">${k.label}</p></div>
-                                <p class="text-[30px] font-bold leading-none tracking-tight" style="color:${k.color};font-family:var(--num)">${k.value}</p>
+                                <p class="text-[30px] font-bold leading-none tracking-tight" style="color:${k.color};font-family:var(--num)">${k.value}</p>${(k.unit || this._KPI_UNITS[k.label]) ? '<p class="text-[10px] text-slate-400 mt-1.5 leading-tight">' + this.escapeHtml(k.unit || this._KPI_UNITS[k.label]) + '</p>' : ''}
                             </div>
                             <div class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"><i data-lucide="copy" width="10" class="text-slate-300"></i></div>
                         </div>`).join('')}
@@ -4058,10 +4109,12 @@ Object.assign(window.App, {
                             <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed checked onchange="if(window.Charts) window.Charts.drawCourse(App.getAnalyticsHistory(), App.selectedCourse)" data-series="crs-enroll"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#1a5276"></span> Enrolled Learners</label>
                             <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed checked onchange="if(window.Charts) window.Charts.drawCourse(App.getAnalyticsHistory(), App.selectedCourse)" data-series="crs-cert"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#4389C8"></span> Certificates</label>
                             <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed id="toggle-crs-growth-bars" onchange="if(window.Charts) window.Charts.drawCourse(App.getAnalyticsHistory(), App.selectedCourse)"> Show monthly bars</label>
+                            ${this._partialMonthToggle()}
                         </div>
                         <div style="${this._chartWidthStyle('chart_growth')}">
                             <div id="chart_growth" style="width: 100%; height: 500px;"></div>
                         </div>
+                        ${this._partialMonthCaption()}
                     </div>
 
                     <div class="bg-white p-6 rounded-xl shadow-sm border mb-8">
@@ -4078,8 +4131,10 @@ Object.assign(window.App, {
                         <div class="mb-3 flex flex-wrap gap-4">
                             <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed checked data-series="crs-rating"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#D03734"></span> Avg Rating</label>
                             <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed id="toggle-crs-fb-bars" onchange="if(window.Charts) window.Charts.drawCourse(App.getAnalyticsHistory(), App.selectedCourse)"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#85c1e9"></span> Survey Volume</label>
+                            ${this._partialMonthToggle()}
                         </div>
                         <div id="chart_feedback_growth" style="width: 100%; height: 400px;"></div>
+                        ${this._partialMonthCaption()}
                     </div>
 
                     ${courseFeedbackBank.length > 0 ? `
@@ -4598,9 +4653,9 @@ Object.assign(window.App, {
             for (const f of files) {
                 if (!/\.(png|jpe?g)$/i.test(f)) continue;
                 const mime = /\.jpe?g$/i.test(f) ? 'image/jpeg' : 'image/png';
-                try { cache[norm(f.replace(/\.[^.]+$/, ''))] = 'data:' + mime + ';base64,' + fs.readFileBase64(path.join(dir, f)); } catch (e) {}
+                try { cache[norm(f.replace(/\.[^.]+$/, ''))] = 'data:' + mime + ';base64,' + fs.readFileBase64(path.join(dir, f)); } catch (e) { __swallowed(e); }
             }
-        } catch (e) {}
+        } catch (e) { __swallowed(e); }
         this._provLogoCache = cache;
         return cache;
     },
@@ -5094,8 +5149,10 @@ Object.assign(window.App, {
                         <div class="mb-3 flex flex-wrap gap-4">
                             <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" checked onchange="if(window.Charts) window.Charts.drawFeedbackTimeline('chart_feedback_growth', App.getAnalyticsSnap(), document.getElementById('toggle-plat-fb-bars').checked)" data-series="plat-rating"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#D03734"></span> Avg Rating</label>
                             <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" id="toggle-plat-fb-bars" onchange="if(window.Charts) window.Charts.drawFeedbackTimeline('chart_feedback_growth', App.getAnalyticsSnap(), this.checked)"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#85c1e9"></span> Survey Volume</label>
+                            ${this._partialMonthToggle()}
                         </div>
                         <div id="chart_feedback_growth" style="width: 100%; height: 400px;"></div>
+                        ${this._partialMonthCaption()}
                     </div>
 
                     ${this._improvementCorpusHtml(snapData)}
@@ -5169,7 +5226,7 @@ Object.assign(window.App, {
                 const cs = (tl.scale && Number(tl.scale.certScale)) || 1;
                 const tE = Number(tl.totalE) || 0, tC = Number(tl.totalC) || 0;
                 if (tE || tC) { tlScaledE += tE; tlRawE += tE / (es || 1); tlScaledC += tC; tlRawC += tC / (cs || 1); tlCount++; if (es > 1.3 || cs > 1.3) highScale++; }
-            } catch (e) {}
+            } catch (e) { __swallowed(e); }
         });
 
         const checks = [];
@@ -5211,14 +5268,14 @@ Object.assign(window.App, {
 
         // Rollback points (the pre-sync backups)
         let rollback = 0;
-        try { const fs = electronAPI.fs, path = electronAPI.path; const bd = path.join(Storage.DATA_DIR, 'backups'); if (fs.existsSync(bd)) rollback = fs.readdirSync(bd, { withFileTypes: true }).filter(e => e.isDirectory && /^presync_/.test(e.name)).length; } catch (e) {}
+        try { const fs = electronAPI.fs, path = electronAPI.path; const bd = path.join(Storage.DATA_DIR, 'backups'); if (fs.existsSync(bd)) rollback = fs.readdirSync(bd, { withFileTypes: true }).filter(e => e.isDirectory && /^presync_/.test(e.name)).length; } catch (e) { __swallowed(e); }
         // Recent raw captures (immutable receipts) from the pull manifest
         let rawPulls = [];
         try {
             const fs = electronAPI.fs, path = electronAPI.path;
             const mf = path.join(Storage.DATA_DIR, 'surghub', 'raw', 'manifest.jsonl');
             if (fs.existsSync(mf)) rawPulls = String(fs.readFileSync(mf, 'utf8')).trim().split('\n').filter(Boolean).slice(-6).map(l => { try { return JSON.parse(l); } catch (e) { return null; } }).filter(Boolean).reverse();
-        } catch (e) {}
+        } catch (e) { __swallowed(e); }
 
         const warnCount = checks.filter(c => c.status === 'warn').length;
         const icon = s => s === 'ok' ? '<span class="text-green-600">●</span>' : s === 'warn' ? '<span class="text-amber-500">▲</span>' : '<span class="text-slate-400">○</span>';
@@ -5258,12 +5315,13 @@ Object.assign(window.App, {
     _dashOverviewHtml(snapData, audSnap, kpiCards) {
         const snap = audSnap || {};
         return `
+                    ${this._dataThroughNote()}
                     <div id="sh-kpi-grid" class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
                         ${kpiCards.map(k => `<div class="group relative bg-white rounded-xl border shadow-sm overflow-hidden cursor-pointer hover:shadow-md transition-shadow" ${k.title ? 'title="'+this.escapeHtml(k.title)+'"' : ''} onclick="App._copyKpiCard(this)">
                             <div class="h-1" style="background:${k.color}"></div>
                             <div class="p-4 pb-5">
                                 <div class="flex items-center gap-1.5 mb-2"><i data-lucide="${k.icon}" width="13" style="color:${k.color}" class="shrink-0"></i><p class="text-[10px] font-bold text-slate-400 uppercase tracking-wide">${k.label}</p></div>
-                                <p class="text-[30px] font-bold leading-none tracking-tight" style="color:${k.color};font-family:var(--num)">${k.value}</p>
+                                <p class="text-[30px] font-bold leading-none tracking-tight" style="color:${k.color};font-family:var(--num)">${k.value}</p>${(k.unit || this._KPI_UNITS[k.label]) ? '<p class="text-[10px] text-slate-400 mt-1.5 leading-tight">' + this.escapeHtml(k.unit || this._KPI_UNITS[k.label]) + '</p>' : ''}
                             </div>
                             <div class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"><i data-lucide="copy" width="10" class="text-slate-300"></i></div>
                         </div>`).join('')}

@@ -25,7 +25,7 @@ function wipeProfileDir(profile) {
   const safe = String(profile || '').replace(/[^A-Za-z0-9_-]/g, '');
   if (!safe) return;                       // empty == the real profile — never wipe
   const targets = [];
-  try { targets.push(path.join(app.getPath('userData'), 'data-' + safe)); } catch (_) {}
+  try { targets.push(path.join(app.getPath('userData'), 'data-' + safe)); } catch (_) { console.warn('[swallowed]', _ && _.message || _); }
   targets.push(path.join(os.homedir(), 'Documents', 'SURGdash-' + safe)); // legacy location
   for (const dir of targets) {
     try { if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true }); } catch (_) { /* best-effort */ }
@@ -76,13 +76,13 @@ function migrateDataDirIfNeeded() {
     const dest = appDataDir();
     const src  = legacyDataDir();
     let destHasContent = false;
-    try { destHasContent = fs.existsSync(dest) && fs.readdirSync(dest).length > 0; } catch (_) {}
+    try { destHasContent = fs.existsSync(dest) && fs.readdirSync(dest).length > 0; } catch (_) { console.warn('[swallowed]', _ && _.message || _); }
     if (destHasContent) return;               // already migrated (or already using new dir)
     let srcHasContent = false;
-    try { srcHasContent = fs.existsSync(src) && fs.readdirSync(src).length > 0; } catch (_) {}
+    try { srcHasContent = fs.existsSync(src) && fs.readdirSync(src).length > 0; } catch (_) { console.warn('[swallowed]', _ && _.message || _); }
     if (!srcHasContent) return;               // fresh install — nothing to migrate
     const tmp = dest + '.migrating';
-    try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (_) {}
+    try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (_) { console.warn('[swallowed]', _ && _.message || _); }
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     // preserveTimestamps so migrated files keep their ORIGINAL mtimes. Otherwise the copy
     // stamps every file at migration-time — newer than the (also-migrated, but old-valued)
@@ -298,7 +298,7 @@ function initAutoUpdate() {
     if (choice === 0) setImmediate(() => autoUpdater.quitAndInstall());
   });
 
-  const check = () => { try { autoUpdater.checkForUpdates().catch(() => {}); } catch (e) {} };
+  const check = () => { try { autoUpdater.checkForUpdates().catch(() => {}); } catch (e) { console.warn('[swallowed]', e && e.message || e); } };
   setTimeout(check, 8000);                       // after first paint, not before
   setInterval(check, 6 * 60 * 60 * 1000);        // every 6 hours while open
 }
@@ -316,7 +316,7 @@ function checkForUpdatesManually() {
   }
   if (!autoUpdater) return;
   manualUpdateCheck = true;
-  try { autoUpdater.checkForUpdates().catch(() => {}); } catch (e) {}
+  try { autoUpdater.checkForUpdates().catch(() => {}); } catch (e) { console.warn('[swallowed]', e && e.message || e); }
 }
 
 // Standard macOS menu + a "Check for Updates…" item. Keeps the default
@@ -331,7 +331,7 @@ function buildAppMenu() {
         { type: 'separator' },
         DATA_PROFILE
           ? { label: 'Switch to Normal Data', click: () => {
-                try { const pp = profilePointerPath(); if (pp && fs.existsSync(pp)) fs.unlinkSync(pp); } catch (_) {}
+                try { const pp = profilePointerPath(); if (pp && fs.existsSync(pp)) fs.unlinkSync(pp); } catch (_) { console.warn('[swallowed]', _ && _.message || _); }
                 app.relaunch({ args: process.argv.slice(1).filter(a => !a.startsWith('--profile=')) });
                 app.exit(0);
               } }
@@ -339,7 +339,7 @@ function buildAppMenu() {
                 // Clean slate every time: wipe the test dir, persist the pointer,
                 // then relaunch into the isolated profile.
                 wipeProfileDir('test');
-                try { const pp = profilePointerPath(); if (pp) fs.writeFileSync(pp, 'test', 'utf8'); } catch (_) {}
+                try { const pp = profilePointerPath(); if (pp) fs.writeFileSync(pp, 'test', 'utf8'); } catch (_) { console.warn('[swallowed]', _ && _.message || _); }
                 app.relaunch({ args: process.argv.slice(1).filter(a => !a.startsWith('--profile=')).concat(['--profile=test']) });
                 app.exit(0);
               } },
@@ -451,7 +451,7 @@ ipcMain.handle('generate-pdf', async (event, { html, outputPath }) => {
     return { success: false, error: err.message };
   } finally {
     if (win) win.destroy();
-    if (tempHtmlPath) try { fs.unlinkSync(tempHtmlPath); } catch(e) {}
+    if (tempHtmlPath) try { fs.unlinkSync(tempHtmlPath); } catch (e) { console.warn('[swallowed]', e && e.message || e); }
   }
 });
 
@@ -487,7 +487,7 @@ ipcMain.handle('merge-pdfs', async (event, { reportPdfPath, coverPath, backPath,
 
     // Clean up temp report
     if (reportPdfPath !== outputPath) {
-      try { fs.unlinkSync(reportPdfPath); } catch(e) {}
+      try { fs.unlinkSync(reportPdfPath); } catch (e) { console.warn('[swallowed]', e && e.message || e); }
     }
 
     return { success: true, path: outputPath };
@@ -635,7 +635,7 @@ ipcMain.handle('http-request', async (event, { url, method, headers, body, timeo
       // "Finalising…" indefinitely behind a modal overlay. Always bound it.
       const capMs = Number(timeoutMs) > 0 ? Number(timeoutMs) : 120000;
       timer = setTimeout(() => {
-        try { request.abort(); } catch (_) {}
+        try { request.abort(); } catch (_) { console.warn('[swallowed]', _ && _.message || _); }
         done({ statusCode: 0, body: '', error: 'Timed out after ' + Math.round(capMs / 1000) + 's with no response' });
       }, capMs);
       if (headers) {

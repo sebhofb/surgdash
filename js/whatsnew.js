@@ -74,13 +74,13 @@
                 const cur = (window.electronAPI && electronAPI.appVersion) || '';
                 if (!cur) return;
                 let seen = null;
-                try { seen = await Storage.getItem('last_seen_version'); } catch (e) {}
+                try { seen = await Storage.getItem('last_seen_version'); } catch (e) { __swallowed(e); }
                 if (seen === cur) return;
-                try { await Storage.setItem('last_seen_version', cur); } catch (e) {}
+                try { await Storage.setItem('last_seen_version', cur); } catch (e) { __swallowed(e); }
                 const isFreshInstall = !seen && !((this.data && this.data.length) || (window.Projects && Projects.registry && Projects.registry.some(p => !p.isSample)));
                 if (isFreshInstall) return;
                 this.showWhatsNew(true);
-            } catch (e) {}
+            } catch (e) { __swallowed(e); }
         },
 
         showWhatsNew() {
