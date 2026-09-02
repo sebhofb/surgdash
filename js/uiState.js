@@ -27,6 +27,8 @@ Object.assign(window.App, {
         'careerTimelineRange', 'topicTimelineRange', 'ambassadorsTimelineRange',
         'joinersPeriodDays',
         'instThreshold', 'instMonths', 'instShowPersonal',
+        'cmpPreset', 'cmpAStart', 'cmpAEnd', 'cmpBStart', 'cmpBEnd', 'cmpCohortMode', 'cmpCohortDomain',
+        'anomalyCollapsed',
     ],
     _UI_OBJECTS: [
         '_chartWidth',

@@ -3654,6 +3654,7 @@ Object.assign(window.App, {
                 ['physicians', 'Physician Reach', 'stethoscope'],
                 ['nurses', 'Nursing Reach', 'heart-pulse'],
                 ['institutions', 'Institutions', 'building-2'],
+                ['compare', 'Compare periods', 'git-compare'],
                 ['health', 'Data Health', 'shield-check'],
             ].map(([k, l, ic]) => `<button onclick="App._dashTab='${k}'; App.renderView()" class="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-bold transition-colors ${dt === k ? 'bg-gsf-prussian text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100'}"><i data-lucide="${ic}" width="15"></i> ${l}</button>`).join('');
 
@@ -3666,6 +3667,7 @@ Object.assign(window.App, {
             else if (dt === 'physicians') dashContent = this._dashPhysicianHtml(snapData, audSnap);
             else if (dt === 'nurses') dashContent = this._dashNurseHtml(snapData, audSnap);
             else if (dt === 'institutions') dashContent = this._dashInstitutionsHtml(snapData, audSnap);
+            else if (dt === 'compare') dashContent = this._dashCompareHtml(snapData, audSnap);
             else if (dt === 'health') dashContent = this._dashHealthHtml(snapData, audSnap);
             else dashContent = this._dashOverviewHtml(snapData, audSnap, kpiCards);
 
@@ -3717,6 +3719,7 @@ Object.assign(window.App, {
                     if (dt === 'physicians' && this._drawPhysicianCharts) this._drawPhysicianCharts(audSnap);
                     if (dt === 'nurses' && this._drawNurseCharts) this._drawNurseCharts();
                     if (dt === 'institutions' && this._drawInstitutionCharts) this._drawInstitutionCharts();
+                    if (dt === 'compare' && this._drawCompareCharts) this._drawCompareCharts();
                 };
                 setTimeout(_d, 80); setTimeout(_d, 400);
             }
@@ -5326,6 +5329,7 @@ Object.assign(window.App, {
         const snap = audSnap || {};
         return `
                     ${this._dataThroughNote()}
+                    ${this._anomalyStripHtml ? this._anomalyStripHtml() : ''}
                     <div id="sh-kpi-grid" class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
                         ${kpiCards.map(k => `<div class="group relative bg-white rounded-xl border shadow-sm overflow-hidden cursor-pointer hover:shadow-md transition-shadow" ${k.title ? 'title="'+this.escapeHtml(k.title)+'"' : ''} onclick="App._copyKpiCard(this)">
                             <div class="h-1" style="background:${k.color}"></div>
