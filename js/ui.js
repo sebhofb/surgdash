@@ -1913,7 +1913,8 @@ Object.assign(window.App, {
             ['surveys',  'ratings & feedback'],
         ];
         const rows = SRC.map(([k, l]) => ({ k, l, t: log[k] ? Date.parse(log[k]) : NaN })).filter(r => !isNaN(r.t));
-        if (!rows.length) return '';
+        const resetBtn = this._resetUiStateBtn ? `<span class="ml-auto">${this._resetUiStateBtn()}</span>` : '';
+        if (!rows.length) return resetBtn ? `<p class="text-[11px] text-slate-500 mb-3 flex items-center">${resetBtn}</p>` : '';
         const newest = Math.max(...rows.map(r => r.t));
         const fmt = t => new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
         const parts = rows.map(r => {
@@ -1922,7 +1923,7 @@ Object.assign(window.App, {
             const tip = r.l + ': last refreshed ' + new Date(r.t).toLocaleString() + (stale ? ' — ' + days + ' days behind the newest source' : '');
             return `<span class="${stale ? 'text-amber-700 font-semibold' : ''}" title="${this.escapeHtml(tip)}">${this.escapeHtml(r.l)} <span class="font-mono">${fmt(r.t)}</span>${stale ? ' ⚠' : ''}</span>`;
         });
-        return `<p class="text-[11px] text-slate-500 mb-3 flex flex-wrap gap-x-4 gap-y-1 items-center"><span class="uppercase tracking-wide font-bold text-slate-400">Data through</span>${parts.join('')}</p>`;
+        return `<p class="text-[11px] text-slate-500 mb-3 flex flex-wrap gap-x-4 gap-y-1 items-center"><span class="uppercase tracking-wide font-bold text-slate-400">Data through</span>${parts.join('')}${resetBtn}</p>`;
     },
 
     _syncRunLog() {
@@ -2654,6 +2655,10 @@ Object.assign(window.App, {
 
     // Get timeline data for a breakdown chart
     _getBreakdownTimelineData(dataAccessor) {
+        // Institutions tab: monthly courses started per email domain (institutions.js).
+        if (dataAccessor === 'InstitutionTimeline') {
+            return this._instTimeline ? this._instTimeline() : null;
+        }
         // Conflict tab: monthly per-country counts restricted to the active list.
         if (dataAccessor === 'ConflictCountryTimeline') {
             const aud = (this.userHistory || []).find(d => d.Timestamp === this.selectedDate)
@@ -2709,6 +2714,8 @@ Object.assign(window.App, {
     renderView() {
         this.renderSidebar();
         this.renderTabBar();
+        // Persist in-place mutations of object view prefs (chart widths, pickers) — see uiState.js.
+        if (this._snapshotUiState) this._snapshotUiState();
         const body = document.getElementById('view-body') || document.getElementById('main-content');
         const project = this.getCurrentProject();
         if (this._refreshSampleBanner) this._refreshSampleBanner(project);
@@ -3646,6 +3653,7 @@ Object.assign(window.App, {
                 ['conflict', 'Conflict Settings', 'shield-alert'],
                 ['physicians', 'Physician Reach', 'stethoscope'],
                 ['nurses', 'Nursing Reach', 'heart-pulse'],
+                ['institutions', 'Institutions', 'building-2'],
                 ['health', 'Data Health', 'shield-check'],
             ].map(([k, l, ic]) => `<button onclick="App._dashTab='${k}'; App.renderView()" class="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-bold transition-colors ${dt === k ? 'bg-gsf-prussian text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100'}"><i data-lucide="${ic}" width="15"></i> ${l}</button>`).join('');
 
@@ -3657,6 +3665,7 @@ Object.assign(window.App, {
             else if (dt === 'conflict') dashContent = this._dashConflictHtml(snapData, audSnap);
             else if (dt === 'physicians') dashContent = this._dashPhysicianHtml(snapData, audSnap);
             else if (dt === 'nurses') dashContent = this._dashNurseHtml(snapData, audSnap);
+            else if (dt === 'institutions') dashContent = this._dashInstitutionsHtml(snapData, audSnap);
             else if (dt === 'health') dashContent = this._dashHealthHtml(snapData, audSnap);
             else dashContent = this._dashOverviewHtml(snapData, audSnap, kpiCards);
 
@@ -3707,6 +3716,7 @@ Object.assign(window.App, {
                     if (dt === 'conflict' && this._drawConflictCharts) this._drawConflictCharts(audSnap);
                     if (dt === 'physicians' && this._drawPhysicianCharts) this._drawPhysicianCharts(audSnap);
                     if (dt === 'nurses' && this._drawNurseCharts) this._drawNurseCharts();
+                    if (dt === 'institutions' && this._drawInstitutionCharts) this._drawInstitutionCharts();
                 };
                 setTimeout(_d, 80); setTimeout(_d, 400);
             }

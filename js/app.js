@@ -70,6 +70,9 @@ window.App = {
             // Migrate from IndexedDB to JSON files (one-time, on first run)
             await Storage.migrateFromLocalforage();
 
+            // Remembered view preferences (device-local) — must precede the first render.
+            if (this._loadUiState) { try { await this._loadUiState(); } catch (e) { __swallowed(e, 'uiState.init'); } }
+
             // Check demo mode state
             this.demoMode = !!(await Storage.getItem('surgdash_demo_active'));
 
@@ -961,6 +964,7 @@ window.App = {
                 'last_project.json',     // which project tab is open
                 'onboarding.json',       // onboarding tooltip dismissal
                 'demo_active.json',      // demo mode toggle
+                'ui_state.json',         // remembered view preferences (device-local)
                 'report_cover_path.json',// PDF cover path (just a file path string)
                 'report_back_path.json', // PDF back path
                 // Sync-state bookkeeping — written DURING a Sheets push itself, so

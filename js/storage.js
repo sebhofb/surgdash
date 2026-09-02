@@ -62,6 +62,10 @@
         // Per-device auto-pull opt-in. Deliberately NOT in relativeToKey's reverse
         // map → keys() never enumerates it → it stays device-local, never pushed.
         if (key === 'surgdash_autopull_enabled') return path.join('settings', 'autopull_enabled.json');
+        // View preferences (dashboard tab, chart widths, toggles, pickers). Forward-mapped
+        // only — deliberately NOT in relativeToKey's reverse map, so it is never
+        // enumerated, pushed to Sheets, exported, or restored onto another machine.
+        if (key === 'surgdash_ui_state')        return path.join('settings', 'ui_state.json');
         if (key === 'surgdash_onboarding')      return path.join('settings', 'onboarding.json');
         if (key === 'surgdash_edit_password')  return path.join('settings', 'edit_password.json');
         if (key === 'report_cover_path')     return path.join('settings', 'report_cover_path.json');
@@ -250,6 +254,7 @@
             // knows they need to click Sync. Skip nav-state and internal writes.
             const NAV_KEYS = new Set([
                 'surgdash_last_project', 'surgdash_onboarding', 'surgdash_demo_active',
+                'surgdash_ui_state',      // remembered view preferences — a click, not a data change
                 'report_cover_path', 'report_back_path'
             ]);
             if (!isInternal && !NAV_KEYS.has(key) && window.App && App.markDirty) {
