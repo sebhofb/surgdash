@@ -2846,7 +2846,7 @@ window.GenericViews = {
             fs.writeFileSync(path.join(dir, `pre-restore_${stamp}.json`), JSON.stringify({ version: 1, timestamp: new Date().toISOString(), data: cur }, null, 2), 'utf8');
             safetyOk = true;
             const snaps = fs.readdirSync(dir, { withFileTypes: true }).filter(e => e.name && /^pre-restore_.*\.json$/.test(e.name)).map(e => e.name).sort();
-            for (const old of snaps.slice(0, Math.max(0, snaps.length - 10))) { try { fs.unlinkSync(path.join(dir, old)); } catch (_) {} }
+            for (const old of snaps.slice(0, Math.max(0, snaps.length - 10))) { try { fs.unlinkSync(path.join(dir, old)); } catch (_) { __swallowed(_); } }
         } catch (e) { console.warn('pre-restore snapshot failed:', e); }
         if (!safetyOk) {
             alert('Could not write a safety backup of your current data — restore aborted to avoid unrecoverable data loss.\n\nCheck that the app\'s data folder is writable with free space, then try again.');
@@ -2885,19 +2885,31 @@ window.GenericViews = {
                     if (p.facilities  != null) { await Storage.setItem(`surgdash_facilities_${id}`, p.facilities); n++; }
                 }
             } else if (b.kind === 'surghub') {
-                const map = { 'data.json': 'surghub_data', 'history.json': 'surghub_history', 'ambassadors.json': 'surghub_ambassadors' };
-                for (const [file, key] of Object.entries(map)) {
-                    const fp = path.join(dir, b.name, file);
-                    if (fs.existsSync(fp)) { try { await Storage.setItem(key, JSON.parse(fs.readFileSync(fp, 'utf8'))); n++; } catch (_) {} }
+                // Restore every dataset the snapshot holds — the pre-sync backup now
+                // covers all surghub/*.json (completion, anon_users, …), not just three.
+                // manifest.json (the size/mtime index used for hard-link dedupe) has no
+                // storage key and is skipped. File → key follows the storage layout:
+                // <name>.json → surghub_<name>.
+                const snapDir = path.join(dir, b.name);
+                const files = fs.readdirSync(snapDir).filter(f => /\.json$/.test(f) && f !== 'manifest.json');
+                for (const file of files) {
+                    const key = 'surghub_' + file.replace(/\.json$/, '');
+                    const fp = path.join(snapDir, file);
+                    try { await Storage.setItem(key, JSON.parse(fs.readFileSync(fp, 'utf8'))); n++; }
+                    catch (e) { console.warn('[restore] could not restore ' + file + ':', e && e.message); }
                 }
                 const d = await Storage.getItem('surghub_data'); if (d) App.data = d;
                 const h = await Storage.getItem('surghub_history'); if (h) App.userHistory = h;
                 const a = await Storage.getItem('surghub_ambassadors'); if (a) App.ambassadorData = a;
+                // Lazy-loaded blobs and caches must be re-read from the restored files.
+                App._rawAnonymizedUsers = null; App._anonLoadPromise = null;
+                App._rawCompletion = null;     App._completionLoadPromise = null;
+                App._milestones = undefined;
             }
             // Restored SURGhub data is now ahead of the cloud — set the unsynced sentinel
             // so the safe auto-pull won't clobber it before the user pushes it.
             if (b.kind === 'surghub' || b.kind === 'full') {
-                try { await Storage.setItem('surghub_unsynced_local', true); await Storage.setItem('surghub_local_mtime', new Date().toISOString()); } catch (_) {}
+                try { await Storage.setItem('surghub_unsynced_local', true); await Storage.setItem('surghub_local_mtime', new Date().toISOString()); } catch (_) { __swallowed(_); }
             }
         } catch (e) {
             alert('Restore failed partway: ' + (e && e.message ? e.message : e) + '\n\nSome items may have been partially written. A safety backup of your pre-restore state was saved first (backups/pre-restore_*.json) — use "Restore from auto-backup" to roll back to it if needed.');
@@ -6587,7 +6599,7 @@ window.GenericViews = {
         const result = await electronAPI.invoke('generate-pdf', { html, outputPath: tmpHtml });
         if (!result.success) return null;
         const buf = electronAPI.fs.readFileSync(tmpHtml);
-        try { electronAPI.fs.unlinkSync(tmpHtml); } catch (_) {}
+        try { electronAPI.fs.unlinkSync(tmpHtml); } catch (_) { __swallowed(_); }
         return new Uint8Array(buf);
     },
 
@@ -6694,7 +6706,7 @@ window.GenericViews = {
             let result = await electronAPI.invoke('generate-pdf', { html: overviewHtml, outputPath: tmpPath });
             if (result.success) {
                 pdfBuffers.push(new Uint8Array(electronAPI.fs.readFileSync(tmpPath)));
-                try { electronAPI.fs.unlinkSync(tmpPath); } catch (_) {}
+                try { electronAPI.fs.unlinkSync(tmpPath); } catch (_) { __swallowed(_); }
             }
 
             // ── Page 1b: Organisation Map ──
@@ -6781,7 +6793,7 @@ window.GenericViews = {
                 result = await electronAPI.invoke('generate-pdf', { html, outputPath: tmpPath });
                 if (result.success) {
                     pdfBuffers.push(new Uint8Array(electronAPI.fs.readFileSync(tmpPath)));
-                    try { electronAPI.fs.unlinkSync(tmpPath); } catch (_) {}
+                    try { electronAPI.fs.unlinkSync(tmpPath); } catch (_) { __swallowed(_); }
                 }
 
                 // ── Per-project map page ──
@@ -8647,7 +8659,7 @@ updateDirtyCount();
                     let _rbT = 0, _rbS = 0, _rb45 = 0;
                     _snap.forEach(d => {
                         if (!d.FeedbackBank) return;
-                        try { const fb = JSON.parse(d.FeedbackBank); if (Array.isArray(fb)) fb.forEach(f => { const r = Number(f && f.r) || 0; if (r >= 1 && r <= 5) { _rbT++; _rbS += r; if (r >= 4) _rb45++; } }); } catch (e) {}
+                        try { const fb = JSON.parse(d.FeedbackBank); if (Array.isArray(fb)) fb.forEach(f => { const r = Number(f && f.r) || 0; if (r >= 1 && r <= 5) { _rbT++; _rbS += r; if (r >= 4) _rb45++; } }); } catch (e) { __swallowed(e); }
                     });
                     const _ratingBand = _rbT >= 10 ? { avg: +(_rbS / _rbT).toFixed(1), pct45: Math.round(_rb45 / _rbT * 100), n: _rbT } : null;
                     // Learner testimonials. Candidates come from the shared collector (FeedbackIntel
@@ -8749,7 +8761,7 @@ updateDirtyCount();
                 if (!gsfEmblem) gsfEmblem = gsfLogo;
                 for (const _f of ['surghub_logo_white.png', 'SURGhub_app_square_white.png', 'surghub_logo.png', 'surghub_white.png']) { surghubLogo = _read(_f); if (surghubLogo) break; }
                 for (const _f of ['SURGfund_logo white.png', 'surgfund_logo_white.png', 'SURGfund_logo_white.png', 'surgfund_logo.png']) { surgfundLogo = _read(_f); if (surgfundLogo) break; }
-            } catch (e) {}
+            } catch (e) { __swallowed(e); }
 
             // Methodology page is context-aware: quality-indicator language only
             // appears when quality indicators are in the snapshot; hidden projects
@@ -9752,7 +9764,7 @@ function renderSurghub(){
     // Learning-impact dials: build + count-up.
     [].forEach.call(el.querySelectorAll('.dial'),function(d){buildDial(d);if(d._fire)d._fire();});
     // Scroll-driven learner-story globe (bottom of the page).
-    if(s.countryMap && typeof initGlobe==='function'){ try{ initGlobe(); }catch(e){} }
+    if(s.countryMap && typeof initGlobe==='function'){ try{ initGlobe(); }catch (e) {} }
 }
 // Country choropleth (Google GeoChart) for the SURGhub page. ISO alpha-2 keyed counts.
 // Retries until the gstatic loader is ready; degrades to a notice if offline.
@@ -9791,7 +9803,7 @@ function _drawCountryMap(elId,iso,tries){
         if(canLog){var rr=maxPct/lo;for(var ci=0;ci<ramp.length;ci++){values.push(lo*Math.pow(rr,ci/(ramp.length-1)));}}
         var colorAxis=canLog?{values:values,colors:ramp}:{minValue:0,colors:['#1d5e90','#62a8df','#FFC145']};
         var opts={backgroundColor:'transparent',datalessRegionColor:'#0b2c46',defaultColor:'#0b2c46',colorAxis:colorAxis,legend:'none',keepAspectRatio:true,tooltip:{textStyle:{color:'#06243a',fontSize:12}}};
-        try{new google.visualization.GeoChart(el).draw(dt,opts);}catch(e){}
+        try{new google.visualization.GeoChart(el).draw(dt,opts);}catch (e) {}
         // Clean, on-theme legend (the native GeoChart legend renders boxed, hard-to-read text).
         var legEl=document.getElementById(elId+'-legend');
         if(legEl){
@@ -10305,7 +10317,7 @@ function _layoutLabels(list,map){
         });
         placed.push(best.rect);
         var off=best.dir==='right'?[10,0]:best.dir==='left'?[-10,0]:best.dir==='top'?[0,-9]:[0,9];
-        try{m.marker.unbindTooltip();}catch(e){}
+        try{m.marker.unbindTooltip();}catch (e) {}
         m.marker.bindTooltip(m.label,{permanent:true,direction:best.dir,offset:off,className:'map-lbl'});
     });
 }
@@ -10314,7 +10326,7 @@ function initOrgMap(){
     if(!window.L)return;
     var el=document.getElementById('org-map');
     if(!el)return;
-    if(_orgMap){try{_orgMap.remove();}catch(e){}}
+    if(_orgMap){try{_orgMap.remove();}catch (e) {}}
     _orgMap=L.map(el,{zoomControl:true});
     _tileLayer(_orgMap);
     var _esc=function(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');};
@@ -10428,7 +10440,7 @@ function initProjectMap(pid){
     var facs=((DATA.projectData[pid]||{}).facilities||[]).filter(function(f){return f.lat!=null&&f.lng!=null;});
     var locs=(p.locations&&p.locations.length>0)?p.locations:(p.lat!=null?[{name:'',lat:p.lat,lng:p.lng}]:[]);
     if(locs.length===0&&facs.length===0){el.style.background='#001020';el.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#6d8ba3;font-size:13px">No location data<\/div>';return;}
-    if(_projMaps[pid]){try{_projMaps[pid].remove();}catch(e){}}
+    if(_projMaps[pid]){try{_projMaps[pid].remove();}catch (e) {}}
     var map=L.map(el,{zoomControl:true});
     _projMaps[pid]=map;
     _tileLayer(map);
@@ -10494,7 +10506,7 @@ function initProjectMap(pid){
     // and render the one project page directly — no "back to overview" round-trip.
     function boot(){
         if (singleId) {
-            try { showProjectPage(singleId); } catch(e){}
+            try { showProjectPage(singleId); } catch (e) {}
         } else {
             renderOrg(); initOrgMap();
         }
@@ -11366,7 +11378,7 @@ function initProjectMap(pid){
             // Defensive: flush the in-memory registry to disk in case any pending
             // edit hadn't been persisted yet. Stops the "but I just changed that!"
             // class of bugs where a forced-backup misses unsaved RAM state.
-            try { await Projects.saveRegistry(); } catch (_) {}
+            try { await Projects.saveRegistry(); } catch (_) { __swallowed(_); }
 
             const allKeys = await Storage.keys();
             const data = {};
@@ -11410,9 +11422,9 @@ function initProjectMap(pid){
 
         // Step 3 — tear down anything that could re-save state OR pull from the cloud
         // mid-wipe / right after the reload.
-        try { if (App._autoPullInterval) clearInterval(App._autoPullInterval); } catch (_) {}
-        try { if (App._autoPullTimer)    clearTimeout(App._autoPullTimer);    } catch (_) {}
-        try { if (App._viewerInputObserver) App._viewerInputObserver.disconnect(); } catch (_) {}
+        try { if (App._autoPullInterval) clearInterval(App._autoPullInterval); } catch (_) { __swallowed(_); }
+        try { if (App._autoPullTimer)    clearTimeout(App._autoPullTimer);    } catch (_) { __swallowed(_); }
+        try { if (App._viewerInputObserver) App._viewerInputObserver.disconnect(); } catch (_) { __swallowed(_); }
         // Block the auto-pull from running again before the reload happens
         App._startAutoPull = () => {};
         // Stub out save paths so post-clear in-flight code can't write anything new
@@ -11483,7 +11495,7 @@ function initProjectMap(pid){
                 } catch (e) { dbErrors.push(`IndexedDB ${name}: ${e.message || e}`); resolve(); }
             });
             // Close the in-memory DB handle first so deleteDatabase isn't blocked
-            try { if (window.DB && window.DB.db && window.DB.db.close) { window.DB.db.close(); window.DB.db = null; } } catch (_) {}
+            try { if (window.DB && window.DB.db && window.DB.db.close) { window.DB.db.close(); window.DB.db = null; } } catch (_) { __swallowed(_); }
             // Enumerate every IndexedDB this origin owns (covers anything we don't know about)
             let allDbNames = ['SURGhub_Analytics', 'localforage'];
             try {
@@ -11491,7 +11503,7 @@ function initProjectMap(pid){
                     const list = await indexedDB.databases();
                     list.forEach(d => { if (d.name && !allDbNames.includes(d.name)) allDbNames.push(d.name); });
                 }
-            } catch (_) {}
+            } catch (_) { __swallowed(_); }
             for (const name of allDbNames) await deleteDb(name);
 
             // Sanity check — is the registry actually gone?
@@ -12059,7 +12071,7 @@ ${additionalPages.map((inner, i) => `
         el.style.height = height + 'px';
 
         // Destroy any previous Leaflet instance on this element
-        if (el._leaflet_map) { try { el._leaflet_map.remove(); } catch(e){} }
+        if (el._leaflet_map) { try { el._leaflet_map.remove(); } catch (e) { __swallowed(e); } }
 
         const map = L.map(el, { zoomControl: true, scrollWheelZoom: true });
         el._leaflet_map = map;
@@ -13497,7 +13509,7 @@ function doPost(e) {
     }
     // Record when the cloud last changed so the app's quick "?meta=1" check can
     // detect new data cheaply. ScriptProperties needs no extra permission.
-    try { PropertiesService.getScriptProperties().setProperty('lastSync', new Date().toISOString()); } catch(_e) {}
+    try { PropertiesService.getScriptProperties().setProperty('lastSync', new Date().toISOString()); } catch (_e) {}
     return _json({ ok: true });
   } catch(err) { return _json({ ok: false, error: err.message }); }
 }
@@ -13509,7 +13521,7 @@ function doPost(e) {
 // needs no OAuth scope). Programmatic writes (the app's push) don't fire this — they
 // stamp lastSync in doPost instead.
 function onEdit(e) {
-  try { PropertiesService.getScriptProperties().setProperty('lastEdit', new Date().toISOString()); } catch(_e) {}
+  try { PropertiesService.getScriptProperties().setProperty('lastEdit', new Date().toISOString()); } catch (_e) {}
 }
 
 function _json(obj) {
@@ -14457,7 +14469,10 @@ function _writeProject(ss, d) {
             const SURGHUB_INTERNAL_KEYS = new Set(['surghub_local_mtime', 'surghub_unsynced_local', 'surghub_last_synced']);
             // API credentials never leave this machine — they are re-entered
             // manually after a restore instead of living in the spreadsheet.
-            const SECRET_KEYS = new Set(['anthropic_api_key', 'learnworlds_api_token', 'learnworlds_client_id']);
+            // The two role-password records stay local too: even hashed, a password
+            // hash in a shared spreadsheet is an offline-cracking target.
+            const SECRET_KEYS = new Set(['anthropic_api_key', 'learnworlds_api_token', 'learnworlds_client_id',
+                                         'surgdash_edit_password', 'surgdash_report_password']);
             for (const key of allKeys) {
                 if (SURGHUB_INTERNAL_KEYS.has(key)) continue;
                 if (SECRET_KEYS.has(key)) continue;
@@ -14572,14 +14587,14 @@ function _writeProject(ss, d) {
                 if (!fs.existsSync(dir)) continue;
                 for (const f of fs.readdirSync(dir, { withFileTypes: true })) {
                     if (!f.name || !f.name.endsWith('.json')) continue;
-                    try { if (fs.statSync(path.join(dir, f.name)).mtimeMs > baselineMs) return true; } catch (_) {}
+                    try { if (fs.statSync(path.join(dir, f.name)).mtimeMs > baselineMs) return true; } catch (_) { __swallowed(_); }
                 }
-            } catch (_) {}
+            } catch (_) { __swallowed(_); }
         }
         try {
             const qf = path.join(Storage.DATA_DIR, 'other', 'surgdash_quality_data_' + projectId + '.json');
             if (fs.existsSync(qf) && fs.statSync(qf).mtimeMs > baselineMs) return true;
-        } catch (_) {}
+        } catch (_) { __swallowed(_); }
         return false;
     },
 
@@ -14639,7 +14654,7 @@ function _writeProject(ss, d) {
                             try {
                                 const stat = fs.statSync(path.join(subDir, f.name));
                                 if (stat.mtimeMs > lastSyncMs) { locallyModified = true; break; }
-                            } catch (_) {}
+                            } catch (_) { __swallowed(_); }
                         }
                         if (locallyModified) break;
                     }
@@ -14714,9 +14729,9 @@ function _writeProject(ss, d) {
                     const snaps = fs.readdirSync(backupDir, { withFileTypes: true })
                         .filter(e => e.name && /^pre-pull_.*\.json$/.test(e.name)).map(e => e.name).sort();
                     for (const old of snaps.slice(0, Math.max(0, snaps.length - 20))) {
-                        try { fs.unlinkSync(path.join(backupDir, old)); } catch (_) {}
+                        try { fs.unlinkSync(path.join(backupDir, old)); } catch (_) { __swallowed(_); }
                     }
-                } catch (_) {}
+                } catch (_) { __swallowed(_); }
             } catch (e) { console.warn('Pre-pull backup failed:', e); }
 
             let created = 0, updated = 0;
@@ -14908,7 +14923,7 @@ function _writeProject(ss, d) {
                 // device clock that's behind the server makes the next check read the cloud as
                 // "newer" even though we're fully in sync. Fall back to local time on error.
                 let _pullStamp = new Date().toISOString();
-                try { const _pm = await App._fetchCloudMeta(); if (_pm && _pm.ok && _pm.lastModified) _pullStamp = _pm.lastModified; } catch (_) {}
+                try { const _pm = await App._fetchCloudMeta(); if (_pm && _pm.ok && _pm.lastModified) _pullStamp = _pm.lastModified; } catch (_) { __swallowed(_); }
                 await Projects.saveAppSettings({ googleSheetsLastPull: _pullStamp }, { internal: true });
             }
             // Local data now matches the cloud — clear the dirty flag, but only if we

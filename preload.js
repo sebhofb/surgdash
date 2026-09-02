@@ -7,6 +7,33 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
+// ── Path guard ───────────────────────────────────────────────────────────────
+// The fs bridge below is the renderer's only route to the disk, so it is the
+// place to bound it. main.js already refuses dialog-less writes outside $HOME
+// (isPathSafe); this applies the same rule here so a renderer bug or XSS
+// cannot become an arbitrary delete. Reads may additionally touch the app
+// bundle (vendored assets, the canonical Apps Script) and any file the user
+// picked through a native dialog; writes may additionally target a folder or
+// save path the user picked. Grants are per-session and per-path.
+const HOME = os.homedir();
+const TMP  = os.tmpdir();
+const APP  = path.resolve(__dirname);
+const DATA = (() => { const a = process.argv.find(x => x.startsWith('--surgdash-datadir=')); return a ? path.resolve(a.substring('--surgdash-datadir='.length)) : ''; })();
+const grantedRead  = new Set();   // exact files picked via open dialogs
+const grantedWrite = new Set();   // folders / save paths picked via dialogs
+const within = (p, root) => { if (!root) return false; const r = path.resolve(p); return r === root || r.startsWith(root + path.sep); };
+const readOK = (p) => typeof p === 'string' && p.length > 0 && (
+    within(p, HOME) || within(p, TMP) || within(p, DATA) || within(p, APP)
+    || grantedRead.has(path.resolve(p)) || [...grantedWrite].some(r => within(p, r)));
+const writeOK = (p) => typeof p === 'string' && p.length > 0 && (
+    within(p, HOME) || within(p, TMP) || within(p, DATA) || [...grantedWrite].some(r => within(p, r)));
+// Never let a recursive delete land on a root we allow writes under.
+const ROOTS = new Set([HOME, TMP, DATA, path.join(HOME, 'Library'), path.join(HOME, 'Documents'), path.join(HOME, 'Desktop')].filter(Boolean).map(p => path.resolve(p)));
+const denyR = (p) => { throw new Error('Read blocked outside allowed directories: ' + p); };
+const denyW = (p) => { throw new Error('Write blocked outside allowed directories: ' + p); };
+const PICK_FILE   = new Set(['pick-pdf-file', 'pick-xlsx-open-path', 'pick-json-open-path', 'pick-geo-file']);
+const PICK_TARGET = new Set(['pick-folder', 'pick-save-path']);
+
 contextBridge.exposeInMainWorld('electronAPI', {
 
     // ── IPC (channel-allowlisted) ────────────────────────────────────────────
@@ -20,7 +47,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
         if (!ALLOWED.includes(channel)) {
             return Promise.reject(new Error(`IPC channel "${channel}" is not allowed`));
         }
-        return ipcRenderer.invoke(channel, ...args);
+        // A path the user just chose in a native dialog is, by that act, granted:
+        // read for opened files, write for chosen folders / save targets.
+        return ipcRenderer.invoke(channel, ...args).then((res) => {
+            if (typeof res === 'string' && res) {
+                if (PICK_FILE.has(channel))   grantedRead.add(path.resolve(res));
+                if (PICK_TARGET.has(channel)) grantedWrite.add(path.resolve(res));
+            }
+            return res;
+        });
     },
 
     // ── Shell — only http/https/mailto URLs ──────────────────────────────────
@@ -60,14 +95,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     // ── File-system (synchronous, matching the existing Storage API) ─────────
     fs: {
-        existsSync(p)          { return fs.existsSync(p); },
+        // existsSync is used as a probe everywhere, so a blocked path reads as
+        // "absent" rather than throwing.
+        existsSync(p)          { return readOK(p) ? fs.existsSync(p) : false; },
         readFileSync(p, enc)   {
+            if (!readOK(p)) denyR(p);
             if (enc) return fs.readFileSync(p, enc);
             // Binary: return ArrayBuffer (survives structured-clone)
             const buf = fs.readFileSync(p);
             return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
         },
         writeFileSync(p, data, enc) {
+            if (!writeOK(p)) denyW(p);
             if (typeof data === 'string') {
                 fs.writeFileSync(p, data, enc || 'utf8');
             } else {
@@ -75,9 +114,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
                 fs.writeFileSync(p, Buffer.from(data));
             }
         },
-        unlinkSync(p)          { fs.unlinkSync(p); },
-        mkdirSync(p, opts)     { fs.mkdirSync(p, opts); },
+        unlinkSync(p)          { if (!writeOK(p)) denyW(p); fs.unlinkSync(p); },
+        mkdirSync(p, opts)     { if (!writeOK(p)) denyW(p); fs.mkdirSync(p, opts); },
+        // Same-volume hard link (used by the pre-sync backup so an unchanged
+        // 40 MB dataset costs no disk); callers fall back to copy on failure.
+        linkSync(src, dest)    { if (!readOK(src)) denyR(src); if (!writeOK(dest)) denyW(dest); fs.linkSync(src, dest); },
+        copyFileSync(src, dest){ if (!readOK(src)) denyR(src); if (!writeOK(dest)) denyW(dest); fs.copyFileSync(src, dest); },
         readdirSync(dir, opts) {
+            if (!readOK(dir)) denyR(dir);
             const entries = fs.readdirSync(dir, opts);
             if (opts && opts.withFileTypes) {
                 // Dirent objects lose methods across contextBridge — flatten
@@ -89,11 +133,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
             }
             return entries;
         },
-        rmSync(p, opts)            { fs.rmSync(p, opts); },
-        renameSync(oldP, newP)     { fs.renameSync(oldP, newP); },
-        readFileBase64(p)          { return fs.readFileSync(p).toString('base64'); },
-        appendFileSync(p, data, enc) { fs.appendFileSync(p, data, enc || 'utf8'); },
+        rmSync(p, opts) {
+            if (!writeOK(p)) denyW(p);
+            if (ROOTS.has(path.resolve(p))) throw new Error('Refusing to remove a root directory: ' + p);
+            fs.rmSync(p, opts);
+        },
+        renameSync(oldP, newP)     { if (!writeOK(oldP)) denyW(oldP); if (!writeOK(newP)) denyW(newP); fs.renameSync(oldP, newP); },
+        readFileBase64(p)          { if (!readOK(p)) denyR(p); return fs.readFileSync(p).toString('base64'); },
+        appendFileSync(p, data, enc) { if (!writeOK(p)) denyW(p); fs.appendFileSync(p, data, enc || 'utf8'); },
         statSync(p) {
+            if (!readOK(p)) denyR(p);
             const s = fs.statSync(p);
             return { mtimeMs: s.mtimeMs, size: s.size };
         }

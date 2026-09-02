@@ -132,7 +132,7 @@ window.App = {
             try {
                 const _v = document.getElementById('app-version');
                 if (_v && window.electronAPI && window.electronAPI.appVersion) _v.textContent = 'v' + window.electronAPI.appVersion;
-            } catch (_) {}
+            } catch (_) { __swallowed(_); }
 
             // Restore the "blend the sample project in/out" preference (viewer-toggleable).
             this.includeSample = !!(await Storage.getItem('surgdash_include_sample'));
@@ -281,7 +281,7 @@ window.App = {
     // to viewers as well as editors. Persists across sessions.
     async toggleSampleInclude(on) {
         this.includeSample = (on === undefined) ? !this.includeSample : !!on;
-        try { await Storage.setItem('surgdash_include_sample', this.includeSample ? '1' : ''); } catch (_) {}
+        try { await Storage.setItem('surgdash_include_sample', this.includeSample ? '1' : ''); } catch (_) { __swallowed(_); }
         // If we just hid the sample while viewing it, step back to the Org overview
         // so the user isn't left on a project that's no longer in the sidebar.
         if (!this.includeSample) {
@@ -299,7 +299,7 @@ window.App = {
         try {
             await Projects.createSampleProject();
             this.includeSample = true;
-            try { await Storage.setItem('surgdash_include_sample', '1'); } catch (_) {}
+            try { await Storage.setItem('surgdash_include_sample', '1'); } catch (_) { __swallowed(_); }
             if (this.showMsg) this.showMsg('Sample project added — blended into the dashboard ✓');
         } catch (e) {
             console.error('addSampleProject failed:', e);
@@ -505,10 +505,48 @@ window.App = {
             .replace(/\n/g, '\\n'));
     },
 
+    // Legacy digest — unsalted SHA-256. Kept ONLY to verify records written before
+    // salting (and the two bundled defaults); new records use _makePasswordRecord.
     async _hashPassword(pw) {
         const data = new TextEncoder().encode(pw);
         const buf = await crypto.subtle.digest('SHA-256', data);
         return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+    },
+
+    // Salted PBKDF2-SHA256 record: "pbkdf2$<iterations>$<saltHex>$<hashHex>".
+    // A random per-record salt makes a leaked hash useless for lookup-table
+    // attacks; 100k iterations makes brute force slow. Verification stays
+    // backward-compatible — anything not starting with "pbkdf2$" is a legacy hash.
+    _PBKDF2_ITER: 100000,
+    async _makePasswordRecord(pw) {
+        const enc = new TextEncoder();
+        const salt = crypto.getRandomValues(new Uint8Array(16));
+        const key = await crypto.subtle.importKey('raw', enc.encode(pw), 'PBKDF2', false, ['deriveBits']);
+        const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations: this._PBKDF2_ITER }, key, 256);
+        const hex = a => Array.from(a).map(b => b.toString(16).padStart(2, '0')).join('');
+        return `pbkdf2$${this._PBKDF2_ITER}$${hex(salt)}$${hex(new Uint8Array(bits))}`;
+    },
+    async _verifyPassword(pw, stored) {
+        if (!stored || !pw) return false;
+        const s = String(stored);
+        if (!s.startsWith('pbkdf2$')) return (await this._hashPassword(pw)) === s;   // legacy
+        const [, iterStr, saltHex, hashHex] = s.split('$');
+        const enc = new TextEncoder();
+        const salt = new Uint8Array(saltHex.match(/.{2}/g).map(h => parseInt(h, 16)));
+        const key = await crypto.subtle.importKey('raw', enc.encode(pw), 'PBKDF2', false, ['deriveBits']);
+        const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations: Number(iterStr) || this._PBKDF2_ITER }, key, 256);
+        const hex = Array.from(new Uint8Array(bits)).map(b => b.toString(16).padStart(2, '0')).join('');
+        return hex === hashHex;
+    },
+    // On a successful login against a legacy (unsalted) record, silently re-save
+    // it salted — so existing installs harden themselves without a reset.
+    async _upgradePasswordRecord(pw, stored, storageKey) {
+        try {
+            if (!stored || String(stored).startsWith('pbkdf2$')) return stored;
+            const rec = await this._makePasswordRecord(pw);
+            await Storage.setItem(storageKey, rec);
+            return rec;
+        } catch (e) { console.warn('[password] upgrade skipped:', e && e.message); return stored; }
     },
 
     async setEditPassword(pw) {
@@ -516,14 +554,14 @@ window.App = {
             this._editPasswordHash = null;
             await Storage.setItem('surgdash_edit_password', null);
         } else {
-            this._editPasswordHash = await this._hashPassword(pw);
+            this._editPasswordHash = await this._makePasswordRecord(pw);
             await Storage.setItem('surgdash_edit_password', this._editPasswordHash);
         }
     },
 
     async unlockEdit(pw) {
-        const hash = await this._hashPassword(pw);
-        if (hash !== this._editPasswordHash) return false;
+        if (!(await this._verifyPassword(pw, this._editPasswordHash))) return false;
+        this._editPasswordHash = await this._upgradePasswordRecord(pw, this._editPasswordHash, 'surgdash_edit_password');
         this.editUnlocked = true;
         this.reportAccess = false;                       // full edit supersedes reporting
         document.body.classList.remove('viewer-mode');
@@ -550,21 +588,21 @@ window.App = {
             this._reportPasswordHash = null;
             await Storage.setItem('surgdash_report_password', null);
         } else {
-            this._reportPasswordHash = await this._hashPassword(pw);
+            this._reportPasswordHash = await this._makePasswordRecord(pw);
             await Storage.setItem('surgdash_report_password', this._reportPasswordHash);
         }
     },
 
     async unlockReport(pw) {
-        const hash = await this._hashPassword(pw);
-        if (!this._reportPasswordHash || hash !== this._reportPasswordHash) return false;
+        if (!this._reportPasswordHash || !(await this._verifyPassword(pw, this._reportPasswordHash))) return false;
+        this._reportPasswordHash = await this._upgradePasswordRecord(pw, this._reportPasswordHash, 'surgdash_report_password');
         this.reportAccess = true;
         this.editUnlocked = false;
         document.body.classList.remove('viewer-mode');
         document.body.classList.add('report-mode');
         if (this._autoPullInterval) { clearInterval(this._autoPullInterval); this._autoPullInterval = null; }
         this.renderView();
-        setTimeout(() => { try { this._showReporterSetupModal(); } catch (e) {} }, 350);
+        setTimeout(() => { try { this._showReporterSetupModal(); } catch (e) { __swallowed(e); } }, 350);
         return true;
     },
 
@@ -574,8 +612,8 @@ window.App = {
     async _showReporterSetupModal() {
         if (document.getElementById('reporter-setup-modal')) return;
         let url = '', key = '';
-        try { url = ((await Projects.getAppSettings()) || {}).googleSheetsUrl || ''; } catch (e) {}
-        try { key = (await this._getAnthropicKey()) || ''; } catch (e) {}
+        try { url = ((await Projects.getAppSettings()) || {}).googleSheetsUrl || ''; } catch (e) { __swallowed(e); }
+        try { key = (await this._getAnthropicKey()) || ''; } catch (e) { __swallowed(e); }
         if (url && key) return;   // all set — no popup
         const esc = (s) => this.escapeHtml(s);
         const row = (title, desc, label, fn, done) => done
@@ -695,7 +733,7 @@ window.App = {
         if (this._rawAnonymizedUsers != null) return this._rawAnonymizedUsers;   // already loaded or synced
         if (this._anonLoadPromise) return this._anonLoadPromise;
         this._anonLoadPromise = (async () => {
-            let v = null; try { v = await Storage.getItem('surghub_anon_users'); } catch (e) {}
+            let v = null; try { v = await Storage.getItem('surghub_anon_users'); } catch (e) { __swallowed(e); }
             this._rawAnonymizedUsers = Array.isArray(v) ? v : [];
             this._anonLoadPromise = null;
             return this._rawAnonymizedUsers;
@@ -706,7 +744,7 @@ window.App = {
         if (this._rawCompletion != null) return this._rawCompletion;
         if (this._completionLoadPromise) return this._completionLoadPromise;
         this._completionLoadPromise = (async () => {
-            let v = null; try { v = await Storage.getItem('surghub_completion'); } catch (e) {}
+            let v = null; try { v = await Storage.getItem('surghub_completion'); } catch (e) { __swallowed(e); }
             this._rawCompletion = Array.isArray(v) ? v : [];
             this._completionLoadPromise = null;
             return this._rawCompletion;
@@ -719,7 +757,7 @@ window.App = {
         if (this._rawSurveyResponses != null) return this._rawSurveyResponses;
         if (this._surveyRawLoadPromise) return this._surveyRawLoadPromise;
         this._surveyRawLoadPromise = (async () => {
-            let v = null; try { v = await Storage.getItem('surghub_survey_raw'); } catch (e) {}
+            let v = null; try { v = await Storage.getItem('surghub_survey_raw'); } catch (e) { __swallowed(e); }
             this._rawSurveyResponses = (v && typeof v === 'object' && !Array.isArray(v)) ? v : {};
             this._surveyRawLoadPromise = null;
             return this._rawSurveyResponses;
@@ -757,7 +795,7 @@ window.App = {
     // meta endpoint (no lastModified field), simply shows nothing.
     _startCloudFreshnessCheck() {
         if (this._cloudCheckInterval) { clearInterval(this._cloudCheckInterval); this._cloudCheckInterval = null; }
-        const run = () => { try { this._checkCloudFreshness(); } catch (_) {} };
+        const run = () => { try { this._checkCloudFreshness(); } catch (_) { __swallowed(_); } };
         setTimeout(run, 4000);                          // after launch settles
         this._cloudCheckInterval = setInterval(run, 10 * 60 * 1000);   // every 10 min
     },
@@ -808,7 +846,7 @@ window.App = {
                 // Remember we've surfaced THIS cloud timestamp (persist it) so it won't re-nag
                 // next launch; a genuinely newer push by a colleague (higher cloudMs) still shows.
                 this._cloudBannerDismissedMs = m.cloudMs;
-                try { await Projects.saveAppSettings({ cloudBannerAckMs: m.cloudMs }, { internal: true }); } catch (_) {}
+                try { await Projects.saveAppSettings({ cloudBannerAckMs: m.cloudMs }, { internal: true }); } catch (_) { __swallowed(_); }
             }
         } catch (_) { /* best-effort, never throws into the UI */ }
     },
@@ -846,7 +884,7 @@ window.App = {
         // Remember the dismissed cloud state so the same data doesn't re-nag — persisted to
         // disk so a restart doesn't forget it.
         this._cloudBannerDismissedMs = Math.max(this._cloudBannerDismissedMs || 0, this._cloudBannerSeenMs || 0);
-        try { Projects.saveAppSettings({ cloudBannerAckMs: this._cloudBannerDismissedMs }, { internal: true }); } catch (_) {}
+        try { Projects.saveAppSettings({ cloudBannerAckMs: this._cloudBannerDismissedMs }, { internal: true }); } catch (_) { __swallowed(_); }
         const el = document.getElementById('cloud-update-banner');
         if (el) el.style.display = 'none';
     },
@@ -961,7 +999,7 @@ window.App = {
                         try {
                             const stat = fs.statSync(full);
                             if (stat.mtimeMs > threshold) { this._unsyncedDirty = true; return true; }
-                        } catch (_) {}
+                        } catch (_) { __swallowed(_); }
                     }
                 }
             }
@@ -971,7 +1009,7 @@ window.App = {
                 try {
                     const stat = fs.statSync(full);
                     if (stat.mtimeMs > threshold) return true;
-                } catch (_) {}
+                } catch (_) { __swallowed(_); }
             }
             return false;
         } catch (e) {
@@ -1007,8 +1045,8 @@ window.App = {
         const banner = document.getElementById('setup-banner');
         if (!banner) return;
         let url = '', key = '';
-        try { url = ((await Projects.getAppSettings()) || {}).googleSheetsUrl || ''; } catch (e) {}
-        try { key = (await this._getAnthropicKey()) || ''; } catch (e) {}
+        try { url = ((await Projects.getAppSettings()) || {}).googleSheetsUrl || ''; } catch (e) { __swallowed(e); }
+        try { key = (await this._getAnthropicKey()) || ''; } catch (e) { __swallowed(e); }
         const canUseAI = this.editUnlocked || this.reportAccess;   // only these need the API key
         const needsSheets = !url;
         const needsKey = canUseAI && !key;
@@ -1040,7 +1078,7 @@ window.App = {
         if (this._refreshSetupBanner) this._refreshSetupBanner();
         if (url && window.GenericViews && GenericViews._pullFromSheets) {
             App.showMsg && App.showMsg('Data link saved — pulling latest data…');
-            try { await GenericViews._pullFromSheets(); } catch (e) {}
+            try { await GenericViews._pullFromSheets(); } catch (e) { __swallowed(e); }
         }
         this.renderView();
     },
