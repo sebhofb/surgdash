@@ -67,6 +67,21 @@ window.LearnWorlds = (function () {
     function abort() { _aborted = true; }
     function _checkAbort() { if (_aborted) throw new Error('Sync cancelled by user.'); }
 
+    // Retry-After → milliseconds, or null when absent/unparseable. Accepts the
+    // delta-seconds form ("30") and the HTTP-date form. Header names arrive
+    // lower-cased from Electron's net module and values may be arrays.
+    function _retryAfterMs(headers) {
+        if (!headers || typeof headers !== 'object') return null;
+        const k = Object.keys(headers).find(h => h.toLowerCase() === 'retry-after');
+        if (!k) return null;
+        let v = headers[k]; if (Array.isArray(v)) v = v[0];
+        v = String(v == null ? '' : v).trim();
+        if (!v) return null;
+        if (/^\d+$/.test(v)) return Number(v) * 1000;
+        const t = Date.parse(v);
+        return isNaN(t) ? null : Math.max(0, t - Date.now());
+    }
+
     async function _apiGet(path, params, retryDepth) {
         _checkAbort();
         const c = await getCredentials();
@@ -87,12 +102,15 @@ window.LearnWorlds = (function () {
             throw new Error(`Auth failed (${res.statusCode}) at ${url}. Check Client ID + token scopes (need courses:read).`);
         }
         if (res.statusCode === 429) {
-            // Honour the server's Retry-After header if present; otherwise back off
-            // exponentially. Cap at 3 retries per call so we don't hang forever.
+            // Honour the server's Retry-After header when present (seconds or an
+            // HTTP-date); otherwise back off exponentially. Either way cap the wait at
+            // 60 s and stop after 3 retries per call so we never hang.
             const d = (retryDepth || 0);
             if (d >= 3) throw new Error(`Rate limit (429) after ${d} retries at ${url}. Server keeps refusing — slow down further or pause sync.`);
-            const waitMs = Math.min(60000, 2000 * Math.pow(2, d));
-            console.warn(`[LearnWorlds] 429 rate-limited, waiting ${waitMs}ms before retry ${d+1}/3 at ${url}`);
+            const fallbackMs = Math.min(60000, 2000 * Math.pow(2, d));
+            const serverMs = _retryAfterMs(res.headers);
+            const waitMs = serverMs != null ? Math.min(60000, Math.max(1000, serverMs)) : fallbackMs;
+            console.warn(`[LearnWorlds] 429 rate-limited, waiting ${waitMs}ms (${serverMs != null ? 'server Retry-After' : 'exponential backoff'}) before retry ${d+1}/3 at ${url}`);
             await _sleep(waitMs);
             _checkAbort();
             return _apiGet(path, params, d + 1);

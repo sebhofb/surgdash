@@ -656,13 +656,26 @@ Object.assign(window.App, {
             this.showMsg('⚠ Add LearnWorlds API credentials first');
             return;
         }
+        // Per-learner enrolment/certificate DATES come only from the card-2 User
+        // Progress upload, which no API sync refreshes. Say so — with its age — so
+        // "Sync Everything" is never mistaken for "everything is now current".
+        let progressNote = '';
+        try {
+            const log = (typeof this._syncRunLog === 'function') ? (this._syncRunLog() || {}) : {};
+            const t = log.progress ? Date.parse(log.progress) : NaN;
+            const days = isNaN(t) ? null : Math.round((Date.now() - t) / 86400000);
+            progressNote = '⚠ NOT refreshed by this sync: per-learner enrolment & certificate dates (card 2 · Upload User Progress)'
+                + (days == null ? ' — never uploaded on this device.' : days > 7 ? ` — last uploaded ${days} days ago.` : ` — last uploaded ${days} day${days === 1 ? '' : 's'} ago.`)
+                + '\nGrowth charts, certificate timelines and the Performance tab stay as of that upload.\n\n';
+        } catch (e) { __swallowed(e); }
         if (!confirm(
             'Sync EVERYTHING from LearnWorlds API?\n\n' +
             'Runs back-to-back:\n' +
-            '  1. Courses — enrolments, certificates, learning time, providers\n' +
+            '  1. Courses — course totals, learning time, providers\n' +
             '  2. Learners & Ambassadors — demographics, lead attribution, referrals\n\n' +
+            progressNote +
             'Total: ~15 minutes (varies with connection / rate limits).\n\n' +
-            'NOT included (run separately): Growth Timelines and Surveys.\n\n' +
+            'Also NOT included (run separately): Growth Timelines and Surveys.\n\n' +
             'You can keep working, but don\'t close the app. Continue?'
         )) return;
         if (this._apiSyncInFlight) { this.showMsg('⚠ A sync is already running — let it finish or Cancel it first.'); return; }

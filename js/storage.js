@@ -141,6 +141,11 @@
             return reverseMap[settMatch[1]] || null;
         }
 
+        // pending/submissions.json — the colleague-submitted change queue. Without
+        // this branch the key was invisible to keys(), so it was silently missing
+        // from the full pre-restore backup and every export.
+        if (rel === 'pending/submissions.json') return 'surgdash_pending_submissions';
+
         // other/{key}.json
         const otherMatch = rel.match(/^other\/(.+)\.json$/);
         if (otherMatch) return otherMatch[1];
