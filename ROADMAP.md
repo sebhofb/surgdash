@@ -20,6 +20,24 @@ From the security / stability review of 12 Aug 2026:
   included), hard-linking unchanged files so it costs little disk.
 - KPI tiles state their unit; the dashboard shows a "Data through" freshness
   line per source and flags one trailing the others by more than 7 days.
+- LearnWorlds 429 handling honours the server's `Retry-After` header
+  (seconds or HTTP-date, capped at 60 s) before the 2/4/8 s fallback.
+- CSP no longer lists the four CDN hosts that were vendored months ago; only
+  Google Charts (gstatic) and Google Fonts remain remote. `unsafe-eval` stays
+  until Tailwind is built statically.
+- "Sync Everything" states that per-learner enrolment/certificate dates come
+  only from the card-2 User Progress upload, and how old that upload is.
+- `surgdash_pending_submissions` is indexed by `Storage.keys()` again, so the
+  colleague-submission queue is included in full backups and exports.
+- **Country names have one pivot: ISO alpha-2 via `countryToISO()`.**
+  `COUNTRY_CODE_MAP` was completed (146 → 246 codes; Malta, Israel, Bahrain,
+  Latvia … were simply absent, so 956 learners fell out of GeoCharts and the
+  per-100k tabs) and 75 World-Bank / verbose aliases added. The income
+  classifier, `isLancetPriority()` and the conflict matcher now fall back to
+  ISO equality when an exact name misses — so "Palestine", "Yemen",
+  "DR Congo", "Azerbaidjan", "Türkiye" all land correctly. Every name in both
+  tables and every spelling in the live data resolves. Hand-rolled name
+  matching (which undercounted conflict learners by 885) is no longer needed.
 
 ## Later — new features
 
@@ -65,23 +83,13 @@ send list is exported.
 
 ## Also noted in the review, not yet scheduled
 
-- Honour the LearnWorlds `Retry-After` header in `_apiGet` (the comment claims
-  it; the code uses fixed 2/4/8 s backoff).
 - Investigate whether the LearnWorlds API exposes per-user enrolment
   timestamps, to remove the dependency on the manual User-Progress xlsx.
-- Tighten the CSP now that libraries are vendored (drop the unused CDN hosts;
-  `unsafe-eval` goes once Tailwind is built to a static stylesheet).
 - Build Tailwind to a static stylesheet instead of shipping the Play-CDN JIT
-  compiler (a likely GPU-load contributor).
+  compiler (a likely GPU-load contributor); then drop `unsafe-eval` from the CSP.
 - Targeted chart redraws instead of full `renderView()` on toggle changes.
 - Release the two large SURGhub blobs from renderer memory when their views
   close, or move derivations into a worker.
-- Rename "Sync Everything" or make it prompt for the card-2 upload when that
-  source is older than the others.
-- One `normaliseCountry()` shared by the income classifier and the conflict
-  list (the two currently carry separate alias tables).
-- Explain `surgdash_pending_submissions` being absent from the storage
-  reverse map, or add it.
 - Keychain-backed storage (`safeStorage`) for the LearnWorlds and Anthropic
   credentials.
 - Version history for the Sheets backup (dated tab per push or a monthly

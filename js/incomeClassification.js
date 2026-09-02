@@ -24,6 +24,8 @@
         'Hong Kong','Taiwan','Aland Islands','Anguilla',
         // Long-tail HIC territories seen in the data (France/UK/NL/NZ/AU dependencies)
         'Curacao','Curaçao','Gibraltar','Martinique','Reunion','Réunion','Bonaire',
+        // French overseas departments — the World Bank counts them under France.
+        'Guadeloupe','Mayotte','French Guiana',
         'Niue','Guernsey','Jersey','Falkland Islands','Cocos Islands','Montserrat',
         'Virgin Islands British',
     ]);
@@ -68,6 +70,29 @@
         'Yemen, Rep.',
     ]);
 
+    // ISO fallback: any spelling that countryToISO() (countryMap.js) maps to the same
+    // ISO code as a listed name gets that name's tier. This closes the alias gap —
+    // the four Sets above are World-Bank spellings plus whatever aliases someone
+    // remembered to add, while the data carries survey spellings ("DR Congo",
+    // "Azerbaidjan", "Türkiye"). Built lazily on first use; a code claimed by two
+    // tiers keeps the first and is logged once (the lists are disjoint by design).
+    let ISO_TIER = null;
+    function isoTierMap() {
+        if (ISO_TIER) return ISO_TIER;
+        ISO_TIER = {};
+        const toISO = (typeof window !== 'undefined' && window.countryToISO) ? window.countryToISO : null;
+        if (!toISO) return ISO_TIER;
+        [['HIC', HIC], ['UMIC', UMIC], ['LMIC', LMIC], ['LIC', LIC]].forEach(([tier, set]) => {
+            set.forEach(name => {
+                const iso = toISO(name);
+                if (!iso) return;
+                if (ISO_TIER[iso] && ISO_TIER[iso] !== tier) { console.warn('[income] ISO ' + iso + ' listed as both ' + ISO_TIER[iso] + ' and ' + tier + ' (' + name + ') — keeping ' + ISO_TIER[iso]); return; }
+                ISO_TIER[iso] = tier;
+            });
+        });
+        return ISO_TIER;
+    }
+
     function classify(country) {
         if (!country) return 'Unknown';
         const c = country.trim();
@@ -75,6 +100,11 @@
         if (UMIC.has(c)) return 'UMIC';
         if (LMIC.has(c)) return 'LMIC';
         if (LIC.has(c))  return 'LIC';
+        const toISO = (typeof window !== 'undefined' && window.countryToISO) ? window.countryToISO : null;
+        if (toISO) {
+            const iso = toISO(c);
+            if (iso && isoTierMap()[iso]) return isoTierMap()[iso];
+        }
         return 'Unknown';
     }
 
@@ -111,8 +141,17 @@
         'Libya','Lebanon','Jordan','Maldives',
     ]);
 
+    let LANCET_ISO = null;
     function isLancetPriority(country) {
-        return country ? LANCET_PRIORITY.has(country.trim()) : false;
+        if (!country) return false;
+        const c = country.trim();
+        if (LANCET_PRIORITY.has(c)) return true;
+        // Same ISO fallback as classify(): a spelling that resolves to a listed country counts.
+        const toISO = (typeof window !== 'undefined' && window.countryToISO) ? window.countryToISO : null;
+        if (!toISO) return false;
+        if (!LANCET_ISO) { LANCET_ISO = new Set(); LANCET_PRIORITY.forEach(n => { const i = toISO(n); if (i) LANCET_ISO.add(i); }); }
+        const iso = toISO(c);
+        return !!(iso && LANCET_ISO.has(iso));
     }
 
     window.IncomeClassification = { classify, label, color, isLancetPriority,

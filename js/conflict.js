@@ -100,13 +100,38 @@ Object.assign(window.App, {
     conflictCountries() { return this.conflictList().map(c => c.wb); },
 
     // Every accepted spelling → the canonical World Bank name.
+    // Name → canonical World-Bank label. Direct lookups use the list's own names and
+    // aliases; anything else falls back to ISO equality via countryMap.js, so a
+    // spelling the list never anticipated ("Palestine", "Yemen", "DR Congo") still
+    // lands on the right entry as long as countryToISO() knows it. Returned object
+    // keeps the Map-style .get() every consumer already calls with _conflictNorm(x).
     _conflictMatchMap() {
-        const m = new Map();
+        const direct = new Map(), isoToCanon = new Map();
+        const toISO = (typeof window !== 'undefined' && window.countryToISO) ? window.countryToISO : null;
         this.conflictList().forEach(c => {
-            m.set(this._conflictNorm(c.wb), c.wb);
-            (c.aliases || []).forEach(a => m.set(this._conflictNorm(a), c.wb));
+            direct.set(this._conflictNorm(c.wb), c.wb);
+            (c.aliases || []).forEach(a => direct.set(this._conflictNorm(a), c.wb));
+            if (toISO) {
+                const iso = (c.iso3 && String(c.iso3).length === 2) ? c.iso3 : (toISO(c.wb) || (c.aliases || []).map(toISO).find(Boolean));
+                if (iso && !isoToCanon.has(iso)) isoToCanon.set(iso, c.wb);
+            }
         });
-        return m;
+        // normalised alias → ISO, from countryMap's own alias table (built once per call;
+        // ~400 entries, negligible).
+        const normToIso = new Map();
+        if (toISO && typeof window !== 'undefined' && window.COUNTRY_NAME_TO_ISO) {
+            Object.entries(window.COUNTRY_NAME_TO_ISO).forEach(([name, iso]) => normToIso.set(this._conflictNorm(name), iso));
+        }
+        return {
+            get: (normKey) => {
+                const hit = direct.get(normKey);
+                if (hit) return hit;
+                const iso = normToIso.get(normKey);
+                return iso ? isoToCanon.get(iso) : undefined;
+            },
+            has: (normKey) => direct.has(normKey) || (normToIso.has(normKey) && isoToCanon.has(normToIso.get(normKey))),
+            size: direct.size,
+        };
     },
 
     // Per-country breakdown against an audience snapshot, plus the entries that
