@@ -10,10 +10,16 @@ dates. `js/enrolmentSync.js` fetches, per account, `/users/{id}/courses` (one
 record per enrolment with its own `created`) and `/users/{id}/progress`
 (status, progress rate, time on course in seconds, score, `completed_at`),
 plus `/certificates` for issued dates, and writes the importer's exact row
-shape into `surghub_completion` — nothing downstream changes. Full run ≈ 4 h
-at 4 concurrent requests (~8 req/s, no 429s); incremental (accounts active
-since the last run) in minutes. Verified on 13 learners / 200 rows against the
-xlsx: dates never later, time never lower, completion 200/200.
+shape into `surghub_completion` — nothing downstream changes. LearnWorlds
+enforces roughly **60 requests/minute sustained** (bursts of 8 req/s pass; the
+first run spent 6.4 of 7.2 hours on Retry-After waits), so the sync is paced at
+55/min, **checkpoints every 200 accounts**, and **resumes** — the next "Sync from
+API" first ingests offline whatever the raw receipt already holds, then continues.
+A full pass over ~63k accounts is ~33 hours of API time spread over sessions;
+incremental runs (accounts active since the last completed run) take minutes.
+Verified on 13 learners / 200 rows against the xlsx, and on the interrupted
+run's receipt (5,595 accounts / 9,382 rows): dates never later, time never
+lower, no certificate lost; 93 completions newer than the 14 Aug export.
 
 Rules that must survive future edits: start_date only when the learner has
 progress (never-opened stays undated); rows from the union of enrolments and
@@ -21,9 +27,10 @@ progress (unenrolled courses keep their learning); dates only move earlier
 (re-enrolment resets the enrolment `created`); time = max(API, prior).
 
 Follow-ups:
-- Run the first FULL sync overnight (card 2 → "Sync from API"), then compare
-  the Overview/Compare figures with the last xlsx-based numbers before trusting
-  it for a report.
+- Finish the open full run in sessions (card 2 → "Sync from API" resumes it;
+  keep the Mac awake with `caffeinate -i`; ~33 h of API time in total at the
+  quota). After it completes, compare the Overview/Compare figures with the
+  last xlsx-based numbers before trusting it for a report.
 - After that, add the incremental stage to "Sync Everything".
 - The xlsx importer could adopt the same earliest-date merge instead of
   replacing rows wholesale.
