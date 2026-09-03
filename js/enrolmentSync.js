@@ -92,6 +92,26 @@ Object.assign(window.App, {
         } catch (e) { if (!this._enrIs404(e)) throw e; }
         return this._enrFromBodies(bodies);
     },
+    // Paced pass over /certificates, one course at a time. The API fixes the page
+    // size at 20 (items_per_page=100 is silently ignored; unfiltered listing is a
+    // 422), so this is ~1,700 pages ≈ 31 min at 55/min — hence run at most daily.
+    async _enrFetchCertificates(LW, courseIds, onProgress) {
+        const items = [];
+        for (let i = 0; i < courseIds.length; i++) {
+            const cid = courseIds[i];
+            try {
+                let page = 1, totalPages = 1;
+                do {
+                    const r = await this._enrGet(LW, '/certificates', { course_id: cid, items_per_page: 20, page });
+                    (r.data || []).forEach(c => items.push(c));
+                    totalPages = (r.meta && r.meta.totalPages) || 1; page++;
+                } while (page <= totalPages && page <= 400);
+            } catch (e) { if (!this._enrIs404(e)) throw e; }
+            if (onProgress) onProgress(i + 1, courseIds.length, items.length);
+        }
+        return items;
+    },
+
     // Normalise raw response bodies (live or from the receipt) into {enrolments, progress}.
     _enrFromBodies(bodies) {
         const enrolments = [], progress = {};
@@ -110,6 +130,40 @@ Object.assign(window.App, {
             const v = { issued, score: c.score };
             [String(userId) + '|' + title, String(userId) + '|' + title.toLowerCase().replace(/[^a-z0-9]/g, '')].forEach(k => { if (!map[k] || (issued && issued < map[k].issued)) map[k] = v; });
         });
+        return map;
+    },
+
+    // ── Certificate index: LearnWorlds user id | course id → {issued, score} ──
+    // Certificates never disappear and issued dates never change, so every
+    // certificate page ever captured (receipts) or fetched is final. The index is
+    // persisted (settings/cert_index.json) and only grows; a fresh pass over
+    // /certificates (~1,700 pages at the API's fixed 20/page) is made at most once
+    // a day instead of once per session.
+    ENR_CERT_KEY: 'surgdash_cert_index',
+    ENR_CERT_MAX_AGE_H: 24,
+    async _enrLoadCertIndex() { try { const v = await Storage.getItem(this.ENR_CERT_KEY); return (v && typeof v === 'object') ? v : {}; } catch (e) { return {}; } },
+    async _enrSaveCertIndex(index) { try { await Storage.setItem(this.ENR_CERT_KEY, index); } catch (e) { __swallowed(e, 'enrolments.certIndex'); } },
+    _enrCertIndexAdd(index, items) {
+        let added = 0;
+        (items || []).forEach(c => {
+            if (!c) return;
+            const userId = c.user && (c.user.id || c.user) || c.user_id, courseId = c.course_id; if (!userId || !courseId) return;
+            const issued = typeof c.issued === 'number' ? this._enrDay(c.issued) : String(c.issued || '').slice(0, 10);
+            const k = String(userId) + '|' + String(courseId);
+            if (!index[k] || (issued && issued < index[k].i)) { if (!index[k]) added++; index[k] = { i: issued, s: c.score == null ? '' : c.score }; }
+        });
+        return added;
+    },
+    // The lookup shape _enrBuildRows expects: userId|courseTitle (and a normalised title key).
+    _enrCertMapFromIndex(index, titleMap) {
+        const map = {};
+        for (const k of Object.keys(index || {})) {
+            const bar = k.indexOf('|'); if (bar < 0) continue;
+            const userId = k.slice(0, bar), courseId = k.slice(bar + 1);
+            const title = titleMap[courseId] || courseId;
+            const v = { issued: index[k].i, score: index[k].s };
+            [userId + '|' + title, userId + '|' + title.toLowerCase().replace(/[^a-z0-9]/g, '')].forEach(kk => { if (!map[kk] || (v.issued && v.issued < map[kk].issued)) map[kk] = v; });
+        }
         return map;
     },
 
@@ -179,13 +233,14 @@ Object.assign(window.App, {
     },
 
     // ── Offline: ingest a raw receipt (the current/last enrolments pull) ─────
-    _enrLatestReceiptDir() {
+    // Every enrolments receipt on disk, oldest first (retention keeps the last 3).
+    _enrReceiptDirs() {
         try {
             const fs = electronAPI.fs, path = electronAPI.path, dir = path.join(Storage.DATA_DIR, 'surghub', 'raw');
-            const dirs = fs.readdirSync(dir, { withFileTypes: true }).filter(e => e.isDirectory && /^enrolments__/.test(e.name) && fs.existsSync(path.join(dir, e.name, 'pull.jsonl'))).map(e => e.name).sort();
-            return dirs.length ? path.join(dir, dirs[dirs.length - 1]) : null;
-        } catch (e) { return null; }
+            return fs.readdirSync(dir, { withFileTypes: true }).filter(e => e.isDirectory && /^enrolments__/.test(e.name) && fs.existsSync(path.join(dir, e.name, 'pull.jsonl'))).map(e => e.name).sort().map(n => path.join(dir, n));
+        } catch (e) { return []; }
     },
+    _enrLatestReceiptDir() { const d = this._enrReceiptDirs(); return d.length ? d[d.length - 1] : null; },
     _enrParseReceipt(pullDir) {
         const fs = electronAPI.fs, path = electronAPI.path;
         const users = new Map(), perUser = new Map(), certs = [];
@@ -203,8 +258,8 @@ Object.assign(window.App, {
     },
     // Build + persist rows for every account the receipt holds a /courses body for.
     // Accounts already in `alreadyProcessed` are skipped. Returns the ids ingested.
-    async _enrIngestReceipt(parsed, titleMap, alreadyProcessed, onProgress) {
-        const certMap = this._enrCertMap(parsed.certs, titleMap);
+    async _enrIngestReceipt(parsed, titleMap, alreadyProcessed, onProgress, certMap) {
+        certMap = certMap || this._enrCertMap(parsed.certs, titleMap);
         if (this._rawCompletion == null && this.ensureCompletionLoaded) { try { await this.ensureCompletionLoaded(); } catch (e) { __swallowed(e, 'enrolments.load'); } }
         const priorByKey = this._enrPriorMap(this._rawCompletion);
         const rows = [], uids = [], ids = [];
@@ -292,20 +347,27 @@ Object.assign(window.App, {
             if (label) this._updateApiSyncOverlay(label, null);
         };
         try {
-            // 1. Ingest what the latest receipt already holds — offline, on EVERY run,
-            //    not just an explicit resume: an interrupted run from a build that kept
-            //    no run record still left a complete receipt on disk. Idempotent
-            //    (processed ids are skipped; rows merge with dates only moving earlier).
+            // 1. Harvest EVERY receipt on disk — offline, on every run: certificate
+            //    pages go into the persistent index (they are final), and accounts whose
+            //    enrolment/progress bodies were captured but never processed (an
+            //    interrupted run, or one from a build that kept no run record) are
+            //    ingested without touching the API. Idempotent: processed ids are
+            //    skipped; rows merge with dates only moving earlier.
+            const certIndex = await this._enrLoadCertIndex();
             {
-                const dir = this._enrLatestReceiptDir();
-                if (dir) {
-                    this._updateApiSyncOverlay('Reading the receipt from the previous session…', 1);
-                    const parsed = this._enrParseReceipt(dir);
-                    const ing = await this._enrIngestReceipt(parsed, titleMap, run.processed, (i, n) => this._updateApiSyncOverlay(`Ingesting receipt… ${i.toLocaleString()}/${n.toLocaleString()}`, 1 + Math.round(i / n * 4)));
+                const dirs = this._enrReceiptDirs();
+                let harvested = 0;
+                for (let d = 0; d < dirs.length; d++) {
+                    this._updateApiSyncOverlay(`Reading receipt ${d + 1}/${dirs.length} from earlier sessions…`, 1);
+                    const parsed = this._enrParseReceipt(dirs[d]);
+                    harvested += this._enrCertIndexAdd(certIndex, parsed.certs);
+                    const certMapNow = this._enrCertMapFromIndex(certIndex, titleMap);
+                    const ing = await this._enrIngestReceipt(parsed, titleMap, run.processed, (i, n) => this._updateApiSyncOverlay(`Ingesting receipt ${d + 1}/${dirs.length}… ${i.toLocaleString()}/${n.toLocaleString()}`, 1 + Math.round(i / n * 4)), certMapNow);
                     ing.ids.forEach(id => { run.processed[id] = 1; });
-                    summary.ingestedOffline = ing.ids.length;
-                    await this._enrSaveMeta(meta);
+                    summary.ingestedOffline += ing.ids.length;
                 }
+                if (harvested) await this._enrSaveCertIndex(certIndex);
+                await this._enrSaveMeta(meta);
             }
             try { LW.startRawPull('enrolments'); } catch (e) { __swallowed(e, 'enrolments.raw'); }
 
@@ -313,10 +375,19 @@ Object.assign(window.App, {
             const users = await this._enrFetchUsers(LW, (p, t, n) => this._updateApiSyncOverlay(`Listing accounts… page ${p}/${t} (${n.toLocaleString()})`, 5 + Math.round(p / t * 5)));
             summary.users = users.size; run.total = users.size;
 
-            // 3. Certificates (issued dates) — existing fetcher, its own pacing
-            this._updateApiSyncOverlay('Fetching certificates…', 10);
-            const certRes = await LW.fetchAllCertificates(p => { if (p && p.total) this._updateApiSyncOverlay(`Fetching certificates… ${p.current || 0}/${p.total} courses`, 10 + Math.round((p.current || 0) / p.total * 5)); });
-            const certMap = this._enrCertMap(Array.isArray(certRes) ? certRes : ((certRes && certRes.records) || []), titleMap);
+            // 3. Certificates — a paced pass at most once a day; otherwise the index
+            //    (receipts + earlier passes) is already complete enough for this run.
+            const certAgeH = meta.certsAt ? (Date.now() - Date.parse(meta.certsAt)) / 3600000 : Infinity;
+            if (certAgeH > this.ENR_CERT_MAX_AGE_H) {
+                const courseIds = Object.keys(titleMap);
+                const items = await this._enrFetchCertificates(LW, courseIds, (i, n, k) => this._updateApiSyncOverlay(`Fetching certificates… course ${i}/${n} · ${k.toLocaleString()} certificates`, 10 + Math.round(i / n * 5)));
+                this._enrCertIndexAdd(certIndex, items);
+                await this._enrSaveCertIndex(certIndex);
+                meta.certsAt = new Date().toISOString(); await this._enrSaveMeta(meta);
+            } else {
+                this._updateApiSyncOverlay(`Certificates: using the index refreshed ${Math.round(certAgeH)} h ago (${Object.keys(certIndex).length.toLocaleString()} certificates)`, 15);
+            }
+            const certMap = this._enrCertMapFromIndex(certIndex, titleMap);
 
             // 4. Selection
             if (this._enrUserCourses === undefined) { this._enrUserCourses = null; try { const uc = await Storage.getItem('surghub_user_courses'); if (uc && typeof uc === 'object') this._enrUserCourses = uc; } catch (e) { __swallowed(e, 'enrolments.uc'); } }
