@@ -128,7 +128,21 @@ window.LearnWorlds = (function () {
         return parsed;
     }
 
-    function _sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+    // Abortable sleep: every wait in a sync (429 backoff — up to 60 s — retry-round
+    // pauses, page delays) goes through here and polls the abort flag, so Cancel
+    // takes effect within half a second instead of after the current wait ends.
+    function _sleep(ms) {
+        return new Promise((resolve, reject) => {
+            const end = Date.now() + Math.max(0, Number(ms) || 0);
+            const tick = () => {
+                if (_aborted) return reject(new Error('Sync cancelled by user.'));
+                const left = end - Date.now();
+                if (left <= 0) return resolve();
+                setTimeout(tick, Math.min(500, left));
+            };
+            tick();
+        });
+    }
 
     // Run async thunks concurrently, retrying any that reject (on top of _apiGet's
     // own 429 backoff). Returns results IN ORDER. If a thunk still fails after all
