@@ -3278,6 +3278,7 @@ Object.assign(window.App, {
                             <h2 class="text-lg font-bold text-gsf-prussian">2 · Upload User Progress</h2>
                             <span class="text-[10px] font-bold uppercase text-indigo-700 bg-indigo-100 border border-indigo-200 px-2 py-0.5 rounded-full">xlsx · before each report</span>
                             ${this._syncCardBadge('progress', 30)}
+                            ${this._enrStatusHtml ? this._enrStatusHtml() : ''}
                             ${this._rawCompletion == null
                                 ? '<span class="text-xs text-slate-400 italic ml-2">checking local data&hellip;</span>'
                                 : (this._rawCompletion.length > 0
