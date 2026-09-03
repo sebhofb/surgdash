@@ -66,6 +66,8 @@
         // only — deliberately NOT in relativeToKey's reverse map, so it is never
         // enumerated, pushed to Sheets, exported, or restored onto another machine.
         if (key === 'surgdash_ui_state')        return path.join('settings', 'ui_state.json');
+        // Enrolment-sync bookkeeping (last run, mode, counts) — device-local like the above.
+        if (key === 'surgdash_enrolment_sync')  return path.join('settings', 'enrolment_sync.json');
         if (key === 'surgdash_onboarding')      return path.join('settings', 'onboarding.json');
         if (key === 'surgdash_edit_password')  return path.join('settings', 'edit_password.json');
         if (key === 'report_cover_path')     return path.join('settings', 'report_cover_path.json');

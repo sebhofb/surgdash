@@ -1607,6 +1607,12 @@ window.LearnWorlds = (function () {
             for (const body of (pageBodies || [])) { const rows = (body && body.data) || []; for (const u of rows) out.push(_flattenUser(u)); }
             return out;
         },
-        abort
+        abort,
+        // Low-level building blocks for syncs that live in their own module
+        // (enrolmentSync.js): the retrying GET (with raw receipts + 429 backoff),
+        // the concurrent-with-retry runner, and a sleep.
+        apiGet: _apiGet,
+        settleWithRetry: _settleWithRetry,
+        sleep: _sleep
     };
 })();

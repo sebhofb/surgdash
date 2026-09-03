@@ -3289,9 +3289,12 @@ Object.assign(window.App, {
                         <div class="flex flex-wrap items-center gap-3">
                             <button onclick="document.getElementById('completion-upload-input').click()" class="px-8 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg shadow-sm transition-colors text-sm flex items-center gap-2"><i data-lucide="clipboard-list" width="16"></i> Upload User Progress xlsx</button>
                             <input id="completion-upload-input" type="file" accept=".xlsx,.xls" onchange="App.processStandaloneCompletion(event)" class="hidden" />
+                            <span class="text-xs font-bold text-slate-400 uppercase">or</span>
+                            <button onclick="App.syncEnrolmentsFromApi()" class="px-8 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow-sm transition-colors text-sm flex items-center gap-2" title="Fetch every learner's enrolments and progress straight from LearnWorlds — same data as the xlsx, no download needed. First run ~4 hours (overnight); after that a few minutes."><i data-lucide="cloud-download" width="16"></i> Sync from API</button>
+                            <button onclick="App.syncEnrolmentsFromApi({ mode: 'full' })" class="text-xs text-slate-500 hover:text-gsf-boston underline" title="Ignore the last run and re-fetch every account (~4 hours)">full re-sync</button>
                             <span class="text-xs text-slate-400 italic">Also accepts the Course Insights overview export (one row per course) — used to reconcile official totals.</span>
                         </div>
-                        <p class="text-xs text-slate-400 mt-2 italic">Run card 1 first — records are matched to the synced course list by name.</p>
+                        <p class="text-xs text-slate-400 mt-2 italic">Run card 1 first — records are matched to the synced course list (the API by course id, the xlsx by name). <strong class="text-slate-500">Sync from API</strong> fetches each learner's enrolments and progress directly (2 calls per account; first run ~4 h, then incremental in minutes) and writes the same records the xlsx would — the upload stays as a fallback.</p>
                     </div>
 
                     <!-- ── 3. Sync Learners & Ambassadors ── -->
