@@ -3,6 +3,31 @@
 Working list of what to build next. Keep entries short; link to code when a
 decision is made. Items move to `js/whatsnew.js` when they ship.
 
+## Done — enrolments & progress from the API (2 September 2026, commit 2496d86)
+
+The card-2 "User Progress" xlsx is no longer the only source of per-learner
+dates. `js/enrolmentSync.js` fetches, per account, `/users/{id}/courses` (one
+record per enrolment with its own `created`) and `/users/{id}/progress`
+(status, progress rate, time on course in seconds, score, `completed_at`),
+plus `/certificates` for issued dates, and writes the importer's exact row
+shape into `surghub_completion` — nothing downstream changes. Full run ≈ 4 h
+at 4 concurrent requests (~8 req/s, no 429s); incremental (accounts active
+since the last run) in minutes. Verified on 13 learners / 200 rows against the
+xlsx: dates never later, time never lower, completion 200/200.
+
+Rules that must survive future edits: start_date only when the learner has
+progress (never-opened stays undated); rows from the union of enrolments and
+progress (unenrolled courses keep their learning); dates only move earlier
+(re-enrolment resets the enrolment `created`); time = max(API, prior).
+
+Follow-ups:
+- Run the first FULL sync overnight (card 2 → "Sync from API"), then compare
+  the Overview/Compare figures with the last xlsx-based numbers before trusting
+  it for a report.
+- After that, add the incremental stage to "Sync Everything".
+- The xlsx importer could adopt the same earliest-date merge instead of
+  replacing rows wholesale.
+
 ## Done — 2 September 2026 feature pass
 
 The five features from the August review, all on `main`:
@@ -74,8 +99,6 @@ start, because no per-email registration date is held.
   registrations in Compare.
 - Per-tile "data through" stamps on the overview (the line covers sources,
   not tiles).
-- Investigate whether the LearnWorlds API exposes per-user enrolment
-  timestamps, to remove the dependency on the manual User-Progress xlsx.
 - Build Tailwind to a static stylesheet instead of shipping the Play-CDN JIT
   compiler (a likely GPU-load contributor); then drop `unsafe-eval` from the CSP.
 - Targeted chart redraws instead of full `renderView()` on toggle changes.
