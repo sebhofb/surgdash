@@ -265,7 +265,7 @@ Object.assign(window.App, {
             const msg = openRun
                 ? `Resume the enrolment & progress sync?\n\n${doneN.toLocaleString()} of ${(openRun.total || 0).toLocaleString()} accounts are done. Anything the raw receipt already holds is ingested first without calling the API; the rest continues at ~${perMin} requests/minute (the LearnWorlds sustained limit), saving progress every ${this.ENR_CHECKPOINT} accounts. Cancel any time — nothing is lost.\n\nContinue?`
                 : mode === 'full'
-                    ? `FULL enrolment & progress sync from the LearnWorlds API?\n\nTwo calls per account at ~${perMin} requests/minute — the API's sustained limit — so the whole platform takes roughly a day and a half of API time. It saves progress every ${this.ENR_CHECKPOINT} accounts and resumes where it left off, so run it in sessions (overnight, keep the Mac awake: \`caffeinate -i\`). Cancel any time — nothing is lost.\n\nContinue?`
+                    ? `FULL enrolment & progress sync from the LearnWorlds API?\n\nAnything a previous run's receipt already holds is ingested first without calling the API. Then two calls per account at ~${perMin} requests/minute — the API's sustained limit — so the whole platform takes roughly a day and a half of API time. It saves progress every ${this.ENR_CHECKPOINT} accounts and resumes where it left off, so run it in sessions (overnight, keep the Mac awake: \`caffeinate -i\`). Cancel any time — nothing is lost.\n\nContinue?`
                     : `Incremental enrolment & progress sync?\n\nRe-fetches accounts active since the last completed run (${String(meta.lastRun || '').slice(0, 10)}) plus new ones — usually minutes.\n\nContinue?`;
             if (!confirm(msg)) return;
         }
@@ -292,8 +292,11 @@ Object.assign(window.App, {
             if (label) this._updateApiSyncOverlay(label, null);
         };
         try {
-            // 1. Ingest what the current receipt already holds (offline, resume only).
-            if (openRun) {
+            // 1. Ingest what the latest receipt already holds — offline, on EVERY run,
+            //    not just an explicit resume: an interrupted run from a build that kept
+            //    no run record still left a complete receipt on disk. Idempotent
+            //    (processed ids are skipped; rows merge with dates only moving earlier).
+            {
                 const dir = this._enrLatestReceiptDir();
                 if (dir) {
                     this._updateApiSyncOverlay('Reading the receipt from the previous session…', 1);

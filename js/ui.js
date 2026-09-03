@@ -3275,8 +3275,8 @@ Object.assign(window.App, {
                     <div class="bg-gradient-to-br from-indigo-50 to-white border border-indigo-200 rounded-2xl p-6 mb-4 shadow-sm">
                         <div class="flex flex-wrap items-center gap-2 mb-1">
                             <i data-lucide="clipboard-list" width="18" class="text-indigo-600"></i>
-                            <h2 class="text-lg font-bold text-gsf-prussian">2 · Upload User Progress</h2>
-                            <span class="text-[10px] font-bold uppercase text-indigo-700 bg-indigo-100 border border-indigo-200 px-2 py-0.5 rounded-full">xlsx · before each report</span>
+                            <h2 class="text-lg font-bold text-gsf-prussian">2 · Enrolments &amp; progress</h2>
+                            <span class="text-[10px] font-bold uppercase text-indigo-700 bg-indigo-100 border border-indigo-200 px-2 py-0.5 rounded-full">API · resumable · xlsx fallback</span>
                             ${this._syncCardBadge('progress', 30)}
                             ${this._enrStatusHtml ? this._enrStatusHtml() : ''}
                             ${this._rawCompletion == null
@@ -3285,7 +3285,7 @@ Object.assign(window.App, {
                                     ? '<span class="inline-flex items-center gap-1.5 text-xs text-slate-400 font-medium ml-2"><i data-lucide="check-circle-2" width="12" class="text-green-500"></i> ' + this.formatNumber(this._rawCompletion.length) + ' learner records loaded</span>'
                                     : '<span class="inline-flex items-center gap-1.5 text-xs text-amber-600 font-medium ml-2"><i data-lucide="alert-circle" width="12"></i> none loaded yet &mdash; upload below</span>')}
                         </div>
-                        <p class="text-sm text-slate-600 max-w-3xl mb-3">The per-user progress export is the <strong>only source of exact learner dates</strong> — it makes every growth curve precise, and fills per-learner <strong>learning time and completion</strong> for the provider report packages. It also links learners to their courses, powering the per-course <strong>&ldquo;Who the Learners Are&rdquo;</strong> demographics (upload this before card 3 / Sync Everything — no Growth-Timelines API sync needed).</p>
+                        <p class="text-sm text-slate-600 max-w-3xl mb-3">Per-learner <strong>enrolment dates, learning time and completion</strong> — what makes every growth curve precise and fills the provider report packages. <strong>Sync from API</strong> fetches them straight from LearnWorlds (two calls per account at the API's sustained limit of ~60 requests/minute, so a full pass is ~33 hours of API time spread over sessions: it saves every 200 accounts and resumes where it stopped; Cancel is safe). The <strong>xlsx upload</strong> remains as a fallback and writes the same records.</p>
                         <p class="text-xs text-slate-500 mb-3"><a href="#" onclick="electronAPI.openExternal('https://www.surghub.org/author/userprogress'); return false" class="text-indigo-700 hover:underline font-medium">Open User Progress</a> → filter <strong>Registered: before <em>tomorrow's date</em></strong> ("before" excludes the chosen day, so tomorrow captures everyone) → <strong>Export user progress</strong> (Excel) → wait for it in the <strong>Reports log</strong> (LearnWorlds admin → Reports) → download → upload here. Or use the saved <a href="#" onclick="electronAPI.openExternal('https://www.surghub.org/author/usersegments?segmentId=18'); return false" class="text-indigo-700 hover:underline font-medium">User Segment ↗</a> and export its <strong>Summary</strong> report — same data, one xlsx (not the CSV ZIP used for Social Activity).</p>
                         <div class="flex flex-wrap items-center gap-3">
                             <button onclick="document.getElementById('completion-upload-input').click()" class="px-8 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg shadow-sm transition-colors text-sm flex items-center gap-2"><i data-lucide="clipboard-list" width="16"></i> Upload User Progress xlsx</button>
@@ -3295,7 +3295,7 @@ Object.assign(window.App, {
                             <button onclick="App.syncEnrolmentsFromApi({ mode: 'full' })" class="text-xs text-slate-500 hover:text-gsf-boston underline" title="Ignore the last run and re-fetch every account (~4 hours)">full re-sync</button>
                             <span class="text-xs text-slate-400 italic">Also accepts the Course Insights overview export (one row per course) — used to reconcile official totals.</span>
                         </div>
-                        <p class="text-xs text-slate-400 mt-2 italic">Run card 1 first — records are matched to the synced course list (the API by course id, the xlsx by name). <strong class="text-slate-500">Sync from API</strong> fetches each learner's enrolments and progress directly (2 calls per account; first run ~4 h, then incremental in minutes) and writes the same records the xlsx would — the upload stays as a fallback.</p>
+                        <p class="text-xs text-slate-400 mt-2 italic">Run card 1 first — records are matched to the synced course list (the API by course id, the xlsx by name). <strong class="text-slate-500">Sync from API</strong> ingests any earlier run's receipt offline first, then continues at the paced rate with a checkpoint every 200 accounts; after the first full pass, runs are incremental (accounts active since the last run) and take minutes. The upload stays as a fallback.</p>
                     </div>
 
                     <!-- ── 3. Sync Learners & Ambassadors ── -->
