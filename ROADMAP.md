@@ -21,6 +21,26 @@ Verified on 13 learners / 200 rows against the xlsx, and on the interrupted
 run's receipt (5,595 accounts / 9,382 rows): dates never later, time never
 lower, no certificate lost; 93 completions newer than the 14 Aug export.
 
+**4 September 2026 — the run has to survive the night.** The 3 Sep session died
+at 22:52 on `net::ERR_NETWORK_CHANGED` (a one-second Wi-Fi change) while listing
+accounts at page 227 of 315: only 429s were retried, the failure surfaced as a
+toast nobody saw, and card 2 showed the same "paused" line as a clean Cancel —
+so nothing ran overnight. Now `_enrGet` retries transient failures in place
+(network errors, 5xx, non-JSON bodies, 429s that outlast apiGet's own three
+retries) with waits of 15 s, 30 s, 1, 2, 5 min and then every 10 min, for up
+to 40 attempts (~6 h of outage) before giving up; 429 exhaustion also widens
+the pacing gap by 20% (floor 20/min) for the session. Auth/config failures stop
+at once; a bad request on one account skips just that account. The run record
+keeps `pausedBy` (cancel/error), `pausedAt`, `lastError` and a session counter,
+and the card says "in progress", "paused (Cancel)", "stopped by an error <when>
+— <why>" or "interrupted". The abort flag is reset on entry (an earlier Cancel
+used to end the next run at its first request with a phantom "cancelled"). A
+receipt whose run moved on to accounts after its last certificate page counts
+as a completed certificate pass, so the daily ~31-minute pass is skipped while a
+receipt under a day old holds one. Fake-API harness: 31 checks (network blip,
+429 slow-down, auth stop, Cancel during a retry wait, stale abort flag,
+receipt-derived certificate refresh, give-up path).
+
 Rules that must survive future edits: start_date only when the learner has
 progress (never-opened stays undated); rows from the union of enrolments and
 progress (unenrolled courses keep their learning); dates only move earlier
@@ -28,9 +48,10 @@ progress (unenrolled courses keep their learning); dates only move earlier
 
 Follow-ups:
 - Finish the open full run in sessions (card 2 → "Sync from API" resumes it;
-  keep the Mac awake with `caffeinate -i`; ~33 h of API time in total at the
-  quota). After it completes, compare the Overview/Compare figures with the
-  last xlsx-based numbers before trusting it for a report.
+  keep the Mac awake with `caffeinate -i -s`; 6,872 of 62,836 accounts done as
+  of 4 Sep, ~34 h of API time left at the quota). After it completes, compare
+  the Overview/Compare figures with the last xlsx-based numbers before trusting
+  it for a report.
 - After that, add the incremental stage to "Sync Everything".
 - The xlsx importer could adopt the same earliest-date merge instead of
   replacing rows wholesale.

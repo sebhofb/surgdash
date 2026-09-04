@@ -39,6 +39,17 @@ Object.assign(window.App, {
     ENR_INCREMENTAL_SLACK_DAYS: 2,
     ENR_MAX_FAILURE_SHARE: 0.01,
     ENR_TIMELINES_DATE: '2026-06-14',   // date of the growth-timelines pull behind surghub_user_courses
+    // TRANSIENT FAILURES ARE RETRIED IN PLACE, not allowed to end the run. A network
+    // blip, a 5xx, an HTML error page, or a rate limit that outlasted apiGet's own
+    // three retries → wait 15 s, 30 s, 1, 2, 5 min, then every 10 min, for up to
+    // ENR_RETRY_MAX_ATTEMPTS (~6 h of outage) before giving up. An unattended
+    // overnight run has to survive a one-second Wi-Fi hiccup: net::ERR_NETWORK_CHANGED
+    // killed the 3 Sep 2026 run at page 227 of the account listing and the card
+    // showed nothing but "paused" the next morning. Cancel still lands in < 0.5 s.
+    ENR_RETRY_WAITS_S: [15, 30, 60, 120, 300],
+    ENR_RETRY_MAX_WAIT_S: 600,
+    ENR_RETRY_MAX_ATTEMPTS: 40,
+    ENR_MIN_PER_MIN: 20,                // adaptive floor when the API keeps answering 429
 
     _enrDay(ts) { const n = Number(ts); return n ? new Date(n * 1000).toISOString().slice(0, 10) : ''; },
     _enrIs404(e) { return /\b404\b|not found/i.test((e && e.message) || ''); },
@@ -48,13 +59,60 @@ Object.assign(window.App, {
     async _enrSaveMeta(meta) { this._enrMeta = meta; try { await Storage.setItem(this.ENR_META_KEY, meta); } catch (e) { __swallowed(e, 'enrolments.meta'); } },
 
     // ── Pacing: never start a request less than 60/TARGET seconds after the last ──
+    // (the gap widens for the session when the API keeps answering 429 — see _enrSlowDown).
     async _enrPace() {
-        const gap = 60000 / this.ENR_TARGET_PER_MIN;
+        const gap = this._enrGapMs || 60000 / this.ENR_TARGET_PER_MIN;
         const now = Date.now(), wait = (this._enrLastReq || 0) + gap - now;
         if (wait > 0) await new Promise(r => setTimeout(r, wait));
         this._enrLastReq = Date.now();
     },
-    async _enrGet(LW, path, params) { await this._enrPace(); return LW.apiGet(path, params); },
+    _enrRateNow() { return Math.round(60000 / (this._enrGapMs || 60000 / this.ENR_TARGET_PER_MIN)); },
+    _enrSlowDown() {
+        const cur = this._enrGapMs || 60000 / this.ENR_TARGET_PER_MIN;
+        this._enrGapMs = Math.min(60000 / this.ENR_MIN_PER_MIN, cur * 1.2);
+        if (this._enrStats) this._enrStats.slowdowns++;
+    },
+    // What kind of failure apiGet surfaced: 'cancel' (stop now), 'notfound' (callers
+    // treat a 404 as "nothing there"), 'fatal' (auth / config / bad request — retrying
+    // cannot help), or 'transient' (everything else: network, 5xx, exhausted 429s,
+    // a non-JSON body). apiGet throws plain Errors, so this reads the message.
+    _enrErrorKind(e) {
+        const m = String((e && e.message) || e || '');
+        if (/cancelled/i.test(m)) return 'cancel';
+        if (this._enrIs404(e)) return 'notfound';
+        if (/^Auth failed|credentials not set|not loaded/i.test(m)) return 'fatal';
+        if (/^API error (400|401|403|405|410|422)\b/.test(m)) return 'fatal';
+        return 'transient';
+    },
+    // Message without the host and query string — fits the card and the overlay.
+    _enrShortErr(e) { return String((e && e.message) || e || '').replace(/https?:\/\/\S+/g, u => u.replace(/^https?:\/\/[^/]+\/admin\/api\/v2/, '').replace(/\?\S*/, q => (/[.:]$/.test(q) ? q.slice(-1) : ''))).slice(0, 160); },
+    _enrFmtWait(s) { return s >= 60 ? Math.round(s / 60) + ' min' : s + ' s'; },
+    _enrFmtWhen(iso) { const d = iso ? new Date(iso) : null; if (!d || isNaN(d)) return ''; return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) + ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }); },
+    // Overlay text, remembered so a retry notice can restore it afterwards.
+    _enrStatus(text, pct) { this._enrLastStatus = { text, pct }; this._updateApiSyncOverlay(text, pct); },
+    // One paced GET that outlives transient failures (see the constants above).
+    async _enrGet(LW, path, params) {
+        for (let attempt = 0; ; attempt++) {
+            await this._enrPace();
+            try {
+                const r = await LW.apiGet(path, params);
+                if (attempt && this._enrLastStatus) this._updateApiSyncOverlay(this._enrLastStatus.text, this._enrLastStatus.pct);
+                return r;
+            } catch (e) {
+                if (this._enrErrorKind(e) !== 'transient') throw e;
+                const n = attempt + 1;
+                if (n >= this.ENR_RETRY_MAX_ATTEMPTS) throw new Error(`Gave up after ${n} attempts over ~${Math.round(this._enrRetryTotalS() / 3600)} h — last error: ${e.message || e}`);
+                if (/\b429\b/.test(e.message || '')) this._enrSlowDown();
+                if (this._enrStats) this._enrStats.retries++;
+                const waitS = attempt < this.ENR_RETRY_WAITS_S.length ? this.ENR_RETRY_WAITS_S[attempt] : this.ENR_RETRY_MAX_WAIT_S;
+                console.warn(`[enrolments] ${this._enrShortErr(e)} — retrying in ${this._enrFmtWait(waitS)} (attempt ${n}/${this.ENR_RETRY_MAX_ATTEMPTS})`);
+                const base = this._enrLastStatus ? this._enrLastStatus.text : 'Enrolments & progress';
+                this._updateApiSyncOverlay(`${base} · ⚠ ${this._enrShortErr(e)} — retrying in ${this._enrFmtWait(waitS)} (attempt ${n}) · Cancel to pause`, null);
+                await LW.sleep(waitS * 1000);   // abortable: Cancel rejects within half a second
+            }
+        }
+    },
+    _enrRetryTotalS() { const w = this.ENR_RETRY_WAITS_S; return w.reduce((a, b) => a + b, 0) + Math.max(0, this.ENR_RETRY_MAX_ATTEMPTS - w.length) * this.ENR_RETRY_MAX_WAIT_S; },
 
     // Latest course title per LearnWorlds course id, from the synced course list.
     _enrCourseTitleMap() {
@@ -244,17 +302,18 @@ Object.assign(window.App, {
     _enrParseReceipt(pullDir) {
         const fs = electronAPI.fs, path = electronAPI.path;
         const users = new Map(), perUser = new Map(), certs = [];
+        let lastCertT = 0, accountsAfterCert = 0;   // the run moves on to accounts only after a COMPLETE certificate pass
         const text = fs.readFileSync(path.join(pullDir, 'pull.jsonl'), 'utf8');
         for (const line of text.split('\n')) {
             if (!line) continue;
             let o, b; try { o = JSON.parse(line); b = JSON.parse(o.body); } catch (e) { continue; }
             const p = String(o.path || '');
             if (p === '/users') { (b.data || []).forEach(u => { if (u && u.id && u.email) users.set(String(u.id), { id: String(u.id), email: String(u.email).toLowerCase().trim(), first: u.first_name || '', last: u.last_name || '', lastLogin: Number(u.last_login) || 0, created: Number(u.created) || 0 }); }); continue; }
-            if (p === '/certificates') { (b.data || []).forEach(c => certs.push(c)); continue; }
+            if (p === '/certificates') { (b.data || []).forEach(c => certs.push(c)); lastCertT = Number(o.t) || lastCertT; accountsAfterCert = 0; continue; }
             const m = p.match(/^\/users\/([^/]+)\/(courses|progress)$/);
-            if (m) { const rec = perUser.get(m[1]) || { courses: [], progress: [] }; rec[m[2]].push(b); perUser.set(m[1], rec); }
+            if (m) { const rec = perUser.get(m[1]) || { courses: [], progress: [] }; rec[m[2]].push(b); perUser.set(m[1], rec); if (lastCertT) accountsAfterCert++; }
         }
-        return { users, perUser, certs, pullDir };
+        return { users, perUser, certs, pullDir, lastCertT, accountsAfterCert };
     },
     // Build + persist rows for every account the receipt holds a /courses body for.
     // Accounts already in `alreadyProcessed` are skipped. Returns the ids ingested.
@@ -326,9 +385,11 @@ Object.assign(window.App, {
         }
 
         this._apiSyncInFlight = true;
+        if (LW.resetAbort) LW.resetAbort();   // an earlier Cancel must not end this run at its first request
+        this._enrGapMs = null; this._enrStats = { retries: 0, slowdowns: 0 }; this._enrLastStatus = null;
         try { await this._backupSurghubBeforeSync(); } catch (e) { __swallowed(e, 'enrolments.backup'); }
         if (!opts.silent) this._showApiSyncOverlay('Enrolments & progress (API)');
-        this._updateApiSyncOverlay('Preparing…', 0);
+        this._enrStatus('Preparing…', 0);
         const summary = { mode, resumed: !!openRun, ingestedOffline: 0, users: 0, selected: 0, done: 0, failed: 0, noEnrolments: 0, rows: 0 };
         let ok = false, cancelled = false;
         const titleMap = this._enrCourseTitleMap();
@@ -336,6 +397,8 @@ Object.assign(window.App, {
         let pending = [], pendingUids = [], pendingIds = [];
         const run = openRun || { startedAt: new Date().toISOString(), mode, total: 0, processed: {}, done: false };
         meta.run = run;
+        run.sessions = (run.sessions || 0) + 1; run.sessionAt = new Date().toISOString();
+        delete run.pausedAt; delete run.pausedBy; delete run.lastError;
         const checkpoint = async (label) => {
             if (pendingIds.length) {
                 await this._enrPersist(pending, pendingUids, 'merge');
@@ -344,7 +407,7 @@ Object.assign(window.App, {
             }
             run.checkpointAt = new Date().toISOString();
             await this._enrSaveMeta(meta);
-            if (label) this._updateApiSyncOverlay(label, null);
+            if (label) this._enrStatus(label, null);
         };
         try {
             // 1. Harvest EVERY receipt on disk — offline, on every run: certificate
@@ -358,21 +421,27 @@ Object.assign(window.App, {
                 const dirs = this._enrReceiptDirs();
                 let harvested = 0;
                 for (let d = 0; d < dirs.length; d++) {
-                    this._updateApiSyncOverlay(`Reading receipt ${d + 1}/${dirs.length} from earlier sessions…`, 1);
+                    this._enrStatus(`Reading receipt ${d + 1}/${dirs.length} from earlier sessions…`, 1);
                     const parsed = this._enrParseReceipt(dirs[d]);
                     harvested += this._enrCertIndexAdd(certIndex, parsed.certs);
+                    // A receipt whose run went on to fetch accounts after its last
+                    // certificate page holds a COMPLETE pass (the pass throws on any
+                    // failure) — so its time counts as the last refresh and today's
+                    // ~31-minute pass is skipped when it is under a day old.
+                    if (parsed.lastCertT && parsed.accountsAfterCert >= 10) { const iso = new Date(parsed.lastCertT).toISOString(); if (!meta.certsAt || iso > meta.certsAt) meta.certsAt = iso; }
                     const certMapNow = this._enrCertMapFromIndex(certIndex, titleMap);
-                    const ing = await this._enrIngestReceipt(parsed, titleMap, run.processed, (i, n) => this._updateApiSyncOverlay(`Ingesting receipt ${d + 1}/${dirs.length}… ${i.toLocaleString()}/${n.toLocaleString()}`, 1 + Math.round(i / n * 4)), certMapNow);
+                    const ing = await this._enrIngestReceipt(parsed, titleMap, run.processed, (i, n) => this._enrStatus(`Ingesting receipt ${d + 1}/${dirs.length}… ${i.toLocaleString()}/${n.toLocaleString()}`, 1 + Math.round(i / n * 4)), certMapNow);
                     ing.ids.forEach(id => { run.processed[id] = 1; });
                     summary.ingestedOffline += ing.ids.length;
                 }
                 if (harvested) await this._enrSaveCertIndex(certIndex);
                 await this._enrSaveMeta(meta);
+                if (!opts.silent && this.view === 'upload') this.renderView();   // card 2 → "in progress"
             }
             try { LW.startRawPull('enrolments'); } catch (e) { __swallowed(e, 'enrolments.raw'); }
 
             // 2. Accounts (paced; ~5 min for the whole list)
-            const users = await this._enrFetchUsers(LW, (p, t, n) => this._updateApiSyncOverlay(`Listing accounts… page ${p}/${t} (${n.toLocaleString()})`, 5 + Math.round(p / t * 5)));
+            const users = await this._enrFetchUsers(LW, (p, t, n) => this._enrStatus(`Listing accounts… page ${p}/${t} (${n.toLocaleString()})`, 5 + Math.round(p / t * 5)));
             summary.users = users.size; run.total = users.size;
 
             // 3. Certificates — a paced pass at most once a day; otherwise the index
@@ -380,12 +449,12 @@ Object.assign(window.App, {
             const certAgeH = meta.certsAt ? (Date.now() - Date.parse(meta.certsAt)) / 3600000 : Infinity;
             if (certAgeH > this.ENR_CERT_MAX_AGE_H) {
                 const courseIds = Object.keys(titleMap);
-                const items = await this._enrFetchCertificates(LW, courseIds, (i, n, k) => this._updateApiSyncOverlay(`Fetching certificates… course ${i}/${n} · ${k.toLocaleString()} certificates`, 10 + Math.round(i / n * 5)));
+                const items = await this._enrFetchCertificates(LW, courseIds, (i, n, k) => this._enrStatus(`Fetching certificates… course ${i}/${n} · ${k.toLocaleString()} certificates`, 10 + Math.round(i / n * 5)));
                 this._enrCertIndexAdd(certIndex, items);
                 await this._enrSaveCertIndex(certIndex);
                 meta.certsAt = new Date().toISOString(); await this._enrSaveMeta(meta);
             } else {
-                this._updateApiSyncOverlay(`Certificates: using the index refreshed ${Math.round(certAgeH)} h ago (${Object.keys(certIndex).length.toLocaleString()} certificates)`, 15);
+                this._enrStatus(`Certificates: using the index refreshed ${Math.round(certAgeH)} h ago (${Object.keys(certIndex).length.toLocaleString()} certificates)`, 15);
             }
             const certMap = this._enrCertMapFromIndex(certIndex, titleMap);
 
@@ -402,15 +471,18 @@ Object.assign(window.App, {
             for (let i = 0; i < selected.length; i++) {
                 const u = selected[i];
                 let fetched;
-                try { fetched = await LW.settleWithRetry([() => this._enrFetchUser(LW, u.id)], 'enrolments'); }
-                catch (e) { if (/cancelled/i.test(e.message || '')) { cancelled = true; throw e; } summary.failed++; continue; }
-                const f = fetched[0];
+                // _enrGet retries transient failures in place; what surfaces here is a
+                // cancel, an auth/config failure (stop — every account would fail the
+                // same way) or a bad request on this one account (skip it, keep going).
+                try { fetched = await this._enrFetchUser(LW, u.id); }
+                catch (e) { const kind = this._enrErrorKind(e); if (kind === 'cancel') { cancelled = true; throw e; } if (kind === 'fatal' && /^Auth failed|credentials/i.test(e.message || '')) throw e; summary.failed++; console.warn('[enrolments] account skipped:', u.id, e.message || e); continue; }
+                const f = fetched;
                 pending.push(...this._enrBuildRows(u, f, certMap, titleMap, priorByKey));
                 pendingUids.push(this._djb2Hash(u.email)); pendingIds.push(u.id);
                 summary.done++; if (!f.enrolments.length && !Object.keys(f.progress).length) summary.noEnrolments++;
                 if (++sinceCheckpoint >= this.ENR_CHECKPOINT) { sinceCheckpoint = 0; await checkpoint(); }
                 const elapsed = (Date.now() - t0) / 1000, eta = summary.done ? (selected.length - i - 1) * elapsed / summary.done : 0;
-                this._updateApiSyncOverlay(`Enrolments… ${(i + 1).toLocaleString()}/${selected.length.toLocaleString()} accounts this session · ${(Object.keys(run.processed).length + pendingIds.length).toLocaleString()}/${run.total.toLocaleString()} overall · ~${this._enrFmtEta(eta)} left · saved every ${this.ENR_CHECKPOINT}`, 15 + Math.round((i + 1) / selected.length * 82));
+                this._enrStatus(`Enrolments… ${(i + 1).toLocaleString()}/${selected.length.toLocaleString()} accounts this session · ${(Object.keys(run.processed).length + pendingIds.length).toLocaleString()}/${run.total.toLocaleString()} overall · ~${this._enrFmtEta(eta)} left · saved every ${this.ENR_CHECKPOINT}`, 15 + Math.round((i + 1) / selected.length * 82));
             }
             if (summary.failed > Math.max(20, summary.selected * this.ENR_MAX_FAILURE_SHARE)) throw new Error(`${summary.failed} of ${summary.selected} accounts failed after retries — stopping; progress so far is saved, run again later.`);
 
@@ -422,21 +494,26 @@ Object.assign(window.App, {
             await this._stampSync('progress'); await this._stampSync('enrolments');
             await this.handleDbSave();
             summary.rows = (this._rawCompletion || []).length;
+            summary.retries = this._enrStats.retries; summary.slowdowns = this._enrStats.slowdowns;
             ok = true;
         } catch (e) {
-            // Keep everything fetched so far — that is the whole point.
+            if (!cancelled && this._enrErrorKind(e) === 'cancel') cancelled = true;   // Cancel during the listing or the certificate pass
+            // Keep everything fetched so far — that is the whole point — and record
+            // WHY the run stopped, so the card can say so tomorrow morning.
+            run.pausedAt = new Date().toISOString(); run.pausedBy = cancelled ? 'cancel' : 'error';
+            if (!cancelled) { run.lastError = String(e.message || e).slice(0, 300); run.errors = (run.errors || 0) + 1; }
             try { await checkpoint(); if (pendingIds.length === 0 && summary.done) { await this._stampSync('progress'); await this.handleDbSave(); } } catch (e2) { __swallowed(e2, 'enrolments.checkpoint'); }
             console.error('[enrolments] sync ' + (cancelled ? 'cancelled' : 'stopped') + ':', e);
-            if (!opts.silent) this.showMsg((cancelled ? '⏸ Enrolment sync paused' : '⚠ Enrolment sync stopped') + ' — ' + Object.keys(run.processed).length.toLocaleString() + ' of ' + (run.total || '?').toLocaleString() + ' accounts saved. Click "Sync from API" to resume.' + (cancelled ? '' : ' (' + (e.message || e) + ')'), !cancelled);
+            if (!opts.silent) this.showMsg((cancelled ? '⏸ Enrolment sync paused' : '⚠ Enrolment sync stopped') + ' — ' + Object.keys(run.processed).length.toLocaleString() + ' of ' + (run.total || '?').toLocaleString() + ' accounts saved. Click "Sync from API" to resume.' + (cancelled ? '' : ' (' + this._enrShortErr(e) + ')'), !cancelled);
             if (!cancelled) throw e;
             return summary;
         } finally {
             try { LW.finishRawPull(ok); } catch (e) { __swallowed(e, 'enrolments.raw'); }
             this._apiSyncInFlight = false;
-            if (!opts.silent) this._hideApiSyncOverlay();
+            if (!opts.silent) { this._hideApiSyncOverlay(); if (!ok && this.view === 'upload') this.renderView(); }   // card 2 → paused / stopped-by-error, after the in-flight flag clears
         }
         if (!opts.silent) {
-            this.showMsg(`✓ Enrolments synced (${mode}${summary.resumed ? ', resumed' : ''}): ${summary.done.toLocaleString()} accounts fetched` + (summary.ingestedOffline ? `, ${summary.ingestedOffline.toLocaleString()} ingested from the receipt` : '') + ` (${summary.noEnrolments.toLocaleString()} with no enrolments) → ${summary.rows.toLocaleString()} learner-course records` + (summary.failed ? ` · ${summary.failed} accounts skipped after retries` : ''));
+            this.showMsg(`✓ Enrolments synced (${mode}${summary.resumed ? ', resumed' : ''}): ${summary.done.toLocaleString()} accounts fetched` + (summary.ingestedOffline ? `, ${summary.ingestedOffline.toLocaleString()} ingested from the receipt` : '') + ` (${summary.noEnrolments.toLocaleString()} with no enrolments) → ${summary.rows.toLocaleString()} learner-course records` + (summary.failed ? ` · ${summary.failed} accounts skipped after retries` : '') + (summary.retries ? ` · ${summary.retries} transient error${summary.retries === 1 ? '' : 's'} retried` : ''));
             this.renderView();
         }
         return summary;
@@ -448,9 +525,16 @@ Object.assign(window.App, {
         const m = this._enrMeta; if (!m) return '';
         const esc = (t) => this.escapeHtml(t);
         if (m.run && !m.run.done) {
-            const done = Object.keys(m.run.processed || {}).length, total = m.run.total || 0;
+            const r = m.run, done = Object.keys(r.processed || {}).length, total = r.total || 0;
             const left = total ? Math.max(0, total - done) : 0;
-            return `<span class="inline-flex items-center gap-1.5 text-xs text-amber-700 font-medium ml-2" title="Started ${esc(String(m.run.startedAt || '').slice(0, 16).replace('T', ' '))}. Click 'Sync from API' to resume — anything already fetched is kept."><i data-lucide="pause-circle" width="12"></i> API run paused: ${done.toLocaleString()} of ${total.toLocaleString()} accounts saved${left ? ' · ~' + this._enrFmtEta(left * 2 * 60 / this.ENR_TARGET_PER_MIN) + ' of API time left' : ''}</span>`;
+            const saved = `${done.toLocaleString()} of ${total.toLocaleString()} accounts saved`;
+            const eta = left ? ` · ~${this._enrFmtEta(left * 2 * 60 / this.ENR_TARGET_PER_MIN)} of API time left` : '';
+            const started = `Started ${esc(this._enrFmtWhen(r.startedAt))}${r.sessions > 1 ? ', session ' + r.sessions : ''}.`;
+            const pill = (cls, icon, text, title) => `<span class="inline-flex items-center gap-1.5 text-xs ${cls} font-medium ml-2" title="${title}"><i data-lucide="${icon}" width="12"></i> ${text}</span>`;
+            if (this._apiSyncInFlight) return pill('text-emerald-700', 'loader', `API run in progress · ${saved}${eta}`, `${started} Progress is saved every ${this.ENR_CHECKPOINT} accounts; Cancel in the corner panel pauses it.`);
+            if (r.pausedBy === 'error') return pill('text-red-700', 'alert-triangle', `API run stopped by an error ${esc(this._enrFmtWhen(r.pausedAt))} — ${esc(this._enrShortErr(r.lastError || ''))} · ${saved}${eta} · click "Sync from API" to resume`, `${started} ${esc(r.lastError || '')}`);
+            if (r.pausedBy === 'cancel') return pill('text-amber-700', 'pause-circle', `API run paused ${esc(this._enrFmtWhen(r.pausedAt))} (Cancel) · ${saved}${eta} · click "Sync from API" to resume`, `${started} Anything already fetched is kept.`);
+            return pill('text-amber-700', 'pause-circle', `API run interrupted · ${saved}${eta} · click "Sync from API" to resume`, `${started} The app closed or crashed mid-run; anything already fetched is kept.`);
         }
         if (m.lastRun) return `<span class="inline-flex items-center gap-1.5 text-xs text-slate-400 font-medium ml-2"><i data-lucide="cloud-download" width="12" class="text-emerald-500"></i> API sync ${esc(String(m.lastRun).slice(0, 10))} (${esc(m.lastMode || '')})</span>`;
         return '';

@@ -65,6 +65,10 @@ window.LearnWorlds = (function () {
     // and every in-flight loop checks it between calls.
     let _aborted = false;
     function abort() { _aborted = true; }
+    // A sync that lives in its own module (enrolmentSync.js) calls this on entry, so
+    // an earlier Cancel — which leaves the flag set for the rest of the session —
+    // cannot end the new run at its first request with a phantom "cancelled".
+    function resetAbort() { _aborted = false; }
     function _checkAbort() { if (_aborted) throw new Error('Sync cancelled by user.'); }
 
     // Retry-After → milliseconds, or null when absent/unparseable. Accepts the
@@ -1622,6 +1626,7 @@ window.LearnWorlds = (function () {
             return out;
         },
         abort,
+        resetAbort,
         // Low-level building blocks for syncs that live in their own module
         // (enrolmentSync.js): the retrying GET (with raw receipts + 429 backoff),
         // the concurrent-with-retry runner, and a sleep.
