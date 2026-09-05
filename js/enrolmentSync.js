@@ -94,6 +94,7 @@ Object.assign(window.App, {
     async _enrGet(LW, path, params) {
         for (let attempt = 0; ; attempt++) {
             await this._enrPace();
+            if (this._enrStats) this._enrStats.requests++;
             try {
                 const r = await LW.apiGet(path, params);
                 if (attempt && this._enrLastStatus) this._updateApiSyncOverlay(this._enrLastStatus.text, this._enrLastStatus.pct);
@@ -386,7 +387,7 @@ Object.assign(window.App, {
 
         this._apiSyncInFlight = true;
         if (LW.resetAbort) LW.resetAbort();   // an earlier Cancel must not end this run at its first request
-        this._enrGapMs = null; this._enrStats = { retries: 0, slowdowns: 0 }; this._enrLastStatus = null;
+        this._enrGapMs = null; this._enrStats = { retries: 0, slowdowns: 0, requests: 0 }; const sessionT0 = Date.now(); this._enrLastStatus = null;
         try { await this._backupSurghubBeforeSync(); } catch (e) { __swallowed(e, 'enrolments.backup'); }
         if (!opts.silent) this._showApiSyncOverlay('Enrolments & progress (API)');
         this._enrStatus('Preparing…', 0);
@@ -406,6 +407,8 @@ Object.assign(window.App, {
                 pending = []; pendingUids = []; pendingIds = [];
             }
             run.checkpointAt = new Date().toISOString();
+            const mins = (Date.now() - sessionT0) / 60000;
+            if (mins >= 3 && this._enrStats) run.reqPerMin = Math.round(this._enrStats.requests / mins * 10) / 10;   // observed, for the card's ETA
             await this._enrSaveMeta(meta);
             if (label) this._enrStatus(label, null);
         };
@@ -463,6 +466,8 @@ Object.assign(window.App, {
             if (this._rawCompletion == null && this.ensureCompletionLoaded) { try { await this.ensureCompletionLoaded(); } catch (e) { __swallowed(e, 'enrolments.load'); } }
             const selected = this._enrSelectUsers(users, mode, meta);
             summary.selected = selected.length;
+            run.processedAtSel = Object.keys(run.processed).length; run.selectedLeft = selected.length;
+            run.skipped = Math.max(0, users.size - run.processedAtSel - selected.length);   // nothing to fetch (or not active, in incremental mode)
             const priorByKey = this._enrPriorMap(this._rawCompletion);
             await this._enrSaveMeta(meta);
 
@@ -526,9 +531,12 @@ Object.assign(window.App, {
         const esc = (t) => this.escapeHtml(t);
         if (m.run && !m.run.done) {
             const r = m.run, done = Object.keys(r.processed || {}).length, total = r.total || 0;
-            const left = total ? Math.max(0, total - done) : 0;
-            const saved = `${done.toLocaleString()} of ${total.toLocaleString()} accounts saved`;
-            const eta = left ? ` · ~${this._enrFmtEta(left * 2 * 60 / this.ENR_TARGET_PER_MIN)} of API time left` : '';
+            // Accounts still to fetch: what the last selection left, minus what this run has done since —
+            // not total − done, which counts the accounts the selection skips as nothing to fetch.
+            const left = (r.selectedLeft != null && r.processedAtSel != null) ? Math.max(0, r.selectedLeft - (done - r.processedAtSel)) : (total ? Math.max(0, total - done) : 0);
+            const rate = r.reqPerMin || this.ENR_TARGET_PER_MIN;
+            const saved = `${done.toLocaleString()} accounts fetched` + (left ? ` · ${left.toLocaleString()} to go` : '') + (r.skipped ? ` · ${r.skipped.toLocaleString()} skipped (nothing to fetch)` : '');
+            const eta = left ? ` · ~${this._enrFmtEta(left * 2 * 60 / rate)} left at ${Math.round(rate)} req/min` : '';
             const started = `Started ${esc(this._enrFmtWhen(r.startedAt))}${r.sessions > 1 ? ', session ' + r.sessions : ''}.`;
             const pill = (cls, icon, text, title) => `<span class="inline-flex items-center gap-1.5 text-xs ${cls} font-medium ml-2" title="${title}"><i data-lucide="${icon}" width="12"></i> ${text}</span>`;
             if (this._apiSyncInFlight) return pill('text-emerald-700', 'loader', `API run in progress · ${saved}${eta}`, `${started} Progress is saved every ${this.ENR_CHECKPOINT} accounts; Cancel in the corner panel pauses it.`);
