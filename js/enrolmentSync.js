@@ -50,6 +50,10 @@ Object.assign(window.App, {
     ENR_RETRY_MAX_WAIT_S: 600,
     ENR_RETRY_MAX_ATTEMPTS: 40,
     ENR_MIN_PER_MIN: 20,                // adaptive floor when the API keeps answering 429
+    // /certificates has its own, much lower limit: a call made sooner than ~10 s after
+    // the previous one is answered 429 + Retry-After 10 (one page per ~12 s, observed
+    // 6 Sep 2026), so certificate pages are paced separately at just over 10 s.
+    ENR_CERT_GAP_MS: 10500,
 
     _enrDay(ts) { const n = Number(ts); return n ? new Date(n * 1000).toISOString().slice(0, 10) : ''; },
     _enrIs404(e) { return /\b404\b|not found/i.test((e && e.message) || ''); },
@@ -60,8 +64,8 @@ Object.assign(window.App, {
 
     // ── Pacing: never start a request less than 60/TARGET seconds after the last ──
     // (the gap widens for the session when the API keeps answering 429 — see _enrSlowDown).
-    async _enrPace() {
-        const gap = this._enrGapMs || 60000 / this.ENR_TARGET_PER_MIN;
+    async _enrPace(minGapMs) {
+        const gap = Math.max(this._enrGapMs || 60000 / this.ENR_TARGET_PER_MIN, minGapMs || 0);
         const now = Date.now(), wait = (this._enrLastReq || 0) + gap - now;
         if (wait > 0) await new Promise(r => setTimeout(r, wait));
         this._enrLastReq = Date.now();
@@ -93,7 +97,7 @@ Object.assign(window.App, {
     // One paced GET that outlives transient failures (see the constants above).
     async _enrGet(LW, path, params) {
         for (let attempt = 0; ; attempt++) {
-            await this._enrPace();
+            await this._enrPace(path === '/certificates' ? this.ENR_CERT_GAP_MS : 0);
             if (this._enrStats) this._enrStats.requests++;
             try {
                 const r = await LW.apiGet(path, params);
@@ -151,24 +155,61 @@ Object.assign(window.App, {
         } catch (e) { if (!this._enrIs404(e)) throw e; }
         return this._enrFromBodies(bodies);
     },
-    // Paced pass over /certificates, one course at a time. The API fixes the page
-    // size at 20 (items_per_page=100 is silently ignored; unfiltered listing is a
-    // 422), so this is ~1,700 pages ≈ 31 min at 55/min — hence run at most daily.
-    async _enrFetchCertificates(LW, courseIds, onProgress) {
-        const items = [];
+    // Pass over /certificates, one course at a time, NEWEST FIRST — the API lists
+    // certificates by issue date descending (verified on 25 pages, 6 Sep 2026). The
+    // index already holds everything issued before the last complete pass
+    // (meta.certsAt), so a course's walk stops at the first page whose certificates
+    // are all in the index AND all issued before that day; a course with nothing
+    // indexed is walked to the end. That is ~1–2 pages per course instead of ~1,750
+    // pages in total (≈ 5 h at this endpoint's limit). Page size is fixed at 20.
+    async _enrFetchCertificates(LW, courseIds, onProgress, index, sinceIso) {
+        const items = []; let pages = 0;
+        const sinceDay = sinceIso ? String(sinceIso).slice(0, 10) : '';
+        const keyOf = (c) => { const u = c && c.user && (c.user.id || c.user) || (c && c.user_id); return u && c.course_id ? String(u) + '|' + String(c.course_id) : ''; };
+        const dayOf = (c) => typeof c.issued === 'number' ? this._enrDay(c.issued) : String(c.issued || '').slice(0, 10);
         for (let i = 0; i < courseIds.length; i++) {
             const cid = courseIds[i];
             try {
                 let page = 1, totalPages = 1;
                 do {
                     const r = await this._enrGet(LW, '/certificates', { course_id: cid, items_per_page: 20, page });
-                    (r.data || []).forEach(c => items.push(c));
-                    totalPages = (r.meta && r.meta.totalPages) || 1; page++;
+                    const data = r.data || []; pages++;
+                    data.forEach(c => items.push(c));
+                    totalPages = (r.meta && r.meta.totalPages) || 1;
+                    if (onProgress) onProgress(i + 1, courseIds.length, items.length, page, totalPages, cid, pages);
+                    const covered = !!(sinceDay && index && data.length && data.every(c => { const k = keyOf(c); return k && index[k]; }) && data.every(c => { const d = dayOf(c); return d && d < sinceDay; }));
+                    if (covered) break;
+                    page++;
                 } while (page <= totalPages && page <= 400);
             } catch (e) { if (!this._enrIs404(e)) throw e; }
-            if (onProgress) onProgress(i + 1, courseIds.length, items.length);
         }
         return items;
+    },
+    // After a certificate refresh: give existing learner records the certificates the
+    // index now holds for them — rows built earlier in the session (before the pass),
+    // or by the xlsx importer, may predate the certificate. Local join, no API call.
+    // Only certificate fields change; completion comes from progress. Returns the
+    // number of records updated.
+    async _enrApplyCertIndexToRows(certIndex, users, titleMap) {
+        const rows = this._rawCompletion; if (!Array.isArray(rows) || !rows.length || !users) return 0;
+        const norm = (t) => String(t).toLowerCase().replace(/[^a-z0-9]/g, '');
+        const byKey = {};
+        for (const k of Object.keys(certIndex || {})) {
+            const bar = k.indexOf('|'); if (bar < 0) continue;
+            const u = users.get(k.slice(0, bar)); if (!u) continue;
+            const title = titleMap[k.slice(bar + 1)] || k.slice(bar + 1), v = certIndex[k], uid = this._djb2Hash(u.email);
+            [uid + '|' + title, uid + '|' + norm(title)].forEach(kk => { if (!byKey[kk] || (v.i && v.i < byKey[kk].i)) byKey[kk] = v; });
+        }
+        let n = 0;
+        for (const r of rows) {
+            if (!r || r.certificate || !r.uid || !r.course) continue;
+            const v = byKey[r.uid + '|' + r.course] || byKey[r.uid + '|' + norm(r.course)]; if (!v) continue;
+            r.certificate = true; r.certificate_date = v.i || r.certificate_date || '';
+            if (isFinite(parseFloat(v.s))) r.certificate_score = parseFloat(v.s);
+            n++;
+        }
+        if (n) { await Storage.setItem('surghub_completion', rows); this._instIdx = null; this._anomCompCache = null; }
+        return n;
     },
 
     // Normalise raw response bodies (live or from the receipt) into {enrolments, progress}.
@@ -482,19 +523,11 @@ Object.assign(window.App, {
             const users = await this._enrFetchUsers(LW, (p, t, n) => this._enrStatus(`Listing accounts… page ${p}/${t} (${n.toLocaleString()})`, 5 + Math.round(p / t * 5)));
             summary.users = users.size; run.total = users.size;
 
-            // 3. Certificates — a paced pass at most once a day; otherwise the index
-            //    (receipts + earlier passes) is already complete enough for this run.
-            const certAgeH = meta.certsAt ? (Date.now() - Date.parse(meta.certsAt)) / 3600000 : Infinity;
-            if (certAgeH > this.ENR_CERT_MAX_AGE_H) {
-                const courseIds = Object.keys(titleMap);
-                const items = await this._enrFetchCertificates(LW, courseIds, (i, n, k) => this._enrStatus(`Fetching certificates… course ${i}/${n} · ${k.toLocaleString()} certificates`, 10 + Math.round(i / n * 5)));
-                this._enrCertIndexAdd(certIndex, items);
-                await this._enrSaveCertIndex(certIndex);
-                meta.certsAt = new Date().toISOString(); await this._enrSaveMeta(meta);
-            } else {
-                this._enrStatus(`Certificates: using the index refreshed ${Math.round(certAgeH)} h ago (${Object.keys(certIndex).length.toLocaleString()} certificates)`, 15);
-            }
+            // 3. Certificates for the rows built below come from the index as it stands
+            //    (receipts + earlier passes); the refresh itself runs AFTER the accounts
+            //    (step 6) and is then applied to every row, so nothing depends on order.
             const certMap = this._enrCertMapFromIndex(certIndex, titleMap);
+            this._enrStatus(`Certificates: index holds ${Object.keys(certIndex).length.toLocaleString()} (refreshed ${meta.certsAt ? String(meta.certsAt).slice(0, 10) : 'never'})`, 15);
 
             // 4. Selection
             if (this._enrUserCourses === undefined) { this._enrUserCourses = null; try { const uc = await Storage.getItem('surghub_user_courses'); if (uc && typeof uc === 'object') this._enrUserCourses = uc; } catch (e) { __swallowed(e, 'enrolments.uc'); } }
@@ -526,7 +559,24 @@ Object.assign(window.App, {
             }
             if (summary.failed > Math.max(20, summary.selected * this.ENR_MAX_FAILURE_SHARE)) throw new Error(`${summary.failed} of ${summary.selected} accounts failed after retries — stopping; progress so far is saved, run again later.`);
 
-            // 6. Finish
+            // 6. Certificates — after the accounts, at most once a day: an incremental
+            //    walk (newest first, stopping where the index is already complete), then
+            //    the index is applied to EVERY record, so rows built above and rows from
+            //    the xlsx importer pick up certificates issued since they were fetched.
+            const certAgeH = meta.certsAt ? (Date.now() - Date.parse(meta.certsAt)) / 3600000 : Infinity;
+            if (certAgeH > this.ENR_CERT_MAX_AGE_H) {
+                await checkpoint();
+                const courseIds = Object.keys(titleMap), tc0 = Date.now();
+                this._enrStatus(`Certificates: checking ${courseIds.length} courses for certificates issued since ${meta.certsAt ? String(meta.certsAt).slice(0, 10) : 'the beginning'} — ~${Math.round(this.ENR_CERT_GAP_MS / 1000)} s per page, this endpoint's limit…`, 97);
+                const items = await this._enrFetchCertificates(LW, courseIds, (i, n, k, page, totalPages, cid, pages) => this._enrStatus(`Certificates… course ${i}/${n} (${titleMap[cid] || cid}) · page ${page}/${totalPages} · ${pages} page${pages === 1 ? '' : 's'} so far · ~${this._enrFmtEta(Math.max(10, (n - i) * (Date.now() - tc0) / 1000 / Math.max(1, i)))} left`, 97 + Math.round(i / n * 2)), certIndex, meta.certsAt);
+                summary.certsNew = this._enrCertIndexAdd(certIndex, items);
+                await this._enrSaveCertIndex(certIndex);
+                meta.certsAt = new Date().toISOString(); await this._enrSaveMeta(meta);
+                this._enrStatus('Applying certificates to learner records…', 99);
+                summary.certsApplied = await this._enrApplyCertIndexToRows(certIndex, users, titleMap);
+            }
+
+            // 7. Finish
             await checkpoint('Saving…');
             run.done = true; run.finishedAt = new Date().toISOString();
             meta.lastRun = run.finishedAt; meta.lastRunEpoch = Math.floor(Date.now() / 1000); meta.lastMode = mode;
@@ -553,7 +603,7 @@ Object.assign(window.App, {
             if (!opts.silent) { this._hideApiSyncOverlay(); if (!ok && this.view === 'upload') this.renderView(); }   // card 2 → paused / stopped-by-error, after the in-flight flag clears
         }
         if (!opts.silent) {
-            this.showMsg(`✓ Enrolments synced (${mode}${summary.resumed ? ', resumed' : ''}): ${summary.done.toLocaleString()} accounts fetched` + (summary.ingestedOffline ? `, ${summary.ingestedOffline.toLocaleString()} ingested from the receipt` : '') + ` (${summary.noEnrolments.toLocaleString()} with no enrolments) → ${summary.rows.toLocaleString()} learner-course records` + (summary.failed ? ` · ${summary.failed} accounts skipped after retries` : '') + (summary.retries ? ` · ${summary.retries} transient error${summary.retries === 1 ? '' : 's'} retried` : ''));
+            this.showMsg(`✓ Enrolments synced (${mode}${summary.resumed ? ', resumed' : ''}): ${summary.done.toLocaleString()} accounts fetched` + (summary.ingestedOffline ? `, ${summary.ingestedOffline.toLocaleString()} ingested from the receipt` : '') + ` (${summary.noEnrolments.toLocaleString()} with no enrolments) → ${summary.rows.toLocaleString()} learner-course records` + (summary.failed ? ` · ${summary.failed} accounts skipped after retries` : '') + (summary.certsNew ? ` · ${summary.certsNew.toLocaleString()} new certificate${summary.certsNew === 1 ? '' : 's'}` : '') + (summary.certsApplied ? ` (${summary.certsApplied.toLocaleString()} records updated)` : '') + (summary.retries ? ` · ${summary.retries} transient error${summary.retries === 1 ? '' : 's'} retried` : ''));
             this.renderView();
         }
         return summary;

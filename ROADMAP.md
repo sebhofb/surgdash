@@ -57,6 +57,21 @@ checkpoint. Also learned: closing the lid on battery sleeps the Mac regardless
 of `caffeinate -s` (AC only), and quitting the app mid-run loses at most the
 accounts since the last checkpoint — which the receipt harvest recovers.
 
+**6 September 2026 (late) — the certificate pass was the real cost.** The
+`/certificates` endpoint has its own limit: a call sooner than ~10 s after the
+previous one is answered 429 + Retry-After 10, so the "paced" pass ran at ~5
+pages/min and the daily ~1,750-page pass would have taken ~5 hours before a
+single account was fetched (the 3 Sep evening run spent 4.5 h there too). The
+API lists certificates newest-first (verified on 25 pages), so the pass is now
+incremental: per course it stops at the first page whose certificates are all
+in the index and all issued before the last complete pass (`meta.certsAt`);
+new courses are walked to the end. That is ~1–2 pages per course, ~1 h/day at
+the endpoint's limit, paced separately at 10.5 s (`ENR_CERT_GAP_MS`) so the
+account phase's pacing is untouched. The pass now runs AFTER the accounts and
+`_enrApplyCertIndexToRows` then joins the index onto every learner record, so
+ordering loses nothing and xlsx-era rows also pick up later certificates.
+Harness: 52 checks.
+
 Rules that must survive future edits: start_date only when the learner has
 progress (never-opened stays undated); rows from the union of enrolments and
 progress (unenrolled courses keep their learning); dates only move earlier
