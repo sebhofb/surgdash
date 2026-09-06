@@ -300,20 +300,54 @@ Object.assign(window.App, {
         } catch (e) { return []; }
     },
     _enrLatestReceiptDir() { const d = this._enrReceiptDirs(); return d.length ? d[d.length - 1] : null; },
-    _enrParseReceipt(pullDir) {
-        const fs = electronAPI.fs, path = electronAPI.path;
+    // Receipts outgrow V8's ~512 MB string limit within a day of fetching: the
+    // 4–6 Sep 2026 session's reached 897 MB and "Cannot create a string longer
+    // than 0x1fffffe8 characters" ended three resume attempts. So the file is read
+    // in ENR_READ_CHUNK slices and handled line by line, and account bodies are
+    // kept only for ids NOT in `skipIds` (everything an earlier run already saved)
+    // — an interrupted session's unsaved tail, not tens of thousands of finished
+    // accounts. /users pages and /certificates pages are always kept (small).
+    ENR_READ_CHUNK: 16 * 1024 * 1024,
+    _enrReadLines(file, onLine) {
+        const fs = electronAPI.fs;
+        if (typeof fs.openSync !== 'function') {   // older preload without chunked reads (works up to ~512 MB)
+            for (const l of fs.readFileSync(file, 'utf8').split('\n')) if (l) onLine(l);
+            return;
+        }
+        const fd = fs.openSync(file), dec = new TextDecoder('utf-8');
+        let carry = '', pos = 0;
+        try {
+            for (;;) {
+                const chunk = fs.readSync(fd, this.ENR_READ_CHUNK, pos);
+                if (!chunk || !chunk.length) break;
+                pos += chunk.length;
+                const parts = (carry + dec.decode(chunk, { stream: true })).split('\n');
+                carry = parts.pop();
+                for (const l of parts) if (l) onLine(l);
+            }
+            carry += dec.decode();
+            if (carry) onLine(carry);
+        } finally { try { fs.closeSync(fd); } catch (e) { __swallowed(e, 'enrolments.receipt'); } }
+    },
+    _enrParseReceipt(pullDir, skipIds) {
+        const path = electronAPI.path;
         const users = new Map(), perUser = new Map(), certs = [];
         let lastCertT = 0, accountsAfterCert = 0;   // the run moves on to accounts only after a COMPLETE certificate pass
-        const text = fs.readFileSync(path.join(pullDir, 'pull.jsonl'), 'utf8');
-        for (const line of text.split('\n')) {
-            if (!line) continue;
-            let o, b; try { o = JSON.parse(line); b = JSON.parse(o.body); } catch (e) { continue; }
-            const p = String(o.path || '');
-            if (p === '/users') { (b.data || []).forEach(u => { if (u && u.id && u.email) users.set(String(u.id), { id: String(u.id), email: String(u.email).toLowerCase().trim(), first: u.first_name || '', last: u.last_name || '', lastLogin: Number(u.last_login) || 0, created: Number(u.created) || 0 }); }); continue; }
-            if (p === '/certificates') { (b.data || []).forEach(c => certs.push(c)); lastCertT = Number(o.t) || lastCertT; accountsAfterCert = 0; continue; }
-            const m = p.match(/^\/users\/([^/]+)\/(courses|progress)$/);
-            if (m) { const rec = perUser.get(m[1]) || { courses: [], progress: [] }; rec[m[2]].push(b); perUser.set(m[1], rec); if (lastCertT) accountsAfterCert++; }
-        }
+        const head = /^\{"t":(\d+),"path":"([^"]*)"/;   // cheap peek — no JSON.parse for bodies nobody needs
+        const perUserRe = /^\/users\/([^/]+)\/(courses|progress)$/;
+        this._enrReadLines(path.join(pullDir, 'pull.jsonl'), (line) => {
+            const h = head.exec(line);
+            let o = null, p, t;
+            if (h) { p = h[2]; t = Number(h[1]) || 0; }
+            else { try { o = JSON.parse(line); } catch (e) { return; } p = String(o.path || ''); t = Number(o.t) || 0; }
+            const m = perUserRe.exec(p);
+            if (m) { if (lastCertT) accountsAfterCert++; if (skipIds && skipIds[m[1]]) return; }
+            else if (p !== '/users' && p !== '/certificates') return;
+            let b; try { o = o || JSON.parse(line); b = JSON.parse(o.body); } catch (e) { return; }
+            if (p === '/users') { (b.data || []).forEach(u => { if (u && u.id && u.email) users.set(String(u.id), { id: String(u.id), email: String(u.email).toLowerCase().trim(), first: u.first_name || '', last: u.last_name || '', lastLogin: Number(u.last_login) || 0, created: Number(u.created) || 0 }); }); return; }
+            if (p === '/certificates') { (b.data || []).forEach(c => certs.push(c)); lastCertT = t || lastCertT; accountsAfterCert = 0; return; }
+            const rec = perUser.get(m[1]) || { courses: [], progress: [] }; rec[m[2]].push(b); perUser.set(m[1], rec);
+        });
         return { users, perUser, certs, pullDir, lastCertT, accountsAfterCert };
     },
     // Build + persist rows for every account the receipt holds a /courses body for.
@@ -365,6 +399,7 @@ Object.assign(window.App, {
 
         let meta = await this._enrLoadMeta();
         const openRun = meta.run && !meta.run.done ? meta.run : null;
+        const priorProcessed = (meta.run && meta.run.processed) || {};   // saved by an earlier run (open or completed): their receipt bodies need no re-ingest
         let mode;
         if (opts.mode === 'full') {
             if (openRun && !opts.silent && !confirm('A run is already in progress (' + Object.keys(openRun.processed || {}).length.toLocaleString() + ' of ' + (openRun.total || '?').toLocaleString() + ' accounts done). Discard it and start a full re-sync from scratch?')) return;
@@ -425,7 +460,7 @@ Object.assign(window.App, {
                 let harvested = 0;
                 for (let d = 0; d < dirs.length; d++) {
                     this._enrStatus(`Reading receipt ${d + 1}/${dirs.length} from earlier sessions…`, 1);
-                    const parsed = this._enrParseReceipt(dirs[d]);
+                    const parsed = this._enrParseReceipt(dirs[d], Object.assign({}, priorProcessed, run.processed));
                     harvested += this._enrCertIndexAdd(certIndex, parsed.certs);
                     // A receipt whose run went on to fetch accounts after its last
                     // certificate page holds a COMPLETE pass (the pass throws on any

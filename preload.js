@@ -21,6 +21,7 @@ const APP  = path.resolve(__dirname);
 const DATA = (() => { const a = process.argv.find(x => x.startsWith('--surgdash-datadir=')); return a ? path.resolve(a.substring('--surgdash-datadir='.length)) : ''; })();
 const grantedRead  = new Set();   // exact files picked via open dialogs
 const grantedWrite = new Set();   // folders / save paths picked via dialogs
+const openFds      = new Set();   // fds opened via fs.openSync below — read-only, chunked reads of files past V8's string limit
 const within = (p, root) => { if (!root) return false; const r = path.resolve(p); return r === root || r.startsWith(root + path.sep); };
 const readOK = (p) => typeof p === 'string' && p.length > 0 && (
     within(p, HOME) || within(p, TMP) || within(p, DATA) || within(p, APP)
@@ -145,7 +146,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
             if (!readOK(p)) denyR(p);
             const s = fs.statSync(p);
             return { mtimeMs: s.mtimeMs, size: s.size };
-        }
+        },
+        // Chunked, read-only access for files that outgrow V8's ~512 MB string
+        // limit (a raw API receipt reaches ~1 GB per sync session). readSync
+        // returns an exact-length Uint8Array (structured-clone copy); only fds
+        // opened here can be read or closed.
+        openSync(p) {
+            if (!readOK(p)) denyR(p);
+            const fd = fs.openSync(p, 'r'); openFds.add(fd); return fd;
+        },
+        readSync(fd, length, position) {
+            if (!openFds.has(fd)) throw new Error('readSync: fd was not opened through openSync');
+            const len = Math.max(0, Math.min(Number(length) || 0, 64 * 1024 * 1024));
+            const buf = Buffer.allocUnsafe(len);
+            const n = fs.readSync(fd, buf, 0, len, position == null ? null : Number(position));
+            return new Uint8Array(buf.buffer.slice(buf.byteOffset, buf.byteOffset + n));
+        },
+        closeSync(fd) { if (!openFds.has(fd)) return; openFds.delete(fd); fs.closeSync(fd); }
     },
 
     // ── Path utilities ───────────────────────────────────────────────────────

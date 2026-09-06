@@ -41,6 +41,22 @@ receipt under a day old holds one. Fake-API harness: 31 checks (network blip,
 429 slow-down, auth stop, Cancel during a retry wait, stale abort flag,
 receipt-derived certificate refresh, give-up path).
 
+**6 September 2026 — receipts outgrow V8's string limit.** The 4–6 Sep session
+(46,876 accounts over two days) left a 923 MB receipt; the next resume died
+three times in `_enrParseReceipt` with "Cannot create a string longer than
+0x1fffffe8 characters" (Node's ~512 MB maximum string, hit by
+`readFileSync(…, 'utf8')`). The preload bridge now exposes chunked read-only
+access (`openSync` / `readSync` → exact-length Uint8Array / `closeSync`, fds
+tracked), `_enrReadLines` streams a receipt in 16 MB slices through a
+`TextDecoder`, and `_enrParseReceipt` peeks at each line's path with a regex
+and only JSON-parses the bodies it needs: /users and /certificates pages
+always, per-account bodies only for ids not already saved by the open or the
+previous run (`priorProcessed`). The 923 MB receipt parses in ~0.6 s with the
+heap flat at ~65 MB and yields exactly the 134 accounts fetched after the last
+checkpoint. Also learned: closing the lid on battery sleeps the Mac regardless
+of `caffeinate -s` (AC only), and quitting the app mid-run loses at most the
+accounts since the last checkpoint — which the receipt harvest recovers.
+
 Rules that must survive future edits: start_date only when the learner has
 progress (never-opened stays undated); rows from the union of enrolments and
 progress (unenrolled courses keep their learning); dates only move earlier
@@ -48,10 +64,12 @@ progress (unenrolled courses keep their learning); dates only move earlier
 
 Follow-ups:
 - Finish the open full run in sessions (card 2 → "Sync from API" resumes it;
-  keep the Mac awake with `caffeinate -i -s`; 6,872 of 62,836 accounts done as
-  of 4 Sep, ~34 h of API time left at the quota). After it completes, compare
-  the Overview/Compare figures with the last xlsx-based numbers before trusting
-  it for a report.
+  keep the Mac awake with `caffeinate -i -s`, on mains, lid open; 46,876 of
+  62,931 accounts done as of 6 Sep, ~10,000 still to fetch). After it
+  completes, compare the Overview/Compare figures with the last xlsx-based
+  numbers before trusting it for a report.
+- Two paced workers under the same 55/min cap would roughly halve session time
+  when the API answers slowly (~2 s per request → 31 req/min observed).
 - After that, add the incremental stage to "Sync Everything".
 - The xlsx importer could adopt the same earliest-date merge instead of
   replacing rows wholesale.
