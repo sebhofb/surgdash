@@ -393,6 +393,8 @@ Object.assign(window.App, {
             // Per-course learning minutes come from the lazy anon blob — make sure it's
             // loaded before the snapshot is built (no Storage fallback in this path).
             if (App.ensureAnonLoaded) await App.ensureAnonLoaded();
+            // Trend sparklines come from the completion records (counts per month only).
+            if (this._rawCompletion == null && this.ensureCompletionLoaded) { try { await this.ensureCompletionLoaded(); } catch (e) { __swallowed(e); } }
             const ipcRenderer = electronAPI;
             const fs = electronAPI.fs;
             const path = electronAPI.path;
@@ -430,8 +432,11 @@ Object.assign(window.App, {
                 LearningMinutes: Number(d.LearningMinutes) || courseMins[d.Course] || 0,
                 CountryStats: d.CountryStats || null,
                 RatingHistory: d.RatingHistory || null, FeedbackBank: d.FeedbackBank || null,
-                CourseTimeline: d.CourseTimeline || timelineByCourse[d.Course] || null
+                CourseTimeline: d.CourseTimeline || timelineByCourse[d.Course] || null,
+                // 12 complete months + current month of courses started (see js/sparklines.js); null = no records
+                Trend: (() => { const t = this.courseTrendSeries ? this.courseTrendSeries(d.Course) : null; return t && t.known ? t.values : null; })()
             }));
+            const trendMonths = this.courseTrendSeries ? (this.courseTrendSeries('') || {}).months || null : null;
 
             // Build platform totals
             let totalLearners=0, totalCerts=0, totalResponses=0, rSum=0, rCount=0, totalCourseMinutes=0;
@@ -468,7 +473,7 @@ Object.assign(window.App, {
             const conflictPct = totalUsers ? (conflictLearners / totalUsers * 100).toFixed(1) : null;
 
             const data = {
-                providers, courses, courseBlob, topFeedback,
+                providers, courses, courseBlob, topFeedback, trendMonths,
                 totalLearners, totalCerts, totalResponses, totalUsers, conflictLearners,
                 totalCourseMinutes, conflictCountries, conflictSource, conflictPct,
                 avgRating: rCount > 0 ? (rSum/rCount).toFixed(2) : '0.00',
@@ -576,6 +581,7 @@ body { font-family: 'Inter', sans-serif; background: #f8fafc; }
 
 <script>
 const D = ${json};
+${this._sparkSvg ? this._sparkSvg.toString() : 'function __sparkSvg() { return ""; }'}
 // Data age note
 (function() {
     var el = document.getElementById('data-age-note');
@@ -938,6 +944,7 @@ function renderCourseTable(sortKey) {
         '<td class="py-3 px-4 text-right">' + fmt(c.Certificates) + '</td>' +
         '<td class="py-3 px-4 text-right text-gsf-crimson font-bold">' + (c.Rating > 0 ? c.Rating.toFixed(2) : '\u2014') + '</td>' +
         '<td class="py-3 px-4 text-right text-gsf-boston">' + fmt(c.Responses) + '</td>' +
+        '<td class="py-3 px-4">' + __sparkSvg(c.Trend, { partial: includePartialMonth, esc: esc }) + '</td>' +
         '</tr>'
     ).join('');
 }
@@ -1012,7 +1019,7 @@ function renderPlatform() {
                         <th class="py-3 px-4 font-medium text-right">Learners</th>
                         <th class="py-3 px-4 font-medium text-right">Certificates</th>
                         <th class="py-3 px-4 font-medium text-right">Rating</th>
-                        <th class="py-3 px-4 font-medium text-right">Responses</th>
+                        <th class="py-3 px-4 font-medium text-right">Responses</th><th class="py-3 px-4 font-medium" title="Courses started per month over the last 12 complete months; colour and % compare the last 3 months with the 3 before">Trend <span class="text-[10px] font-normal text-slate-400">12 mo</span></th>
                     </tr></thead>
                     <tbody id="all-courses-tbody"></tbody>
                 </table>
@@ -1079,8 +1086,8 @@ function renderProvider() {
             <div class="bg-slate-50 border-b p-5"><h2 class="font-bold text-lg text-gsf-prussian">Courses by \${esc(selectedProvider)} (\${pCourses.length})</h2></div>
             <div class="overflow-x-auto max-h-[400px] overflow-y-auto custom-scrollbar">
                 <table class="w-full text-left border-collapse whitespace-nowrap text-sm">
-                    <thead class="sticky top-0 bg-white shadow-sm z-10"><tr class="border-b text-slate-500"><th class="py-3 px-4 font-medium">Course Title</th><th class="py-3 px-4 font-medium text-right">Learners</th><th class="py-3 px-4 font-medium text-right">Certificates</th><th class="py-3 px-4 font-medium text-right">Learning Time</th><th class="py-3 px-4 font-medium text-right">Rating</th><th class="py-3 px-4 font-medium text-right">Responses</th></tr></thead>
-                    <tbody>\${pCourses.sort((a,b)=>b.Learners-a.Learners).map(c => '<tr class="border-b hover:bg-slate-50 cursor-pointer" onclick="selectedCourse=\\''+esc(c.Course).replace(/'/g,"\\\\'")+'\\''+'; switchTab(\\'course\\')"><td class="py-3 px-4 font-bold text-gsf-prussian">'+esc(c.Course)+'</td><td class="py-3 px-4 text-right">'+fmt(c.Learners)+'</td><td class="py-3 px-4 text-right">'+fmt(c.Certificates)+'</td><td class="py-3 px-4 text-right text-slate-500">'+fmtTime(c.LearningMinutes)+'</td><td class="py-3 px-4 text-right text-gsf-crimson font-bold">'+(c.Rating>0?c.Rating.toFixed(2):'-')+'</td><td class="py-3 px-4 text-right text-gsf-boston">'+fmt(c.Responses)+'</td></tr>').join('')}</tbody>
+                    <thead class="sticky top-0 bg-white shadow-sm z-10"><tr class="border-b text-slate-500"><th class="py-3 px-4 font-medium">Course Title</th><th class="py-3 px-4 font-medium text-right">Learners</th><th class="py-3 px-4 font-medium text-right">Certificates</th><th class="py-3 px-4 font-medium text-right">Learning Time</th><th class="py-3 px-4 font-medium text-right">Rating</th><th class="py-3 px-4 font-medium text-right">Responses</th><th class="py-3 px-4 font-medium" title="Courses started per month over the last 12 complete months; colour and % compare the last 3 months with the 3 before">Trend <span class="text-[10px] font-normal text-slate-400">12 mo</span></th></tr></thead>
+                    <tbody>\${pCourses.sort((a,b)=>b.Learners-a.Learners).map(c => '<tr class="border-b hover:bg-slate-50 cursor-pointer" onclick="selectedCourse=\\''+esc(c.Course).replace(/'/g,"\\\\'")+'\\''+'; switchTab(\\'course\\')"><td class="py-3 px-4 font-bold text-gsf-prussian">'+esc(c.Course)+'</td><td class="py-3 px-4 text-right">'+fmt(c.Learners)+'</td><td class="py-3 px-4 text-right">'+fmt(c.Certificates)+'</td><td class="py-3 px-4 text-right text-slate-500">'+fmtTime(c.LearningMinutes)+'</td><td class="py-3 px-4 text-right text-gsf-crimson font-bold">'+(c.Rating>0?c.Rating.toFixed(2):'-')+'</td><td class="py-3 px-4 text-right text-gsf-boston">'+fmt(c.Responses)+'</td><td class="py-3 px-4">'+__sparkSvg(c.Trend, { partial: includePartialMonth, esc: esc })+'</td></tr>').join('')}</tbody>
                 </table>
             </div>
         </div>

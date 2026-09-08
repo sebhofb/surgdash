@@ -7,9 +7,50 @@
 // start_month per learner-course) — nothing is fetched and only counts are shown,
 // no learner is identifiable. The per-course index is rebuilt only when the
 // records array is replaced (identity check), so rendering a table is cheap.
+// Standalone renderer — no App, no `this` — so the HTML snapshot can embed its source
+// verbatim (export.js splices __sparkSvg.toString() into the exported page).
+// values13: courses started per month, 12 complete months then the current one.
+// opts: {width, height, partial (draw the 13th as a hollow point), esc (HTML escaper)}.
+function __sparkSvg(values13, opts) {
+    opts = opts || {};
+    const w = opts.width || 84, h = opts.height || 24, partial = !!opts.partial;
+    const esc = opts.esc || ((t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])));
+    if (!Array.isArray(values13) || values13.length < 2) return '<span class="text-slate-300 text-xs" title="No learner records for this course">–</span>';
+    const complete = values13.slice(0, Math.max(1, values13.length - 1)).map((v) => Number(v) || 0);
+    const current = Number(values13[values13.length - 1]) || 0;
+    const vals = partial ? complete.concat([current]) : complete;
+    const n = vals.length, max = Math.max(1, ...vals);
+    const sum = (a) => a.reduce((x, y) => x + y, 0);
+    const recent = sum(complete.slice(-3)), prior = sum(complete.slice(-6, -3));
+    const delta = prior > 0 ? (recent - prior) / prior : (recent > 0 ? Infinity : 0);
+    const th = 0.15;
+    const color = delta >= th ? '#059669' : delta <= -th ? '#e11d48' : '#64748b';
+    const pct = !isFinite(delta) ? 'new' : Math.abs(delta) >= 10 ? '×' + Math.round(recent / Math.max(1, prior)) : (delta > 0 ? '+' : delta < 0 ? '−' : '') + Math.round(Math.abs(delta) * 100) + '%';
+    const arrow = delta >= th ? '▲ ' : delta <= -th ? '▼ ' : '';
+    const padX = 2, padY = 2.5, innerW = w - padX * 2, innerH = h - padY * 2;
+    const x = (i) => (padX + (n > 1 ? i / (n - 1) : 0) * innerW).toFixed(1);
+    const y = (v) => (h - padY - (v / max) * innerH).toFixed(1);
+    const solidN = partial ? n - 1 : n;
+    const pts = vals.slice(0, solidN).map((v, i) => x(i) + ',' + y(v)).join(' ');
+    const base = (h - padY).toFixed(1);
+    const area = x(0) + ',' + base + ' ' + pts + ' ' + x(solidN - 1) + ',' + base;
+    const tip = 'Courses started per month, last ' + complete.length + ' complete months (oldest → newest): ' + complete.join(', ')
+        + (partial ? ' · current month so far: ' + current : '')
+        + ' · last 3 months ' + recent + ' vs previous 3 months ' + prior + (isFinite(delta) ? ' (' + pct + ')' : '');
+    const partialMark = partial
+        ? '<line x1="' + x(solidN - 1) + '" y1="' + y(vals[solidN - 1]) + '" x2="' + x(n - 1) + '" y2="' + y(vals[n - 1]) + '" stroke="' + color + '" stroke-width="1.2" stroke-dasharray="2 2"/>'
+          + '<circle cx="' + x(n - 1) + '" cy="' + y(vals[n - 1]) + '" r="2.2" fill="#fff" stroke="' + color + '" stroke-width="1.2"/>'
+        : '';
+    return '<span class="inline-flex items-center gap-1.5 align-middle" title="' + esc(tip) + '">'
+        + '<svg width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '" role="img" aria-label="' + esc('Courses started per month, trend ' + pct) + '" style="display:block;overflow:visible">'
+        + '<polygon points="' + area + '" fill="' + color + '" fill-opacity="0.12"/>'
+        + '<polyline points="' + pts + '" fill="none" stroke="' + color + '" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>'
+        + '<circle cx="' + x(solidN - 1) + '" cy="' + y(vals[solidN - 1]) + '" r="2.2" fill="' + color + '"/>' + partialMark + '</svg>'
+        + '<span class="text-[10px] font-semibold tabular-nums whitespace-nowrap" style="color:' + color + ';min-width:38px">' + arrow + pct + '</span></span>';
+}
+
 Object.assign(window.App, {
     SPARK_MONTHS: 12,
-    SPARK_TREND_THRESHOLD: 0.15,
 
     _sparkNorm(t) { return String(t || '').toLowerCase().replace(/[^a-z0-9]/g, ''); },
 
@@ -42,52 +83,40 @@ Object.assign(window.App, {
         try { this.ensureCompletionLoaded().then(() => { if (this.renderView) this.renderView(); }); } catch (e) { __swallowed(e, 'spark.load'); }
     },
 
-    // {months, values, partial, recent, prior, delta, total, known} or null while loading.
+    // {months, values, partial, recent, prior, delta, total, known} or null while loading —
+    // the app view's shape (values follow the "Include current month" toggle).
     courseTrendData(courseTitle, now) {
-        const idx = this._sparkIndex();
-        if (!idx) { this._sparkEnsureLoaded(); return null; }
-        const m = idx.get(this._sparkNorm(courseTitle));
+        const s = this.courseTrendSeries(courseTitle, now);
+        if (!s) return null;
         const partial = !!this.includePartialMonth;
-        const months = this._sparkMonths(this.SPARK_MONTHS, partial, now);
-        const values = months.map(k => (m && m.get(k)) || 0);
-        const complete = partial ? values.slice(0, -1) : values;
+        const months = partial ? s.months : s.months.slice(0, -1), values = partial ? s.values : s.values.slice(0, -1);
+        const complete = s.values.slice(0, -1);
         const sum = (a) => a.reduce((x, y) => x + y, 0);
         const recent = sum(complete.slice(-3)), prior = sum(complete.slice(-6, -3));
         const delta = prior > 0 ? (recent - prior) / prior : (recent > 0 ? Infinity : 0);
-        return { months, values, complete, partial, recent, prior, delta, total: sum(complete), known: !!m };
+        return { months, values, complete, partial, recent, prior, delta, total: sum(complete), known: s.known };
     },
 
-    // Inline SVG + % label. opts: {width, height}. Empty span while records load; a dash when the
-    // course has no learner records at all.
+    // 12 complete months + the current month, for the HTML snapshot (it decides at view
+    // time whether to draw the partial month). null while records load; known=false when
+    // the course has no learner records.
+    courseTrendSeries(courseTitle, now) {
+        const idx = this._sparkIndex();
+        if (!idx) { this._sparkEnsureLoaded(); return null; }
+        const m = idx.get(this._sparkNorm(courseTitle));
+        const months = this._sparkMonths(this.SPARK_MONTHS, true, now);
+        return { months, values: months.map(k => (m && m.get(k)) || 0), known: !!m };
+    },
+
+    // Inline SVG + % label for the app's tables. opts: {width, height}. Empty span while
+    // records load; a dash when the course has no learner records at all.
     courseTrendSpark(courseTitle, opts) {
         opts = opts || {};
         const w = opts.width || 84, h = opts.height || 24;
-        const t = this.courseTrendData(courseTitle);
-        if (!t) return `<span class="inline-block align-middle" style="width:${w + 40}px;height:${h}px" title="Loading learner records…"></span>`;
-        if (!t.known) return `<span class="text-slate-300 text-xs" title="No learner records for this course yet — run card 2 (Sync from API) or upload the User Progress xlsx">–</span>`;
-        const vals = t.values, n = vals.length, max = Math.max(1, ...vals);
-        const padX = 2, padY = 2.5, innerW = w - padX * 2, innerH = h - padY * 2;
-        const x = (i) => (padX + (n > 1 ? i / (n - 1) : 0) * innerW).toFixed(1);
-        const y = (v) => (h - padY - (v / max) * innerH).toFixed(1);
-        const solidN = t.partial ? n - 1 : n;
-        const pts = vals.slice(0, solidN).map((v, i) => `${x(i)},${y(v)}`).join(' ');
-        const base = (h - padY).toFixed(1);
-        const area = `${x(0)},${base} ${pts} ${x(solidN - 1)},${base}`;
-        const th = this.SPARK_TREND_THRESHOLD;
-        const color = t.delta >= th ? '#059669' : t.delta <= -th ? '#e11d48' : '#64748b';
-        const pct = !isFinite(t.delta) ? 'new' : Math.abs(t.delta) >= 10 ? '×' + Math.round(t.recent / Math.max(1, t.prior)) : (t.delta > 0 ? '+' : t.delta < 0 ? '−' : '') + Math.round(Math.abs(t.delta) * 100) + '%';   // ×32 reads better than +3129%
-        const arrow = t.delta >= th ? '▲ ' : t.delta <= -th ? '▼ ' : '';
-        const tip = `Courses started per month, last ${this.SPARK_MONTHS} complete months (oldest → newest): ${t.complete.join(', ')}`
-            + (t.partial ? ` · current month so far: ${vals[n - 1]}` : '')
-            + ` · last 3 months ${t.recent} vs previous 3 months ${t.prior}` + (isFinite(t.delta) ? ` (${pct})` : '');
-        const partialMark = t.partial
-            ? `<line x1="${x(solidN - 1)}" y1="${y(vals[solidN - 1])}" x2="${x(n - 1)}" y2="${y(vals[n - 1])}" stroke="${color}" stroke-width="1.2" stroke-dasharray="2 2"/><circle cx="${x(n - 1)}" cy="${y(vals[n - 1])}" r="2.2" fill="#fff" stroke="${color}" stroke-width="1.2"/>`
-            : '';
-        return `<span class="inline-flex items-center gap-1.5 align-middle" title="${this.escapeHtml(tip)}">`
-            + `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" role="img" aria-label="${this.escapeHtml('Courses started per month, trend ' + pct)}" style="display:block;overflow:visible">`
-            + `<polygon points="${area}" fill="${color}" fill-opacity="0.12"/>`
-            + `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>`
-            + `<circle cx="${x(solidN - 1)}" cy="${y(vals[solidN - 1])}" r="2.2" fill="${color}"/>${partialMark}</svg>`
-            + `<span class="text-[10px] font-semibold tabular-nums whitespace-nowrap" style="color:${color};min-width:38px">${arrow}${pct}</span></span>`;
+        const s = this.courseTrendSeries(courseTitle);
+        if (!s) return `<span class="inline-block align-middle" style="width:${w + 40}px;height:${h}px" title="Loading learner records…"></span>`;
+        if (!s.known) return `<span class="text-slate-300 text-xs" title="No learner records for this course yet — run card 2 (Sync from API) or upload the User Progress xlsx">–</span>`;
+        return __sparkSvg(s.values, { width: w, height: h, partial: !!this.includePartialMonth, esc: (t) => this.escapeHtml(t) });
     },
+    _sparkSvg: __sparkSvg,
 });

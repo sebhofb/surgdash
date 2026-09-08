@@ -99,9 +99,12 @@ segment when "Include current month" is on. Colour and label compare the last
 the earlier quarter had none, "×N" beyond +1000%). Built from the completion
 records already in memory (start_month per learner-course, counts only), index
 rebuilt only when the records array changes (~40 ms for 150k rows), records
-loaded on demand when the provider page is opened first. Not yet in the HTML
-exports (they carry course-level data only; embedding the monthly counts is a
-small follow-up).
+loaded on demand when the provider page is opened first. The interactive HTML
+snapshot (export.js) carries the same sparklines in its provider and all-courses
+tables: each course embeds its 13 monthly counts (`Trend`, counts only) and the
+renderer is a standalone function (`__sparkSvg`, no `this`) whose source is
+spliced into the exported page, so the export's own "include current month"
+toggle drives the hollow point.
 
 ## Done — 2 September 2026 feature pass
 
