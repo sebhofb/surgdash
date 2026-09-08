@@ -49,6 +49,18 @@ function __sparkSvg(values13, opts) {
         + '<span class="text-[10px] font-semibold tabular-nums whitespace-nowrap" style="color:' + color + ';min-width:38px">' + arrow + pct + '</span></span>';
 }
 
+// Element-wise sum of several 13-month series (null entries skipped); null when there are none.
+// Standalone for the same reason as __sparkSvg: the HTML snapshot sums a provider's courses itself.
+function __sparkSum(list) {
+    let out = null;
+    for (const v of (list || [])) {
+        if (!Array.isArray(v)) continue;
+        if (!out) out = v.map(() => 0);
+        for (let i = 0; i < out.length && i < v.length; i++) out[i] += Number(v[i]) || 0;
+    }
+    return out;
+}
+
 Object.assign(window.App, {
     SPARK_MONTHS: 12,
 
@@ -119,4 +131,35 @@ Object.assign(window.App, {
         return __sparkSvg(s.values, { width: w, height: h, partial: !!this.includePartialMonth, esc: (t) => this.escapeHtml(t) });
     },
     _sparkSvg: __sparkSvg,
+    _sparkSum: __sparkSum,
+
+    // A provider's courses for the trend: the synced course list's entries for it, minus
+    // excluded courses (the same set the provider KPIs use), one title each.
+    _providerCourseTitles(providerName) {
+        const seen = new Set(), out = [];
+        (this.data || []).forEach(d => {
+            if (!d || d.Provider !== providerName || !d.Course || d.Excluded) return;
+            const k = this._sparkNorm(d.Course); if (seen.has(k)) return; seen.add(k); out.push(d.Course);
+        });
+        return out;
+    },
+    providerTrendSeries(providerName, now) {
+        const idx = this._sparkIndex();
+        if (!idx) { this._sparkEnsureLoaded(); return null; }
+        const months = this._sparkMonths(this.SPARK_MONTHS, true, now);
+        const values = months.map(() => 0); let known = false;
+        for (const title of this._providerCourseTitles(providerName)) {
+            const m = idx.get(this._sparkNorm(title)); if (!m) continue; known = true;
+            months.forEach((k, i) => { values[i] += m.get(k) || 0; });
+        }
+        return { months, values, known };
+    },
+    providerTrendSpark(providerName, opts) {
+        opts = opts || {};
+        const w = opts.width || 84, h = opts.height || 24;
+        const s = this.providerTrendSeries(providerName);
+        if (!s) return `<span class="inline-block align-middle" style="width:${w + 40}px;height:${h}px" title="Loading learner records…"></span>`;
+        if (!s.known) return `<span class="text-slate-300 text-xs" title="No learner records for this provider's courses yet">–</span>`;
+        return __sparkSvg(s.values, { width: w, height: h, partial: !!this.includePartialMonth, esc: (t) => this.escapeHtml(t) });
+    },
 });

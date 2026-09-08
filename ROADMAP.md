@@ -104,7 +104,11 @@ snapshot (export.js) carries the same sparklines in its provider and all-courses
 tables: each course embeds its 13 monthly counts (`Trend`, counts only) and the
 renderer is a standalone function (`__sparkSvg`, no `this`) whose source is
 spliced into the exported page, so the export's own "include current month"
-toggle drives the hollow point.
+toggle drives the hollow point. Providers get the same line (their included
+courses' monthly starts summed — `providerTrendSeries`, `__sparkSum` in the
+export): on every row of the Providers directory, in the Provider Reports and
+Course Details page headers next to the picker, and on the dashboard's All
+Courses table; the snapshot's provider and course tabs carry the header line.
 
 ## Done — 2 September 2026 feature pass
 

@@ -3024,7 +3024,7 @@ Object.assign(window.App, {
                                 </div>
                             </div>
                             <div class="max-h-[320px] overflow-y-auto custom-scrollbar divide-y divide-slate-100">
-                                ${provs.map(p => { const inc = this.isProviderIncluded(p); const n = provCounts[p].size; return '<label data-dirsearch="' + this.escapeHtml(p.toLowerCase()) + '" class="flex items-center justify-between gap-3 px-5 py-2.5 hover:bg-slate-50 cursor-pointer">' + '<span class="text-sm ' + (inc ? 'text-gsf-prussian font-medium' : 'text-slate-400 line-through') + '">' + this.escapeHtml(p) + ' <span class="text-xs text-slate-400 font-normal">(' + n + ' course' + (n !== 1 ? 's' : '') + ')</span></span>' + '<input type="checkbox" ' + (inc ? 'checked' : '') + ' data-prov="' + this.escapeHtml(p) + '" onchange="App.toggleProviderIncluded(this.getAttribute(\'data-prov\'), this.checked, this)">' + '</label>'; }).join('')}
+                                ${provs.map(p => { const inc = this.isProviderIncluded(p); const n = provCounts[p].size; return '<label data-dirsearch="' + this.escapeHtml(p.toLowerCase()) + '" class="flex items-center justify-between gap-3 px-5 py-2.5 hover:bg-slate-50 cursor-pointer">' + '<span class="text-sm ' + (inc ? 'text-gsf-prussian font-medium' : 'text-slate-400 line-through') + '">' + this.escapeHtml(p) + ' <span class="text-xs text-slate-400 font-normal">(' + n + ' course' + (n !== 1 ? 's' : '') + ')</span></span>' + '<span class="ml-auto shrink-0" onclick="event.preventDefault(); event.stopPropagation();">' + this.providerTrendSpark(p, { width: 72, height: 20 }) + '</span>' + '<input type="checkbox" ' + (inc ? 'checked' : '') + ' data-prov="' + this.escapeHtml(p) + '" onchange="App.toggleProviderIncluded(this.getAttribute(\'data-prov\'), this.checked, this)">' + '</label>'; }).join('')}
                             </div>
                         </div>`;
                     })()}
@@ -3946,6 +3946,7 @@ Object.assign(window.App, {
                                 <span class="text-slate-500 text-sm">Provider:</span>
                                 ${this._comboHtml('prov-combo', providers, this.selectedProvider, 'provider')}
                             </div>
+                            <div class="mt-3 inline-flex items-center gap-2" title="Courses started per month across this provider's included courses, last 12 complete months; colour and % compare the last 3 months with the 3 before">${this.providerTrendSpark(this.selectedProvider, { width: 120, height: 28 })}<span class="text-[11px] text-slate-400">courses started per month · 12-month trend</span></div>
                         </div>
                         <div id="prov-logo-slot" class="shrink-0" style="display:none"></div>
                     </header>
@@ -4087,6 +4088,7 @@ Object.assign(window.App, {
                                 <span class="text-slate-500 text-sm">Course:</span>
                                 ${this._comboHtml('crs-combo', courses, this.selectedCourse, 'course')}
                             </div>
+                            <div class="mt-3 inline-flex items-center gap-2" title="Courses started per month, last 12 complete months; colour and % compare the last 3 months with the 3 before">${this.courseTrendSpark(this.selectedCourse, { width: 120, height: 28 })}<span class="text-[11px] text-slate-400">courses started per month · 12-month trend</span></div>
                         </div>
                         <div id="crs-logo-slot" class="shrink-0" style="display:none"></div>
                     </header>
@@ -5767,6 +5769,7 @@ Object.assign(window.App, {
                                             ${th('rating', 'Rating', 'text-right')}
                                             ${th('responses', 'Responses', 'text-right')}
                                             ${th('completion', 'Completion', 'text-right')}
+                                            <th class="py-3 px-3 font-medium" title="Courses started per month over the last 12 complete months; colour and % compare the last 3 months with the 3 before">Trend <span class="text-[10px] font-normal text-slate-400">12 mo</span></th>
                                         </tr></thead>
                                         <tbody>
                                             ${rows.map(r => {
@@ -5781,6 +5784,7 @@ Object.assign(window.App, {
                                                     <td class="py-2 px-3 text-right text-xs font-medium ${r.rating >= 4 ? 'text-green-600' : r.rating > 0 ? 'text-gsf-crimson' : 'text-slate-300'}">${r.rating > 0 ? r.rating.toFixed(2) : '-'}</td>
                                                     <td class="py-2 px-3 text-right text-xs text-slate-500">${this.formatNumber(r.responses)}</td>
                                                     <td class="py-2 px-3 text-right text-xs text-slate-500">${this.formatCertRate(r.certs, r.learners)}</td>
+                                                    <td class="py-2 px-3">${this.courseTrendSpark(r.course, { width: 70, height: 20 })}</td>
                                                 </tr>`;
                                             }).join('')}
                                         </tbody>

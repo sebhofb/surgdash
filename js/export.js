@@ -582,6 +582,7 @@ body { font-family: 'Inter', sans-serif; background: #f8fafc; }
 <script>
 const D = ${json};
 ${this._sparkSvg ? this._sparkSvg.toString() : 'function __sparkSvg() { return ""; }'}
+${this._sparkSum ? this._sparkSum.toString() : 'function __sparkSum() { return null; }'}
 // Data age note
 (function() {
     var el = document.getElementById('data-age-note');
@@ -1060,6 +1061,7 @@ function renderProvider() {
                 \${D.providers.map(p => '<option value="'+esc(p)+'" '+(p===selectedProvider?'selected':'')+'>'+esc(p)+'</option>').join('')}
             </select>
         </div>
+        <div class="flex items-center gap-2 mb-6 -mt-3" title="Courses started per month across this provider's courses, last 12 complete months; colour and % compare the last 3 months with the 3 before">\${__sparkSvg(__sparkSum(pCourses.map(c => c.Trend)), { width: 120, height: 28, partial: includePartialMonth, esc: esc })}<span class="text-[11px] text-slate-400">courses started per month · 12-month trend</span></div>
         <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
             <div class="bg-white p-5 rounded-xl border shadow-sm"><p class="text-xs font-bold text-slate-400 uppercase mb-1">Courses</p><p class="text-2xl font-black text-gsf-prussian">\${pCourses.length}</p></div>
             <div class="bg-white p-5 rounded-xl border shadow-sm"><p class="text-xs font-bold text-slate-400 uppercase mb-1">Learners</p><p class="text-2xl font-black text-gsf-boston">\${fmt(pLrn)}</p></div>
@@ -1115,6 +1117,7 @@ function renderCourse() {
                 \${D.courses.map(co => '<option value="'+esc(co)+'" '+(co===selectedCourse?'selected':'')+'>'+esc(co)+'</option>').join('')}
             </select>
         </div>
+        <div class="flex items-center gap-2 mb-6 -mt-3" title="Courses started per month, last 12 complete months; colour and % compare the last 3 months with the 3 before">\${__sparkSvg(c.Trend, { width: 120, height: 28, partial: includePartialMonth, esc: esc })}<span class="text-[11px] text-slate-400">courses started per month · 12-month trend</span></div>
         <p class="text-sm text-slate-500 mb-6">Provider: <span class="font-bold text-gsf-boston">\${esc(c.Provider||'Unknown')}</span></p>
         <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
             <div class="bg-white p-5 rounded-xl border shadow-sm"><p class="text-xs font-bold text-slate-400 uppercase mb-1">Learners</p><p class="text-2xl font-black text-gsf-boston">\${fmt(c.Learners)}</p></div>
