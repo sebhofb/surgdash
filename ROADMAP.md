@@ -89,6 +89,20 @@ Follow-ups:
 - The xlsx importer could adopt the same earliest-date merge instead of
   replacing rows wholesale.
 
+## Done — course trend sparklines (7 September 2026)
+
+`js/sparklines.js`: a tiny inline-SVG line per course in the provider course
+table and the Tracked Course Directory — courses started per month over the
+last 12 complete months, with the current month as a hollow point on a dashed
+segment when "Include current month" is on. Colour and label compare the last
+3 complete months with the 3 before (≥ ±15% green/red, else grey; "new" when
+the earlier quarter had none, "×N" beyond +1000%). Built from the completion
+records already in memory (start_month per learner-course, counts only), index
+rebuilt only when the records array changes (~40 ms for 150k rows), records
+loaded on demand when the provider page is opened first. Not yet in the HTML
+exports (they carry course-level data only; embedding the monthly counts is a
+small follow-up).
+
 ## Done — 2 September 2026 feature pass
 
 The five features from the August review, all on `main`:
