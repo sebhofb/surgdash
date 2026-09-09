@@ -10,8 +10,9 @@
 // enrolment date (the API has no first-activity timestamp), so durations here are
 // enrolment → completion. Pathways order each learner's opened courses by date
 // (one entry per course; a re-enrolment keeps the first) and count consecutive
-// pairs. "Returned after a certificate" = opened another course after the day of
-// the learner's first certificate. Activation uses the account index
+// pairs, triples and quadruples — the "top learning paths" list. "Returned after a
+// certificate" = opened another course after the day of the learner's first
+// certificate. Activation uses the account index
 // (surghub_accounts: sign-up day, last-login day and email domain per hashed
 // learner id, written by every enrolment sync's account listing — hashed ids
 // and domains only, never exported).
@@ -20,8 +21,8 @@ Object.assign(window.App, {
     JRN_ACTIVATION_DAYS: 30,   // sign-up → first course opened within this many days = activated
     JRN_MIN_DEFAULT: 100,      // funnel table: minimum enrolments per course, by default
     JRN_MONTHS: 24,            // activation: sign-up months shown
-    JRN_PATH_MIN_DEFAULT: 20,  // learning paths: minimum learners per step shown
-    JRN_SANKEY_TOP: 9,         // learning paths: courses named per stage; the rest pool as "other courses"
+    JRN_PATH_MIN_DEFAULT: 10,  // learning paths: minimum learners per chain shown
+    JRN_PATH_ROWS: 15,         // learning paths: chains listed
 
     _jrnDay(s) { s = String(s || ''); return s.length >= 10 ? s.slice(0, 10) : ''; },
     _jrnDays(a, b) { return Math.round((Date.parse(b) - Date.parse(a)) / 86400000); },
@@ -66,7 +67,7 @@ Object.assign(window.App, {
         }
         const transitions = new Map(), gaps = [], perLearner = [0, 0, 0, 0];   // 1, 2, 3–4, 5+ courses opened
         const chains3 = new Map(), chains4 = new Map();                          // consecutive 3- and 4-course chains
-        let learners = 0, multi = 0, never = 0, certLearners = 0, returned = 0;
+        let learners = 0, multi = 0, never = 0, certLearners = 0, returned = 0, four = 0;
         for (const u of byUid.values()) {
             learners++;
             if (!u.starts.length) { never++; continue; }
@@ -74,7 +75,7 @@ Object.assign(window.App, {
             const seen = new Set(), seq = [];
             for (const s of u.starts) { if (seen.has(s.course)) continue; seen.add(s.course); seq.push(s); }
             u.seq = seq; u.first = seq[0].date;
-            const n = seq.length; perLearner[n >= 5 ? 3 : n >= 3 ? 2 : n - 1]++; if (n >= 2) multi++;
+            const n = seq.length; perLearner[n >= 5 ? 3 : n >= 3 ? 2 : n - 1]++; if (n >= 2) multi++; if (n === 4) four++;
             for (let i = 1; i < n; i++) {
                 const a = seq[i - 1], b = seq[i], k = a.course + ' > ' + b.course, g = this._jrnDays(a.date, b.date);
                 const t = transitions.get(k) || { from: a.course, to: b.course, n: 0, gaps: [] }; t.n++; t.gaps.push(g); transitions.set(k, t);
@@ -95,7 +96,7 @@ Object.assign(window.App, {
         totals.median = this._jrnMedian(totals.durations);
         const tr = [...transitions.values()].sort((a, b) => b.n - a.n); tr.forEach(t => { t.medianGap = this._jrnMedian(t.gaps); });
         const topChains = (m) => [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 40).map(([k, n]) => ({ courses: k.split(' › '), n }));
-        const idx = { src: rows, courses, byUid, transitions: tr, gapMedian: this._jrnMedian(gaps), perLearner, learners, multi, never, certLearners, returned, totals, chains3: topChains(chains3), chains4: topChains(chains4), chains3Total: [...chains3.values()].reduce((a, b) => a + b, 0) };
+        const idx = { src: rows, courses, byUid, transitions: tr, gapMedian: this._jrnMedian(gaps), perLearner, learners, multi, never, certLearners, returned, totals, chains3: topChains(chains3), chains4: topChains(chains4), chains3Total: [...chains3.values()].reduce((a, b) => a + b, 0), chains4Learners4: four };
         this._jrnIdx = idx; return idx;
     },
     _jrnProviderStats(provider) {
@@ -105,56 +106,6 @@ Object.assign(window.App, {
         for (const t of titles) { const k = this._jrnFind(idx, t); if (!k) continue; const c = idx.courses.get(k); agg.courses++; agg.enrolled += c.enrolled; agg.opened += c.opened; agg.completed += c.completed; agg.certified += c.certified; agg.fast += c.fast; for (const d of c.durations) agg.durations.push(d); }
         agg.median = this._jrnMedian(agg.durations); agg.within1 = agg.durations.filter(d => d <= 1).length; agg.over30 = agg.durations.filter(d => d > 30).length;
         return agg.enrolled ? agg : null;
-    },
-
-    // ── Learning paths as a flow: stage 1 → 2 → 3 ──
-    // Nodes carry a stage suffix so the same course at different positions is a
-    // different node (Google's Sankey refuses cycles). Per stage the JRN_SANKEY_TOP
-    // most common courses are named; everything else pools into "other courses".
-    // mode 'first': every learner's first three courses; mode 'course': from the
-    // given course onwards. Returns {rows: [[from, to, learners]], maxStage}.
-    _jrnSankeyRows(idx, mode, start, minN) {
-        const seqs = [];
-        for (const u of idx.byUid.values()) {
-            if (!u.seq || u.seq.length < 2) continue;
-            let s = u.seq.map(x => x.course);
-            if (mode === 'course') { const p = s.indexOf(start); if (p < 0) continue; s = s.slice(p); if (s.length < 2) continue; }
-            seqs.push(s.slice(0, 3));
-        }
-        const short = (t) => { t = String(t); return t.length > 34 ? t.slice(0, 32).replace(/\s+\S*$/, '') + '…' : t; };
-        const suffix = ['', ' (2nd)', ' (3rd)'];
-        const named = [0, 1, 2].map(stage => {
-            const cnt = new Map(); seqs.forEach(s => { if (s[stage]) cnt.set(s[stage], (cnt.get(s[stage]) || 0) + 1); });
-            return new Set([...cnt.entries()].sort((a, b) => b[1] - a[1]).slice(0, this.JRN_SANKEY_TOP).map(e => e[0]));
-        });
-        const node = (course, stage) => (named[stage].has(course) ? short(course) : 'other courses') + suffix[stage];
-        const flows = new Map();
-        const add = (a, b) => { const k = a + '\u0001' + b; flows.set(k, (flows.get(k) || 0) + 1); };
-        for (const s of seqs) { add(node(s[0], 0), node(s[1], 1)); if (s[2]) add(node(s[1], 1), node(s[2], 2)); }
-        const rows = [];
-        for (const [k, n] of flows) {
-            const [a, b] = k.split('\u0001'), oa = /^other courses/.test(a), ob = /^other courses/.test(b);
-            if (oa && ob) continue;                       // pooled → pooled says nothing and would swamp the picture
-            if (n >= minN || oa || ob) rows.push([a, b, n]);
-        }
-        // a pooled flow smaller than the minimum only clutters; drop it unless it is the sole flow out of a node
-        const out = rows.filter(([a, b, n]) => n >= Math.max(1, Math.round(minN / 2)) || !rows.some(([a2, , n2]) => a2 === a && n2 > n));
-        const perStage = [0, 1, 2].map(st => new Set(out.flatMap(([a, b]) => [a, b]).filter(x => (st === 0 ? !/\((2nd|3rd)\)$/.test(x) : st === 1 ? /\(2nd\)$/.test(x) : /\(3rd\)$/.test(x)))).size);
-        return { rows: out, maxStage: Math.max(1, ...perStage), learners: seqs.length };
-    },
-    _drawJourneyCharts() {
-        const el = document.getElementById('chart_jrn_sankey'); if (!el) return;
-        const idx = this._jrnIndex(); if (!idx) return;
-        if (!(window.google && google.visualization && google.visualization.Sankey)) { el.innerHTML = '<p class="text-xs text-slate-400 p-4">The flow diagram needs Google Charts (sankey package): check the connection and reopen the tab.</p>'; return; }
-        const explorerKey = this._jrnFind(idx, this._jrnCourse) || [...idx.courses.values()].sort((a, b) => b.enrolled - a.enrolled)[0].course;
-        const sk = this._jrnSankeyRows(idx, this._jrnSankeyMode || 'first', explorerKey, Math.max(1, Number(this._jrnPathMin) || this.JRN_PATH_MIN_DEFAULT));
-        if (!sk.rows.length) { el.innerHTML = '<p class="text-xs text-slate-400 p-4">Not enough learners with two or more courses above the minimum.</p>'; return; }
-        const dt = new google.visualization.DataTable();
-        dt.addColumn('string', 'From'); dt.addColumn('string', 'To'); dt.addColumn('number', 'Learners');
-        dt.addRows(sk.rows);
-        const opts = { height: Math.max(300, 26 * sk.maxStage + 60), sankey: { node: { label: { fontSize: 11, color: '#334155', bold: false }, nodePadding: 12, width: 10, colors: ['#002F4C', '#4389C8', '#206095', '#7A9E9F', '#E28743', '#5B8C5A', '#B8860B', '#91B5D9', '#C25953', '#64748b'] }, link: { colorMode: 'gradient', colors: ['#002F4C', '#4389C8', '#206095', '#7A9E9F', '#E28743', '#5B8C5A', '#B8860B', '#91B5D9', '#C25953', '#64748b'] } }, tooltip: { textStyle: { fontSize: 12 } } };
-        try { new google.visualization.Sankey(el).draw(dt, opts); } catch (e) { el.innerHTML = '<p class="text-xs text-slate-400 p-4">Flow diagram could not be drawn: ' + this.escapeHtml(e && e.message || e) + '</p>'; return; }
-        if (window.Charts && Charts._registerChart) { try { Charts._registerChart('chart_jrn_sankey', 'Sankey', dt, opts); } catch (e) { __swallowed(e, 'journeys.sankey'); } }
     },
 
     // ── Funnel strip: three steps with conversion ──
@@ -291,15 +242,13 @@ Object.assign(window.App, {
         const pl = idx.perLearner, plTotal = pl.reduce((a, b) => a + b, 0);
         const explorerKey = this._jrnFind(idx, this._jrnCourse) || [...idx.courses.values()].sort((a, b) => b.enrolled - a.enrolled)[0].course;
         const ex = idx.courses.get(explorerKey);
-        // learning paths: sortable steps table (share by default) + Sankey sizing
-        const pathMin = Math.max(1, Number(this._jrnPathMin) || this.JRN_PATH_MIN_DEFAULT), pathSort = this._jrnPathSort || 'share', pathAsc = !!this._jrnPathAsc, sankeyMode = this._jrnSankeyMode || 'first';
-        const pathRows = idx.transitions.filter(tr => tr.n >= pathMin).map(tr => Object.assign({}, tr, { share: pct(tr.n, (idx.courses.get(tr.from) || {}).opened) }));
-        const pval = (tr) => pathSort === 'from' ? tr.from.toLowerCase() : pathSort === 'to' ? tr.to.toLowerCase() : pathSort === 'n' ? tr.n : pathSort === 'gap' ? tr.medianGap : tr.share;
-        pathRows.sort((a, b) => { const va = pval(a), vb = pval(b); return (va < vb ? -1 : va > vb ? 1 : 0) * (pathAsc ? 1 : -1) || b.n - a.n; });
-        pathRows.splice(30);
-        const pth = (key, label, cls, tip) => `<th class="py-2.5 px-4 font-medium cursor-pointer select-none hover:text-gsf-boston ${cls || ''}" title="${esc(tip || '')}" onclick="App._jrnPathAsc = App._jrnPathSort === '${key}' ? !App._jrnPathAsc : ${key === 'from' || key === 'to'}; App._jrnPathSort='${key}'; App.renderView()">${label} ${pathSort === key ? (pathAsc ? '&#9650;' : '&#9660;') : '<span class="text-slate-300">&#8597;</span>'}</th>`;
-        const sankey = this._jrnSankeyRows(idx, sankeyMode, explorerKey, pathMin);
-        const sankeyH = Math.max(300, 26 * sankey.maxStage + 60);
+        // top learning paths: chains of 2, 3 or 4 courses, by learners or by share of the first course's openers
+        const pathMin = Math.max(1, Number(this._jrnPathMin) || this.JRN_PATH_MIN_DEFAULT), chainLen = [2, 3, 4].includes(Number(this._jrnChainLen)) ? Number(this._jrnChainLen) : 2, chainSort = this._jrnChainSort === 'share' ? 'share' : 'learners';
+        const chainSource = chainLen === 2 ? idx.transitions.map(tr => ({ courses: [tr.from, tr.to], n: tr.n, gap: tr.medianGap })) : chainLen === 3 ? idx.chains3 : idx.chains4;
+        const chains = chainSource.filter(ch => ch.n >= pathMin).map(ch => Object.assign({}, ch, { share: pct(ch.n, (idx.courses.get(ch.courses[0]) || {}).opened) }));
+        chains.sort((x, y) => (chainSort === 'share' ? y.share - x.share : y.n - x.n) || y.n - x.n);
+        chains.splice(this.JRN_PATH_ROWS);
+        const chainsWithLen = chainLen === 2 ? idx.multi : chainLen === 3 ? idx.perLearner[2] + idx.perLearner[3] : idx.perLearner[3] + idx.chains4Learners4;
         const act = this._jrnActivation();
         const kpi = (label, value, sub, color, tip) => `<div class="bg-white rounded-xl border shadow-sm overflow-hidden" title="${esc(tip || '')}"><div class="h-1" style="background:${color}"></div><div class="p-4"><p class="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1.5">${label}</p><p class="text-[26px] font-bold leading-none tracking-tight" style="color:${color};font-family:var(--num)">${value}</p>${sub ? `<p class="text-[10px] text-slate-400 mt-1.5 leading-tight">${sub}</p>` : ''}</div></div>`;
         const openedP = pct(t.opened, t.enrolled), certP = pct(t.certified, t.opened);
@@ -382,30 +331,19 @@ Object.assign(window.App, {
 
             <div class="bg-white rounded-xl shadow-sm border overflow-hidden mb-8">
                 <div class="bg-slate-50 border-b p-5 flex items-center justify-between gap-3 flex-wrap">
-                    <div><h2 class="font-bold text-lg text-gsf-prussian flex items-center gap-2"><i data-lucide="arrow-right-left" class="text-gsf-boston" width="18"></i> Learning paths</h2><p class="text-xs text-slate-500 mt-1">Courses in the order learners opened them. Left to right: first, second, third course; flows are learners. Share = learners who took a step ÷ learners who opened the step's first course.</p></div>
-                    <div class="flex items-center gap-3 text-xs">
-                        <label class="inline-flex items-center gap-1.5">Paths from <select data-viewer-allowed onchange="App._jrnSankeyMode=this.value; App.renderView()" class="border rounded px-1.5 py-1 max-w-[260px]"><option value="first" ${sankeyMode !== 'course' ? 'selected' : ''}>every learner's first course</option><option value="course" ${sankeyMode === 'course' ? 'selected' : ''}>${esc(explorerKey)} onwards</option></select></label>
+                    <div><h2 class="font-bold text-lg text-gsf-prussian flex items-center gap-2"><i data-lucide="arrow-right-left" class="text-gsf-boston" width="18"></i> Top learning paths</h2><p class="text-xs text-slate-500 mt-1">The sequences learners follow most often: courses opened one after the other by the same learner. Share = learners on this path ÷ learners who opened its first course.</p></div>
+                    <div class="flex items-center gap-3 text-xs flex-wrap">
+                        <div class="inline-flex rounded-lg border overflow-hidden">${[2, 3, 4].map(k => `<button data-viewer-allowed onclick="App._jrnChainLen=${k}; App.renderView()" class="px-3 py-1.5 font-bold ${chainLen === k ? 'bg-gsf-boston text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}">${k} courses</button>`).join('')}</div>
+                        <label class="inline-flex items-center gap-1.5">Sort by <select data-viewer-allowed onchange="App._jrnChainSort=this.value; App.renderView()" class="border rounded px-1.5 py-1"><option value="learners" ${chainSort === 'learners' ? 'selected' : ''}>learners</option><option value="share" ${chainSort === 'share' ? 'selected' : ''}>share</option></select></label>
                         <label class="inline-flex items-center gap-1.5">Min. learners <input data-viewer-allowed type="number" min="1" step="5" value="${pathMin}" onchange="App._jrnPathMin=Math.max(1, Number(this.value)||1); App.renderView()" class="border rounded px-1.5 py-1 w-16"></label>
                     </div>
                 </div>
-                <div class="p-5 border-b">
-                    <div id="chart_jrn_sankey" style="width:100%;height:${sankeyH}px"></div>
-                    <p class="text-[10px] text-slate-400 mt-2">${sankeyMode === 'course' ? 'Learners who opened ' + esc(explorerKey) + ' and what they opened next, two steps on.' : 'The first three courses of every learner who opened at least two.'} Courses below the minimum are pooled as "other courses"; node labels are shortened, hover for the full flow.</p>
-                </div>
-                <div class="grid grid-cols-1 xl:grid-cols-5">
-                    <div class="xl:col-span-3 border-b xl:border-b-0 xl:border-r">
-                        <h4 class="px-5 pt-4 pb-2 font-bold text-sm text-gsf-prussian">Most travelled steps <span class="text-slate-400 font-normal text-xs">· steps with at least ${pathMin} learners</span></h4>
-                        <div class="overflow-x-auto"><table class="w-full text-left border-collapse text-sm"><thead><tr class="border-b text-slate-500 text-xs">${pth('from', 'From')}${pth('to', 'To')}${pth('n', 'Learners', 'text-right')}${pth('share', 'Share', 'text-right', 'Learners who took this step ÷ learners who opened the first course')}${pth('gap', 'Median gap', 'text-right', 'Days between opening the two courses')}</tr></thead>
-                        <tbody>${pathRows.map(tr => `<tr class="border-b hover:bg-slate-50 text-xs"><td class="py-2 px-4 font-bold text-gsf-prussian"><button onclick="App._jrnCourse='${this.escapeJsArg(tr.from)}'; App._jrnSankeyMode='course'; App.renderView()" class="text-left hover:text-gsf-boston hover:underline" title="Show paths from ${esc(tr.from)}">${esc(tr.from)}</button></td><td class="py-2 px-4 text-gsf-prussian">${esc(tr.to)}</td><td class="py-2 px-4 text-right tabular-nums">${fmt(tr.n)}</td><td class="py-2 px-4 text-right tabular-nums text-slate-600">${tr.share}%</td><td class="py-2 px-4 text-right tabular-nums text-slate-500">${tr.medianGap} d</td></tr>`).join('') || '<tr><td colspan="5" class="py-6 text-center text-slate-400">No step with that many learners.</td></tr>'}</tbody></table></div>
-                    </div>
-                    <div class="xl:col-span-2">
-                        <h4 class="px-5 pt-4 pb-2 font-bold text-sm text-gsf-prussian">Longer chains <span class="text-slate-400 font-normal text-xs">· ${fmt(idx.perLearner[2] + idx.perLearner[3])} learners opened 3+ courses</span></h4>
-                        <div class="px-5 pb-4 text-xs">
-                            ${idx.chains3.filter(ch => ch.n >= Math.max(2, Math.round(pathMin / 4))).slice(0, 12).map(ch => `<div class="py-1.5 border-b border-slate-100 flex items-start justify-between gap-3"><div class="text-gsf-prussian leading-snug">${ch.courses.map(esc).join(' <span class="text-gsf-boston">›</span> ')}</div><span class="tabular-nums text-slate-500 shrink-0">${fmt(ch.n)}</span></div>`).join('') || '<div class="text-slate-400 py-2">No 3-course chain above the minimum yet.</div>'}
-                            ${idx.chains4.length && idx.chains4[0].n >= 3 ? `<div class="text-[10px] font-bold uppercase tracking-wide text-slate-400 mt-4 mb-1">Four in a row</div>${idx.chains4.slice(0, 5).map(ch => `<div class="py-1.5 border-b border-slate-100 flex items-start justify-between gap-3"><div class="text-gsf-prussian leading-snug">${ch.courses.map(esc).join(' <span class="text-gsf-boston">›</span> ')}</div><span class="tabular-nums text-slate-500 shrink-0">${fmt(ch.n)}</span></div>`).join('')}` : ''}
-                            <p class="text-[10px] text-slate-400 mt-3">Consecutive courses opened by the same learner, counted for every learner who took exactly that sequence of steps (${fmt(idx.chains3Total)} three-step sequences in total).</p>
-                        </div>
-                    </div>
+                <div class="px-5 py-3">
+                    <p class="text-xs text-slate-500 mb-2">${fmt(chainsWithLen)} learners opened ${chainLen === 2 ? 'two or more' : chainLen === 3 ? 'three or more' : 'four or more'} courses · showing the ${chains.length} most common ${chainLen}-course paths with at least ${pathMin} learners</p>
+                    ${chains.map((ch, i) => `<div class="flex items-center justify-between gap-4 py-2.5 ${i ? 'border-t border-slate-100' : ''}">
+                        <div class="flex items-center flex-wrap gap-y-1.5 text-xs min-w-0"><span class="w-6 text-slate-300 tabular-nums shrink-0">${i + 1}</span>${ch.courses.map((c, j) => `${j ? '<i data-lucide="chevron-right" width="14" class="text-gsf-boston shrink-0 mx-1"></i>' : ''}<button onclick="App.openCourse('${this.escapeJsArg(c)}')" class="px-2.5 py-1 rounded-md bg-slate-100 hover:bg-slate-200 text-gsf-prussian font-medium text-left max-w-[260px] truncate" title="${esc(c)}">${esc(c)}</button>`).join('')}</div>
+                        <div class="text-right shrink-0 tabular-nums"><div class="text-sm font-bold text-gsf-prussian">${fmt(ch.n)}</div><div class="text-[10px] text-slate-400">${ch.share}% of first course's openers${ch.gap != null ? ' · ' + ch.gap + ' d apart' : ''}</div></div>
+                    </div>`).join('') || `<div class="py-6 text-center text-slate-400 text-sm">No ${chainLen}-course path with ${pathMin} or more learners. Lower the minimum.</div>`}
                 </div>
             </div>
 

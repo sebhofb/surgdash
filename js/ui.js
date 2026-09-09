@@ -3728,7 +3728,6 @@ Object.assign(window.App, {
                     if (dt === 'nurses' && this._drawNurseCharts) this._drawNurseCharts();
                     if (dt === 'institutions' && this._drawInstitutionCharts) this._drawInstitutionCharts();
                     if (dt === 'compare' && this._drawCompareCharts) this._drawCompareCharts();
-                    if (dt === 'journeys' && this._drawJourneyCharts) this._drawJourneyCharts();
                 };
                 setTimeout(_d, 80); setTimeout(_d, 400);
             }
