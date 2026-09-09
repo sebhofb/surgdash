@@ -46,6 +46,7 @@
             'surghub_email_demo':   path.join('surghub', 'email_demo.json'),
             'surghub_social':       path.join('surghub', 'social.json'),
             'surghub_completion':   path.join('surghub', 'completion.json'),
+            'surghub_accounts':     path.join('surghub', 'accounts.json'),
             'surghub_selected_testimonials': path.join('surghub', 'selected_testimonials.json'),
             'surghub_milestones':   path.join('surghub', 'milestones.json'),
             'surghub_improvement_ai': path.join('surghub', 'improvement_ai.json'),
@@ -113,7 +114,7 @@
                 'user_courses': 'surghub_user_courses', 'user_certs': 'surghub_user_certs',
                 'signup_demo': 'surghub_signup_demo',
                 'signup_survey_url': 'surghub_signup_survey_url',
-                'social': 'surghub_social', 'completion': 'surghub_completion',
+                'social': 'surghub_social', 'completion': 'surghub_completion', 'accounts': 'surghub_accounts',
                 'selected_testimonials': 'surghub_selected_testimonials',
                 'milestones': 'surghub_milestones',
                 'improvement_ai': 'surghub_improvement_ai'

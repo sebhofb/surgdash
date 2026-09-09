@@ -508,6 +508,15 @@ Object.assign(window.App, {
                     // failure) — so its time counts as the last refresh and today's
                     // ~31-minute pass is skipped when it is under a day old.
                     if (parsed.lastCertT && parsed.accountsAfterCert >= 10) { const iso = new Date(parsed.lastCertT).toISOString(); if (!meta.certsAt || iso > meta.certsAt) meta.certsAt = iso; }
+                    // A full account listing in a receipt refreshes the account index when it is newer than the one held.
+                    if (parsed.users.size >= 1000 && this._accountsFromUsers) {
+                        try {
+                            const st = String(dirs[d]).match(/__(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})$/);
+                            const listedAt = st ? new Date(+st[1], +st[2] - 1, +st[3], +st[4], +st[5], +st[6]).toISOString() : '';
+                            const cur = await this._accountsLoad();
+                            if (listedAt && (!cur || String(cur.listedAt || '') < listedAt)) await this._accountsPersist(this._accountsFromUsers(parsed.users, listedAt));
+                        } catch (e) { __swallowed(e, 'enrolments.accounts'); }
+                    }
                     const certMapNow = this._enrCertMapFromIndex(certIndex, titleMap);
                     const ing = await this._enrIngestReceipt(parsed, titleMap, run.processed, (i, n) => this._enrStatus(`Ingesting receipt ${d + 1}/${dirs.length}… ${i.toLocaleString()}/${n.toLocaleString()}`, 1 + Math.round(i / n * 4)), certMapNow);
                     ing.ids.forEach(id => { run.processed[id] = 1; });
@@ -522,6 +531,8 @@ Object.assign(window.App, {
             // 2. Accounts (paced; ~5 min for the whole list)
             const users = await this._enrFetchUsers(LW, (p, t, n) => this._enrStatus(`Listing accounts… page ${p}/${t} (${n.toLocaleString()})`, 5 + Math.round(p / t * 5)));
             summary.users = users.size; run.total = users.size;
+            // Account index for the Learner journeys tab: sign-up day, last login and email domain per hashed id.
+            try { if (this._accountsFromUsers) await this._accountsPersist(this._accountsFromUsers(users, new Date().toISOString())); } catch (e) { __swallowed(e, 'enrolments.accounts'); }
 
             // 3. Certificates for the rows built below come from the index as it stands
             //    (receipts + earlier passes); the refresh itself runs AFTER the accounts

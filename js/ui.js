@@ -3661,6 +3661,7 @@ Object.assign(window.App, {
                 ['nurses', 'Nursing Reach', 'heart-pulse'],
                 ['institutions', 'Institutions', 'building-2'],
                 ['compare', 'Compare periods', 'git-compare'],
+                ['journeys', 'Learner journeys', 'route'],
                 ['health', 'Data Health', 'shield-check'],
             ].map(([k, l, ic]) => `<button onclick="App._dashTab='${k}'; App.renderView()" class="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-bold transition-colors ${dt === k ? 'bg-gsf-prussian text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100'}"><i data-lucide="${ic}" width="15"></i> ${l}</button>`).join('');
 
@@ -3674,6 +3675,7 @@ Object.assign(window.App, {
             else if (dt === 'nurses') dashContent = this._dashNurseHtml(snapData, audSnap);
             else if (dt === 'institutions') dashContent = this._dashInstitutionsHtml(snapData, audSnap);
             else if (dt === 'compare') dashContent = this._dashCompareHtml(snapData, audSnap);
+            else if (dt === 'journeys') dashContent = this._dashJourneysHtml(snapData, audSnap);
             else if (dt === 'health') dashContent = this._dashHealthHtml(snapData, audSnap);
             else dashContent = this._dashOverviewHtml(snapData, audSnap, kpiCards);
 
@@ -3950,6 +3952,7 @@ Object.assign(window.App, {
                         </div>
                         <div id="prov-logo-slot" class="shrink-0" style="display:none"></div>
                     </header>
+                    ${this._jrnProviderStripHtml ? this._jrnProviderStripHtml(this.selectedProvider) : ''}
 
                     <div class="flex items-center justify-between gap-3 flex-wrap mb-6 bg-white border rounded-xl px-4 py-2.5 shadow-sm">
                         <div class="flex items-center gap-1.5" title="Reports keep all-time totals and add a section covering this period (new learners, certificates, responses)">
@@ -4092,6 +4095,7 @@ Object.assign(window.App, {
                         </div>
                         <div id="crs-logo-slot" class="shrink-0" style="display:none"></div>
                     </header>
+                    ${this._jrnCourseStripHtml ? this._jrnCourseStripHtml(this.selectedCourse) : ''}
 
                     <div class="flex items-center justify-between gap-3 flex-wrap bg-white border border-slate-200 rounded-xl shadow-sm px-4 py-3 mb-6">
                         <p class="text-sm text-slate-500">Provider: ${(cSnap.Provider && cSnap.Provider !== 'Unknown' && cSnap.Provider !== 'Unknown Provider') ? '<button onclick="App.openProvider(\'' + this.escapeJsArg(cSnap.Provider) + '\')" class="font-bold text-gsf-boston hover:underline cursor-pointer">' + this.escapeHtml(cSnap.Provider) + ' &rsaquo;</button>' : '<span class="font-bold text-gsf-boston">' + this.escapeHtml(cSnap.Provider || 'Unknown') + '</span>'}${this._courseStatusBadge(cSnap.Access)}</p>

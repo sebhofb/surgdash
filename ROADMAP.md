@@ -89,6 +89,36 @@ Follow-ups:
 - The xlsx importer could adopt the same earliest-date merge instead of
   replacing rows wholesale.
 
+## Done — Learner journeys tab (9 September 2026)
+
+`js/journeys.js` (pill "Learner journeys", loads before uiState.js): what the
+API enrolment dates unlock.
+- **Funnel** enrolled → opened → completed → certified, per course or per
+  provider (min-enrolments filter, sortable, Excel). "Opened" = start date
+  present; "completed" = LearnWorlds flag OR certificate (the flag alone makes
+  the funnel run backwards: Navigating shows 51 completed vs 366 certified).
+- **Pathways**: each learner's opened courses ordered by date (one entry per
+  course); consecutive pairs → "most travelled paths", per-course "go on to /
+  came from", courses-per-learner histogram, median gap, and "returned after a
+  certificate" (opened another course after the day of the first certificate:
+  19.8% platform-wide on 9 Sep). Top path: Surgical Foundations → Suture
+  Technique.
+- **Time to completion** (enrolment → completion, since API start dates equal
+  the enrolment date) with a **fast-certificate flag** (`JRN_FAST_MIN` = 10
+  recorded minutes; 2,062 of 33,411 certificates).
+- **Activation & activity** from a new hashed account index `surghub_accounts`
+  (`surghub/accounts.json`: sign-up day, last-login day, email domain per uid;
+  written by every enrolment sync's account listing and by the receipt harvest;
+  "Build from the last sync" creates it from the newest receipt; in the JSON
+  backup/restore/wipe lists, never in exports). Activated = first course
+  opened within 30 days of sign-up (81% of 63,204 accounts on the 6 Sep
+  listing; 17% dormant; 6,739 active in the last 30 days, 14,926 in 90).
+- Course and provider pages carry a "Learner journey" strip (funnel, next /
+  previous courses, time to completion, fast certificates, return rate).
+- Live-data harness: 23 checks (independent recounts, Σnext = Σprev =
+  transitions, index ↔ records join 55,722/55,809, tab renders both with and
+  without the account index).
+
 ## Done — course trend sparklines (7 September 2026)
 
 `js/sparklines.js`: a tiny inline-SVG line per course in the provider course

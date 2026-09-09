@@ -1105,7 +1105,7 @@ window.App = {
     },
 
     async exportSurghubJson() {
-        const keys = ['surghub_data','surghub_history','surghub_ambassadors','surghub_unique_users','surghub_anon_users','surghub_user_courses','surghub_user_certs','surghub_signup_demo','surghub_signup_survey_url','surghub_email_demo','surghub_social','surghub_completion','surghub_selected_testimonials','surghub_milestones'];
+        const keys = ['surghub_data','surghub_history','surghub_ambassadors','surghub_unique_users','surghub_anon_users','surghub_user_courses','surghub_user_certs','surghub_signup_demo','surghub_signup_survey_url','surghub_email_demo','surghub_social','surghub_completion','surghub_accounts','surghub_selected_testimonials','surghub_milestones'];
         const snapshot = { _type: 'surghub_snapshot', _version: 2, _exported: new Date().toISOString() };
         const included = [];
         for (const k of keys) {
@@ -1227,7 +1227,7 @@ window.App = {
             const snapshot = JSON.parse(text);
 
             // Support both new format (_type: 'surghub_snapshot') and old format (data/history/ambassadors/uniqueUsers)
-            const keys = ['surghub_data','surghub_history','surghub_ambassadors','surghub_unique_users','surghub_anon_users','surghub_user_courses','surghub_user_certs','surghub_signup_demo','surghub_signup_survey_url','surghub_email_demo','surghub_social','surghub_completion','surghub_selected_testimonials','surghub_milestones'];
+            const keys = ['surghub_data','surghub_history','surghub_ambassadors','surghub_unique_users','surghub_anon_users','surghub_user_courses','surghub_user_certs','surghub_signup_demo','surghub_signup_survey_url','surghub_email_demo','surghub_social','surghub_completion','surghub_accounts','surghub_selected_testimonials','surghub_milestones'];
             if (snapshot._type === 'surghub_snapshot') {
                 for (const k of keys) {
                     if (snapshot[k] != null) await Storage.setItem(k, snapshot[k]);
@@ -1333,7 +1333,7 @@ window.App = {
         const keys = [
             'surghub_data', 'surghub_history', 'surghub_ambassadors', 'surghub_unique_users',
             'surghub_anon_users', 'surghub_user_courses', 'surghub_user_certs', 'surghub_signup_demo',
-            'surghub_email_demo', 'surghub_social', 'surghub_completion',
+            'surghub_email_demo', 'surghub_social', 'surghub_completion', 'surghub_accounts',
             'surghub_selected_testimonials',
             // Internal sync-state flags (so a fresh sync starts clean)
             'surghub_local_mtime', 'surghub_unsynced_local', 'surghub_last_synced'
