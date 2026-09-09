@@ -89,6 +89,19 @@ Follow-ups:
   snapshot and the provider packages; a "recommended next course" list per
   course for the SURGhub site, derived from the 2-course paths.
 
+## Done — Learner lookup (9 September 2026)
+
+`js/lookup.js`, dashboard pill "Learner lookup" (`data-edit-only`, content also
+checks `App.editUnlocked`): search by email, name or hashed id, pick a learner,
+see sign-up day and last login (account index), country and profession
+(per-email demographics), totals, and one row per enrolment (enrolled, opened,
+certificate day, learning minutes with the fast-certificate flag, score,
+status). "Copy history" puts a plain-text summary on the clipboard for a
+support reply. Personal data rules: the tab's markup is wrapped in
+`data-no-export` so DOM-based exports strip it; the query and selection live in
+memory only (deliberately NOT in uiState); typing re-renders only the result
+list so the box keeps focus. Live-data test: 15 checks, printing counts only.
+
 ## Done — Learner journeys tab (9 September 2026)
 
 `js/journeys.js` (pill "Learner journeys", loads before uiState.js): what the

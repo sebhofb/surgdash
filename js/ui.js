@@ -3663,7 +3663,8 @@ Object.assign(window.App, {
                 ['compare', 'Compare periods', 'git-compare'],
                 ['journeys', 'Learner journeys', 'route'],
                 ['health', 'Data Health', 'shield-check'],
-            ].map(([k, l, ic]) => `<button onclick="App._dashTab='${k}'; App.renderView()" class="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-bold transition-colors ${dt === k ? 'bg-gsf-prussian text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100'}"><i data-lucide="${ic}" width="15"></i> ${l}</button>`).join('');
+                ['lookup', 'Learner lookup', 'user-search', true],   // edit-only: personal data
+            ].map(([k, l, ic, editOnly]) => `<button ${editOnly ? 'data-edit-only ' : ''}onclick="App._dashTab='${k}'; App.renderView()" class="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-bold transition-colors ${dt === k ? 'bg-gsf-prussian text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100'}"><i data-lucide="${ic}" width="15"></i> ${l}</button>`).join('');
 
             let dashContent;
             if (dt === 'learners') dashContent = this._dashLearnersHtml(audSnap);
@@ -3676,6 +3677,7 @@ Object.assign(window.App, {
             else if (dt === 'institutions') dashContent = this._dashInstitutionsHtml(snapData, audSnap);
             else if (dt === 'compare') dashContent = this._dashCompareHtml(snapData, audSnap);
             else if (dt === 'journeys') dashContent = this._dashJourneysHtml(snapData, audSnap);
+            else if (dt === 'lookup') dashContent = '<div data-no-export>' + this._dashLookupHtml() + '</div>';   // stripped from DOM-based exports
             else if (dt === 'health') dashContent = this._dashHealthHtml(snapData, audSnap);
             else dashContent = this._dashOverviewHtml(snapData, audSnap, kpiCards);
 
