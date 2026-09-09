@@ -4,9 +4,9 @@
 // a real number, each learner's courses can be put in order, and time from
 // enrolment to completion is measurable. Definitions shared with the other tabs:
 // "opened" = start_date present (the learner opened the course); "completed" =
-// the LearnWorlds completed flag OR a certificate (LearnWorlds marks many
-// certified learners as not completed, which would make the funnel run
-// backwards); "certified" = certificate issued. In API records the start date equals the
+// a certificate was issued — the certificate IS the completion test (LearnWorlds'
+// own completed flag marks many certified learners as not completed and is
+// ignored here). Durations are enrolment → certificate day. In API records the start date equals the
 // enrolment date (the API has no first-activity timestamp), so durations here are
 // enrolment → completion. Pathways order each learner's opened courses by date
 // (one entry per course; a re-enrolment keeps the first) and count consecutive
@@ -20,6 +20,8 @@ Object.assign(window.App, {
     JRN_ACTIVATION_DAYS: 30,   // sign-up → first course opened within this many days = activated
     JRN_MIN_DEFAULT: 100,      // funnel table: minimum enrolments per course, by default
     JRN_MONTHS: 24,            // activation: sign-up months shown
+    JRN_PATH_MIN_DEFAULT: 20,  // learning paths: minimum learners per step shown
+    JRN_SANKEY_TOP: 9,         // learning paths: courses named per stage; the rest pool as "other courses"
 
     _jrnDay(s) { s = String(s || ''); return s.length >= 10 ? s.slice(0, 10) : ''; },
     _jrnDays(a, b) { return Math.round((Date.parse(b) - Date.parse(a)) / 86400000); },
@@ -49,17 +51,21 @@ Object.assign(window.App, {
         const cstat = (t) => { let c = courses.get(t); if (!c) { c = { course: t, enrolled: 0, opened: 0, completed: 0, certified: 0, fast: 0, durations: [], next: new Map(), prev: new Map(), certLearners: 0, returned: 0 }; courses.set(t, c); } return c; };
         for (const r of rows) {
             if (!r || !r.course || !r.uid) continue;
-            const c = cstat(r.course), sd = this._jrnDay(r.start_date), cd = this._jrnDay(r.completion_date);
+            const c = cstat(r.course), sd = this._jrnDay(r.start_date);
             c.enrolled++;
             if (sd) c.opened++;
-            if (r.completed || r.certificate) c.completed++;
-            if (r.certificate) { c.certified++; if ((Number(r.time_minutes) || 0) < this.JRN_FAST_MIN) c.fast++; }
-            if ((r.completed || r.certificate) && sd && cd && cd >= sd) c.durations.push(this._jrnDays(sd, cd));
+            if (r.certificate) {
+                c.certified++; c.completed++;
+                if ((Number(r.time_minutes) || 0) < this.JRN_FAST_MIN) c.fast++;
+                const cd = this._jrnDay(r.certificate_date) || this._jrnDay(r.completion_date);
+                if (sd && cd && cd >= sd) c.durations.push(this._jrnDays(sd, cd));
+            }
             let u = byUid.get(r.uid); if (!u) { u = { starts: [], firstCert: '', firstCertCourse: '' }; byUid.set(r.uid, u); }
             if (sd) u.starts.push({ course: r.course, date: sd });
             if (r.certificate) { const d = this._jrnDay(r.certificate_date); if (d && (!u.firstCert || d < u.firstCert)) { u.firstCert = d; u.firstCertCourse = r.course; } }
         }
         const transitions = new Map(), gaps = [], perLearner = [0, 0, 0, 0];   // 1, 2, 3–4, 5+ courses opened
+        const chains3 = new Map(), chains4 = new Map();                          // consecutive 3- and 4-course chains
         let learners = 0, multi = 0, never = 0, certLearners = 0, returned = 0;
         for (const u of byUid.values()) {
             learners++;
@@ -76,6 +82,8 @@ Object.assign(window.App, {
                 ca.next.set(b.course, (ca.next.get(b.course) || 0) + 1); cb.prev.set(a.course, (cb.prev.get(a.course) || 0) + 1);
                 gaps.push(g);
             }
+            for (let i = 0; i + 2 < n; i++) { const k = seq[i].course + ' › ' + seq[i + 1].course + ' › ' + seq[i + 2].course; chains3.set(k, (chains3.get(k) || 0) + 1); }
+            for (let i = 0; i + 3 < n; i++) { const k = seq[i].course + ' › ' + seq[i + 1].course + ' › ' + seq[i + 2].course + ' › ' + seq[i + 3].course; chains4.set(k, (chains4.get(k) || 0) + 1); }
             if (u.firstCert) { certLearners++; const c = cstat(u.firstCertCourse); c.certLearners++; if (seq.some(s => s.date > u.firstCert)) { returned++; c.returned++; } }
         }
         const totals = { enrolled: 0, opened: 0, completed: 0, certified: 0, fast: 0, durations: [] };
@@ -86,7 +94,8 @@ Object.assign(window.App, {
         }
         totals.median = this._jrnMedian(totals.durations);
         const tr = [...transitions.values()].sort((a, b) => b.n - a.n); tr.forEach(t => { t.medianGap = this._jrnMedian(t.gaps); });
-        const idx = { src: rows, courses, byUid, transitions: tr, gapMedian: this._jrnMedian(gaps), perLearner, learners, multi, never, certLearners, returned, totals };
+        const topChains = (m) => [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 40).map(([k, n]) => ({ courses: k.split(' › '), n }));
+        const idx = { src: rows, courses, byUid, transitions: tr, gapMedian: this._jrnMedian(gaps), perLearner, learners, multi, never, certLearners, returned, totals, chains3: topChains(chains3), chains4: topChains(chains4), chains3Total: [...chains3.values()].reduce((a, b) => a + b, 0) };
         this._jrnIdx = idx; return idx;
     },
     _jrnProviderStats(provider) {
@@ -98,15 +107,64 @@ Object.assign(window.App, {
         return agg.enrolled ? agg : null;
     },
 
-    // ── Funnel strip: four steps with conversion ──
+    // ── Learning paths as a flow: stage 1 → 2 → 3 ──
+    // Nodes carry a stage suffix so the same course at different positions is a
+    // different node (Google's Sankey refuses cycles). Per stage the JRN_SANKEY_TOP
+    // most common courses are named; everything else pools into "other courses".
+    // mode 'first': every learner's first three courses; mode 'course': from the
+    // given course onwards. Returns {rows: [[from, to, learners]], maxStage}.
+    _jrnSankeyRows(idx, mode, start, minN) {
+        const seqs = [];
+        for (const u of idx.byUid.values()) {
+            if (!u.seq || u.seq.length < 2) continue;
+            let s = u.seq.map(x => x.course);
+            if (mode === 'course') { const p = s.indexOf(start); if (p < 0) continue; s = s.slice(p); if (s.length < 2) continue; }
+            seqs.push(s.slice(0, 3));
+        }
+        const short = (t) => { t = String(t); return t.length > 34 ? t.slice(0, 32).replace(/\s+\S*$/, '') + '…' : t; };
+        const suffix = ['', ' (2nd)', ' (3rd)'];
+        const named = [0, 1, 2].map(stage => {
+            const cnt = new Map(); seqs.forEach(s => { if (s[stage]) cnt.set(s[stage], (cnt.get(s[stage]) || 0) + 1); });
+            return new Set([...cnt.entries()].sort((a, b) => b[1] - a[1]).slice(0, this.JRN_SANKEY_TOP).map(e => e[0]));
+        });
+        const node = (course, stage) => (named[stage].has(course) ? short(course) : 'other courses') + suffix[stage];
+        const flows = new Map();
+        const add = (a, b) => { const k = a + '\u0001' + b; flows.set(k, (flows.get(k) || 0) + 1); };
+        for (const s of seqs) { add(node(s[0], 0), node(s[1], 1)); if (s[2]) add(node(s[1], 1), node(s[2], 2)); }
+        const rows = [];
+        for (const [k, n] of flows) {
+            const [a, b] = k.split('\u0001'), oa = /^other courses/.test(a), ob = /^other courses/.test(b);
+            if (oa && ob) continue;                       // pooled → pooled says nothing and would swamp the picture
+            if (n >= minN || oa || ob) rows.push([a, b, n]);
+        }
+        // a pooled flow smaller than the minimum only clutters; drop it unless it is the sole flow out of a node
+        const out = rows.filter(([a, b, n]) => n >= Math.max(1, Math.round(minN / 2)) || !rows.some(([a2, , n2]) => a2 === a && n2 > n));
+        const perStage = [0, 1, 2].map(st => new Set(out.flatMap(([a, b]) => [a, b]).filter(x => (st === 0 ? !/\((2nd|3rd)\)$/.test(x) : st === 1 ? /\(2nd\)$/.test(x) : /\(3rd\)$/.test(x)))).size);
+        return { rows: out, maxStage: Math.max(1, ...perStage), learners: seqs.length };
+    },
+    _drawJourneyCharts() {
+        const el = document.getElementById('chart_jrn_sankey'); if (!el) return;
+        const idx = this._jrnIndex(); if (!idx) return;
+        if (!(window.google && google.visualization && google.visualization.Sankey)) { el.innerHTML = '<p class="text-xs text-slate-400 p-4">The flow diagram needs Google Charts (sankey package): check the connection and reopen the tab.</p>'; return; }
+        const explorerKey = this._jrnFind(idx, this._jrnCourse) || [...idx.courses.values()].sort((a, b) => b.enrolled - a.enrolled)[0].course;
+        const sk = this._jrnSankeyRows(idx, this._jrnSankeyMode || 'first', explorerKey, Math.max(1, Number(this._jrnPathMin) || this.JRN_PATH_MIN_DEFAULT));
+        if (!sk.rows.length) { el.innerHTML = '<p class="text-xs text-slate-400 p-4">Not enough learners with two or more courses above the minimum.</p>'; return; }
+        const dt = new google.visualization.DataTable();
+        dt.addColumn('string', 'From'); dt.addColumn('string', 'To'); dt.addColumn('number', 'Learners');
+        dt.addRows(sk.rows);
+        const opts = { height: Math.max(300, 26 * sk.maxStage + 60), sankey: { node: { label: { fontSize: 11, color: '#334155', bold: false }, nodePadding: 12, width: 10, colors: ['#002F4C', '#4389C8', '#206095', '#7A9E9F', '#E28743', '#5B8C5A', '#B8860B', '#91B5D9', '#C25953', '#64748b'] }, link: { colorMode: 'gradient', colors: ['#002F4C', '#4389C8', '#206095', '#7A9E9F', '#E28743', '#5B8C5A', '#B8860B', '#91B5D9', '#C25953', '#64748b'] } }, tooltip: { textStyle: { fontSize: 12 } } };
+        try { new google.visualization.Sankey(el).draw(dt, opts); } catch (e) { el.innerHTML = '<p class="text-xs text-slate-400 p-4">Flow diagram could not be drawn: ' + this.escapeHtml(e && e.message || e) + '</p>'; return; }
+        if (window.Charts && Charts._registerChart) { try { Charts._registerChart('chart_jrn_sankey', 'Sankey', dt, opts); } catch (e) { __swallowed(e, 'journeys.sankey'); } }
+    },
+
+    // ── Funnel strip: three steps with conversion ──
     _jrnFunnelHtml(c, opts) {
         opts = opts || {};
         const esc = (t) => this.escapeHtml(t), pct = this._jrnPct.bind(this);
         const steps = [
             ['Enrolled', c.enrolled, '', 'Enrolments (learner-course records)'],
             ['Opened', c.opened, pct(c.opened, c.enrolled) + '% of enrolled', 'Records with a start date: the learner opened the course'],
-            ['Completed', c.completed, pct(c.completed, c.opened) + '% of opened', 'LearnWorlds completed flag, or a certificate'],
-            ['Certified', c.certified, pct(c.certified, c.opened) + '% of opened', 'Certificate issued'],
+            ['Completed', c.certified, pct(c.certified, c.opened) + '% of opened', 'Certificate issued: the completion test'],
         ];
         const w = opts.compact ? 'min-w-[92px]' : 'min-w-[120px]';
         return `<div class="flex items-stretch gap-1.5 flex-wrap">${steps.map(([l, v, sub, tip]) => `<div class="${w} rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2" title="${esc(tip)}">
@@ -118,7 +176,7 @@ Object.assign(window.App, {
     },
     _jrnTimeHtml(c) {
         const n = c.durations.length; if (!n) return '<span class="text-slate-400 text-xs">no completions</span>';
-        return `<span title="Days from enrolment to completion, ${this.formatNumber(n)} completions with both dates">median <strong>${c.median} d</strong> to complete · ${this._jrnPct(c.within1, n)}% within a day · ${this._jrnPct(c.over30, n)}% over 30 d</span>`;
+        return `<span title="Days from enrolment to the certificate, ${this.formatNumber(n)} certificates with both dates">median <strong>${c.median} d</strong> to complete · ${this._jrnPct(c.within1, n)}% within a day · ${this._jrnPct(c.over30, n)}% over 30 d</span>`;
     },
     _jrnFastHtml(c) {
         if (!c.certified) return '';
@@ -226,16 +284,25 @@ Object.assign(window.App, {
             rows = [...idx.courses.values()].map(c => Object.assign({}, c, { provider: provOf[c.course] || '' }));
         }
         rows = rows.filter(r => r.enrolled >= minN);
-        const val = (r) => sortKey === 'course' ? r.course.toLowerCase() : sortKey === 'opened' ? pct(r.opened, r.enrolled) : sortKey === 'completed' ? pct(r.completed, r.opened) : sortKey === 'certified' ? pct(r.certified, r.opened) : sortKey === 'median' ? (r.median == null ? -1 : r.median) : sortKey === 'fast' ? pct(r.fast, r.certified) : r.enrolled;
+        const val = (r) => sortKey === 'course' ? r.course.toLowerCase() : sortKey === 'opened' ? pct(r.opened, r.enrolled) : sortKey === 'certified' || sortKey === 'completed' ? pct(r.certified, r.opened) : sortKey === 'median' ? (r.median == null ? -1 : r.median) : sortKey === 'fast' ? pct(r.fast, r.certified) : r.enrolled;
         rows.sort((a, b) => { const va = val(a), vb = val(b); return (va < vb ? -1 : va > vb ? 1 : 0) * (asc ? 1 : -1); });
         const th = (key, label, cls, tip) => `<th class="py-2.5 px-3 font-medium cursor-pointer select-none hover:text-gsf-boston ${cls || ''}" title="${esc(tip || '')}" onclick="App._jrnAsc = App._jrnSort === '${key}' ? !App._jrnAsc : ${key === 'course'}; App._jrnSort='${key}'; App.renderView()">${label} ${sortKey === key ? (asc ? '&#9650;' : '&#9660;') : '<span class="text-slate-300">&#8597;</span>'}</th>`;
         const bar = (p, color) => `<div class="flex items-center gap-2 justify-end"><div class="w-16 h-1.5 rounded bg-slate-100 overflow-hidden"><div class="h-full ${color}" style="width:${Math.min(100, p)}%"></div></div><span class="tabular-nums w-12 text-right">${p}%</span></div>`;
         const pl = idx.perLearner, plTotal = pl.reduce((a, b) => a + b, 0);
         const explorerKey = this._jrnFind(idx, this._jrnCourse) || [...idx.courses.values()].sort((a, b) => b.enrolled - a.enrolled)[0].course;
         const ex = idx.courses.get(explorerKey);
+        // learning paths: sortable steps table (share by default) + Sankey sizing
+        const pathMin = Math.max(1, Number(this._jrnPathMin) || this.JRN_PATH_MIN_DEFAULT), pathSort = this._jrnPathSort || 'share', pathAsc = !!this._jrnPathAsc, sankeyMode = this._jrnSankeyMode || 'first';
+        const pathRows = idx.transitions.filter(tr => tr.n >= pathMin).map(tr => Object.assign({}, tr, { share: pct(tr.n, (idx.courses.get(tr.from) || {}).opened) }));
+        const pval = (tr) => pathSort === 'from' ? tr.from.toLowerCase() : pathSort === 'to' ? tr.to.toLowerCase() : pathSort === 'n' ? tr.n : pathSort === 'gap' ? tr.medianGap : tr.share;
+        pathRows.sort((a, b) => { const va = pval(a), vb = pval(b); return (va < vb ? -1 : va > vb ? 1 : 0) * (pathAsc ? 1 : -1) || b.n - a.n; });
+        pathRows.splice(30);
+        const pth = (key, label, cls, tip) => `<th class="py-2.5 px-4 font-medium cursor-pointer select-none hover:text-gsf-boston ${cls || ''}" title="${esc(tip || '')}" onclick="App._jrnPathAsc = App._jrnPathSort === '${key}' ? !App._jrnPathAsc : ${key === 'from' || key === 'to'}; App._jrnPathSort='${key}'; App.renderView()">${label} ${pathSort === key ? (pathAsc ? '&#9650;' : '&#9660;') : '<span class="text-slate-300">&#8597;</span>'}</th>`;
+        const sankey = this._jrnSankeyRows(idx, sankeyMode, explorerKey, pathMin);
+        const sankeyH = Math.max(300, 26 * sankey.maxStage + 60);
         const act = this._jrnActivation();
         const kpi = (label, value, sub, color, tip) => `<div class="bg-white rounded-xl border shadow-sm overflow-hidden" title="${esc(tip || '')}"><div class="h-1" style="background:${color}"></div><div class="p-4"><p class="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1.5">${label}</p><p class="text-[26px] font-bold leading-none tracking-tight" style="color:${color};font-family:var(--num)">${value}</p>${sub ? `<p class="text-[10px] text-slate-400 mt-1.5 leading-tight">${sub}</p>` : ''}</div></div>`;
-        const openedP = pct(t.opened, t.enrolled), complP = pct(t.completed, t.opened), certP = pct(t.certified, t.opened);
+        const openedP = pct(t.opened, t.enrolled), certP = pct(t.certified, t.opened);
         const dur = t.durations, durN = dur.length || 1;
         const bins = [['same day', dur.filter(x => x <= 0).length], ['1–7 days', dur.filter(x => x >= 1 && x <= 7).length], ['8–30 days', dur.filter(x => x > 7 && x <= 30).length], ['31–90 days', dur.filter(x => x > 30 && x <= 90).length], ['over 90 days', dur.filter(x => x > 90).length]];
         const hbar = (l, v, total, color) => `<div class="flex items-center gap-3 text-sm mb-2"><span class="w-24 text-slate-600">${l}</span><div class="flex-1 h-4 bg-slate-100 rounded overflow-hidden"><div class="h-full ${color}" style="width:${total ? Math.max(1, 100 * v / total) : 0}%"></div></div><span class="w-28 text-right tabular-nums text-slate-700">${fmt(v)} <span class="text-slate-400 text-xs">${pct(v, total)}%</span></span></div>`;
@@ -263,10 +330,10 @@ Object.assign(window.App, {
         return `
             <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
                 ${kpi('Enrolments opened', openedP + '%', fmt(t.enrolled - t.opened) + ' of ' + fmt(t.enrolled) + ' never opened', '#206095', 'Records with a start date ÷ all learner-course records')}
-                ${kpi('Openers who complete', complP + '%', fmt(t.completed) + ' completions · ' + certP + '% certified', '#4389C8', 'Completed (LearnWorlds flag or certificate) ÷ opened; certified ÷ opened')}
+                ${kpi('Openers who complete', certP + '%', fmt(t.certified) + ' certificates · a certificate is the completion test', '#4389C8', 'Certificates ÷ opened')}
                 ${kpi('Learners with 2+ courses', pct(idx.multi, idx.learners - idx.never) + '%', fmt(idx.multi) + ' of ' + fmt(idx.learners - idx.never) + ' learners who opened a course', '#5B8C5A', 'Learners who opened at least two different courses')}
                 ${kpi('Return after a certificate', pct(idx.returned, idx.certLearners) + '%', fmt(idx.returned) + ' of ' + fmt(idx.certLearners) + ' certified learners opened another course later', '#B8860B', 'Opened another course after the day of their first certificate')}
-                ${kpi('Enrolment → completion', t.median == null ? '–' : t.median + ' d', 'median · ' + pct(dur.filter(d => d <= 1).length, dur.length) + '% within a day · ' + pct(dur.filter(d => d > 30).length, dur.length) + '% over 30 d', '#7A9E9F', 'Days from enrolment to completion (API start dates equal the enrolment date)')}
+                ${kpi('Enrolment → certificate', t.median == null ? '–' : t.median + ' d', 'median · ' + pct(dur.filter(d => d <= 1).length, dur.length) + '% within a day · ' + pct(dur.filter(d => d > 30).length, dur.length) + '% over 30 d', '#7A9E9F', 'Days from enrolment to the certificate (API start dates equal the enrolment date)')}
                 ${kpi('Fast certificates', pct(t.fast, t.certified) + '%', fmt(t.fast) + ' certificates with under ' + this.JRN_FAST_MIN + ' recorded minutes', t.fast / Math.max(1, t.certified) >= 0.05 ? '#D03734' : '#64748b', 'A certificate with almost no recorded learning time: worth a look, or an undercount in the LearnWorlds timer')}
                 ${kpi('Between courses', idx.gapMedian == null ? '–' : idx.gapMedian + ' d', 'median gap from one course opened to the next', '#E28743', 'Days between consecutive courses a learner opened')}
                 ${act ? kpi('Active learners', fmt(act.active30), fmt(act.active90) + ' logged in within 90 d · as of ' + act.asOf, '#002F4C', 'Accounts with a LearnWorlds login in the last 30 / 90 days before the listing') : kpi('Active learners', '–', 'needs the account index (below)', '#94a3b8', '')}
@@ -274,7 +341,7 @@ Object.assign(window.App, {
 
             <div class="bg-white rounded-xl shadow-sm border overflow-hidden mb-8">
                 <div class="bg-slate-50 border-b p-5 flex items-center justify-between gap-3 flex-wrap">
-                    <div><h2 class="font-bold text-lg text-gsf-prussian flex items-center gap-2"><i data-lucide="filter" class="text-gsf-boston" width="18"></i> Funnel by ${by === 'provider' ? 'provider' : 'course'}</h2><p class="text-xs text-slate-500 mt-1">Enrolled → opened → completed → certified. Percentages for completed and certified are of <em>opened</em>. "Never opened" is where marketing brings people a course does not hold.</p></div>
+                    <div><h2 class="font-bold text-lg text-gsf-prussian flex items-center gap-2"><i data-lucide="filter" class="text-gsf-boston" width="18"></i> Funnel by ${by === 'provider' ? 'provider' : 'course'}</h2><p class="text-xs text-slate-500 mt-1">Enrolled → opened → completed, where completed means a certificate was issued. The completion percentage is of <em>opened</em>. "Never opened" is where marketing brings people a course does not hold.</p></div>
                     <div class="flex items-center gap-3 text-xs">
                         <label class="inline-flex items-center gap-1.5">By <select data-viewer-allowed onchange="App._jrnBy=this.value; App.renderView()" class="border rounded px-1.5 py-1"><option value="course" ${by === 'course' ? 'selected' : ''}>course</option><option value="provider" ${by === 'provider' ? 'selected' : ''}>provider</option></select></label>
                         <label class="inline-flex items-center gap-1.5">Min. enrolments <input data-viewer-allowed type="number" min="0" step="50" value="${minN}" onchange="App._jrnMin=Number(this.value)||0; App.renderView()" class="border rounded px-1.5 py-1 w-20"></label>
@@ -282,13 +349,13 @@ Object.assign(window.App, {
                     </div>
                 </div>
                 <div class="overflow-x-auto max-h-[520px] overflow-y-auto custom-scrollbar"><table class="w-full text-left border-collapse text-sm">
-                    <thead class="sticky top-0 bg-white shadow-sm z-10"><tr class="border-b text-slate-500 text-xs">${th('course', by === 'provider' ? 'Provider' : 'Course')}${by === 'provider' ? '' : '<th class="py-2.5 px-3 font-medium">Provider</th>'}${th('enrolled', 'Enrolled', 'text-right')}${th('opened', 'Opened', 'text-right', 'Share of enrolments with a start date')}${th('completed', 'Completed', 'text-right', 'Share of opened that completed')}${th('certified', 'Certified', 'text-right', 'Share of opened with a certificate')}${th('median', 'Median days', 'text-right', 'Enrolment to completion')}${th('fast', 'Fast certs', 'text-right', 'Certificates with under ' + this.JRN_FAST_MIN + ' recorded minutes')}<th class="py-2.5 px-3 font-medium">Most common next course</th></tr></thead>
+                    <thead class="sticky top-0 bg-white shadow-sm z-10"><tr class="border-b text-slate-500 text-xs">${th('course', by === 'provider' ? 'Provider' : 'Course')}${by === 'provider' ? '' : '<th class="py-2.5 px-3 font-medium">Provider</th>'}${th('enrolled', 'Enrolled', 'text-right')}${th('opened', 'Opened', 'text-right', 'Share of enrolments with a start date')}${th('certified', 'Completed', 'text-right', 'Share of opened with a certificate')}${th('median', 'Median days', 'text-right', 'Enrolment to certificate')}${th('fast', 'Fast certs', 'text-right', 'Certificates with under ' + this.JRN_FAST_MIN + ' recorded minutes')}<th class="py-2.5 px-3 font-medium">Most common next course</th></tr></thead>
                     <tbody>${rows.map(r => {
                         const nx = r.next ? this._jrnTop(r.next, 1)[0] : null;
                         const name = by === 'provider' ? `<button onclick="App.openProvider('${this.escapeJsArg(r.course)}')" class="font-bold text-gsf-prussian hover:text-gsf-boston hover:underline text-left">${esc(r.course)}</button>` : `<button onclick="App.openCourse('${this.escapeJsArg(r.course)}')" class="font-bold text-gsf-prussian hover:text-gsf-boston hover:underline text-left">${esc(r.course)}</button>`;
                         const fastP = pct(r.fast, r.certified);
-                        return `<tr class="border-b hover:bg-slate-50 text-xs"><td class="py-2 px-3">${name}</td>${by === 'provider' ? '' : `<td class="py-2 px-3 text-slate-500 truncate max-w-[160px]" title="${esc(r.provider)}">${esc(r.provider)}</td>`}<td class="py-2 px-3 text-right tabular-nums">${fmt(r.enrolled)}</td><td class="py-2 px-3">${bar(pct(r.opened, r.enrolled), 'bg-gsf-boston')}</td><td class="py-2 px-3">${bar(pct(r.completed, r.opened), 'bg-emerald-500')}</td><td class="py-2 px-3">${bar(pct(r.certified, r.opened), 'bg-amber-500')}</td><td class="py-2 px-3 text-right tabular-nums">${r.median == null ? '–' : r.median}</td><td class="py-2 px-3 text-right tabular-nums ${fastP >= 15 ? 'text-red-600 font-bold' : fastP >= 5 ? 'text-amber-600' : 'text-slate-500'}">${r.certified ? fastP + '%' : '–'}</td><td class="py-2 px-3 text-slate-600 truncate max-w-[220px]">${nx ? `<button onclick="App.openCourse('${this.escapeJsArg(nx[0])}')" class="hover:text-gsf-boston hover:underline text-left" title="${esc(nx[0])}">${esc(nx[0])}</button> <span class="text-slate-400">${pct(nx[1], r.opened)}%</span>` : '<span class="text-slate-300">–</span>'}</td></tr>`;
-                    }).join('') || '<tr><td colspan="9" class="py-6 text-center text-slate-400">No rows above the minimum.</td></tr>'}</tbody>
+                        return `<tr class="border-b hover:bg-slate-50 text-xs"><td class="py-2 px-3">${name}</td>${by === 'provider' ? '' : `<td class="py-2 px-3 text-slate-500 truncate max-w-[160px]" title="${esc(r.provider)}">${esc(r.provider)}</td>`}<td class="py-2 px-3 text-right tabular-nums">${fmt(r.enrolled)}</td><td class="py-2 px-3">${bar(pct(r.opened, r.enrolled), 'bg-gsf-boston')}</td><td class="py-2 px-3">${bar(pct(r.certified, r.opened), 'bg-emerald-500')}</td><td class="py-2 px-3 text-right tabular-nums">${r.median == null ? '–' : r.median}</td><td class="py-2 px-3 text-right tabular-nums ${fastP >= 15 ? 'text-red-600 font-bold' : fastP >= 5 ? 'text-amber-600' : 'text-slate-500'}">${r.certified ? fastP + '%' : '–'}</td><td class="py-2 px-3 text-slate-600 truncate max-w-[220px]">${nx ? `<button onclick="App.openCourse('${this.escapeJsArg(nx[0])}')" class="hover:text-gsf-boston hover:underline text-left" title="${esc(nx[0])}">${esc(nx[0])}</button> <span class="text-slate-400">${pct(nx[1], r.opened)}%</span>` : '<span class="text-slate-300">–</span>'}</td></tr>`;
+                    }).join('') || '<tr><td colspan="8" class="py-6 text-center text-slate-400">No rows above the minimum.</td></tr>'}</tbody>
                 </table></div>
             </div>
 
@@ -297,9 +364,9 @@ Object.assign(window.App, {
                     <h3 class="font-bold text-lg text-gsf-prussian flex items-center gap-2 mb-1"><i data-lucide="route" class="text-gsf-boston" width="18"></i> Courses per learner</h3>
                     <p class="text-xs text-slate-500 mb-4">${fmt(idx.learners - idx.never)} learners who opened at least one course; ${fmt(idx.never)} more enrolled but never opened anything.</p>
                     ${[['1 course', pl[0]], ['2 courses', pl[1]], ['3–4 courses', pl[2]], ['5 or more', pl[3]]].map(([l, n]) => hbar(l, n, plTotal, 'bg-gsf-boston')).join('')}
-                    <h4 class="font-bold text-sm text-gsf-prussian mt-6 mb-2">Time from enrolment to completion</h4>
+                    <h4 class="font-bold text-sm text-gsf-prussian mt-6 mb-2">Time from enrolment to certificate</h4>
                     ${bins.map(([l, v]) => hbar(l, v, durN, 'bg-emerald-500')).join('')}
-                    <p class="text-[11px] text-slate-400 mt-3">API start dates equal the enrolment date, so this is enrolment → completion. Most SURGhub courses are short, hence the same-day bar.</p>
+                    <p class="text-[11px] text-slate-400 mt-3">API start dates equal the enrolment date, so this is enrolment → certificate. Most SURGhub courses are short, hence the same-day bar.</p>
                 </div>
                 <div class="bg-white rounded-xl shadow-sm border p-6">
                     <h3 class="font-bold text-lg text-gsf-prussian flex items-center gap-2 mb-1"><i data-lucide="git-branch" class="text-gsf-boston" width="18"></i> Where learners go next</h3>
@@ -314,9 +381,32 @@ Object.assign(window.App, {
             </div>
 
             <div class="bg-white rounded-xl shadow-sm border overflow-hidden mb-8">
-                <div class="bg-slate-50 border-b p-5"><h2 class="font-bold text-lg text-gsf-prussian flex items-center gap-2"><i data-lucide="arrow-right-left" class="text-gsf-boston" width="18"></i> Most travelled paths</h2><p class="text-xs text-slate-500 mt-1">Consecutive courses opened by the same learner, across the whole platform. Share = learners who took this step ÷ learners who opened the first course.</p></div>
-                <div class="overflow-x-auto"><table class="w-full text-left border-collapse text-sm"><thead><tr class="border-b text-slate-500 text-xs"><th class="py-2.5 px-4 font-medium">From</th><th class="py-2.5 px-4 font-medium">To</th><th class="py-2.5 px-4 font-medium text-right">Learners</th><th class="py-2.5 px-4 font-medium text-right">Share</th><th class="py-2.5 px-4 font-medium text-right">Median gap</th></tr></thead>
-                <tbody>${idx.transitions.slice(0, 20).map(tr => `<tr class="border-b hover:bg-slate-50 text-xs"><td class="py-2 px-4 font-bold text-gsf-prussian">${esc(tr.from)}</td><td class="py-2 px-4 text-gsf-prussian">${esc(tr.to)}</td><td class="py-2 px-4 text-right tabular-nums">${fmt(tr.n)}</td><td class="py-2 px-4 text-right tabular-nums text-slate-500">${pct(tr.n, (idx.courses.get(tr.from) || {}).opened)}%</td><td class="py-2 px-4 text-right tabular-nums text-slate-500">${tr.medianGap} d</td></tr>`).join('')}</tbody></table></div>
+                <div class="bg-slate-50 border-b p-5 flex items-center justify-between gap-3 flex-wrap">
+                    <div><h2 class="font-bold text-lg text-gsf-prussian flex items-center gap-2"><i data-lucide="arrow-right-left" class="text-gsf-boston" width="18"></i> Learning paths</h2><p class="text-xs text-slate-500 mt-1">Courses in the order learners opened them. Left to right: first, second, third course; flows are learners. Share = learners who took a step ÷ learners who opened the step's first course.</p></div>
+                    <div class="flex items-center gap-3 text-xs">
+                        <label class="inline-flex items-center gap-1.5">Paths from <select data-viewer-allowed onchange="App._jrnSankeyMode=this.value; App.renderView()" class="border rounded px-1.5 py-1 max-w-[260px]"><option value="first" ${sankeyMode !== 'course' ? 'selected' : ''}>every learner's first course</option><option value="course" ${sankeyMode === 'course' ? 'selected' : ''}>${esc(explorerKey)} onwards</option></select></label>
+                        <label class="inline-flex items-center gap-1.5">Min. learners <input data-viewer-allowed type="number" min="1" step="5" value="${pathMin}" onchange="App._jrnPathMin=Math.max(1, Number(this.value)||1); App.renderView()" class="border rounded px-1.5 py-1 w-16"></label>
+                    </div>
+                </div>
+                <div class="p-5 border-b">
+                    <div id="chart_jrn_sankey" style="width:100%;height:${sankeyH}px"></div>
+                    <p class="text-[10px] text-slate-400 mt-2">${sankeyMode === 'course' ? 'Learners who opened ' + esc(explorerKey) + ' and what they opened next, two steps on.' : 'The first three courses of every learner who opened at least two.'} Courses below the minimum are pooled as "other courses"; node labels are shortened, hover for the full flow.</p>
+                </div>
+                <div class="grid grid-cols-1 xl:grid-cols-5">
+                    <div class="xl:col-span-3 border-b xl:border-b-0 xl:border-r">
+                        <h4 class="px-5 pt-4 pb-2 font-bold text-sm text-gsf-prussian">Most travelled steps <span class="text-slate-400 font-normal text-xs">· steps with at least ${pathMin} learners</span></h4>
+                        <div class="overflow-x-auto"><table class="w-full text-left border-collapse text-sm"><thead><tr class="border-b text-slate-500 text-xs">${pth('from', 'From')}${pth('to', 'To')}${pth('n', 'Learners', 'text-right')}${pth('share', 'Share', 'text-right', 'Learners who took this step ÷ learners who opened the first course')}${pth('gap', 'Median gap', 'text-right', 'Days between opening the two courses')}</tr></thead>
+                        <tbody>${pathRows.map(tr => `<tr class="border-b hover:bg-slate-50 text-xs"><td class="py-2 px-4 font-bold text-gsf-prussian"><button onclick="App._jrnCourse='${this.escapeJsArg(tr.from)}'; App._jrnSankeyMode='course'; App.renderView()" class="text-left hover:text-gsf-boston hover:underline" title="Show paths from ${esc(tr.from)}">${esc(tr.from)}</button></td><td class="py-2 px-4 text-gsf-prussian">${esc(tr.to)}</td><td class="py-2 px-4 text-right tabular-nums">${fmt(tr.n)}</td><td class="py-2 px-4 text-right tabular-nums text-slate-600">${tr.share}%</td><td class="py-2 px-4 text-right tabular-nums text-slate-500">${tr.medianGap} d</td></tr>`).join('') || '<tr><td colspan="5" class="py-6 text-center text-slate-400">No step with that many learners.</td></tr>'}</tbody></table></div>
+                    </div>
+                    <div class="xl:col-span-2">
+                        <h4 class="px-5 pt-4 pb-2 font-bold text-sm text-gsf-prussian">Longer chains <span class="text-slate-400 font-normal text-xs">· ${fmt(idx.perLearner[2] + idx.perLearner[3])} learners opened 3+ courses</span></h4>
+                        <div class="px-5 pb-4 text-xs">
+                            ${idx.chains3.filter(ch => ch.n >= Math.max(2, Math.round(pathMin / 4))).slice(0, 12).map(ch => `<div class="py-1.5 border-b border-slate-100 flex items-start justify-between gap-3"><div class="text-gsf-prussian leading-snug">${ch.courses.map(esc).join(' <span class="text-gsf-boston">›</span> ')}</div><span class="tabular-nums text-slate-500 shrink-0">${fmt(ch.n)}</span></div>`).join('') || '<div class="text-slate-400 py-2">No 3-course chain above the minimum yet.</div>'}
+                            ${idx.chains4.length && idx.chains4[0].n >= 3 ? `<div class="text-[10px] font-bold uppercase tracking-wide text-slate-400 mt-4 mb-1">Four in a row</div>${idx.chains4.slice(0, 5).map(ch => `<div class="py-1.5 border-b border-slate-100 flex items-start justify-between gap-3"><div class="text-gsf-prussian leading-snug">${ch.courses.map(esc).join(' <span class="text-gsf-boston">›</span> ')}</div><span class="tabular-nums text-slate-500 shrink-0">${fmt(ch.n)}</span></div>`).join('')}` : ''}
+                            <p class="text-[10px] text-slate-400 mt-3">Consecutive courses opened by the same learner, counted for every learner who took exactly that sequence of steps (${fmt(idx.chains3Total)} three-step sequences in total).</p>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <div class="bg-white rounded-xl shadow-sm border overflow-hidden mb-8">
@@ -333,21 +423,22 @@ Object.assign(window.App, {
         const t = idx.totals, act = this._jrnActivation();
         const about = [
             ['SURGhub — learner journeys (funnel, pathways, time to completion, activation)'], ['Generated', new Date().toISOString().slice(0, 10)], [''],
-            ['Enrolments', t.enrolled], ['Opened', t.opened], ['Completed', t.completed], ['Certified', t.certified],
+            ['Enrolments', t.enrolled], ['Opened', t.opened], ['Completed (certificate issued)', t.certified],
             ['Learners who opened a course', idx.learners - idx.never], ['Learners who never opened a course', idx.never], ['Learners with 2+ courses', idx.multi],
             ['Certified learners', idx.certLearners], ['... who opened another course after their first certificate', idx.returned],
-            ['Median days enrolment to completion', t.median == null ? '' : t.median], ['Median days between courses', idx.gapMedian == null ? '' : idx.gapMedian],
+            ['Median days enrolment to certificate', t.median == null ? '' : t.median], ['Median days between courses', idx.gapMedian == null ? '' : idx.gapMedian],
             ['Fast certificates (< ' + this.JRN_FAST_MIN + ' recorded minutes)', t.fast], [''],
-            ['NOTE', 'Counts only; no learner is identifiable. "Opened" = record with a start date. API start dates equal the enrolment date. Paths = consecutive courses opened by the same learner, one entry per course.'],
+            ['NOTE', 'Counts only; no learner is identifiable. "Opened" = record with a start date; "completed" = certificate issued. API start dates equal the enrolment date. Paths = consecutive courses opened by the same learner, one entry per course.'],
         ];
         XLSX.utils.book_append_sheet(wb, nice(XLSX.utils.aoa_to_sheet(about), { noFilter: true, widths: [{ wch: 44 }, { wch: 100 }] }), 'Summary');
-        const courseRows = [...idx.courses.values()].sort((a, b) => b.enrolled - a.enrolled).map(c => { const nx = this._jrnTop(c.next, 1)[0]; return { 'Course': c.course, 'Provider': provOf[c.course] || '', 'Enrolled': c.enrolled, 'Opened': c.opened, 'Opened %': pct(c.opened, c.enrolled), 'Completed': c.completed, 'Completed % of opened': pct(c.completed, c.opened), 'Certified': c.certified, 'Certified % of opened': pct(c.certified, c.opened), 'Median days to completion': c.median == null ? '' : c.median, 'Within a day %': pct(c.within1, c.durations.length), 'Over 30 days %': pct(c.over30, c.durations.length), 'Fast certificates': c.fast, 'Fast %': pct(c.fast, c.certified), 'Certified here first': c.certLearners, 'Returned after certificate %': pct(c.returned, c.certLearners), 'Most common next course': nx ? nx[0] : '', 'Next course share %': nx ? pct(nx[1], c.opened) : '' }; });
+        const courseRows = [...idx.courses.values()].sort((a, b) => b.enrolled - a.enrolled).map(c => { const nx = this._jrnTop(c.next, 1)[0]; return { 'Course': c.course, 'Provider': provOf[c.course] || '', 'Enrolled': c.enrolled, 'Opened': c.opened, 'Opened %': pct(c.opened, c.enrolled), 'Completed (certificate)': c.certified, 'Completed % of opened': pct(c.certified, c.opened), 'Median days to certificate': c.median == null ? '' : c.median, 'Within a day %': pct(c.within1, c.durations.length), 'Over 30 days %': pct(c.over30, c.durations.length), 'Fast certificates': c.fast, 'Fast %': pct(c.fast, c.certified), 'Certified here first': c.certLearners, 'Returned after certificate %': pct(c.returned, c.certLearners), 'Most common next course': nx ? nx[0] : '', 'Next course share %': nx ? pct(nx[1], c.opened) : '' }; });
         XLSX.utils.book_append_sheet(wb, nice(XLSX.utils.json_to_sheet(courseRows)), 'Funnel by course');
         const provs = [...new Set(Object.values(provOf))].filter(Boolean).map(p => this._jrnProviderStats(p)).filter(Boolean).sort((a, b) => b.enrolled - a.enrolled);
-        XLSX.utils.book_append_sheet(wb, nice(XLSX.utils.json_to_sheet(provs.map(a => ({ 'Provider': a.course, 'Included courses': a.courses, 'Enrolled': a.enrolled, 'Opened': a.opened, 'Opened %': pct(a.opened, a.enrolled), 'Completed': a.completed, 'Completed % of opened': pct(a.completed, a.opened), 'Certified': a.certified, 'Certified % of opened': pct(a.certified, a.opened), 'Median days to completion': a.median == null ? '' : a.median, 'Fast certificates': a.fast, 'Fast %': pct(a.fast, a.certified) })))), 'Funnel by provider');
-        XLSX.utils.book_append_sheet(wb, nice(XLSX.utils.json_to_sheet(idx.transitions.slice(0, 500).map(tr => ({ 'From': tr.from, 'To': tr.to, 'Learners': tr.n, 'Share of first course openers %': pct(tr.n, (idx.courses.get(tr.from) || {}).opened), 'Median gap (days)': tr.medianGap })))), 'Paths');
+        XLSX.utils.book_append_sheet(wb, nice(XLSX.utils.json_to_sheet(provs.map(a => ({ 'Provider': a.course, 'Included courses': a.courses, 'Enrolled': a.enrolled, 'Opened': a.opened, 'Opened %': pct(a.opened, a.enrolled), 'Completed (certificate)': a.certified, 'Completed % of opened': pct(a.certified, a.opened), 'Median days to certificate': a.median == null ? '' : a.median, 'Fast certificates': a.fast, 'Fast %': pct(a.fast, a.certified) })))), 'Funnel by provider');
+        XLSX.utils.book_append_sheet(wb, nice(XLSX.utils.json_to_sheet(idx.transitions.slice(0, 500).map(tr => ({ 'From': tr.from, 'To': tr.to, 'Learners': tr.n, 'Share of first course openers %': pct(tr.n, (idx.courses.get(tr.from) || {}).opened), 'Median gap (days)': tr.medianGap })))), 'Steps');
+        XLSX.utils.book_append_sheet(wb, nice(XLSX.utils.json_to_sheet(idx.chains3.map(ch => ({ 'First': ch.courses[0], 'Second': ch.courses[1], 'Third': ch.courses[2], 'Learners': ch.n })).concat(idx.chains4.map(ch => ({ 'First': ch.courses[0], 'Second': ch.courses[1], 'Third': ch.courses[2], 'Fourth': ch.courses[3], 'Learners': ch.n }))))), 'Chains');
         const d = t.durations;
-        XLSX.utils.book_append_sheet(wb, nice(XLSX.utils.aoa_to_sheet([['Courses opened', 'Learners'], ['1', idx.perLearner[0]], ['2', idx.perLearner[1]], ['3-4', idx.perLearner[2]], ['5+', idx.perLearner[3]], [], ['Enrolment to completion', 'Completions'], ['same day', d.filter(x => x <= 0).length], ['1-7 days', d.filter(x => x >= 1 && x <= 7).length], ['8-30 days', d.filter(x => x > 7 && x <= 30).length], ['31-90 days', d.filter(x => x > 30 && x <= 90).length], ['over 90 days', d.filter(x => x > 90).length]]), { noFilter: true }), 'Distributions');
+        XLSX.utils.book_append_sheet(wb, nice(XLSX.utils.aoa_to_sheet([['Courses opened', 'Learners'], ['1', idx.perLearner[0]], ['2', idx.perLearner[1]], ['3-4', idx.perLearner[2]], ['5+', idx.perLearner[3]], [], ['Enrolment to certificate', 'Certificates'], ['same day', d.filter(x => x <= 0).length], ['1-7 days', d.filter(x => x >= 1 && x <= 7).length], ['8-30 days', d.filter(x => x > 7 && x <= 30).length], ['31-90 days', d.filter(x => x > 30 && x <= 90).length], ['over 90 days', d.filter(x => x > 90).length]]), { noFilter: true }), 'Distributions');
         if (act) {
             XLSX.utils.book_append_sheet(wb, nice(XLSX.utils.json_to_sheet(act.months.map(m => ({ 'Sign-up month': m.month, 'Sign-ups': m.signups, ['Activated within ' + this.JRN_ACTIVATION_DAYS + ' d']: m.activated, 'Activated %': pct(m.activated, m.signups), 'Ever opened a course': m.ever, 'Ever %': pct(m.ever, m.signups) })))), 'Activation by month');
             XLSX.utils.book_append_sheet(wb, nice(XLSX.utils.json_to_sheet(act.domains.map(x => ({ 'Domain': x.domain, 'Sign-ups (12 mo)': x.signups, 'Activated %': pct(x.activated, x.signups), 'Active in last 90 d %': pct(x.active90, x.signups) })))), 'Activation by institution');

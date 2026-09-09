@@ -6,7 +6,7 @@ const GSF_COLORS = ['#1a5276', '#3498db', '#e74c3c', '#85c1e9', '#f39c12', '#247
 // (e.g. offline launch), don't throw at parse time — the rest of the app still runs,
 // and charts degrade gracefully via the isReady/_deferIfNotReady retry path below.
 if (window.google && google.charts) {
-    google.charts.load('current', {'packages':['corechart', 'geochart', 'bar']});
+    google.charts.load('current', {'packages':['corechart', 'geochart', 'bar', 'sankey']});
     google.charts.setOnLoadCallback(() => { window.Charts.isReady = true; });
 } else {
     console.warn('[charts] Google Charts loader unavailable (offline?) — charts disabled this session.');

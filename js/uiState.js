@@ -29,7 +29,7 @@ Object.assign(window.App, {
         'instThreshold', 'instMonths', 'instShowPersonal', 'instViewMode',
         'cmpPreset', 'cmpAStart', 'cmpAEnd', 'cmpBStart', 'cmpBEnd', 'cmpCohortMode', 'cmpCohortDomain',
         'anomalyCollapsed',
-        '_jrnSort', '_jrnAsc', '_jrnBy', '_jrnMin', '_jrnCourse',
+        '_jrnSort', '_jrnAsc', '_jrnBy', '_jrnMin', '_jrnCourse', '_jrnPathSort', '_jrnPathAsc', '_jrnPathMin', '_jrnSankeyMode',
     ],
     _UI_OBJECTS: [
         '_chartWidth',

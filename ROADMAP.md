@@ -85,6 +85,11 @@ Follow-ups:
   numbers before trusting it for a report.
 - Two paced workers under the same 55/min cap would roughly halve session time
   when the API answers slowly (~2 s per request → 31 req/min observed).
+- Learner journeys: the Sankey was verified on its rows (acyclic, stage-ordered)
+  but not yet by eye in the app — check label clipping on the third column and
+  adjust `JRN_SANKEY_TOP` / the 34-char label cut if needed. Possible next
+  steps: click a Sankey node to re-root the flow; a per-provider Sankey in the
+  provider package; funnel + pathways in the HTML snapshot export.
 - After that, add the incremental stage to "Sync Everything".
 - The xlsx importer could adopt the same earliest-date merge instead of
   replacing rows wholesale.
@@ -115,6 +120,14 @@ API enrolment dates unlock.
   listing; 17% dormant; 6,739 active in the last 30 days, 14,926 in 90).
 - Course and provider pages carry a "Learner journey" strip (funnel, next /
   previous courses, time to completion, fast certificates, return rate).
+- Revision the same day: **a certificate is the completion test** (LearnWorlds'
+  completed flag ignored; funnel = enrolled → opened → completed(certificate),
+  durations enrolment → certificate day); "Most travelled steps" sorted by
+  share with every column sortable and a min-learners filter; **Sankey
+  learning paths** (`_jrnSankeyRows`, Google Charts `sankey` package, stage
+  suffixes to avoid cycles, top 9 courses named per stage, pooled → pooled
+  dropped) either from every learner's first course or from a chosen course
+  onwards; **longer chains** (most common 3- and 4-course sequences).
 - Live-data harness: 23 checks (independent recounts, Σnext = Σprev =
   transitions, index ↔ records join 55,722/55,809, tab renders both with and
   without the account index).
