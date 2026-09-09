@@ -250,6 +250,8 @@ window.App = {
             } else if (proj) {
                 this.view = 'project-dashboard';
             }
+            // Start on the screen that was open last time (device-local; see uiState.js).
+            if (this._restoreLastScreen) { try { this._restoreLastScreen(); } catch (e) { __swallowed(e, 'uiState.screen'); } }
         }
 
         if (this.renderView) this.renderView();

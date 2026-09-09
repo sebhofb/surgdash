@@ -2723,6 +2723,7 @@ Object.assign(window.App, {
         const viewKey = this.currentProject + '::' + this.view;
         const sameView = this._lastRenderedViewKey === viewKey;
         this._lastRenderedViewKey = viewKey;
+        if (this._rememberScreen) this._rememberScreen();   // start here next launch (uiState.js)
 
         // Preserve scroll position across same-view re-renders (e.g. ticking an
         // include box, editing a course) so the page doesn't jump to the top.

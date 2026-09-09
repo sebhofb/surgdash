@@ -89,6 +89,17 @@ Follow-ups:
   snapshot and the provider packages; a "recommended next course" list per
   course for the SURGhub site, derived from the 2-course paths.
 
+## Done — start on the last screen (9 September 2026)
+
+`renderView()` records `{project, view, course, provider}` into the device-local
+UI state (`_lastScreen` in `settings/ui_state.json`) and `init()` restores it
+once editing is unlocked — viewer mode still lands on the org dashboard. A
+remembered course or provider that no longer exists falls back to the platform
+view; a view whose project type no longer matches (org-*, project-*, SURGhub
+views) is ignored; creation flows (`new-project`, `project-setup`,
+`project-entry`) are never remembered. Switching project on restore also writes
+`surgdash_last_project`. "Reset view preferences" forgets it. 12 unit checks.
+
 ## Done — Learner lookup (9 September 2026)
 
 `js/lookup.js`, dashboard pill "Learner lookup" (`data-edit-only`, content also

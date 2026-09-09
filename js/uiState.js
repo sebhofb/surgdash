@@ -118,8 +118,43 @@ Object.assign(window.App, {
         if (this.renderView) this.renderView();
     },
 
+    // ── Last screen: start where you left off ──────────────────────────────
+    // renderView() records {project, view, course, provider} here; init() restores it
+    // once editing is unlocked (viewer mode keeps landing on the org dashboard, as
+    // before). Creation flows are not remembered, and a remembered course, provider
+    // or project that no longer exists falls back to the project's home view.
+    _SCREEN_SKIP: ['new-project', 'project-setup', 'project-entry'],
+    _SURGHUB_VIEWS: ['platform', 'provider', 'course', 'upload', 'audience', 'ambassadors', 'manage', 'sh-milestones', 'sh-reports', 'methodology'],
+    _rememberScreen() {
+        if (!this._uiState || !this.view || this._SCREEN_SKIP.includes(this.view)) return;
+        const s = { project: this.currentProject || null, view: this.view, course: this.view === 'course' ? (this.selectedCourse || null) : null, provider: this.view === 'provider' ? (this.selectedProvider || null) : null };
+        const prev = this._uiState._lastScreen;
+        if (prev && prev.project === s.project && prev.view === s.view && prev.course === s.course && prev.provider === s.provider) return;
+        this._uiState._lastScreen = s;
+        this._saveUiState();
+    },
+    _restoreLastScreen() {
+        const s = this._uiState && this._uiState._lastScreen;
+        if (!s || !s.view || this._SCREEN_SKIP.includes(s.view)) return false;
+        if (s.project && s.project !== this.currentProject) {
+            const known = s.project === 'org' || s.project === 'surghub' || !!(window.Projects && Projects.getProject && Projects.getProject(s.project));
+            if (!known) return false;
+            this.currentProject = s.project;
+            try { Storage.setItem('surgdash_last_project', s.project); } catch (e) { __swallowed(e, 'uiState.screen'); }   // keep the sidebar's notion of "last project" in step
+        }
+        const proj = this.getCurrentProject ? this.getCurrentProject() : null, type = proj && proj.type;
+        const need = /^org-/.test(s.view) ? 'org' : /^project-/.test(s.view) ? 'project' : this._SURGHUB_VIEWS.includes(s.view) ? 'surghub' : 'any';
+        if (need === 'org' && type !== 'org') return false;
+        if (need === 'surghub' && type !== 'surghub') return false;
+        if (need === 'project' && (!proj || type === 'org' || type === 'surghub')) return false;
+        if (s.view === 'course') { if ((this.data || []).some(d => d && d.Course === s.course)) this.selectedCourse = s.course; else { this.view = 'platform'; return true; } }
+        if (s.view === 'provider') { if ((this.data || []).some(d => d && d.Provider === s.provider)) this.selectedProvider = s.provider; else { this.view = 'platform'; return true; } }
+        this.view = s.view;
+        return true;
+    },
+
     _resetUiStateBtn() {
-        return `<button data-viewer-allowed onclick="App.resetUiState()" title="Forget remembered view preferences on this device — dashboard tab, chart widths, toggles, pickers" class="px-2 py-0.5 text-[10px] font-bold rounded text-slate-400 hover:bg-slate-100 hover:text-gsf-boston border border-slate-200">↺ Reset view preferences</button>`;
+        return `<button data-viewer-allowed onclick="App.resetUiState()" title="Forget remembered view preferences on this device — last screen, dashboard tab, chart widths, toggles, pickers" class="px-2 py-0.5 text-[10px] font-bold rounded text-slate-400 hover:bg-slate-100 hover:text-gsf-boston border border-slate-200">↺ Reset view preferences</button>`;
     },
 });
 
