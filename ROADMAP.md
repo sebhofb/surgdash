@@ -92,13 +92,15 @@ Follow-ups:
 ## Done — start on the last screen (9 September 2026)
 
 `renderView()` records `{project, view, course, provider}` into the device-local
-UI state (`_lastScreen` in `settings/ui_state.json`) and `init()` restores it
-once editing is unlocked — viewer mode still lands on the org dashboard. A
-remembered course or provider that no longer exists falls back to the platform
-view; a view whose project type no longer matches (org-*, project-*, SURGhub
-views) is ignored; creation flows (`new-project`, `project-setup`,
-`project-entry`) are never remembered. Switching project on restore also writes
-`surgdash_last_project`. "Reset view preferences" forgets it. 12 unit checks.
+UI state (`_lastScreen` in `settings/ui_state.json`) while editing is
+unlocked. The app always opens read-only on the org dashboard, so the restore
+happens in `unlockEdit()`: if the editor is still on that startup screen when
+they unlock, they are taken back to the remembered one (navigating first wins).
+Viewer-mode renders are not recorded, so the startup screen cannot overwrite
+the memory. A remembered course or provider that no longer exists falls back to
+the platform view; a view whose project type no longer matches is ignored;
+creation flows are never remembered; switching project on restore also writes
+`surgdash_last_project`. "Reset view preferences" forgets it. 16 unit checks.
 
 ## Done — Learner lookup (9 September 2026)
 

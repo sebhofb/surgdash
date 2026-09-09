@@ -119,14 +119,17 @@ Object.assign(window.App, {
     },
 
     // ── Last screen: start where you left off ──────────────────────────────
-    // renderView() records {project, view, course, provider} here; init() restores it
-    // once editing is unlocked (viewer mode keeps landing on the org dashboard, as
-    // before). Creation flows are not remembered, and a remembered course, provider
-    // or project that no longer exists falls back to the project's home view.
+    // renderView() records {project, view, course, provider} here WHILE EDITING IS
+    // UNLOCKED. The app always opens read-only (init sets editUnlocked=false and
+    // lands on the org dashboard), so the restore happens in unlockEdit(): if the
+    // editor is still on that startup screen when they unlock, they are taken to
+    // the remembered one. Viewer-mode renders are not recorded, so the startup
+    // screen cannot overwrite the memory. Creation flows are never remembered, and
+    // a remembered course, provider or project that no longer exists falls back.
     _SCREEN_SKIP: ['new-project', 'project-setup', 'project-entry'],
     _SURGHUB_VIEWS: ['platform', 'provider', 'course', 'upload', 'audience', 'ambassadors', 'manage', 'sh-milestones', 'sh-reports', 'methodology'],
     _rememberScreen() {
-        if (!this._uiState || !this.view || this._SCREEN_SKIP.includes(this.view)) return;
+        if (!this._uiState || !this.editUnlocked || !this.view || this._SCREEN_SKIP.includes(this.view)) return;
         const s = { project: this.currentProject || null, view: this.view, course: this.view === 'course' ? (this.selectedCourse || null) : null, provider: this.view === 'provider' ? (this.selectedProvider || null) : null };
         const prev = this._uiState._lastScreen;
         if (prev && prev.project === s.project && prev.view === s.view && prev.course === s.course && prev.provider === s.provider) return;
@@ -151,6 +154,12 @@ Object.assign(window.App, {
         if (s.view === 'provider') { if ((this.data || []).some(d => d && d.Provider === s.provider)) this.selectedProvider = s.provider; else { this.view = 'platform'; return true; } }
         this.view = s.view;
         return true;
+    },
+
+    // Called by unlockEdit(): restore only if nothing was navigated since the startup render.
+    _restoreLastScreenOnUnlock() {
+        if (this._startupViewKey && this._lastRenderedViewKey && this._lastRenderedViewKey !== this._startupViewKey) return false;
+        return this._restoreLastScreen();
     },
 
     _resetUiStateBtn() {

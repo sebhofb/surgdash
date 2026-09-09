@@ -255,6 +255,7 @@ window.App = {
         }
 
         if (this.renderView) this.renderView();
+        this._startupViewKey = this.currentProject + '::' + this.view;   // unlockEdit() restores the last screen only while still here
         // Splash fade is owned by the controller in index.html, which anchors its
         // minimum-visible timer to actual window-show (main.js 'ready-to-show')
         // so the splash is reliably seen — don't fade it from here.
@@ -572,6 +573,8 @@ window.App = {
         document.body.classList.remove('viewer-mode');
         document.body.classList.remove('report-mode');
         if (this._autoPullInterval) { clearInterval(this._autoPullInterval); this._autoPullInterval = null; }
+        // Back to the screen that was open last time, unless the editor already moved off the startup screen (uiState.js).
+        if (this._restoreLastScreenOnUnlock) { try { this._restoreLastScreenOnUnlock(); } catch (e) { __swallowed(e, 'uiState.screen'); } }
         this.renderView();
         return true;
     },
