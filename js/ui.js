@@ -446,13 +446,17 @@ Object.assign(window.App, {
     // (ambassadors raw, id → name) → per-ambassador downstream reach, naming even
     // referrers absent from the top-promoter list. Persists a small, EXPORT-SAFE
     // summary (names + counts only, never emails) to surghub_referrer_bridge.
-    async buildReferrerBridgeFromRaw() {
+    async buildReferrerBridgeFromRaw(opts) {
+        opts = opts || {};
+        const silent = !!opts.silent;
+        if (this._bridgeBuilding) return null;
         const fs = electronAPI.fs, path = electronAPI.path;
         const rawDir = path.join(Storage.DATA_DIR, 'surghub', 'raw');
         const latest = re => { try { return fs.readdirSync(rawDir, { withFileTypes: true }).filter(e => e.isDirectory && re.test(e.name)).map(e => e.name).sort().pop(); } catch (e) { return null; } };
         const demoDir = latest(/^demographics__/), ambDir = latest(/^ambassadors__/);
-        if (!demoDir) { this.showMsg('⚠ No demographics raw capture yet — run a Learners / Demographics sync first.'); return; }
-        this.showMsg('Building downstream reach from raw…');
+        if (!demoDir) { if (!silent) this.showMsg('⚠ No demographics raw capture yet — run a Learners / Demographics sync first.'); return null; }
+        this._bridgeBuilding = true;
+        if (!silent) this.showMsg('Building downstream reach from raw…');
         try {
             // referrer_id → distinct learner count + that referrer's learner EMAILS
             // (emails are used in-memory only to join outcomes from completion.json;
@@ -572,13 +576,54 @@ Object.assign(window.App, {
             };
             await Storage.setItem('surghub_referrer_bridge', summary, { internal: true });
             this._referrerBridge = summary;
+            this._bridgeBuilding = false;
             const outMsg = hasOutcomes ? ' · ' + this.formatNumber(summary.totalCerts) + ' certs / ' + this.formatNumber(summary.totalCourses) + ' courses by referred learners' : '';
-            this.showMsg('Downstream reach built — ' + this.formatNumber(summary.totalBridged) + ' learners across ' + summary.distinctReferrers + ' referrers' + outMsg + ' ✓');
-            this.renderView();
+            if (!silent) this.showMsg('Downstream reach built — ' + this.formatNumber(summary.totalBridged) + ' learners across ' + summary.distinctReferrers + ' referrers' + outMsg + ' ✓');
+            try { if (!silent || this.view === 'ambassadors') this.renderView(); } catch (e) { __swallowed(e, 'referrer-bridge.render'); }   // a render error is not a build failure
+            return summary;
         } catch (e) {
+            this._bridgeBuilding = false;
             console.error('[referrer-bridge]', e);
-            this.showMsg('⚠ Could not build downstream reach: ' + (e && e.message));
+            if (!silent) this.showMsg('⚠ Could not build downstream reach: ' + (e && e.message));
+            return null;
         }
+    },
+
+    // ── Keeping the bridge current ──────────────────────────────────────────
+    // The bridge is a derived artefact of two raw captures; when either has a
+    // newer capture on disk it is stale (this is how the Performance table came
+    // to show 462 referrals for an ambassador the chart had at 517: the table read
+    // a bridge built on 27 Jul while the chart read the 7 Sep sync). The syncs now
+    // rebuild it as they finish, and the Ambassadors tab rebuilds a stale one on
+    // open — silently, once per set of captures.
+    _receiptStamp(dirName) { const m = String(dirName || '').match(/__(\d{4})(\d{2})(\d{2})-/); return m ? `${m[1]}-${m[2]}-${m[3]}` : ''; },
+    _latestCaptures() {
+        try {
+            const fs = electronAPI.fs, path = electronAPI.path, rawDir = path.join(Storage.DATA_DIR, 'surghub', 'raw');
+            const names = fs.readdirSync(rawDir, { withFileTypes: true }).filter(e => e.isDirectory).map(e => e.name).sort();
+            const last = re => names.filter(n => re.test(n)).pop() || null;
+            return { demo: last(/^demographics__/), amb: last(/^ambassadors__/) };
+        } catch (e) { return { demo: null, amb: null }; }
+    },
+    _referrerBridgeStale() {
+        const b = this._referrerBridge; if (!b) return true;
+        const c = this._latestCaptures();
+        return !!((c.demo && c.demo !== b.fromDemoPull) || (c.amb && c.amb !== b.fromAmbPull));
+    },
+    _referrerBridgeAutoRefresh() {
+        if (this._bridgeBuilding || this._referrerBridge === undefined) return;   // undefined = stored bridge still loading
+        if (!this._referrerBridgeStale()) return;
+        const c = this._latestCaptures(), key = (c.demo || '') + '|' + (c.amb || '');
+        if (this._bridgeAutoKey === key) return;                                   // one attempt per set of captures
+        this._bridgeAutoKey = key;
+        this.buildReferrerBridgeFromRaw({ silent: true }).catch(e => __swallowed(e, 'referrer-bridge.auto'));
+    },
+    _bridgeFreshnessNote(bridge) {
+        if (!bridge) return '';
+        const built = this._enrFmtWhen ? this._enrFmtWhen(bridge.builtAt) : String(bridge.builtAt || '').slice(0, 10);
+        const cap = this._receiptStamp(bridge.fromDemoPull);
+        const stale = this._referrerBridgeStale();
+        return ` Attribution built ${this.escapeHtml(built)} from the ${this.escapeHtml(cap || 'raw')} capture${stale ? ' · <span class="text-amber-700 font-bold">a newer capture exists — ' + (this._bridgeBuilding ? 'refreshing…' : 'click Refresh') + '</span>' : ''}.`;
     },
     // ── Re-derivability check (the derive() firewall) ──────────────────────
     // Re-runs the EXACT live aggregation (runAudienceAggregation) over the users
@@ -1166,7 +1211,7 @@ Object.assign(window.App, {
             ${showOut ? `<td class="py-2 px-4 text-right text-slate-600">${r.active == null ? '–' : this.formatNumber(r.active)}</td><td class="py-2 px-4 text-right text-slate-600">${r.courses == null ? '–' : this.formatNumber(r.courses)}</td><td class="py-2 px-4 text-right font-semibold text-emerald-700">${r.certs == null ? '–' : this.formatNumber(r.certs)}</td><td class="py-2 px-4 text-right text-slate-500">${r.minutes == null ? '–' : this.formatNumber(Math.round(r.minutes / 60))}</td>` : ''}
         </tr>`).join('');
         const note = complete
-            ? `Complete attribution — every one of ${this.formatNumber(bridge.distinctReferrers)} referrers matched to a name (${this.formatNumber(bridge.totalBridged)} referrals), recovered from the raw capture. Referrals = signups via referral · Clicks = referral-link visits.${showOut ? ` <strong>Active</strong> = referred learners who started a course · <strong>Learner courses / certs</strong> = courses enrolled and certificates earned by those learners · <strong>Learning hrs</strong> = total learning time they logged — ${this.formatNumber(bridge.totalCerts)} certs / ${this.formatNumber(bridge.totalCourses)} courses / ${this.formatNumber(Math.round((bridge.totalMinutes || 0) / 60))} hrs across ${this.formatNumber(bridge.activeLearners)} active referred learners, as of the last User-Progress upload.` : ''}`
+            ? `Complete attribution — every one of ${this.formatNumber(bridge.distinctReferrers)} referrers matched to a name (${this.formatNumber(bridge.totalBridged)} referrals), recovered from the raw capture.${this._bridgeFreshnessNote ? this._bridgeFreshnessNote(bridge) : ''} Referrals = signups via referral · Clicks = referral-link visits.${showOut ? ` <strong>Active</strong> = referred learners who started a course · <strong>Learner courses / certs</strong> = courses enrolled and certificates earned by those learners · <strong>Learning hrs</strong> = total learning time they logged — ${this.formatNumber(bridge.totalCerts)} certs / ${this.formatNumber(bridge.totalCourses)} courses / ${this.formatNumber(Math.round((bridge.totalMinutes || 0) / 60))} hrs across ${this.formatNumber(bridge.activeLearners)} active referred learners, as of the last User-Progress upload.` : ''}`
             : `Referrals = signups via referral · Clicks = referral-link visits · Conversion = referrals ÷ clicks. ${totalNamed > 200 ? 'Showing the top 200 of ' + this.formatNumber(totalNamed) : 'Showing the ' + totalNamed} named referrers from the last sync — a few referrals aren't yet matched to a name.`;
         const buildBtn = complete
             ? `<button onclick="App.buildReferrerBridgeFromRaw()" class="shrink-0 px-3 py-1.5 border rounded-lg text-xs font-bold text-slate-600 hover:text-gsf-boston hover:bg-slate-50 transition-colors" title="Re-match referrals to names from the latest raw capture"><i data-lucide="refresh-cw" width="12"></i> Refresh</button>`
@@ -3746,6 +3791,7 @@ Object.assign(window.App, {
             // Lazy-load the persisted referrer→learner bridge summary (once) so it
             // survives reloads; rebuild is via the button in _ambassadorReachSection.
             if (this._referrerBridge === undefined) { this._referrerBridge = null; if (window.Storage) Storage.getItem('surghub_referrer_bridge').then(v => { if (v) { this._referrerBridge = v; if (this.view === 'ambassadors') this.renderView(); } }).catch(() => {}); }
+            else if (this._referrerBridgeAutoRefresh) this._referrerBridgeAutoRefresh();   // a newer capture → rebuild silently, then re-render
             let allAmbassadors = [];
             if (snap.TopPromoters) allAmbassadors = snap.TopPromoters;
 

@@ -89,6 +89,19 @@ Follow-ups:
   snapshot and the provider packages; a "recommended next course" list per
   course for the SURGhub site, derived from the 2-course paths.
 
+## Done — ambassador attribution keeps itself current (9 September 2026)
+
+Bug report: Neharaj Pitla showed 462 referrals on the Ambassador Performance
+table and 517 on the Top Ambassadors chart. The chart reads the ambassadors
+sync (7 Sep); the table reads a derived referrer → learner bridge
+(`surghub_referrer_bridge`) that had last been built on 27 Jul and only
+rebuilt on a manual Refresh. Now `_referrerBridgeStale()` compares the bridge's
+source captures with the newest demographics / ambassadors receipts on disk,
+the Ambassadors tab rebuilds a stale bridge silently once per set of captures,
+the Learners (API) and Ambassadors syncs rebuild it on completion, and the
+table header states the build date and capture (amber while newer data exists).
+Rebuild is ~100 ms; names and counts only are persisted.
+
 ## Done — start on the last screen (9 September 2026)
 
 `renderView()` records `{project, view, course, provider}` into the device-local

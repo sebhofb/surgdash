@@ -3073,6 +3073,8 @@ Object.assign(window.App, {
                 }
                 alert(`Ambassadors synced (LearnWorlds API)\n\n${total.toLocaleString()} attributable referrals from ${Object.keys(promoters).length} ambassadors.${modeNote}${histNote}`);
             }
+            // New ambassadors capture → rebuild the attribution bridge (names + reach) quietly.
+            if (this.buildReferrerBridgeFromRaw) { try { await this.buildReferrerBridgeFromRaw({ silent: true }); } catch (e) { __swallowed(e, 'referrer-bridge.sync'); } }
             if (!opts.silent) this.autoVerifyAfterSync();
             return { ok: true, totalReferrals: total, ambassadors: Object.keys(promoters).length, mode, historicalTotal };
         } catch (err) {
@@ -3334,6 +3336,8 @@ Object.assign(window.App, {
             }
 
             await this._stampSync('learners');
+            // New demographics capture → the ambassador attribution bridge is now stale; rebuild it quietly.
+            if (this.buildReferrerBridgeFromRaw) { try { await this.buildReferrerBridgeFromRaw({ silent: true }); } catch (e) { __swallowed(e, 'referrer-bridge.sync'); } }
             this._updateApiSyncOverlay('Saving…', 99);
             await this.handleDbSave();
             if (!opts.silent) {
