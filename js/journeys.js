@@ -187,7 +187,7 @@ Object.assign(window.App, {
         const listedAt = m ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]).toISOString() : new Date().toISOString();
         const acc = this._accountsFromUsers(best.users, listedAt);
         await this._accountsPersist(acc);
-        if (!silent) { this.showMsg(`Account index built: ${acc.n.toLocaleString()} accounts (listing of ${listedAt.slice(0, 10)})`); if (this.renderView) this.renderView(); }
+        if (!silent) { this.showMsg(`Account index built: ${acc.n.toLocaleString()} accounts (listing of ${listedAt.slice(0, 10)})`); if (this.rerenderDashTab) this.rerenderDashTab(); else if (this.renderView) this.renderView(); }
         return acc;
     },
     _jrnActivation() {
@@ -224,7 +224,7 @@ Object.assign(window.App, {
         const esc = (t) => this.escapeHtml(t), fmt = (n) => this.formatNumber(n), pct = this._jrnPct.bind(this);
         const idx = this._jrnIndex();
         if (!idx) return `<div class="bg-white rounded-xl border shadow-sm p-8 text-center text-slate-500">Loading learner records…</div>`;
-        if (this._accounts === undefined) { this._accountsLoad().then(() => { if (this.view === 'platform' && (this._dashTab || '') === 'journeys') this.renderView(); }); }
+        if (this._accounts === undefined) { this._accountsLoad().then(() => { if (this.view === 'platform' && (this._dashTab || '') === 'journeys') (this.rerenderDashTab || this.renderView).call(this); }); }
         const t = idx.totals, provOf = this._jrnProviderOf();
         const by = this._jrnBy || 'course', minN = Number(this._jrnMin) || this.JRN_MIN_DEFAULT, sortKey = this._jrnSort || 'enrolled', asc = !!this._jrnAsc;
         let rows;
@@ -237,7 +237,7 @@ Object.assign(window.App, {
         rows = rows.filter(r => r.enrolled >= minN);
         const val = (r) => sortKey === 'course' ? r.course.toLowerCase() : sortKey === 'opened' ? pct(r.opened, r.enrolled) : sortKey === 'certified' || sortKey === 'completed' ? pct(r.certified, r.opened) : sortKey === 'median' ? (r.median == null ? -1 : r.median) : sortKey === 'fast' ? pct(r.fast, r.certified) : r.enrolled;
         rows.sort((a, b) => { const va = val(a), vb = val(b); return (va < vb ? -1 : va > vb ? 1 : 0) * (asc ? 1 : -1); });
-        const th = (key, label, cls, tip) => `<th class="py-2.5 px-3 font-medium cursor-pointer select-none hover:text-gsf-boston ${cls || ''}" title="${esc(tip || '')}" onclick="App._jrnAsc = App._jrnSort === '${key}' ? !App._jrnAsc : ${key === 'course'}; App._jrnSort='${key}'; App.renderView()">${label} ${sortKey === key ? (asc ? '&#9650;' : '&#9660;') : '<span class="text-slate-300">&#8597;</span>'}</th>`;
+        const th = (key, label, cls, tip) => `<th class="py-2.5 px-3 font-medium cursor-pointer select-none hover:text-gsf-boston ${cls || ''}" title="${esc(tip || '')}" onclick="App._jrnAsc = App._jrnSort === '${key}' ? !App._jrnAsc : ${key === 'course'}; App._jrnSort='${key}'; App.rerenderDashTab()">${label} ${sortKey === key ? (asc ? '&#9650;' : '&#9660;') : '<span class="text-slate-300">&#8597;</span>'}</th>`;
         const bar = (p, color) => `<div class="flex items-center gap-2 justify-end"><div class="w-16 h-1.5 rounded bg-slate-100 overflow-hidden"><div class="h-full ${color}" style="width:${Math.min(100, p)}%"></div></div><span class="tabular-nums w-12 text-right">${p}%</span></div>`;
         const pl = idx.perLearner, plTotal = pl.reduce((a, b) => a + b, 0);
         const explorerKey = this._jrnFind(idx, this._jrnCourse) || [...idx.courses.values()].sort((a, b) => b.enrolled - a.enrolled)[0].course;
@@ -255,7 +255,7 @@ Object.assign(window.App, {
         const dur = t.durations, durN = dur.length || 1;
         const bins = [['same day', dur.filter(x => x <= 0).length], ['1–7 days', dur.filter(x => x >= 1 && x <= 7).length], ['8–30 days', dur.filter(x => x > 7 && x <= 30).length], ['31–90 days', dur.filter(x => x > 30 && x <= 90).length], ['over 90 days', dur.filter(x => x > 90).length]];
         const hbar = (l, v, total, color) => `<div class="flex items-center gap-3 text-sm mb-2"><span class="w-24 text-slate-600">${l}</span><div class="flex-1 h-4 bg-slate-100 rounded overflow-hidden"><div class="h-full ${color}" style="width:${total ? Math.max(1, 100 * v / total) : 0}%"></div></div><span class="w-28 text-right tabular-nums text-slate-700">${fmt(v)} <span class="text-slate-400 text-xs">${pct(v, total)}%</span></span></div>`;
-        const pathList = (map, denom) => this._jrnTop(map, 6).map(([c, n]) => `<div class="flex justify-between gap-2 py-1 border-b border-slate-100"><button onclick="App._jrnCourse='${this.escapeJsArg(c)}'; App.renderView()" class="text-left text-gsf-prussian hover:text-gsf-boston hover:underline truncate" title="${esc(c)}">${esc(c)}</button><span class="tabular-nums text-slate-500 shrink-0">${fmt(n)} · ${pct(n, denom)}%</span></div>`).join('') || '<div class="text-slate-400">none yet</div>';
+        const pathList = (map, denom) => this._jrnTop(map, 6).map(([c, n]) => `<div class="flex justify-between gap-2 py-1 border-b border-slate-100"><button onclick="App._jrnCourse='${this.escapeJsArg(c)}'; App.rerenderDashTab()" class="text-left text-gsf-prussian hover:text-gsf-boston hover:underline truncate" title="${esc(c)}">${esc(c)}</button><span class="tabular-nums text-slate-500 shrink-0">${fmt(n)} · ${pct(n, denom)}%</span></div>`).join('') || '<div class="text-slate-400">none yet</div>';
         let actHtml;
         if (act) {
             const mx = Math.max(1, ...act.months.map(m => m.signups));
@@ -292,8 +292,8 @@ Object.assign(window.App, {
                 <div class="bg-slate-50 border-b p-5 flex items-center justify-between gap-3 flex-wrap">
                     <div><h2 class="font-bold text-lg text-gsf-prussian flex items-center gap-2"><i data-lucide="filter" class="text-gsf-boston" width="18"></i> Funnel by ${by === 'provider' ? 'provider' : 'course'}</h2><p class="text-xs text-slate-500 mt-1">Enrolled → opened → completed, where completed means a certificate was issued. The completion percentage is of <em>opened</em>. "Never opened" is where marketing brings people a course does not hold.</p></div>
                     <div class="flex items-center gap-3 text-xs">
-                        <label class="inline-flex items-center gap-1.5">By <select data-viewer-allowed onchange="App._jrnBy=this.value; App.renderView()" class="border rounded px-1.5 py-1"><option value="course" ${by === 'course' ? 'selected' : ''}>course</option><option value="provider" ${by === 'provider' ? 'selected' : ''}>provider</option></select></label>
-                        <label class="inline-flex items-center gap-1.5">Min. enrolments <input data-viewer-allowed type="number" min="0" step="50" value="${minN}" onchange="App._jrnMin=Number(this.value)||0; App.renderView()" class="border rounded px-1.5 py-1 w-20"></label>
+                        <label class="inline-flex items-center gap-1.5">By <select data-viewer-allowed onchange="App._jrnBy=this.value; App.rerenderDashTab()" class="border rounded px-1.5 py-1"><option value="course" ${by === 'course' ? 'selected' : ''}>course</option><option value="provider" ${by === 'provider' ? 'selected' : ''}>provider</option></select></label>
+                        <label class="inline-flex items-center gap-1.5">Min. enrolments <input data-viewer-allowed type="number" min="0" step="50" value="${minN}" onchange="App._jrnMin=Number(this.value)||0; App.rerenderDashTab()" class="border rounded px-1.5 py-1 w-20"></label>
                         <button onclick="App.exportJourneysXlsx()" class="px-3 py-1.5 border rounded-lg font-bold text-slate-600 hover:text-gsf-boston hover:bg-slate-50" title="Funnel, pathways, time to completion and activation as an Excel workbook (counts only)"><i data-lucide="download" width="12" class="inline mr-1"></i>Excel</button>
                     </div>
                 </div>
@@ -320,7 +320,7 @@ Object.assign(window.App, {
                 <div class="bg-white rounded-xl shadow-sm border p-6">
                     <h3 class="font-bold text-lg text-gsf-prussian flex items-center gap-2 mb-1"><i data-lucide="git-branch" class="text-gsf-boston" width="18"></i> Where learners go next</h3>
                     <p class="text-xs text-slate-500 mb-3">Pick a course: the courses its learners opened next, and the ones they came from. Shares are of learners who opened the course.</p>
-                    <select data-viewer-allowed onchange="App._jrnCourse=this.value; App.renderView()" class="w-full border rounded-lg px-2 py-1.5 text-sm mb-4">${[...idx.courses.values()].sort((a, b) => b.enrolled - a.enrolled).map(c => `<option value="${esc(c.course)}" ${c.course === explorerKey ? 'selected' : ''}>${esc(c.course)} (${fmt(c.opened)} opened)</option>`).join('')}</select>
+                    <select data-viewer-allowed onchange="App._jrnCourse=this.value; App.rerenderDashTab()" class="w-full border rounded-lg px-2 py-1.5 text-sm mb-4">${[...idx.courses.values()].sort((a, b) => b.enrolled - a.enrolled).map(c => `<option value="${esc(c.course)}" ${c.course === explorerKey ? 'selected' : ''}>${esc(c.course)} (${fmt(c.opened)} opened)</option>`).join('')}</select>
                     <div class="grid grid-cols-2 gap-4 text-sm">
                         <div><div class="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-2">Go on to</div>${pathList(ex.next, ex.opened)}</div>
                         <div><div class="text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-2">Came from</div>${pathList(ex.prev, ex.opened)}</div>
@@ -333,9 +333,9 @@ Object.assign(window.App, {
                 <div class="bg-slate-50 border-b p-5 flex items-center justify-between gap-3 flex-wrap">
                     <div><h2 class="font-bold text-lg text-gsf-prussian flex items-center gap-2"><i data-lucide="arrow-right-left" class="text-gsf-boston" width="18"></i> Top learning paths</h2><p class="text-xs text-slate-500 mt-1">The sequences learners follow most often: courses opened one after the other by the same learner. Share = learners on this path ÷ learners who opened its first course.</p></div>
                     <div class="flex items-center gap-3 text-xs flex-wrap">
-                        <div class="inline-flex rounded-lg border overflow-hidden">${[2, 3, 4].map(k => `<button data-viewer-allowed onclick="App._jrnChainLen=${k}; App.renderView()" class="px-3 py-1.5 font-bold ${chainLen === k ? 'bg-gsf-boston text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}">${k} courses</button>`).join('')}</div>
-                        <label class="inline-flex items-center gap-1.5">Sort by <select data-viewer-allowed onchange="App._jrnChainSort=this.value; App.renderView()" class="border rounded px-1.5 py-1"><option value="learners" ${chainSort === 'learners' ? 'selected' : ''}>learners</option><option value="share" ${chainSort === 'share' ? 'selected' : ''}>share</option></select></label>
-                        <label class="inline-flex items-center gap-1.5">Min. learners <input data-viewer-allowed type="number" min="1" step="5" value="${pathMin}" onchange="App._jrnPathMin=Math.max(1, Number(this.value)||1); App.renderView()" class="border rounded px-1.5 py-1 w-16"></label>
+                        <div class="inline-flex rounded-lg border overflow-hidden">${[2, 3, 4].map(k => `<button data-viewer-allowed onclick="App._jrnChainLen=${k}; App.rerenderDashTab()" class="px-3 py-1.5 font-bold ${chainLen === k ? 'bg-gsf-boston text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}">${k} courses</button>`).join('')}</div>
+                        <label class="inline-flex items-center gap-1.5">Sort by <select data-viewer-allowed onchange="App._jrnChainSort=this.value; App.rerenderDashTab()" class="border rounded px-1.5 py-1"><option value="learners" ${chainSort === 'learners' ? 'selected' : ''}>learners</option><option value="share" ${chainSort === 'share' ? 'selected' : ''}>share</option></select></label>
+                        <label class="inline-flex items-center gap-1.5">Min. learners <input data-viewer-allowed type="number" min="1" step="5" value="${pathMin}" onchange="App._jrnPathMin=Math.max(1, Number(this.value)||1); App.rerenderDashTab()" class="border rounded px-1.5 py-1 w-16"></label>
                     </div>
                 </div>
                 <div class="px-5 py-3">

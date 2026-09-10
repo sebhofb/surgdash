@@ -206,12 +206,12 @@ Object.assign(window.App, {
         if (k === 'instShowPersonal') v = (v === true || v === 'true');
         this[k] = v;
         if (k === 'instShowPersonal') this.selectedInstitutions = [];   // category list changes → re-default the picker
-        this.renderView();
+        this.rerenderDashTab ? this.rerenderDashTab() : this.renderView();
     },
     _sortInstTable(col) {
         const cur = this._instSort || { col: 'learners', dir: 'desc' };
         this._instSort = (cur.col === col) ? { col, dir: cur.dir === 'desc' ? 'asc' : 'desc' } : { col, dir: (col === 'domain' || col === 'firstMonth') ? 'asc' : 'desc' };
-        this.renderView();
+        this.rerenderDashTab ? this.rerenderDashTab() : this.renderView();
     },
 
     // ── Tab ────────────────────────────────────────────────────────────────
@@ -221,11 +221,11 @@ Object.assign(window.App, {
         const pct = (n, d = 1) => (Number(n) || 0).toFixed(d) + '%';
         // Lazy: the ~40 MB completion blob, plus the email→demographics map for "top country".
         if (this._rawCompletion == null && this.ensureCompletionLoaded && !this._completionLoadPromise) {
-            this.ensureCompletionLoaded().then(() => { if (this.view === 'platform' && this._dashTab === 'institutions') this.renderView(); });
+            this.ensureCompletionLoaded().then(() => { if (this.view === 'platform' && this._dashTab === 'institutions') (this.rerenderDashTab || this.renderView).call(this); });
         }
         if (!this._emailDemoMap && !this._instDemoKick) {
             this._instDemoKick = true;
-            Storage.getItem('surghub_email_demo').then(v => { if (v) { this._emailDemoMap = v; if (this.view === 'platform' && this._dashTab === 'institutions') this.renderView(); } }).catch(() => {});
+            Storage.getItem('surghub_email_demo').then(v => { if (v) { this._emailDemoMap = v; if (this.view === 'platform' && this._dashTab === 'institutions') (this.rerenderDashTab || this.renderView).call(this); } }).catch(() => {});
         }
         const idx = this.institutionIndex();
         if (!idx) {

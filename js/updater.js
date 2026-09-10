@@ -656,26 +656,24 @@ Object.assign(window.App, {
             this.showMsg('⚠ Add LearnWorlds API credentials first');
             return;
         }
-        // Per-learner enrolment/certificate DATES come only from the card-2 User
-        // Progress upload, which no API sync refreshes. Say so — with its age — so
-        // "Sync Everything" is never mistaken for "everything is now current".
-        let progressNote = '';
+        // Card 2 (enrolments & progress) joins the run incrementally: accounts active
+        // since the last completed pass. An interrupted pass is resumed instead; if no
+        // pass has ever completed the step is skipped (a 30-hour first pass is never
+        // started from here) and the summary says so.
+        let enrolPlan = 'skip', enrolNote = 'skipped — card 2 has never completed a full pass; run it once by hand';
         try {
-            const log = (typeof this._syncRunLog === 'function') ? (this._syncRunLog() || {}) : {};
-            const t = log.progress ? Date.parse(log.progress) : NaN;
-            const days = isNaN(t) ? null : Math.round((Date.now() - t) / 86400000);
-            progressNote = '⚠ NOT refreshed by this sync: per-learner enrolment & certificate dates (card 2 · Upload User Progress)'
-                + (days == null ? ' — never uploaded on this device.' : days > 7 ? ` — last uploaded ${days} days ago.` : ` — last uploaded ${days} day${days === 1 ? '' : 's'} ago.`)
-                + '\nGrowth charts, certificate timelines and the Performance tab stay as of that upload.\n\n';
+            const meta = this._enrLoadMeta ? await this._enrLoadMeta() : {};
+            if (meta.run && !meta.run.done) { enrolPlan = 'resume'; enrolNote = 'resumes the interrupted pass (' + Object.keys(meta.run.processed || {}).length.toLocaleString() + ' accounts saved so far)'; }
+            else if (meta.lastRunEpoch) { const h = Math.max(0, Math.round((Date.now() / 1000 - meta.lastRunEpoch) / 3600)); enrolPlan = 'incremental'; enrolNote = 'accounts active since the last pass (' + h + ' h ago) — usually 20–60 min'; }
         } catch (e) { __swallowed(e); }
         if (!confirm(
             'Sync EVERYTHING from LearnWorlds API?\n\n' +
             'Runs back-to-back:\n' +
             '  1. Courses — course totals, learning time, providers\n' +
-            '  2. Learners & Ambassadors — demographics, lead attribution, referrals\n\n' +
-            progressNote +
-            'Total: ~15 minutes (varies with connection / rate limits).\n\n' +
-            'Also NOT included (run separately): Growth Timelines and Surveys.\n\n' +
+            '  2. Learners & Ambassadors — demographics, lead attribution, referrals\n' +
+            '  3. Enrolments & progress — ' + enrolNote + '\n\n' +
+            'Steps 1–2 take ~15 minutes; step 3 runs last, and Cancel keeps everything done so far.\n\n' +
+            'NOT included (run separately): Growth Timelines and Surveys.\n\n' +
             'You can keep working, but don\'t close the app. Continue?'
         )) return;
         if (this._apiSyncInFlight) { this.showMsg('⚠ A sync is already running — let it finish or Cancel it first.'); return; }
@@ -687,7 +685,14 @@ Object.assign(window.App, {
         const stages = [
             { label: 'Courses', fn: () => this.syncCourseFoundationFromApi({ silent: true }) },
             { label: 'Demographics + lead attribution', fn: () => this.syncDemographicsFromApi({ silent: true }) },
-            { label: 'Ambassadors', fn: () => this.syncAmbassadorsFromApi({ silent: true }) }
+            { label: 'Ambassadors', fn: () => this.syncAmbassadorsFromApi({ silent: true }) },
+            { label: 'Enrolments & progress', fn: async () => {
+                if (enrolPlan === 'skip') return { skipped: true, note: enrolNote };
+                // The enrolment sync guards and owns the in-flight flag itself.
+                this._apiSyncInFlight = false;
+                try { const r = await this.syncEnrolmentsFromApi({ silent: true }); return Object.assign({ plan: enrolPlan }, r || {}); }
+                finally { this._apiSyncInFlight = true; }
+            } }
         ];
         const done = [];
         for (const stage of stages) {
@@ -717,6 +722,15 @@ Object.assign(window.App, {
                 if (dcLine) lines.push(dcLine);
             } else if (s.label === 'Ambassadors') {
                 lines.push(`✓ Ambassadors timeline refreshed`);
+            } else if (s.label === 'Enrolments & progress') {
+                if (r.skipped) lines.push(`– Enrolments & progress: ${r.note}`);
+                else {
+                    const paused = !!(this._enrMeta && this._enrMeta.run && !this._enrMeta.run.done);
+                    lines.push(`${paused ? '⏸' : '✓'} Enrolments & progress (${r.mode || enrolPlan}${r.resumed ? ', resumed' : ''}): ${(r.done || 0).toLocaleString()} accounts refreshed`
+                        + (r.ingestedOffline ? `, ${r.ingestedOffline.toLocaleString()} from the receipt` : '')
+                        + (r.certsNew ? `, ${r.certsNew.toLocaleString()} new certificates` : '')
+                        + (paused ? ' — paused; card 2 → Sync from API resumes it' : ''));
+                }
             }
         }
         alert(lines.join('\n'));

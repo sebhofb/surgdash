@@ -89,6 +89,27 @@ Follow-ups:
   snapshot and the provider packages; a "recommended next course" list per
   course for the SURGhub site, derived from the 2-course paths.
 
+## Done — Sync Everything includes card 2; targeted redraws (10 September 2026)
+
+- **Sync Everything** now runs a third stage, Enrolments & progress: incremental
+  when a full pass has completed, resuming an interrupted pass otherwise, and
+  skipped with a note if card 2 has never completed (a 30-hour first pass is
+  never started from here). It runs last, in-flight flag released around it,
+  Cancel keeps the earlier stages; the summary reports accounts refreshed, new
+  certificates and a pause. The old "NOT refreshed by this sync" warning is gone.
+- **Targeted redraws** (`js/ui.js`): each view that draws charts remembers its
+  draw hook (`_currentDraw`); `redrawCharts()` re-runs it without touching the
+  DOM. `rerenderDashTab()` re-renders only `#dash-content` for the current
+  dashboard tab (the overview still needs the full pass for its KPI cards) and
+  runs that tab's own charts — no sidebar/header rebuild, no scroll jump.
+  `setIncludePartialMonth(v)` syncs every partial-month toggle and caption on
+  the page (`data-partial-toggle`, `data-partial-caption`), then redraws charts
+  or re-renders an HTML tab. `_setChartWidth` resizes the wrapper, refreshes the
+  S/M/L buttons and redraws that one chart from `Charts.redrawRegistered` (the
+  export registry's last data). Tab-local controls in journeys / compare /
+  institutions call `rerenderDashTab()`. Convention for new tabs: tab-local
+  state → `App.rerenderDashTab()`; navigation → `renderView()`.
+
 ## Done — background sync of cards 3 and 2 (10 September 2026)
 
 `js/backgroundSync.js`. Once a day, at the first quiet moment (3 min without
@@ -275,7 +296,6 @@ start, because no per-email registration date is held.
   not tiles).
 - Build Tailwind to a static stylesheet instead of shipping the Play-CDN JIT
   compiler (a likely GPU-load contributor); then drop `unsafe-eval` from the CSP.
-- Targeted chart redraws instead of full `renderView()` on toggle changes.
 - Release the two large SURGhub blobs from renderer memory when their views
   close, or move derivations into a worker.
 - Keychain-backed storage (`safeStorage`) for the LearnWorlds and Anthropic

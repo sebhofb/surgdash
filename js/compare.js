@@ -181,7 +181,7 @@ Object.assign(window.App, {
         return { A: this._cmpMetrics(A, filter), B: this._cmpMetrics(B, filter), preset, filter };
     },
 
-    setCmpOpt(k, v) { this[k] = v; if (k === 'cmpCohortMode' && v === 'all') this.cmpCohortDomain = ''; this.renderView(); },
+    setCmpOpt(k, v) { this[k] = v; if (k === 'cmpCohortMode' && v === 'all') this.cmpCohortDomain = ''; this.rerenderDashTab ? this.rerenderDashTab() : this.renderView(); },
 
     _drawCompareCharts() {
         if (!(window.google && google.visualization && google.visualization.ColumnChart)) return;
@@ -206,7 +206,7 @@ Object.assign(window.App, {
         const fmt1 = (n) => (n == null ? '—' : (Math.round(n * 10) / 10).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 }));
         const pctS = (n, d = 1) => (n == null ? '—' : (Number(n)).toFixed(d) + '%');
         // Lazy sources
-        const kick = (p) => p.then(() => { if (this.view === 'platform' && this._dashTab === 'compare') this.renderView(); }).catch(() => {});
+        const kick = (p) => p.then(() => { if (this.view === 'platform' && this._dashTab === 'compare') (this.rerenderDashTab || this.renderView).call(this); }).catch(() => {});
         if (this._rawCompletion == null && this.ensureCompletionLoaded && !this._completionLoadPromise) kick(this.ensureCompletionLoaded());
         if (this._rawAnonymizedUsers == null && this.ensureAnonLoaded && !this._anonLoadPromise) kick(this.ensureAnonLoaded());
         if (this._surveyRawMap === undefined) { this._surveyRawMap = null; kick(Storage.getItem('surghub_survey_raw').then(v => { this._surveyRawMap = (v && typeof v === 'object') ? v : {}; })); }

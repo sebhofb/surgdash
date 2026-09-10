@@ -36,6 +36,14 @@ window.Charts = {
     _registerChart(elementId, chartType, data, options) {
         this._charts[elementId] = { chartType, data, options };
     },
+    // Redraw one chart from its last registered data — for changes that alter only its
+    // container (width) and none of its data. Returns false when it cannot.
+    redrawRegistered(elementId) {
+        const e = this._charts[elementId], el = document.getElementById(elementId);
+        if (!e || !el || !(window.google && google.visualization && google.visualization[e.chartType])) return false;
+        try { new google.visualization[e.chartType](el).draw(e.data, e.options); return true; }
+        catch (err) { __swallowed(err, 'charts.redraw'); return false; }
+    },
 
     _renderHiRes(elementId) {
         const entry = this._charts[elementId];

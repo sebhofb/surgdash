@@ -104,6 +104,68 @@ Object.assign(window.App, {
         this.includePartialMonth = false;
         this.renderView();
     },
+    // ── Targeted redraws ──────────────────────────────────────────────────
+    // A toggle used to rebuild the whole view (sidebar, header, every chart). Now:
+    //   redrawCharts()          re-runs the current view's chart draw hook only;
+    //   rerenderDashTab()       re-renders just the dashboard tab's content
+    //                           (#dash-content) and its own charts — no header,
+    //                           no scroll jump, no platform-wide redraw;
+    //   setIncludePartialMonth  syncs every toggle + caption on the page, then
+    //                           redraws charts (or re-renders an HTML-only tab).
+    _DASH_HTML_TABS: ['institutions', 'compare', 'journeys', 'lookup', 'health'],
+    _dashAudSnap() {
+        return (this.userHistory || []).find(d => d.Timestamp === this.selectedDate) || (this.userHistory || []).slice().reduce((a, b) => (a && String(a.Timestamp) > String(b.Timestamp) ? a : b), null) || null;
+    },
+    _dashContentHtml(dt, snapData, audSnap, kpiCards) {
+        if (dt === 'learners') return this._dashLearnersHtml(audSnap);
+        if (dt === 'geography') return this._dashGeographyHtml(audSnap);
+        if (dt === 'performance') return this._dashPerformanceHtml(snapData);
+        if (dt === 'feedback') return this._dashFeedbackHtml(snapData);
+        if (dt === 'conflict') return this._dashConflictHtml(snapData, audSnap);
+        if (dt === 'physicians') return this._dashPhysicianHtml(snapData, audSnap);
+        if (dt === 'nurses') return this._dashNurseHtml(snapData, audSnap);
+        if (dt === 'institutions') return this._dashInstitutionsHtml(snapData, audSnap);
+        if (dt === 'compare') return this._dashCompareHtml(snapData, audSnap);
+        if (dt === 'journeys') return this._dashJourneysHtml(snapData, audSnap);
+        if (dt === 'lookup') return '<div data-no-export>' + this._dashLookupHtml() + '</div>';   // stripped from DOM-based exports
+        if (dt === 'health') return this._dashHealthHtml(snapData, audSnap);
+        return this._dashOverviewHtml(snapData, audSnap, kpiCards);
+    },
+    _dashDraw(dt, audSnap, platSnap) {
+        if (!window.Charts) return;
+        window.Charts.drawPlatform(this.getPlatformHistory(), platSnap);
+        if (audSnap && audSnap.TotalUsers) window.Charts.drawAudience(audSnap);
+        if (dt === 'conflict' && this._drawConflictCharts) this._drawConflictCharts(audSnap);
+        if (dt === 'physicians' && this._drawPhysicianCharts) this._drawPhysicianCharts(audSnap);
+        if (dt === 'nurses' && this._drawNurseCharts) this._drawNurseCharts();
+        if (dt === 'institutions' && this._drawInstitutionCharts) this._drawInstitutionCharts();
+        if (dt === 'compare' && this._drawCompareCharts) this._drawCompareCharts();
+    },
+    redrawCharts() {
+        if (!this._currentDraw) return false;
+        try { this._currentDraw(); } catch (e) { __swallowed(e, 'redrawCharts'); }
+        return true;
+    },
+    rerenderDashTab() {
+        const dt = this._dashTab || 'overview';
+        const host = document.getElementById('dash-content');
+        if (!host || this.view !== 'platform' || dt === 'overview') { this.renderView(); return; }   // the overview's KPI cards need the full pass
+        const snapData = this.getAnalyticsSnap(), platSnap = this.getPlatformSnap(), audSnap = this._dashAudSnap();
+        host.innerHTML = this._dashContentHtml(dt, snapData, audSnap, null);
+        if (window.lucide && lucide.createIcons) { try { lucide.createIcons(); } catch (e) { __swallowed(e, 'rerender.icons'); } }
+        if (this._snapshotUiState) this._snapshotUiState();
+        if (window.Charts) { const _d = () => this._dashDraw(dt, audSnap, platSnap); this._currentDraw = _d; setTimeout(_d, 40); }
+    },
+    setIncludePartialMonth(v) {
+        this.includePartialMonth = !!v;
+        try {
+            document.querySelectorAll('input[data-partial-toggle]').forEach(cb => { cb.checked = !!v; });
+            document.querySelectorAll('[data-partial-caption]').forEach(el => { el.innerHTML = this._partialMonthCaptionInner(); });
+        } catch (e) { __swallowed(e, 'partialMonth.sync'); }
+        if (this.view === 'platform' && this._DASH_HTML_TABS.includes(this._dashTab || 'overview')) { this.rerenderDashTab(); return; }
+        if (!this.redrawCharts()) this.renderView();
+    },
+
     _resetChartBtn(elementId) {
         return `<button onclick="App._resetChart('${elementId}')" title="Reset this chart's view to defaults (width, period, trim, monthly bars)" class="ml-1 px-2 py-0.5 text-[10px] font-bold rounded text-slate-400 hover:bg-slate-100 hover:text-gsf-boston border border-slate-200">↺ Reset</button>`;
     },
@@ -122,8 +184,16 @@ Object.assign(window.App, {
     _chartWidth: {},  // map: elementId -> 'compact' | 'standard' | 'wide'
     _setChartWidth(elementId, width) {
         this._chartWidth[elementId] = width;
-        // Full re-render — the view's own draw triggers handle the chart redraw cleanly
-        this.renderView();
+        // In place: resize the wrapper, refresh the S/M/L buttons, redraw this one chart
+        // from its registered data. Anything missing → the old full re-render.
+        const el = document.getElementById(elementId), wrap = el && el.parentElement;
+        const btns = document.querySelector('[data-chart-width-btns="' + elementId + '"]');
+        if (!el || !wrap || !wrap.style || !wrap.style.maxWidth || !btns) { this.renderView(); return; }
+        const map = { compact: '520px', standard: '820px', wide: '100%' };
+        wrap.style.maxWidth = map[width] || '100%'; wrap.style.margin = width === 'wide' ? '0' : '0 auto';
+        btns.outerHTML = this._chartWidthBtns(elementId);
+        if (this._snapshotUiState) this._snapshotUiState();
+        if (!(window.Charts && Charts.redrawRegistered && Charts.redrawRegistered(elementId))) { if (!this.redrawCharts()) this.renderView(); }
     },
     // Inline style helper for chart width wrapper divs
     _chartWidthStyle(elementId) {
@@ -135,7 +205,7 @@ Object.assign(window.App, {
         const cur = this._chartWidth[elementId] || 'wide';
         const btn = (val, label, title) =>
             `<button onclick="App._setChartWidth('${elementId}','${val}')" title="${title}" class="px-2 py-0.5 text-[10px] font-bold rounded ${cur===val ? 'bg-gsf-boston text-white' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-600'}">${label}</button>`;
-        return `<div class="inline-flex items-center gap-0.5 ml-2 border border-slate-200 rounded p-0.5" title="Chart width — narrower charts make growth slopes look steeper">
+        return `<div data-chart-width-btns="${elementId}" class="inline-flex items-center gap-0.5 ml-2 border border-slate-200 rounded p-0.5" title="Chart width — narrower charts make growth slopes look steeper">
             ${btn('compact','S','Compact width — steepest slopes')}
             ${btn('standard','M','Standard width')}
             ${btn('wide','L','Full width')}
@@ -1589,12 +1659,13 @@ Object.assign(window.App, {
         const cm = (window.Charts && Charts._currentMonth) ? Charts._currentMonth() : '';
         const monthLabel = cm ? new Date(cm + '-01').toLocaleDateString('en-US', { month: 'short' }) : 'current month';
         return `<label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer ml-auto" title="When off, only complete months are shown to avoid the misleading flatline at the end. Turn on to see the in-progress month.">
-            <input type="checkbox" data-viewer-allowed ${this.includePartialMonth ? 'checked' : ''} onchange="App.includePartialMonth=this.checked; App.renderView()">
+            <input type="checkbox" data-viewer-allowed data-partial-toggle ${this.includePartialMonth ? 'checked' : ''} onchange="App.setIncludePartialMonth(this.checked)">
             <span>Include ${this.escapeHtml(monthLabel)} (partial)</span>
         </label>`;
     },
     // Footnote shown beneath a chart when the partial month is included.
-    _partialMonthCaption() {
+    _partialMonthCaption() { return `<div data-partial-caption>${this._partialMonthCaptionInner()}</div>`; },
+    _partialMonthCaptionInner() {
         if (!this.includePartialMonth || !window.Charts || !window.Charts._partialMonthCaption) return '';
         const txt = Charts._partialMonthCaption();
         return `<p class="text-[11px] text-slate-400 italic mt-2 text-right">⚠ ${txt}. Cumulative growth may appear to slow until the month completes.</p>`;
@@ -2761,6 +2832,7 @@ Object.assign(window.App, {
         this.renderTabBar();
         // Persist in-place mutations of object view prefs (chart widths, pickers) — see uiState.js.
         if (this._snapshotUiState) this._snapshotUiState();
+        this._currentDraw = null;   // set by views that draw charts; redrawCharts() re-runs it without rebuilding the DOM
         const body = document.getElementById('view-body') || document.getElementById('main-content');
         const project = this.getCurrentProject();
         if (this._refreshSampleBanner) this._refreshSampleBanner(project);
@@ -3646,7 +3718,7 @@ Object.assign(window.App, {
             let fallbackUsers = this.platformUniqueUsers || 0;
             // userHistory is appended oldest-first (updater pushes), so fall back to the
             // NEWEST row by Timestamp — never [0] (the oldest) — to match the Ask-data pack.
-            const audSnap = (this.userHistory || []).find(d => d.Timestamp === this.selectedDate) || (this.userHistory || []).slice().reduce((a, b) => (a && String(a.Timestamp) > String(b.Timestamp) ? a : b), null) || null;
+            const audSnap = this._dashAudSnap();
             const totalAudience = audSnap && audSnap.TotalUsers ? audSnap.TotalUsers : fallbackUsers;
 
             let studyMin = 0;
@@ -3713,20 +3785,7 @@ Object.assign(window.App, {
                 ['lookup', 'Learner lookup', 'user-search', true],   // edit-only: personal data
             ].map(([k, l, ic, editOnly]) => `<button ${editOnly ? 'data-edit-only ' : ''}onclick="App._dashTab='${k}'; App.renderView()" class="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-bold transition-colors ${dt === k ? 'bg-gsf-prussian text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100'}"><i data-lucide="${ic}" width="15"></i> ${l}</button>`).join('');
 
-            let dashContent;
-            if (dt === 'learners') dashContent = this._dashLearnersHtml(audSnap);
-            else if (dt === 'geography') dashContent = this._dashGeographyHtml(audSnap);
-            else if (dt === 'performance') dashContent = this._dashPerformanceHtml(snapData);
-            else if (dt === 'feedback') dashContent = this._dashFeedbackHtml(snapData);
-            else if (dt === 'conflict') dashContent = this._dashConflictHtml(snapData, audSnap);
-            else if (dt === 'physicians') dashContent = this._dashPhysicianHtml(snapData, audSnap);
-            else if (dt === 'nurses') dashContent = this._dashNurseHtml(snapData, audSnap);
-            else if (dt === 'institutions') dashContent = this._dashInstitutionsHtml(snapData, audSnap);
-            else if (dt === 'compare') dashContent = this._dashCompareHtml(snapData, audSnap);
-            else if (dt === 'journeys') dashContent = this._dashJourneysHtml(snapData, audSnap);
-            else if (dt === 'lookup') dashContent = '<div data-no-export>' + this._dashLookupHtml() + '</div>';   // stripped from DOM-based exports
-            else if (dt === 'health') dashContent = this._dashHealthHtml(snapData, audSnap);
-            else dashContent = this._dashOverviewHtml(snapData, audSnap, kpiCards);
+            const dashContent = this._dashContentHtml(dt, snapData, audSnap, kpiCards);
 
             body.innerHTML = `
                 <div class="p-6 md:p-10 fade-in w-full max-w-7xl mx-auto">
@@ -3765,19 +3824,12 @@ Object.assign(window.App, {
                     </div>
 
                     ${dt === 'overview' ? this._milestoneStripHtml() : ''}
-                    ${dashContent}
+                    <div id="dash-content">${dashContent}</div>
                 </div>
             `;
             if (window.Charts) {
-                const _d = () => {
-                    window.Charts.drawPlatform(this.getPlatformHistory(), platSnap);
-                    if (audSnap && audSnap.TotalUsers) window.Charts.drawAudience(audSnap);
-                    if (dt === 'conflict' && this._drawConflictCharts) this._drawConflictCharts(audSnap);
-                    if (dt === 'physicians' && this._drawPhysicianCharts) this._drawPhysicianCharts(audSnap);
-                    if (dt === 'nurses' && this._drawNurseCharts) this._drawNurseCharts();
-                    if (dt === 'institutions' && this._drawInstitutionCharts) this._drawInstitutionCharts();
-                    if (dt === 'compare' && this._drawCompareCharts) this._drawCompareCharts();
-                };
+                const _d = () => this._dashDraw(dt, audSnap, platSnap);
+                this._currentDraw = _d;
                 setTimeout(_d, 80); setTimeout(_d, 400);
             }
         }
@@ -3964,7 +4016,7 @@ Object.assign(window.App, {
                     ` : '<div class="bg-white p-12 text-center text-slate-500 italic rounded-xl border">No Ambassador Data uploaded yet.</div>'}
                 </div>
             `;
-            if(snap.TotalReferrals && window.Charts) { const _d = () => window.Charts.drawAmbassadors(snap); setTimeout(_d, 80); setTimeout(_d, 400); }
+            if(snap.TotalReferrals && window.Charts) { const _d = () => window.Charts.drawAmbassadors(snap); this._currentDraw = _d; setTimeout(_d, 80); setTimeout(_d, 400); }
         }
         else if (this.view === 'provider') {
             const snapData = this.getAnalyticsSnap();
@@ -4110,7 +4162,7 @@ Object.assign(window.App, {
                     ` : ''}
                 </div>
             `;
-            if(window.Charts) { const _d = () => window.Charts.drawProvider(this.getAnalyticsHistory(), this.selectedProvider); setTimeout(_d, 80); setTimeout(_d, 400); }
+            if(window.Charts) { const _d = () => window.Charts.drawProvider(this.getAnalyticsHistory(), this.selectedProvider); this._currentDraw = _d; setTimeout(_d, 80); setTimeout(_d, 400); }
             this._hydrateTestimonialCheckboxes(this.selectedProvider);
             setTimeout(() => this._injectProviderLogo(this.selectedProvider, 'prov-logo-slot', this._providerSurghubUrl(this.selectedProvider)), 30);
         }
@@ -4220,7 +4272,7 @@ Object.assign(window.App, {
                     ` : ''}
                 </div>
             `;
-            if(window.Charts) { const _d = () => window.Charts.drawCourse(this.getAnalyticsHistory(), this.selectedCourse); setTimeout(_d, 80); setTimeout(_d, 400); }
+            if(window.Charts) { const _d = () => window.Charts.drawCourse(this.getAnalyticsHistory(), this.selectedCourse); this._currentDraw = _d; setTimeout(_d, 80); setTimeout(_d, 400); }
             setTimeout(() => this._injectProviderLogo((cSnap.Provider || ''), 'crs-logo-slot', this._courseSurghubUrl(cSnap.CourseId)), 30);
             this._hydrateTestimonialCheckboxes(cSnap.Provider || '');
         }
