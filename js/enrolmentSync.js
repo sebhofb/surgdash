@@ -21,7 +21,10 @@
 //     is ever fetched twice;
 //   • SELECTIVE: accounts that had no course in the growth-timelines pull and
 //     no activity since are skipped (no enrolments to fetch); most recently
-//     active accounts go first so fresh data lands early.
+//     active accounts go first so fresh data lands early. Incremental runs
+//     re-fetch only accounts that logged in after their last fetch
+//     (meta.fetchedAt) and walk certificates only for courses with fresh
+//     completions (see the constants below).
 // A full pass over ~63k accounts is still ~33 hours of API time; it simply no
 // longer has to happen in one sitting. Incremental runs (accounts active since
 // the last completed run) take minutes.
@@ -36,7 +39,21 @@ Object.assign(window.App, {
     ENR_META_KEY: 'surgdash_enrolment_sync',
     ENR_TARGET_PER_MIN: 55,             // just under the observed ~60/min sustained quota
     ENR_CHECKPOINT: 200,                // accounts between persisted checkpoints (~7 min)
-    ENR_INCREMENTAL_SLACK_DAYS: 2,
+    ENR_INCREMENTAL_SLACK_DAYS: 2,      // fallback rule only (no per-account fetch times yet)
+    // INCREMENTAL RUNS FETCH ONLY WHAT CAN HAVE CHANGED. meta.fetchedAt holds, per
+    // account, the epoch of its last fetch (kept across runs; seeded from receipts).
+    // An account is re-fetched when it logged in after that (progress needs a login),
+    // was created after it, or was never fetched. ENR_SESSION_SLACK_S covers a login
+    // shortly BEFORE the fetch whose session continued after it. Result: a daily run
+    // touches the day's active accounts (~400) instead of everyone active in a
+    // two-day window (~2,500).
+    ENR_SESSION_SLACK_S: 6 * 3600,
+    // CERTIFICATE WALKS ARE TARGETED. Each session walks (newest-first, early stop)
+    // only the courses where a fetched account completed something since the last
+    // walk; every course is walked at most every ENR_CERT_FULL_DAYS as a safety net
+    // (a certificate issued long after completion, or to an account that did not log
+    // in). At ~10 s a page this turns a ~1 h daily walk into ~10 min most days.
+    ENR_CERT_FULL_DAYS: 3,
     ENR_MAX_FAILURE_SHARE: 0.01,
     ENR_TIMELINES_DATE: '2026-06-14',   // date of the growth-timelines pull behind surghub_user_courses
     // TRANSIENT FAILURES ARE RETRIED IN PLACE, not allowed to end the run. A network
@@ -240,7 +257,6 @@ Object.assign(window.App, {
     // /certificates (~1,700 pages at the API's fixed 20/page) is made at most once
     // a day instead of once per session.
     ENR_CERT_KEY: 'surgdash_cert_index',
-    ENR_CERT_MAX_AGE_H: 24,
     async _enrLoadCertIndex() { try { const v = await Storage.getItem(this.ENR_CERT_KEY); return (v && typeof v === 'object') ? v : {}; } catch (e) { return {}; } },
     async _enrSaveCertIndex(index) { try { await Storage.setItem(this.ENR_CERT_KEY, index); } catch (e) { __swallowed(e, 'enrolments.certIndex'); } },
     _enrCertIndexAdd(index, items) {
@@ -374,6 +390,7 @@ Object.assign(window.App, {
         const path = electronAPI.path;
         const users = new Map(), perUser = new Map(), certs = [];
         let lastCertT = 0, accountsAfterCert = 0;   // the run moves on to accounts only after a COMPLETE certificate pass
+        const fetchedAt = {};                          // account id → epoch seconds of its (latest) fetch in this receipt
         const head = /^\{"t":(\d+),"path":"([^"]*)"/;   // cheap peek — no JSON.parse for bodies nobody needs
         const perUserRe = /^\/users\/([^/]+)\/(courses|progress)$/;
         this._enrReadLines(path.join(pullDir, 'pull.jsonl'), (line) => {
@@ -382,14 +399,14 @@ Object.assign(window.App, {
             if (h) { p = h[2]; t = Number(h[1]) || 0; }
             else { try { o = JSON.parse(line); } catch (e) { return; } p = String(o.path || ''); t = Number(o.t) || 0; }
             const m = perUserRe.exec(p);
-            if (m) { if (lastCertT) accountsAfterCert++; if (skipIds && skipIds[m[1]]) return; }
+            if (m) { if (lastCertT) accountsAfterCert++; const ts = Math.floor((t || 0) / 1000); if (ts && (!fetchedAt[m[1]] || ts > fetchedAt[m[1]])) fetchedAt[m[1]] = ts; if (skipIds && skipIds[m[1]]) return; }
             else if (p !== '/users' && p !== '/certificates') return;
             let b; try { o = o || JSON.parse(line); b = JSON.parse(o.body); } catch (e) { return; }
             if (p === '/users') { (b.data || []).forEach(u => { if (u && u.id && u.email) users.set(String(u.id), { id: String(u.id), email: String(u.email).toLowerCase().trim(), first: u.first_name || '', last: u.last_name || '', lastLogin: Number(u.last_login) || 0, created: Number(u.created) || 0 }); }); return; }
             if (p === '/certificates') { (b.data || []).forEach(c => certs.push(c)); lastCertT = t || lastCertT; accountsAfterCert = 0; return; }
             const rec = perUser.get(m[1]) || { courses: [], progress: [] }; rec[m[2]].push(b); perUser.set(m[1], rec);
         });
-        return { users, perUser, certs, pullDir, lastCertT, accountsAfterCert };
+        return { users, perUser, certs, pullDir, lastCertT, accountsAfterCert, fetchedAt };
     },
     // Build + persist rows for every account the receipt holds a /courses body for.
     // Accounts already in `alreadyProcessed` are skipped. Returns the ids ingested.
@@ -417,10 +434,19 @@ Object.assign(window.App, {
         const uc = this._enrUserCourses || null;
         const tl = Math.floor(new Date(this.ENR_TIMELINES_DATE).getTime() / 1000);
         let out = list.filter(u => !processed[u.id]);
-        if (mode === 'incremental' && meta.lastRunEpoch) {
-            const since = meta.lastRunEpoch - this.ENR_INCREMENTAL_SLACK_DAYS * 86400;
-            const known = new Set((this._rawCompletion || []).map(r => r.uid));
-            out = out.filter(u => u.lastLogin >= since || u.created >= since || !known.has(this._djb2Hash(u.email)));
+        if (mode === 'incremental') {
+            const fa = (meta.fetchedAt && Object.keys(meta.fetchedAt).length) ? meta.fetchedAt : null;
+            if (fa) {
+                // Exact per account: never fetched, logged in after the fetch (plus the
+                // session slack), or created after it.
+                const slack = this.ENR_SESSION_SLACK_S;
+                out = out.filter(u => { const f = fa[u.id]; return !f || (u.lastLogin + slack) > f || u.created > f; });
+            } else if (meta.lastRunEpoch) {
+                // Fallback for a device without fetch times yet: a two-day window.
+                const since = meta.lastRunEpoch - this.ENR_INCREMENTAL_SLACK_DAYS * 86400;
+                const known = new Set((this._rawCompletion || []).map(r => r.uid));
+                out = out.filter(u => u.lastLogin >= since || u.created >= since || !known.has(this._djb2Hash(u.email)));
+            }
         }
         // No course in the growth-timelines pull and no activity since → nothing to fetch.
         if (uc) out = out.filter(u => uc[u.id] || u.created >= tl || u.lastLogin >= tl);
@@ -471,7 +497,16 @@ Object.assign(window.App, {
         let ok = false, cancelled = false;
         const titleMap = this._enrCourseTitleMap();
         // Buffered rows since the last checkpoint — flushed on checkpoint, cancel, error, or completion.
-        let pending = [], pendingUids = [], pendingIds = [];
+        let pending = [], pendingUids = [], pendingIds = [], pendingAt = [];
+        // Per-account fetch times, kept across runs. First time on a device with a
+        // completed pass: seed every processed account with that run's start (the
+        // earliest it can have been fetched) — receipts sharpen this in the harvest.
+        if (!meta.fetchedAt || typeof meta.fetchedAt !== 'object') meta.fetchedAt = {};
+        if (!Object.keys(meta.fetchedAt).length && meta.run && meta.run.processed && (meta.run.done || meta.lastRunEpoch)) {
+            const seed = Math.floor(Date.parse(meta.run.startedAt || meta.lastRun || 0) / 1000) || meta.lastRunEpoch || 0;
+            if (seed) for (const id of Object.keys(meta.run.processed)) meta.fetchedAt[id] = seed;
+        }
+        if (!meta.certsFullAt && meta.certsAt) meta.certsFullAt = meta.certsAt;   // earlier passes walked every course
         const run = openRun || { startedAt: new Date().toISOString(), mode, total: 0, processed: {}, done: false };
         meta.run = run;
         run.sessions = (run.sessions || 0) + 1; run.sessionAt = new Date().toISOString();
@@ -479,8 +514,8 @@ Object.assign(window.App, {
         const checkpoint = async (label) => {
             if (pendingIds.length) {
                 await this._enrPersist(pending, pendingUids, 'merge');
-                pendingIds.forEach(id => { run.processed[id] = 1; });
-                pending = []; pendingUids = []; pendingIds = [];
+                pendingIds.forEach((id, k) => { run.processed[id] = 1; meta.fetchedAt[id] = pendingAt[k] || Math.floor(Date.now() / 1000); });
+                pending = []; pendingUids = []; pendingIds = []; pendingAt = [];
             }
             run.checkpointAt = new Date().toISOString();
             const mins = (Date.now() - sessionT0) / 60000;
@@ -507,7 +542,7 @@ Object.assign(window.App, {
                     // certificate page holds a COMPLETE pass (the pass throws on any
                     // failure) — so its time counts as the last refresh and today's
                     // ~31-minute pass is skipped when it is under a day old.
-                    if (parsed.lastCertT && parsed.accountsAfterCert >= 10) { const iso = new Date(parsed.lastCertT).toISOString(); if (!meta.certsAt || iso > meta.certsAt) meta.certsAt = iso; }
+                    if (parsed.lastCertT && parsed.accountsAfterCert >= 10) { const iso = new Date(parsed.lastCertT).toISOString(); if (!meta.certsAt || iso > meta.certsAt) meta.certsAt = iso; if (!meta.certsFullAt || iso > meta.certsFullAt) meta.certsFullAt = iso; }
                     // A full account listing in a receipt refreshes the account index when it is newer than the one held.
                     if (parsed.users.size >= 1000 && this._accountsFromUsers) {
                         try {
@@ -519,7 +554,10 @@ Object.assign(window.App, {
                     }
                     const certMapNow = this._enrCertMapFromIndex(certIndex, titleMap);
                     const ing = await this._enrIngestReceipt(parsed, titleMap, run.processed, (i, n) => this._enrStatus(`Ingesting receipt ${d + 1}/${dirs.length}… ${i.toLocaleString()}/${n.toLocaleString()}`, 1 + Math.round(i / n * 4)), certMapNow);
-                    ing.ids.forEach(id => { run.processed[id] = 1; });
+                    const stampS = (() => { const st = String(dirs[d]).match(/__(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})$/); return st ? Math.floor(new Date(+st[1], +st[2] - 1, +st[3], +st[4], +st[5], +st[6]).getTime() / 1000) : 0; })();
+                    ing.ids.forEach(id => { run.processed[id] = 1; meta.fetchedAt[id] = (parsed.fetchedAt && parsed.fetchedAt[id]) || stampS || meta.fetchedAt[id] || 0; });
+                    // Exact fetch times for every account this receipt holds (also the ones already saved).
+                    if (parsed.fetchedAt) for (const id of Object.keys(parsed.fetchedAt)) if (!meta.fetchedAt[id] || parsed.fetchedAt[id] > meta.fetchedAt[id]) meta.fetchedAt[id] = parsed.fetchedAt[id];
                     summary.ingestedOffline += ing.ids.length;
                 }
                 if (harvested) await this._enrSaveCertIndex(certIndex);
@@ -552,6 +590,7 @@ Object.assign(window.App, {
 
             // 5. Per-account fetch, paced, checkpointed
             const t0 = Date.now(); let sinceCheckpoint = 0;
+            const freshCourses = new Set(), certsAtS = meta.certsAt ? Math.floor(Date.parse(meta.certsAt) / 1000) : 0;
             for (let i = 0; i < selected.length; i++) {
                 const u = selected[i];
                 let fetched;
@@ -562,29 +601,44 @@ Object.assign(window.App, {
                 catch (e) { const kind = this._enrErrorKind(e); if (kind === 'cancel') { cancelled = true; throw e; } if (kind === 'fatal' && /^Auth failed|credentials/i.test(e.message || '')) throw e; summary.failed++; console.warn('[enrolments] account skipped:', u.id, e.message || e); continue; }
                 const f = fetched;
                 pending.push(...this._enrBuildRows(u, f, certMap, titleMap, priorByKey));
-                pendingUids.push(this._djb2Hash(u.email)); pendingIds.push(u.id);
+                pendingUids.push(this._djb2Hash(u.email)); pendingIds.push(u.id); pendingAt.push(Math.floor(Date.now() / 1000));
                 summary.done++; if (!f.enrolments.length && !Object.keys(f.progress).length) summary.noEnrolments++;
+                // Courses where this account completed something since the last certificate walk → walk them below.
+                for (const cid of Object.keys(f.progress)) {
+                    const pr = f.progress[cid]; if (!pr || certIndex[u.id + '|' + cid]) continue;
+                    const done = String(pr.status || '').toLowerCase() === 'completed' || (Number(pr.progress_rate) || 0) >= 100 || !!pr.completed_at;
+                    if (!done) continue;
+                    const ca = Number(pr.completed_at) || 0;
+                    if (!ca || !certsAtS || ca >= certsAtS - 3600) freshCourses.add(cid);
+                }
                 if (++sinceCheckpoint >= this.ENR_CHECKPOINT) { sinceCheckpoint = 0; await checkpoint(); }
                 const elapsed = (Date.now() - t0) / 1000, eta = summary.done ? (selected.length - i - 1) * elapsed / summary.done : 0;
                 this._enrStatus(`Enrolments… ${(i + 1).toLocaleString()}/${selected.length.toLocaleString()} accounts this session · ${(Object.keys(run.processed).length + pendingIds.length).toLocaleString()}/${run.total.toLocaleString()} overall · ~${this._enrFmtEta(eta)} left · saved every ${this.ENR_CHECKPOINT}`, 15 + Math.round((i + 1) / selected.length * 82));
             }
             if (summary.failed > Math.max(20, summary.selected * this.ENR_MAX_FAILURE_SHARE)) throw new Error(`${summary.failed} of ${summary.selected} accounts failed after retries — stopping; progress so far is saved, run again later.`);
 
-            // 6. Certificates — after the accounts, at most once a day: an incremental
-            //    walk (newest first, stopping where the index is already complete), then
-            //    the index is applied to EVERY record, so rows built above and rows from
-            //    the xlsx importer pick up certificates issued since they were fetched.
-            const certAgeH = meta.certsAt ? (Date.now() - Date.parse(meta.certsAt)) / 3600000 : Infinity;
-            if (certAgeH > this.ENR_CERT_MAX_AGE_H) {
+            // 6. Certificates — after the accounts: every session walks the courses where a
+            //    fetched account completed something since the last walk (newest first,
+            //    stopping where the index is complete); every course is walked at most every
+            //    ENR_CERT_FULL_DAYS. Then the index is applied to EVERY record, so rows built
+            //    above and rows from the xlsx importer pick up certificates issued since.
+            const fullDue = !meta.certsFullAt || (Date.now() - Date.parse(meta.certsFullAt)) / 86400000 >= this.ENR_CERT_FULL_DAYS || !Object.keys(certIndex).length;
+            const walkIds = fullDue ? Object.keys(titleMap) : [...freshCourses].filter(id => titleMap[id]);
+            summary.certWalk = fullDue ? 'full' : (walkIds.length ? 'targeted' : 'none'); summary.certCourses = walkIds.length;
+            if (walkIds.length) {
                 await checkpoint();
-                const courseIds = Object.keys(titleMap), tc0 = Date.now();
-                this._enrStatus(`Certificates: checking ${courseIds.length} courses for certificates issued since ${meta.certsAt ? String(meta.certsAt).slice(0, 10) : 'the beginning'} — ~${Math.round(this.ENR_CERT_GAP_MS / 1000)} s per page, this endpoint's limit…`, 97);
-                const items = await this._enrFetchCertificates(LW, courseIds, (i, n, k, page, totalPages, cid, pages) => this._enrStatus(`Certificates… course ${i}/${n} (${titleMap[cid] || cid}) · page ${page}/${totalPages} · ${pages} page${pages === 1 ? '' : 's'} so far · ~${this._enrFmtEta(Math.max(10, (n - i) * (Date.now() - tc0) / 1000 / Math.max(1, i)))} left`, 97 + Math.round(i / n * 2)), certIndex, meta.certsAt);
+                const tc0 = Date.now();
+                this._enrStatus(`Certificates: ${fullDue ? 'checking every course' : 'checking ' + walkIds.length + ' course' + (walkIds.length === 1 ? '' : 's') + ' with new completions'} for certificates issued since ${meta.certsAt ? String(meta.certsAt).slice(0, 10) : 'the beginning'} — ~${Math.round(this.ENR_CERT_GAP_MS / 1000)} s per page, this endpoint's limit…`, 97);
+                const items = await this._enrFetchCertificates(LW, walkIds, (i, n, k, page, totalPages, cid, pages) => this._enrStatus(`Certificates… course ${i}/${n} (${titleMap[cid] || cid}) · page ${page}/${totalPages} · ${pages} page${pages === 1 ? '' : 's'} so far · ~${this._enrFmtEta(Math.max(10, (n - i) * (Date.now() - tc0) / 1000 / Math.max(1, i)))} left`, 97 + Math.round(i / n * 2)), certIndex, meta.certsAt);
                 summary.certsNew = this._enrCertIndexAdd(certIndex, items);
                 await this._enrSaveCertIndex(certIndex);
-                meta.certsAt = new Date().toISOString(); await this._enrSaveMeta(meta);
+                const nowIso = new Date().toISOString();
+                meta.certsAt = nowIso; if (fullDue) meta.certsFullAt = nowIso;
+                await this._enrSaveMeta(meta);
                 this._enrStatus('Applying certificates to learner records…', 99);
                 summary.certsApplied = await this._enrApplyCertIndexToRows(certIndex, users, titleMap);
+            } else {
+                this._enrStatus(`Certificates: no new completions since the last walk (${meta.certsAt ? String(meta.certsAt).slice(0, 10) : 'never'}) — index unchanged`, 98);
             }
 
             // 7. Finish

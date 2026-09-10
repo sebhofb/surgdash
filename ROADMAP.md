@@ -89,6 +89,25 @@ Follow-ups:
   snapshot and the provider packages; a "recommended next course" list per
   course for the SURGhub site, derived from the 2-course paths.
 
+## Done — card 2 incremental runs made small (10 September 2026)
+
+Two levers in `js/enrolmentSync.js`:
+- **Per-account fetch times** (`meta.fetchedAt`, id → epoch, kept across runs;
+  seeded from the receipts' exact request times, else the pass's start). An
+  incremental run re-fetches only accounts that logged in after their last
+  fetch (plus a 6-hour session slack), were created after it, or were never
+  fetched — instead of everyone active in a two-day window. Steady state: the
+  day's active accounts, ~15 minutes, not ~2 hours.
+- **Targeted certificate walks**: each session walks only the courses where a
+  fetched account completed something since the last walk; every course is
+  walked at most every `ENR_CERT_FULL_DAYS` (3) as a safety net. The daily
+  24-hour gate is gone (targeted walks are cheap, so certificates land the same
+  session). `meta.certsFullAt` tracks the last full walk; receipts that prove a
+  complete pass set it too.
+Fake-API test: 13 checks (selection rule incl. slack and fallback, fetch times
+recorded/refreshed/seeded, receipt times override the seed, targeted vs full
+walk, quiet day does nothing).
+
 ## Done — Sync Everything includes card 2; targeted redraws (10 September 2026)
 
 - **Sync Everything** now runs a third stage, Enrolments & progress: incremental
