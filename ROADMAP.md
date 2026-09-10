@@ -112,6 +112,46 @@ Follow-ups:
   ambassadors sync are already at the cap; the UI's Tailwind Play-CDN build is
   the main interactive-speed item left (needs a visual check after).
 
+## Done — card 2: why the afternoon run crawled, and the fix (10 September 2026)
+
+Seb's run after the parallel build showed "8,530 accounts this session · ~13 h
+left". Two causes, both read off the receipts (`raw/enrolments__*/pull.jsonl`
+request timestamps) and `settings/enrolment_sync.json`:
+
+- **The API put the app in a penalty box.** Two account workers at 55/min ran
+  13 minutes, then LearnWorlds answered 429 (Retry-After 30 s, then 60 s). The
+  refused worker waited inside `apiGet`'s own retry while the other worker kept
+  requesting, so the client was never silent — and the server let exactly ONE
+  request through per minute for two hours (12:49–14:40 UTC). Single-flow
+  sessions at ~50/min (the 13:29 session, the 08:00 UTC hour of the full pass
+  at 53/min) were never refused; on 4 Sep a single flow at 70–136/min was
+  refused but recovered each time because it went quiet. Fix in
+  `js/enrolmentSync.js` + `js/learnworlds.js`: `apiGet(…, { rateLimit: 'throw' })`
+  surfaces a 429 at once (status + Retry-After); `_enrRateLimited` holds EVERY
+  worker (the pacer honours `_enrPausedUntil`; ≥ 60 s or the server's
+  Retry-After, doubled when refused again within 5 min, ≤ 15 min), then the
+  session continues single-file (one request in flight, a pacer guarantee) a
+  third slower. Defaults: `ENR_TARGET_PER_MIN` 50, `ENR_WORKERS` 1,
+  `ENR_LIST_WORKERS` 2. The overlay and card 2 say when the API refused.
+- **The full pass's record had been lost, so 7,300 unchanged accounts were
+  being re-fetched.** The 13:29 run (old build) replaced `meta.run`, and the
+  receipts holding the first 8,500 accounts of the full pass had been pruned
+  (retention keeps three), so those accounts had no fetch time and counted as
+  "never fetched". Offline check on the live listing: 7,325 of the 7,330 still
+  selected had NOT logged in since the pass began (5 were new sign-ups).
+  Fix: `_enrSeedFetchedAtFromFullPass` — after the listing, every account
+  created before the completed full pass began (`meta.lastFullStartedAt`, now
+  recorded when a full run completes; for this device taken from the earliest
+  `enrolments__` pull in `raw/manifest.jsonl`) with no fetch time is credited
+  with the pass's start, so only a login since then re-fetches it.
+- Verified with 43 fake-API checks (`test_enr_ratelimit.js` 16 — shared hold,
+  Retry-After, escalation, sibling refusal, cancel during a hold, listing
+  single-file, seeding from the manifest, no seeding without a completed
+  pass; `test_enr_fast.js` 13; `test_enr_parallel.js` 14).
+- To resume on Seb's Mac: Cancel the crawling run, restart the app, "Sync from
+  API" → listing ~8 min (or reused), ~5 accounts, then the 3-day full
+  certificate walk (~50 min, `ENR_CERT_FULL_DAYS`).
+
 ## Done — card 2 incremental runs made small (10 September 2026)
 
 Two levers in `js/enrolmentSync.js`:

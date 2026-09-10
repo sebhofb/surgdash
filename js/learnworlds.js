@@ -86,7 +86,10 @@ window.LearnWorlds = (function () {
         return isNaN(t) ? null : Math.max(0, t - Date.now());
     }
 
-    async function _apiGet(path, params, retryDepth) {
+    // opts.rateLimit === 'throw': a 429 is thrown at once (err.status = 429,
+    // err.retryAfterMs from the header) instead of being retried here, for a caller
+    // that runs several requests at a time and must hold ALL of them while it waits.
+    async function _apiGet(path, params, retryDepth, opts) {
         _checkAbort();
         const c = await getCredentials();
         if (!hasCredentials(c)) {
@@ -106,6 +109,11 @@ window.LearnWorlds = (function () {
             throw new Error(`Auth failed (${res.statusCode}) at ${url}. Check Client ID + token scopes (need courses:read).`);
         }
         if (res.statusCode === 429) {
+            if (opts && opts.rateLimit === 'throw') {
+                const err = new Error(`Rate limit (429) at ${url}`);
+                err.status = 429; err.retryAfterMs = _retryAfterMs(res.headers);
+                throw err;
+            }
             // Honour the server's Retry-After header when present (seconds or an
             // HTTP-date); otherwise back off exponentially. Either way cap the wait at
             // 60 s and stop after 3 retries per call so we never hang.
@@ -117,7 +125,7 @@ window.LearnWorlds = (function () {
             console.warn(`[LearnWorlds] 429 rate-limited, waiting ${waitMs}ms (${serverMs != null ? 'server Retry-After' : 'exponential backoff'}) before retry ${d+1}/3 at ${url}`);
             await _sleep(waitMs);
             _checkAbort();
-            return _apiGet(path, params, d + 1);
+            return _apiGet(path, params, d + 1, opts);
         }
         if (res.statusCode < 200 || res.statusCode >= 300) {
             throw new Error(`API error ${res.statusCode} at ${url}: ${(res.body || '').slice(0, 200)}`);
@@ -1633,7 +1641,7 @@ window.LearnWorlds = (function () {
         // Low-level building blocks for syncs that live in their own module
         // (enrolmentSync.js): the retrying GET (with raw receipts + 429 backoff),
         // the concurrent-with-retry runner, and a sleep.
-        apiGet: _apiGet,
+        apiGet: (path, params, opts) => _apiGet(path, params, 0, opts),
         settleWithRetry: _settleWithRetry,
         sleep: _sleep
     };

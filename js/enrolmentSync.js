@@ -37,7 +37,7 @@
 Object.assign(window.App, {
 
     ENR_META_KEY: 'surgdash_enrolment_sync',
-    ENR_TARGET_PER_MIN: 55,             // just under the observed ~60/min sustained quota
+    ENR_TARGET_PER_MIN: 50,             // the profile that has run for days without a refusal (see the note below)
     ENR_CHECKPOINT: 200,                // accounts between persisted checkpoints (~7 min)
     ENR_INCREMENTAL_SLACK_DAYS: 2,      // fallback rule only (no per-account fetch times yet)
     // INCREMENTAL RUNS FETCH ONLY WHAT CAN HAVE CHANGED. meta.fetchedAt holds, per
@@ -54,12 +54,21 @@ Object.assign(window.App, {
     // (a certificate issued long after completion, or to an account that did not log
     // in). At ~10 s a page this turns a ~1 h daily walk into ~10 min most days.
     ENR_CERT_FULL_DAYS: 3,
-    // PARALLELISM HIDES LATENCY, NOT THE QUOTA. Requests still take their turn at the
-    // shared pacer (one start every 60/ENR_TARGET_PER_MIN seconds), so the rate never
-    // exceeds the cap; but with ~1.5–2 s responses one worker only reaches ~30–45
-    // req/min — two account workers and three listing workers reach the cap.
-    ENR_WORKERS: 2,
-    ENR_LIST_WORKERS: 3,
+    // PARALLELISM HIDES LATENCY, NOT THE QUOTA — AND THE API PUNISHES IT. Requests
+    // take their turn at the shared pacer (one start every 60/ENR_TARGET_PER_MIN s), so
+    // the rate never exceeds the target; workers only overlap the waits. But on 10 Sep
+    // two account workers at 55/min were refused (429, Retry-After 30–60 s) after
+    // 13 minutes, and because the second worker kept requesting while the first waited,
+    // the API let ONE request through per minute for two hours: it lifts the penalty
+    // only after the client has been completely silent. So: one account worker by
+    // default (a single flow at ~50/min ran for days without a refusal), two for the
+    // listing, and on any 429 EVERY worker holds (_enrRateLimited) and the session
+    // continues single-file at a lower rate.
+    ENR_WORKERS: 1,
+    ENR_LIST_WORKERS: 2,
+    ENR_HOLD_MIN_MS: 60000,             // silence after a 429: at least this, or the server's Retry-After
+    ENR_HOLD_MAX_MS: 15 * 60000,
+    ENR_HOLD_REPEAT_MS: 5 * 60000,      // a second 429 this soon after a hold doubles the next hold
     // A users listing made by the Learners sync (card 3) within this many minutes is
     // reused instead of listing again — the nightly run lists once, not twice.
     ENR_LISTING_REUSE_MIN: 30,
@@ -94,20 +103,53 @@ Object.assign(window.App, {
         // Serialized: concurrent callers queue and each gets its own slot, so two
         // workers can never start inside the same gap.
         const slot = async () => {
-            const gap = Math.max(this._enrGapMs || 60000 / this.ENR_TARGET_PER_MIN, minGapMs || 0);
-            const wait = (this._enrLastReq || 0) + gap - Date.now();
-            if (wait > 0) await new Promise(r => setTimeout(r, wait));
+            // A rate-limit hold (_enrPausedUntil) outranks the gap: nothing starts before it
+            // ends — re-checked after every wait, since a hold can begin while a slot sleeps.
+            for (;;) {
+                const gap = Math.max(this._enrGapMs || 60000 / this.ENR_TARGET_PER_MIN, minGapMs || 0);
+                const wait = Math.max((this._enrLastReq || 0) + gap, this._enrPausedUntil || 0) - Date.now();
+                if (wait > 0) { await this._enrSleep(wait); continue; }
+                // Single-file after a refusal: one request in flight at a time, whatever a worker is in the middle of.
+                if (this._enrSingleFile && this._enrInFlight > 0) { await this._enrSleep(50); continue; }
+                break;
+            }
             this._enrLastReq = Date.now();
         };
         const p = (this._enrPaceChain || Promise.resolve()).then(slot, slot);
         this._enrPaceChain = p.catch(() => {});
         return p;
     },
+    // Abortable when the LearnWorlds module is there (Cancel ends a hold within half a second).
+    _enrSleep(ms) { const LW = window.LearnWorlds; return (LW && LW.sleep) ? LW.sleep(ms) : new Promise(r => setTimeout(r, ms)); },
     _enrRateNow() { return Math.round(60000 / (this._enrGapMs || 60000 / this.ENR_TARGET_PER_MIN)); },
-    _enrSlowDown() {
+    _enrSlowDown(factor) {
         const cur = this._enrGapMs || 60000 / this.ENR_TARGET_PER_MIN;
-        this._enrGapMs = Math.min(60000 / this.ENR_MIN_PER_MIN, cur * 1.2);
+        this._enrGapMs = Math.min(60000 / this.ENR_MIN_PER_MIN, cur * (factor || 1.2));
         if (this._enrStats) this._enrStats.slowdowns++;
+    },
+    _enrIs429(e) { return !!(e && (e.status === 429 || /\b429\b/.test(String(e.message || '')))); },
+    // The API refused (429): go silent — every worker, since the pacer holds them all —
+    // for the server's Retry-After (at least ENR_HOLD_MIN_MS), longer each time it
+    // happens again soon after; then continue single-file and a third slower. Keeping
+    // one worker going while another waited is what turned a 60 s refusal into two
+    // hours at one request a minute.
+    _enrRateLimited(e) {
+        const now = Date.now(), server = Number(e && e.retryAfterMs) || 0;
+        let hold = Math.min(this.ENR_HOLD_MAX_MS, Math.max(this.ENR_HOLD_MIN_MS, server));
+        // A sibling request refused in the same breath (another worker was in flight)
+        // extends the current hold; a refusal soon AFTER a hold ended doubles the next.
+        const inHold = !!this._enrHoldEndsAt && now < this._enrHoldEndsAt;
+        if (!inHold && this._enrHoldEndsAt && now - this._enrHoldEndsAt < this.ENR_HOLD_REPEAT_MS) hold = Math.min(this.ENR_HOLD_MAX_MS, Math.max(hold, (this._enrHoldMs || hold) * 2));
+        if (!inHold) { this._enrHoldMs = hold; this._enrSlowDown(1.5); }
+        this._enrHoldEndsAt = Math.max(this._enrHoldEndsAt || 0, now + hold);
+        this._enrPausedUntil = Math.max(this._enrPausedUntil || 0, now + hold + 2000);
+        this._enrSingleFile = true;
+        if (this._enrStats) this._enrStats.rateLimits++;
+        const holdTxt = this._enrFmtWait(Math.max(1, Math.round(hold / 1000)));
+        console.warn(`[enrolments] API rate limit (429)${server ? ', Retry-After ' + Math.round(server / 1000) + ' s' : ''} — all requests paused for ${holdTxt}, then one at a time at ${this._enrRateNow()} req/min`);
+        const base = this._enrLastStatus ? this._enrLastStatus.text : 'Enrolments & progress';
+        this._updateApiSyncOverlay(`${base} · ⚠ API rate limit — all requests paused for ${holdTxt}, then one at a time at ${this._enrRateNow()} req/min · Cancel to pause`, null);
+        return hold;
     },
     // What kind of failure apiGet surfaced: 'cancel' (stop now), 'notfound' (callers
     // treat a 404 as "nothing there"), 'fatal' (auth / config / bad request — retrying
@@ -132,22 +174,25 @@ Object.assign(window.App, {
         for (let attempt = 0; ; attempt++) {
             await this._enrPace(path === '/certificates' ? this.ENR_CERT_GAP_MS : 0);
             if (this._enrStats) this._enrStats.requests++;
-            try {
-                const r = await LW.apiGet(path, params);
+            this._enrInFlight = (this._enrInFlight || 0) + 1;
+            let r, err = null;
+            try { r = await LW.apiGet(path, params, { rateLimit: 'throw' }); } catch (e) { err = e; }
+            this._enrInFlight = Math.max(0, (this._enrInFlight || 1) - 1);
+            if (!err) {
                 if (attempt && this._enrLastStatus) this._updateApiSyncOverlay(this._enrLastStatus.text, this._enrLastStatus.pct);
                 return r;
-            } catch (e) {
-                if (this._enrErrorKind(e) !== 'transient') throw e;
-                const n = attempt + 1;
-                if (n >= this.ENR_RETRY_MAX_ATTEMPTS) throw new Error(`Gave up after ${n} attempts over ~${Math.round(this._enrRetryTotalS() / 3600)} h — last error: ${e.message || e}`);
-                if (/\b429\b/.test(e.message || '')) this._enrSlowDown();
-                if (this._enrStats) this._enrStats.retries++;
-                const waitS = attempt < this.ENR_RETRY_WAITS_S.length ? this.ENR_RETRY_WAITS_S[attempt] : this.ENR_RETRY_MAX_WAIT_S;
-                console.warn(`[enrolments] ${this._enrShortErr(e)} — retrying in ${this._enrFmtWait(waitS)} (attempt ${n}/${this.ENR_RETRY_MAX_ATTEMPTS})`);
-                const base = this._enrLastStatus ? this._enrLastStatus.text : 'Enrolments & progress';
-                this._updateApiSyncOverlay(`${base} · ⚠ ${this._enrShortErr(e)} — retrying in ${this._enrFmtWait(waitS)} (attempt ${n}) · Cancel to pause`, null);
-                await LW.sleep(waitS * 1000);   // abortable: Cancel rejects within half a second
             }
+            const e = err;
+            if (this._enrErrorKind(e) !== 'transient') throw e;
+            const n = attempt + 1;
+            if (n >= this.ENR_RETRY_MAX_ATTEMPTS) throw new Error(`Gave up after ${n} attempts over ~${Math.round(this._enrRetryTotalS() / 3600)} h — last error: ${e.message || e}`);
+            if (this._enrIs429(e)) { this._enrRateLimited(e); continue; }   // the hold lives in the pacer; the retry waits there
+            if (this._enrStats) this._enrStats.retries++;
+            const waitS = attempt < this.ENR_RETRY_WAITS_S.length ? this.ENR_RETRY_WAITS_S[attempt] : this.ENR_RETRY_MAX_WAIT_S;
+            console.warn(`[enrolments] ${this._enrShortErr(e)} — retrying in ${this._enrFmtWait(waitS)} (attempt ${n}/${this.ENR_RETRY_MAX_ATTEMPTS})`);
+            const base = this._enrLastStatus ? this._enrLastStatus.text : 'Enrolments & progress';
+            this._updateApiSyncOverlay(`${base} · ⚠ ${this._enrShortErr(e)} — retrying in ${this._enrFmtWait(waitS)} (attempt ${n}) · Cancel to pause`, null);
+            await LW.sleep(waitS * 1000);   // abortable: Cancel rejects within half a second
         }
     },
     _enrRetryTotalS() { const w = this.ENR_RETRY_WAITS_S; return w.reduce((a, b) => a + b, 0) + Math.max(0, this.ENR_RETRY_MAX_ATTEMPTS - w.length) * this.ENR_RETRY_MAX_WAIT_S; },
@@ -169,15 +214,16 @@ Object.assign(window.App, {
         take(first);
         // Remaining pages with a few workers; each request still takes its turn at the pacer.
         let next = 2, done = 1, failure = null;
-        const worker = async () => {
+        const worker = async (w) => {
             while (!failure) {
+                if (w && this._enrSingleFile) return;   // after a 429 only the first worker goes on
                 const p = next++; if (p > totalPages) return;
                 try { take(await this._enrGet(LW, '/users', { page: p, items_per_page: 200 })); }
                 catch (e) { failure = failure || e; return; }
                 done++; if (onProgress) onProgress(done, totalPages, out.size);
             }
         };
-        await Promise.all(Array.from({ length: Math.max(1, Math.min(this.ENR_LIST_WORKERS, Math.max(1, totalPages - 1))) }, worker));
+        await Promise.all(Array.from({ length: Math.max(1, Math.min(this.ENR_LIST_WORKERS, Math.max(1, totalPages - 1))) }, (_, w) => worker(w)));
         if (failure) throw failure;
         return out;
     },
@@ -457,6 +503,43 @@ Object.assign(window.App, {
         return { ids, rows: rows.length };
     },
 
+    // When the earliest enrolments pull on this device began — the start of the
+    // full pass on devices that completed it before meta.lastFullStartedAt existed.
+    // From the raw manifest (all pulls, also pruned ones); else the oldest receipt dir.
+    _enrEarliestReceiptStart() {
+        try {
+            const fs = electronAPI.fs, path = electronAPI.path, dir = path.join(Storage.DATA_DIR, 'surghub', 'raw');
+            let best = '';
+            try {
+                const mf = path.join(dir, 'manifest.jsonl');
+                if (fs.existsSync(mf)) for (const line of String(fs.readFileSync(mf, 'utf8')).split('\n')) {
+                    if (!/"pullId":"enrolments__/.test(line)) continue;
+                    const m = line.match(/"startedAt":"([^"]+)"/); if (m && (!best || m[1] < best)) best = m[1];
+                }
+            } catch (e) { __swallowed(e, 'enrolments.manifest'); }
+            if (!best) { const d = this._enrReceiptDirs()[0]; const st = d && String(d).match(/__(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})(\d{2})$/); if (st) best = new Date(+st[1], +st[2] - 1, +st[3], +st[4], +st[5], +st[6]).toISOString(); }
+            return best && !isNaN(Date.parse(best)) ? best : '';
+        } catch (e) { return ''; }
+    },
+    // A completed full pass fetched every account that existed when it began (or found
+    // nothing to fetch). Accounts it covered whose receipt has since been pruned have no
+    // fetch time on record and would be re-fetched wholesale — 7,300 unchanged accounts
+    // on 10 Sep, after the old build replaced the run record. Seed them with the pass's
+    // start: only a login since then re-fetches them. Returns how many were seeded.
+    _enrSeedFetchedAtFromFullPass(meta, users) {
+        if (!meta || !meta.fetchedAt || !meta.lastRunEpoch || !users) return 0;
+        if (!meta.lastFullStartedAt) {
+            if (meta.lastMode !== 'full') return 0;   // no completed full pass on record
+            const t = this._enrEarliestReceiptStart(); if (!t) return 0;
+            meta.lastFullStartedAt = t;
+        }
+        const seed = Math.floor(Date.parse(meta.lastFullStartedAt) / 1000); if (!seed) return 0;
+        const processed = (meta.run && meta.run.processed) || {};
+        let n = 0;
+        for (const u of users.values()) { if (u.created && u.created < seed && !meta.fetchedAt[u.id] && !processed[u.id]) { meta.fetchedAt[u.id] = seed; n++; } }
+        return n;
+    },
+
     _enrSelectUsers(users, mode, meta) {
         const list = [...users.values()];
         const processed = (meta.run && meta.run.processed) || {};
@@ -518,7 +601,8 @@ Object.assign(window.App, {
 
         this._apiSyncInFlight = true;
         if (LW.resetAbort) LW.resetAbort();   // an earlier Cancel must not end this run at its first request
-        this._enrGapMs = null; this._enrStats = { retries: 0, slowdowns: 0, requests: 0 }; const sessionT0 = Date.now(); this._enrLastStatus = null;
+        this._enrGapMs = null; this._enrPausedUntil = 0; this._enrSingleFile = false; this._enrHoldMs = 0; this._enrHoldEndsAt = 0; this._enrInFlight = 0;
+        this._enrStats = { retries: 0, slowdowns: 0, requests: 0, rateLimits: 0 }; const sessionT0 = Date.now(); this._enrLastStatus = null;
         try { await this._backupSurghubBeforeSync(); } catch (e) { __swallowed(e, 'enrolments.backup'); }
         if (!opts.silent) this._showApiSyncOverlay('Enrolments & progress (API)');
         this._enrStatus('Preparing…', 0);
@@ -538,7 +622,7 @@ Object.assign(window.App, {
         if (!meta.certsFullAt && meta.certsAt) meta.certsFullAt = meta.certsAt;   // earlier passes walked every course
         const run = openRun || { startedAt: new Date().toISOString(), mode, total: 0, processed: {}, done: false };
         meta.run = run;
-        run.sessions = (run.sessions || 0) + 1; run.sessionAt = new Date().toISOString();
+        run.sessions = (run.sessions || 0) + 1; run.sessionAt = new Date().toISOString(); run.rateLimitsBefore = run.rateLimits || 0;
         delete run.pausedAt; delete run.pausedBy; delete run.lastError;
         // Checkpoints are serialized (two workers may ask at once) and swap the buffers
         // out first, so rows pushed while a persist is in flight wait for the next one
@@ -555,6 +639,7 @@ Object.assign(window.App, {
             run.checkpointAt = new Date().toISOString();
             const mins = (Date.now() - sessionT0) / 60000;
             if (mins >= 3 && this._enrStats) run.reqPerMin = Math.round(this._enrStats.requests / mins * 10) / 10;   // observed, for the card's ETA
+            if (this._enrStats && this._enrStats.rateLimits) { run.rateLimits = (run.rateLimitsBefore || 0) + this._enrStats.rateLimits; run.rateLimitAt = new Date().toISOString(); }
             await this._enrSaveMeta(meta);
             if (label) this._enrStatus(label, null);
         };
@@ -612,10 +697,12 @@ Object.assign(window.App, {
                 // Keep this run's receipt self-contained: the listing it relied on, as one page.
                 try { if (LW.captureRaw) LW.captureRaw('/users', { page: 1, items_per_page: users.size, reused: cache.source || 'listing' }, JSON.stringify({ data: [...users.values()].map(u => ({ id: u.id, email: u.email, first_name: u.first, last_name: u.last, last_login: u.lastLogin, created: u.created })), meta: { page: 1, totalPages: 1, totalItems: users.size } })); } catch (e) { __swallowed(e, 'enrolments.raw'); }
             } else {
-                users = await this._enrFetchUsers(LW, (p, t, n) => this._enrStatus(`Listing accounts… ${p}/${t} pages (${n.toLocaleString()}) · ${this.ENR_LIST_WORKERS} in parallel`, 5 + Math.round(p / t * 5)));
+                users = await this._enrFetchUsers(LW, (p, t, n) => this._enrStatus(`Listing accounts… ${p}/${t} pages (${n.toLocaleString()})${!this._enrSingleFile && this.ENR_LIST_WORKERS > 1 ? ' · ' + this.ENR_LIST_WORKERS + ' in parallel' : ''}`, 5 + Math.round(p / t * 5)));
                 this._enrUsersCache = { at: Date.now(), users, source: 'enrolments' };
             }
             summary.users = users.size; run.total = users.size;
+            // 2b. Fetch times for accounts the completed full pass covered but whose receipt is gone.
+            try { summary.seeded = this._enrSeedFetchedAtFromFullPass(meta, users); if (summary.seeded) await this._enrSaveMeta(meta); } catch (e) { __swallowed(e, 'enrolments.seed'); }
             // Account index for the Learner journeys tab: sign-up day, last login and email domain per hashed id.
             try { if (this._accountsFromUsers) await this._accountsPersist(this._accountsFromUsers(users, new Date().toISOString())); } catch (e) { __swallowed(e, 'enrolments.accounts'); }
 
@@ -643,10 +730,12 @@ Object.assign(window.App, {
             const nWorkers = Math.max(1, Math.min(this.ENR_WORKERS, selected.length || 1));
             const status = () => {
                 const elapsed = (Date.now() - t0) / 1000, eta = summary.done ? (selected.length - summary.done) * elapsed / summary.done : 0;
-                this._enrStatus(`Enrolments… ${summary.done.toLocaleString()}/${selected.length.toLocaleString()} accounts this session · ${(Object.keys(run.processed).length + pendingIds.length).toLocaleString()}/${run.total.toLocaleString()} overall · ~${this._enrFmtEta(eta)} left · ${nWorkers} in parallel · saved every ${this.ENR_CHECKPOINT}`, 15 + Math.round(summary.done / Math.max(1, selected.length) * 82));
+                const par = (nWorkers > 1 && !this._enrSingleFile) ? ` · ${nWorkers} in parallel` : '';
+                this._enrStatus(`Enrolments… ${summary.done.toLocaleString()}/${selected.length.toLocaleString()} accounts this session · ${(Object.keys(run.processed).length + pendingIds.length).toLocaleString()}/${run.total.toLocaleString()} overall · ~${this._enrFmtEta(eta)} left · ${this._enrRateNow()} req/min${par} · saved every ${this.ENR_CHECKPOINT}`, 15 + Math.round(summary.done / Math.max(1, selected.length) * 82));
             };
-            const worker = async () => {
+            const worker = async (w) => {
                 while (!stop) {
+                    if (w && this._enrSingleFile) return;   // after a 429 only the first worker goes on
                     const i = nextIdx++; if (i >= selected.length) return;
                     const u = selected[i];
                     let f;
@@ -675,7 +764,7 @@ Object.assign(window.App, {
                     status();
                 }
             };
-            await Promise.all(Array.from({ length: nWorkers }, worker));
+            await Promise.all(Array.from({ length: nWorkers }, (_, w) => worker(w)));
             if (fatal) throw fatal;
             if (summary.failed > Math.max(20, summary.selected * this.ENR_MAX_FAILURE_SHARE)) throw new Error(`${summary.failed} of ${summary.selected} accounts failed after retries — stopping; progress so far is saved, run again later.`);
 
@@ -707,11 +796,12 @@ Object.assign(window.App, {
             await checkpoint('Saving…');
             run.done = true; run.finishedAt = new Date().toISOString();
             meta.lastRun = run.finishedAt; meta.lastRunEpoch = Math.floor(Date.now() / 1000); meta.lastMode = mode;
+            if (mode === 'full') meta.lastFullStartedAt = run.startedAt;   // every account that existed then was covered — see _enrSeedFetchedAtFromFullPass
             await this._enrSaveMeta(meta);
             await this._stampSync('progress'); await this._stampSync('enrolments');
             await this.handleDbSave();
             summary.rows = (this._rawCompletion || []).length;
-            summary.retries = this._enrStats.retries; summary.slowdowns = this._enrStats.slowdowns;
+            summary.retries = this._enrStats.retries; summary.slowdowns = this._enrStats.slowdowns; summary.rateLimits = this._enrStats.rateLimits;
             ok = true;
         } catch (e) {
             if (!cancelled && this._enrErrorKind(e) === 'cancel') cancelled = true;   // Cancel during the listing or the certificate pass
@@ -730,7 +820,7 @@ Object.assign(window.App, {
             if (!opts.silent) { this._hideApiSyncOverlay(); if (!ok && this.view === 'upload') this.renderView(); }   // card 2 → paused / stopped-by-error, after the in-flight flag clears
         }
         if (!opts.silent) {
-            this.showMsg(`✓ Enrolments synced (${mode}${summary.resumed ? ', resumed' : ''}): ${summary.done.toLocaleString()} accounts fetched` + (summary.ingestedOffline ? `, ${summary.ingestedOffline.toLocaleString()} ingested from the receipt` : '') + ` (${summary.noEnrolments.toLocaleString()} with no enrolments) → ${summary.rows.toLocaleString()} learner-course records` + (summary.failed ? ` · ${summary.failed} accounts skipped after retries` : '') + (summary.certsNew ? ` · ${summary.certsNew.toLocaleString()} new certificate${summary.certsNew === 1 ? '' : 's'}` : '') + (summary.certsApplied ? ` (${summary.certsApplied.toLocaleString()} records updated)` : '') + (summary.retries ? ` · ${summary.retries} transient error${summary.retries === 1 ? '' : 's'} retried` : '') + (summary.listingReused ? ' · listing reused from the Learners sync' : ''));
+            this.showMsg(`✓ Enrolments synced (${mode}${summary.resumed ? ', resumed' : ''}): ${summary.done.toLocaleString()} accounts fetched` + (summary.ingestedOffline ? `, ${summary.ingestedOffline.toLocaleString()} ingested from the receipt` : '') + ` (${summary.noEnrolments.toLocaleString()} with no enrolments) → ${summary.rows.toLocaleString()} learner-course records` + (summary.failed ? ` · ${summary.failed} accounts skipped after retries` : '') + (summary.certsNew ? ` · ${summary.certsNew.toLocaleString()} new certificate${summary.certsNew === 1 ? '' : 's'}` : '') + (summary.certsApplied ? ` (${summary.certsApplied.toLocaleString()} records updated)` : '') + (summary.retries ? ` · ${summary.retries} transient error${summary.retries === 1 ? '' : 's'} retried` : '') + (summary.rateLimits ? ` · rate-limited ${summary.rateLimits}× (held back, then single-file)` : '') + (summary.seeded ? ` · ${summary.seeded.toLocaleString()} accounts credited to the full pass` : '') + (summary.listingReused ? ' · listing reused from the Learners sync' : ''));
             this.renderView();
         }
         return summary;
@@ -747,7 +837,7 @@ Object.assign(window.App, {
             // not total − done, which counts the accounts the selection skips as nothing to fetch.
             const left = (r.selectedLeft != null && r.processedAtSel != null) ? Math.max(0, r.selectedLeft - (done - r.processedAtSel)) : (total ? Math.max(0, total - done) : 0);
             const rate = r.reqPerMin || this.ENR_TARGET_PER_MIN;
-            const saved = `${done.toLocaleString()} accounts fetched` + (left ? ` · ${left.toLocaleString()} to go` : '') + (r.skipped ? ` · ${r.skipped.toLocaleString()} skipped (nothing to fetch)` : '');
+            const saved = `${done.toLocaleString()} accounts fetched` + (left ? ` · ${left.toLocaleString()} to go` : '') + (r.skipped ? ` · ${r.skipped.toLocaleString()} skipped (nothing to fetch)` : '') + (r.rateLimits ? ` · the API refused ${r.rateLimits}× (rate limit, backed off)` : '');
             const eta = left ? ` · ~${this._enrFmtEta(left * 2 * 60 / rate)} left at ${Math.round(rate)} req/min` : '';
             const started = `Started ${esc(this._enrFmtWhen(r.startedAt))}${r.sessions > 1 ? ', session ' + r.sessions : ''}.`;
             const pill = (cls, icon, text, title) => `<span class="inline-flex items-center gap-1.5 text-xs ${cls} font-medium ml-2" title="${title}"><i data-lucide="${icon}" width="12"></i> ${text}</span>`;
