@@ -750,6 +750,8 @@ Object.assign(window.App, {
         document.body.appendChild(host);
     },
     _updateApiSyncOverlay(text, pct) {
+        // A background run (backgroundSync.js) reports into its corner pill instead of the modal overlay.
+        if (this._bgSyncRunning) { if (this._bgProgress) this._bgProgress(text, pct); return; }
         if (!document.getElementById('lw-api-sync-overlay')) this._showApiSyncOverlay();
         const t = document.getElementById('lw-api-sync-text');
         const b = document.getElementById('lw-api-sync-bar');

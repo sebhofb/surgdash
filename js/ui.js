@@ -3279,6 +3279,7 @@ Object.assign(window.App, {
                         </button>
                     </div>
 
+                    ${this._bgSyncPanelHtml ? this._bgSyncPanelHtml() : ''}
                     <!-- ── 1. Sync Courses: course foundation + analytics ── -->
                     <div class="bg-gradient-to-br from-sky-50 to-white border border-sky-200 rounded-2xl p-6 mb-4 shadow-sm">
                         <div class="flex flex-wrap items-center justify-between gap-4">

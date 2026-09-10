@@ -72,6 +72,8 @@
         // Certificate index (LearnWorlds user|course → issued date), harvested from API
         // receipts and fetches; certificates never disappear, so it only grows. Device-local.
         if (key === 'surgdash_cert_index')      return path.join('settings', 'cert_index.json');
+        // Background-sync schedule + run log (backgroundSync.js) — device-local like the above.
+        if (key === 'surgdash_bg_sync')         return path.join('settings', 'bg_sync.json');
         if (key === 'surgdash_onboarding')      return path.join('settings', 'onboarding.json');
         if (key === 'surgdash_edit_password')  return path.join('settings', 'edit_password.json');
         if (key === 'report_cover_path')     return path.join('settings', 'report_cover_path.json');
@@ -261,6 +263,7 @@
             const NAV_KEYS = new Set([
                 'surgdash_last_project', 'surgdash_onboarding', 'surgdash_demo_active',
                 'surgdash_ui_state',      // remembered view preferences — a click, not a data change
+                'surgdash_bg_sync',       // background-sync schedule + run log — a device setting
                 'report_cover_path', 'report_back_path'
             ]);
             if (!isInternal && !NAV_KEYS.has(key) && window.App && App.markDirty) {

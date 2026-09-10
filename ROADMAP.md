@@ -89,6 +89,21 @@ Follow-ups:
   snapshot and the provider packages; a "recommended next course" list per
   course for the SURGhub site, derived from the 2-course paths.
 
+## Done — background sync of cards 3 and 2 (10 September 2026)
+
+`js/backgroundSync.js`. Once a day, at the first quiet moment (3 min without
+input) after a chosen hour (default 02:00) while the app is open, the Learners
+& Ambassadors sync and then the incremental Enrolments & progress sync run by
+themselves — the same functions as the buttons, `{silent: true}`. Progress
+shows in a corner pill with Details / Stop (`_updateApiSyncOverlay` routes to
+it while `_bgSyncRunning`); no dialogs. Runs only where the API credentials
+are, never alongside another sync, once per calendar day; card 2 is skipped
+with a note until a full pass has completed (a paused run is resumed). Panel
+above card 1 on Data Sync: switch, hour, per-card toggles, last run summary,
+Run now. Settings + 7-run log in `settings/bg_sync.json` (device-local nav
+key). Follow-up: an optional Sheets push after a successful night so viewer
+machines wake up to the new numbers.
+
 ## Done — ambassador attribution keeps itself current (9 September 2026)
 
 Bug report: Neharaj Pitla showed 462 referrals on the Ambassador Performance

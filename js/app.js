@@ -129,6 +129,7 @@ window.App = {
 
             this._startAutoPull();
             this._startCloudFreshnessCheck();
+            if (this._bgSyncStart) this._bgSyncStart();   // nightly background sync of cards 2 + 3 (backgroundSync.js)
 
             // Stamp the real app version into the sidebar (single source of truth:
             // package.json, exposed via preload). Falls back to the hardcoded label.
