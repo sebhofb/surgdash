@@ -3130,6 +3130,13 @@ Object.assign(window.App, {
             });
             try { window.LearnWorlds.finishRawPull(true); } catch (e) { __swallowed(e); }
             console.log(`[LearnWorlds] Fetched ${usersJson.length.toLocaleString()} users; first row keys:`, Object.keys(usersJson[0] || {}));
+            // Share this listing with card 2 (enrolmentSync.js): an enrolment sync within
+            // ENR_LISTING_REUSE_MIN reuses it instead of listing all accounts again.
+            try {
+                const um = new Map();
+                for (const r of usersJson) { if (r && r.id && r.email) um.set(String(r.id), { id: String(r.id), email: String(r.email).toLowerCase().trim(), first: r.first_name || '', last: r.last_name || '', lastLogin: Number(r.last_login) || 0, created: Number(r.created) || 0 }); }
+                if (um.size) this._enrUsersCache = { at: Date.now(), users: um, source: 'demographics' };
+            } catch (e) { __swallowed(e, 'demographics.listingCache'); }
 
             // ── Join enrolment + certificate course lists collected by the Growth
             // Timelines sync (user→courses / user→certs maps, keyed by user id).

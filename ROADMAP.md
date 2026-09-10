@@ -89,6 +89,29 @@ Follow-ups:
   snapshot and the provider packages; a "recommended next course" list per
   course for the SURGhub site, derived from the 2-course paths.
 
+## Done — card 2 faster still: parallel workers, one listing per night (10 September 2026)
+
+- **Serialized pacer** (`_enrPace` as a promise chain): concurrent callers each
+  get one slot, so parallel workers cannot burst; the cap is unchanged.
+- **Parallel fetching under the cap**: `ENR_LIST_WORKERS` (3) for the account
+  listing (~8 → ~6 min, the cap's floor), `ENR_WORKERS` (2) for the account
+  phase (hides the API's 1.5–2 s latency; one worker only reached 30–45
+  req/min). Checkpoints are serialized and swap buffers first (no account
+  marked saved without its rows); cancel/auth failure stops every worker.
+- **Listing reuse**: the Learners sync shares its account listing
+  (`App._enrUsersCache`); an enrolment sync within `ENR_LISTING_REUSE_MIN`
+  (30) reuses it — the nightly run and Sync Everything list once. The receipt
+  gets the reused listing as one synthetic page (`LearnWorlds.captureRaw`).
+- **Half-captures** (cancel between an account's two calls) are no longer
+  ingested from receipts as complete.
+- **API probe (read-only)**: `/users` ignores `last_login_after`,
+  `created_after`, `updated_after` and sort params; ordering is sign-up date
+  descending, recent logins spread over ~30 pages — no early stop possible.
+- Nightly budget now: listing 0 (reused) or ~6 min, accounts ~5–8 min,
+  certificates ~5–10 min. Remaining levers are outside card 2: card 1 and the
+  ambassadors sync are already at the cap; the UI's Tailwind Play-CDN build is
+  the main interactive-speed item left (needs a visual check after).
+
 ## Done — card 2 incremental runs made small (10 September 2026)
 
 Two levers in `js/enrolmentSync.js`:

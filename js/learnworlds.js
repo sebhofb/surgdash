@@ -1616,6 +1616,9 @@ window.LearnWorlds = (function () {
         startRawPull,
         finishRawPull,
         captureRawArtifact,
+        // Record a body into the current pull as if it had been fetched (used when a
+        // sync reuses another sync's listing, so its receipt stays self-contained).
+        captureRaw: (p, params, body) => _captureRaw(p, params, body),
         readLatestArtifactRows,
         // Reconstruct the flattened usersJson from captured raw /users page bodies —
         // the SAME _flattenUser the live fetch applies, so re-deriving the audience

@@ -54,6 +54,15 @@ Object.assign(window.App, {
     // (a certificate issued long after completion, or to an account that did not log
     // in). At ~10 s a page this turns a ~1 h daily walk into ~10 min most days.
     ENR_CERT_FULL_DAYS: 3,
+    // PARALLELISM HIDES LATENCY, NOT THE QUOTA. Requests still take their turn at the
+    // shared pacer (one start every 60/ENR_TARGET_PER_MIN seconds), so the rate never
+    // exceeds the cap; but with ~1.5–2 s responses one worker only reaches ~30–45
+    // req/min — two account workers and three listing workers reach the cap.
+    ENR_WORKERS: 2,
+    ENR_LIST_WORKERS: 3,
+    // A users listing made by the Learners sync (card 3) within this many minutes is
+    // reused instead of listing again — the nightly run lists once, not twice.
+    ENR_LISTING_REUSE_MIN: 30,
     ENR_MAX_FAILURE_SHARE: 0.01,
     ENR_TIMELINES_DATE: '2026-06-14',   // date of the growth-timelines pull behind surghub_user_courses
     // TRANSIENT FAILURES ARE RETRIED IN PLACE, not allowed to end the run. A network
@@ -81,11 +90,18 @@ Object.assign(window.App, {
 
     // ── Pacing: never start a request less than 60/TARGET seconds after the last ──
     // (the gap widens for the session when the API keeps answering 429 — see _enrSlowDown).
-    async _enrPace(minGapMs) {
-        const gap = Math.max(this._enrGapMs || 60000 / this.ENR_TARGET_PER_MIN, minGapMs || 0);
-        const now = Date.now(), wait = (this._enrLastReq || 0) + gap - now;
-        if (wait > 0) await new Promise(r => setTimeout(r, wait));
-        this._enrLastReq = Date.now();
+    _enrPace(minGapMs) {
+        // Serialized: concurrent callers queue and each gets its own slot, so two
+        // workers can never start inside the same gap.
+        const slot = async () => {
+            const gap = Math.max(this._enrGapMs || 60000 / this.ENR_TARGET_PER_MIN, minGapMs || 0);
+            const wait = (this._enrLastReq || 0) + gap - Date.now();
+            if (wait > 0) await new Promise(r => setTimeout(r, wait));
+            this._enrLastReq = Date.now();
+        };
+        const p = (this._enrPaceChain || Promise.resolve()).then(slot, slot);
+        this._enrPaceChain = p.catch(() => {});
+        return p;
     },
     _enrRateNow() { return Math.round(60000 / (this._enrGapMs || 60000 / this.ENR_TARGET_PER_MIN)); },
     _enrSlowDown() {
@@ -151,10 +167,18 @@ Object.assign(window.App, {
         const out = new Map();
         const take = (body) => (body && body.data || []).forEach(u => { if (u && u.id && u.email) out.set(String(u.id), { id: String(u.id), email: String(u.email).toLowerCase().trim(), first: u.first_name || '', last: u.last_name || '', lastLogin: Number(u.last_login) || 0, created: Number(u.created) || 0 }); });
         take(first);
-        for (let p = 2; p <= totalPages; p++) {
-            take(await this._enrGet(LW, '/users', { page: p, items_per_page: 200 }));
-            if (onProgress) onProgress(p, totalPages, out.size);
-        }
+        // Remaining pages with a few workers; each request still takes its turn at the pacer.
+        let next = 2, done = 1, failure = null;
+        const worker = async () => {
+            while (!failure) {
+                const p = next++; if (p > totalPages) return;
+                try { take(await this._enrGet(LW, '/users', { page: p, items_per_page: 200 })); }
+                catch (e) { failure = failure || e; return; }
+                done++; if (onProgress) onProgress(done, totalPages, out.size);
+            }
+        };
+        await Promise.all(Array.from({ length: Math.max(1, Math.min(this.ENR_LIST_WORKERS, Math.max(1, totalPages - 1))) }, worker));
+        if (failure) throw failure;
         return out;
     },
 
@@ -420,6 +444,11 @@ Object.assign(window.App, {
             i++;
             if (alreadyProcessed && alreadyProcessed[id]) continue;
             const u = parsed.users.get(id); if (!u || !bodies.courses.length) continue;
+            // A capture is complete when the progress pages are there too (they are fetched
+            // whenever the account has enrolments). A cancel between the two calls leaves a
+            // half-capture: skip it, so the resume fetches the account properly.
+            const hasEnrolments = bodies.courses.some(b => (b && b.data || []).length);
+            if (hasEnrolments && !bodies.progress.length) continue;
             rows.push(...this._enrBuildRows(u, this._enrFromBodies(bodies), certMap, titleMap, priorByKey));
             uids.push(this._djb2Hash(u.email)); ids.push(id);
             if (onProgress && i % 500 === 0) onProgress(i, parsed.perUser.size);
@@ -511,11 +540,17 @@ Object.assign(window.App, {
         meta.run = run;
         run.sessions = (run.sessions || 0) + 1; run.sessionAt = new Date().toISOString();
         delete run.pausedAt; delete run.pausedBy; delete run.lastError;
-        const checkpoint = async (label) => {
+        // Checkpoints are serialized (two workers may ask at once) and swap the buffers
+        // out first, so rows pushed while a persist is in flight wait for the next one
+        // and no account is ever marked saved without its rows.
+        let ckChain = Promise.resolve();
+        const checkpoint = (label) => { const p = ckChain.then(() => checkpointNow(label)); ckChain = p.catch(() => {}); return p; };
+        const checkpointNow = async (label) => {
             if (pendingIds.length) {
-                await this._enrPersist(pending, pendingUids, 'merge');
-                pendingIds.forEach((id, k) => { run.processed[id] = 1; meta.fetchedAt[id] = pendingAt[k] || Math.floor(Date.now() / 1000); });
+                const rowsB = pending, uidsB = pendingUids, idsB = pendingIds, atB = pendingAt;
                 pending = []; pendingUids = []; pendingIds = []; pendingAt = [];
+                await this._enrPersist(rowsB, uidsB, 'merge');
+                idsB.forEach((id, k) => { run.processed[id] = 1; meta.fetchedAt[id] = atB[k] || Math.floor(Date.now() / 1000); });
             }
             run.checkpointAt = new Date().toISOString();
             const mins = (Date.now() - sessionT0) / 60000;
@@ -566,8 +601,20 @@ Object.assign(window.App, {
             }
             try { LW.startRawPull('enrolments'); } catch (e) { __swallowed(e, 'enrolments.raw'); }
 
-            // 2. Accounts (paced; ~5 min for the whole list)
-            const users = await this._enrFetchUsers(LW, (p, t, n) => this._enrStatus(`Listing accounts… page ${p}/${t} (${n.toLocaleString()})`, 5 + Math.round(p / t * 5)));
+            // 2. Accounts — reuse a listing the Learners sync (card 3) made minutes ago,
+            //    else list now (~6 min with ENR_LIST_WORKERS under the cap).
+            let users;
+            const cache = this._enrUsersCache;
+            if (!opts.forceListing && cache && cache.users && cache.users.size > 1000 && (Date.now() - cache.at) < this.ENR_LISTING_REUSE_MIN * 60000) {
+                users = cache.users;
+                summary.listingReused = true;
+                this._enrStatus(`Accounts: reusing the listing from ${new Date(cache.at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })} (${users.size.toLocaleString()} accounts)`, 8);
+                // Keep this run's receipt self-contained: the listing it relied on, as one page.
+                try { if (LW.captureRaw) LW.captureRaw('/users', { page: 1, items_per_page: users.size, reused: cache.source || 'listing' }, JSON.stringify({ data: [...users.values()].map(u => ({ id: u.id, email: u.email, first_name: u.first, last_name: u.last, last_login: u.lastLogin, created: u.created })), meta: { page: 1, totalPages: 1, totalItems: users.size } })); } catch (e) { __swallowed(e, 'enrolments.raw'); }
+            } else {
+                users = await this._enrFetchUsers(LW, (p, t, n) => this._enrStatus(`Listing accounts… ${p}/${t} pages (${n.toLocaleString()}) · ${this.ENR_LIST_WORKERS} in parallel`, 5 + Math.round(p / t * 5)));
+                this._enrUsersCache = { at: Date.now(), users, source: 'enrolments' };
+            }
             summary.users = users.size; run.total = users.size;
             // Account index for the Learner journeys tab: sign-up day, last login and email domain per hashed id.
             try { if (this._accountsFromUsers) await this._accountsPersist(this._accountsFromUsers(users, new Date().toISOString())); } catch (e) { __swallowed(e, 'enrolments.accounts'); }
@@ -588,33 +635,48 @@ Object.assign(window.App, {
             const priorByKey = this._enrPriorMap(this._rawCompletion);
             await this._enrSaveMeta(meta);
 
-            // 5. Per-account fetch, paced, checkpointed
-            const t0 = Date.now(); let sinceCheckpoint = 0;
+            // 5. Per-account fetch — ENR_WORKERS in parallel under the shared pacer (each
+            //    request still waits its turn; parallelism only hides latency), checkpointed
+            //    every ENR_CHECKPOINT accounts. A cancel or an auth failure stops every worker.
+            const t0 = Date.now(); let sinceCheckpoint = 0, nextIdx = 0, stop = false, fatal = null;
             const freshCourses = new Set(), certsAtS = meta.certsAt ? Math.floor(Date.parse(meta.certsAt) / 1000) : 0;
-            for (let i = 0; i < selected.length; i++) {
-                const u = selected[i];
-                let fetched;
-                // _enrGet retries transient failures in place; what surfaces here is a
-                // cancel, an auth/config failure (stop — every account would fail the
-                // same way) or a bad request on this one account (skip it, keep going).
-                try { fetched = await this._enrFetchUser(LW, u.id); }
-                catch (e) { const kind = this._enrErrorKind(e); if (kind === 'cancel') { cancelled = true; throw e; } if (kind === 'fatal' && /^Auth failed|credentials/i.test(e.message || '')) throw e; summary.failed++; console.warn('[enrolments] account skipped:', u.id, e.message || e); continue; }
-                const f = fetched;
-                pending.push(...this._enrBuildRows(u, f, certMap, titleMap, priorByKey));
-                pendingUids.push(this._djb2Hash(u.email)); pendingIds.push(u.id); pendingAt.push(Math.floor(Date.now() / 1000));
-                summary.done++; if (!f.enrolments.length && !Object.keys(f.progress).length) summary.noEnrolments++;
-                // Courses where this account completed something since the last certificate walk → walk them below.
-                for (const cid of Object.keys(f.progress)) {
-                    const pr = f.progress[cid]; if (!pr || certIndex[u.id + '|' + cid]) continue;
-                    const done = String(pr.status || '').toLowerCase() === 'completed' || (Number(pr.progress_rate) || 0) >= 100 || !!pr.completed_at;
-                    if (!done) continue;
-                    const ca = Number(pr.completed_at) || 0;
-                    if (!ca || !certsAtS || ca >= certsAtS - 3600) freshCourses.add(cid);
+            const nWorkers = Math.max(1, Math.min(this.ENR_WORKERS, selected.length || 1));
+            const status = () => {
+                const elapsed = (Date.now() - t0) / 1000, eta = summary.done ? (selected.length - summary.done) * elapsed / summary.done : 0;
+                this._enrStatus(`Enrolments… ${summary.done.toLocaleString()}/${selected.length.toLocaleString()} accounts this session · ${(Object.keys(run.processed).length + pendingIds.length).toLocaleString()}/${run.total.toLocaleString()} overall · ~${this._enrFmtEta(eta)} left · ${nWorkers} in parallel · saved every ${this.ENR_CHECKPOINT}`, 15 + Math.round(summary.done / Math.max(1, selected.length) * 82));
+            };
+            const worker = async () => {
+                while (!stop) {
+                    const i = nextIdx++; if (i >= selected.length) return;
+                    const u = selected[i];
+                    let f;
+                    // _enrGet retries transient failures in place; what surfaces here is a
+                    // cancel, an auth/config failure (stop — every account would fail the
+                    // same way) or a bad request on this one account (skip it, keep going).
+                    try { f = await this._enrFetchUser(LW, u.id); }
+                    catch (e) {
+                        const kind = this._enrErrorKind(e);
+                        if (kind === 'cancel') { cancelled = true; stop = true; fatal = fatal || e; return; }
+                        if (kind === 'fatal' && /^Auth failed|credentials/i.test(e.message || '')) { stop = true; fatal = fatal || e; return; }
+                        summary.failed++; console.warn('[enrolments] account skipped:', u.id, e.message || e); continue;
+                    }
+                    pending.push(...this._enrBuildRows(u, f, certMap, titleMap, priorByKey));
+                    pendingUids.push(this._djb2Hash(u.email)); pendingIds.push(u.id); pendingAt.push(Math.floor(Date.now() / 1000));
+                    summary.done++; if (!f.enrolments.length && !Object.keys(f.progress).length) summary.noEnrolments++;
+                    // Courses where this account completed something since the last certificate walk → walk them below.
+                    for (const cid of Object.keys(f.progress)) {
+                        const pr = f.progress[cid]; if (!pr || certIndex[u.id + '|' + cid]) continue;
+                        const done = String(pr.status || '').toLowerCase() === 'completed' || (Number(pr.progress_rate) || 0) >= 100 || !!pr.completed_at;
+                        if (!done) continue;
+                        const ca = Number(pr.completed_at) || 0;
+                        if (!ca || !certsAtS || ca >= certsAtS - 3600) freshCourses.add(cid);
+                    }
+                    if (++sinceCheckpoint >= this.ENR_CHECKPOINT) { sinceCheckpoint = 0; await checkpoint(); }
+                    status();
                 }
-                if (++sinceCheckpoint >= this.ENR_CHECKPOINT) { sinceCheckpoint = 0; await checkpoint(); }
-                const elapsed = (Date.now() - t0) / 1000, eta = summary.done ? (selected.length - i - 1) * elapsed / summary.done : 0;
-                this._enrStatus(`Enrolments… ${(i + 1).toLocaleString()}/${selected.length.toLocaleString()} accounts this session · ${(Object.keys(run.processed).length + pendingIds.length).toLocaleString()}/${run.total.toLocaleString()} overall · ~${this._enrFmtEta(eta)} left · saved every ${this.ENR_CHECKPOINT}`, 15 + Math.round((i + 1) / selected.length * 82));
-            }
+            };
+            await Promise.all(Array.from({ length: nWorkers }, worker));
+            if (fatal) throw fatal;
             if (summary.failed > Math.max(20, summary.selected * this.ENR_MAX_FAILURE_SHARE)) throw new Error(`${summary.failed} of ${summary.selected} accounts failed after retries — stopping; progress so far is saved, run again later.`);
 
             // 6. Certificates — after the accounts: every session walks the courses where a
@@ -668,7 +730,7 @@ Object.assign(window.App, {
             if (!opts.silent) { this._hideApiSyncOverlay(); if (!ok && this.view === 'upload') this.renderView(); }   // card 2 → paused / stopped-by-error, after the in-flight flag clears
         }
         if (!opts.silent) {
-            this.showMsg(`✓ Enrolments synced (${mode}${summary.resumed ? ', resumed' : ''}): ${summary.done.toLocaleString()} accounts fetched` + (summary.ingestedOffline ? `, ${summary.ingestedOffline.toLocaleString()} ingested from the receipt` : '') + ` (${summary.noEnrolments.toLocaleString()} with no enrolments) → ${summary.rows.toLocaleString()} learner-course records` + (summary.failed ? ` · ${summary.failed} accounts skipped after retries` : '') + (summary.certsNew ? ` · ${summary.certsNew.toLocaleString()} new certificate${summary.certsNew === 1 ? '' : 's'}` : '') + (summary.certsApplied ? ` (${summary.certsApplied.toLocaleString()} records updated)` : '') + (summary.retries ? ` · ${summary.retries} transient error${summary.retries === 1 ? '' : 's'} retried` : ''));
+            this.showMsg(`✓ Enrolments synced (${mode}${summary.resumed ? ', resumed' : ''}): ${summary.done.toLocaleString()} accounts fetched` + (summary.ingestedOffline ? `, ${summary.ingestedOffline.toLocaleString()} ingested from the receipt` : '') + ` (${summary.noEnrolments.toLocaleString()} with no enrolments) → ${summary.rows.toLocaleString()} learner-course records` + (summary.failed ? ` · ${summary.failed} accounts skipped after retries` : '') + (summary.certsNew ? ` · ${summary.certsNew.toLocaleString()} new certificate${summary.certsNew === 1 ? '' : 's'}` : '') + (summary.certsApplied ? ` (${summary.certsApplied.toLocaleString()} records updated)` : '') + (summary.retries ? ` · ${summary.retries} transient error${summary.retries === 1 ? '' : 's'} retried` : '') + (summary.listingReused ? ' · listing reused from the Learners sync' : ''));
             this.renderView();
         }
         return summary;
