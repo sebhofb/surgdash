@@ -309,6 +309,17 @@ function diffDumps(a, b) {
     check('pullPlan with the key: unchanged → skip', planK.skip && planK.reason === 'unchanged');
     check('rotation with a wrong current key is refused', (await SS.setKey(http, URL_, { newKey: KEY2, currentKey: 'nope' }).catch(() => false)) === false && S.props.syncKey === KEY);
     check('rotation with the current key works; old key then fails', (await SS.setKey(http, URL_, { newKey: KEY2, currentKey: KEY })) === true && S.props.syncKey === KEY2 && !(await SS.push(ctx(KEY))).ok && (await SS.push(ctx(KEY2))).ok);
+    // a key change whose reply is lost: the script took it, the app must find out instead of retrying blindly
+    { const S2 = loadScript(NEW_SRC); const A = SS.generateKey(), B = SS.generateKey();
+      await SS.setKey(makeHttp(S2).http, URL_, { newKey: A });
+      let dropped = 0; const lossy = async (req) => { const res = await makeHttp(S2).http(req); if (req.method === 'POST' && /"set_key"/.test(req.body) && dropped++ === 0) return { error: 'net::ERR_TIMED_OUT' }; return res; };
+      const ok = await SS.setKey(lossy, URL_, { newKey: B, currentKey: A });
+      check('lost reply to a rotation: the script holds the new key, the app verifies via ?meta and reports success (no blind retry)', ok === true && dropped === 1 && S2.props.syncKey === B);
+      const again = await SS.setKey(makeHttp(S2).http, URL_, { newKey: B, currentKey: A });
+      check('replaying an accepted change (old key + same new key) is answered OK, not unauthorised', again === true && S2.props.syncKey === B);
+      const iA = await SS.serverInfo(makeHttp(S2).http, URL_, A), iB = await SS.serverInfo(makeHttp(S2).http, URL_, B), i0 = await SS.serverInfo(makeHttp(S2).http, URL_);
+      check('?meta&k= says whether a key is current; without k it stays silent', iA.keyOk === false && iB.keyOk === true && i0.keyOk === undefined && iA.secured);
+    }
     // share links
     const p1 = SS.parseShareLink('https://script.google.com/macros/s/AKfyc/exec#k=' + KEY2), p2 = SS.parseShareLink('https://script.google.com/macros/s/AKfyc/exec?k=' + KEY2), p3 = SS.parseShareLink('https://script.google.com/macros/s/AKfyc/exec'), p4 = SS.parseShareLink('  https://script.google.com/macros/s/AKfyc/exec#k=' + KEY2 + '  ');
     check('parseShareLink: #k= and ?k= forms yield the bare URL + key; a plain URL has no key; whitespace tolerated', p1.url === URL_ && p1.key === KEY2 && p2.url === URL_ && p2.key === KEY2 && p3.url === URL_ && p3.key === '' && p4.url === URL_ && p4.key === KEY2, JSON.stringify([p1, p2, p3, p4]));
@@ -327,6 +338,7 @@ function diffDumps(a, b) {
     check('isReservedTabName: the Sheet\'s own tabs, also with re-encoded emoji; real projects pass', SS.isReservedTabName('\ud83d\udcca Organisation') && SS.isReservedTabName('\ud83d\udccb SURGhub') && SS.isReservedTabName('\ud83d\udccb SURGdash Backup') && SS.isReservedTabName('__SURGdash__') && SS.isReservedTabName('\u00fc\u00ec\u00e4 Organisation') && SS.isReservedTabName('SURGhub') && !SS.isReservedTabName('Nakuru OSS') && !SS.isReservedTabName('Organisation Development Kenya') && !SS.isReservedTabName(''));
     const pjs = fs.readFileSync(path.join(ROOT, 'js/projects.js'), 'utf8'), appjs = fs.readFileSync(path.join(ROOT, 'js/app.js'), 'utf8');
     check('pulls drop reserved tab names (both paths); pushes refuse them; start-up cleanup wired', (gv.match(/!\(window\.SheetsSync && SheetsSync\.isReservedTabName\(p\.name\)\)/g) || []).length === 2 && /SheetsSync\.isReservedTabName\(p\.shortName\)\)\);/.test(gv) && /async purgeSheetArtifacts\(\)/.test(pjs) && /Projects\.purgeSheetArtifacts\(\)/.test(appjs));
+    check('settings row: status probes with this device\'s key and explains recovery when it is not current', /SheetsSync\.serverInfo\(http, url, key\)/.test(gv) && /info\.keyOk === false/.test(gv) && /Script Properties/.test(gv));
     check('genericViews: both URL fields go through _sheetsStoreShareLink; push and pull carry the key; settings row + Secure/Rotate/Copy handlers exist', (gv.match(/_sheetsStoreShareLink\(/g) || []).length >= 3 && /key: await this\._sheetsKey\(\),\s*$/m.test(gv) && /pullPlan\(_http, url, \{[^}]*key: await this\._sheetsKey\(\)/.test(gv) && /id="sheets-key-status"/.test(gv) && /async _secureSheet\(\)/.test(gv) && /async _rotateSheetsKey\(\)/.test(gv) && /async _copySheetsShareLink\(btn\)/.test(gv) && /clipboard-write-text/.test(gv));
   }
   console.log(`\n${ok}/${ok + bad} passed`); process.exit(bad ? 1 : 0);

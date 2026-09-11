@@ -163,19 +163,30 @@ window.SheetsSync = (function () {
         const u8 = new Uint8Array(24); crypto.getRandomValues(u8);
         return Array.from(u8).map(b => b.toString(16).padStart(2, '0')).join('');
     }
-    // Set the first key (server has none) or rotate (needs the current key).
+    // Set the first key (server has none) or rotate (needs the current key). A key change is
+    // NOT retried blindly: if the script accepted it but the reply was lost, a retry would carry
+    // the superseded key and be refused, leaving the app with the old key (11 Sep 2026).
+    // Instead, after any failure the script is asked whether the NEW key is now current.
     async function setKey(http, url, opts) {
         opts = opts || {};
-        const r = await request(http, { url, method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'set_key', newKey: opts.newKey, k: opts.currentKey || '' }) }, { attempts: 2, timeoutMs: cfg.metaTimeoutMs * 2, waitsMs: [3000] });
-        return !!(r && r.ok);
+        let err = null;
+        try {
+            const r = await request(http, { url, method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'set_key', newKey: opts.newKey, k: opts.currentKey || '' }) }, { attempts: 1, timeoutMs: cfg.metaTimeoutMs * 3 });
+            if (r && r.ok) return true;
+        } catch (e) { err = e; }
+        try { const probe = await serverInfo(http, url, opts.newKey); if (probe.keyOk === true) return true; } catch (_) {}
+        if (err) throw err;
+        return false;
     }
 
     // ── server capabilities (?meta=1) ─────────────────────────────────────────
     // → { version, hashes: { projects: {id: hash}, org, surghub }, lastModified, fast, reason? }
-    async function serverInfo(http, url) {
-        const info = { version: 0, hashes: { projects: {}, org: '', surghub: '' }, lastModified: '', fast: false, secured: false, canSecure: false };
+    // With `key`, a v4+ script also says whether that key is accepted (info.keyOk true/false;
+    // undefined when the script cannot tell).
+    async function serverInfo(http, url, key) {
+        const info = { version: 0, hashes: { projects: {}, org: '', surghub: '' }, lastModified: '', fast: false, secured: false, canSecure: false, keyOk: undefined };
         let r;
-        try { r = await get(http, url + (url.indexOf('?') >= 0 ? '&' : '?') + 'meta=1', { attempts: 2, timeoutMs: cfg.metaTimeoutMs, waitsMs: [2000] }); }
+        try { r = await get(http, withKey(url + (url.indexOf('?') >= 0 ? '&' : '?') + 'meta=1', key), { attempts: 2, timeoutMs: cfg.metaTimeoutMs, waitsMs: [2000] }); }
         catch (e) { info.reason = 'unreachable: ' + e.message; return info; }
         if (!r || !r.meta) { info.reason = 'no ?meta endpoint (script older than 2.0.6)'; return info; }
         info.version = Number(r.version) || 2;
@@ -187,6 +198,7 @@ window.SheetsSync = (function () {
         info.fast = info.version >= SCRIPT_MIN_FAST;
         info.canSecure = info.version >= SCRIPT_MIN_KEY;
         info.secured = !!r.secured;
+        if (typeof r.keyOk === 'boolean') info.keyOk = r.keyOk;
         if (!info.fast) info.reason = 'script version ' + info.version + ' — redeploy for the fast sync';
         return info;
     }

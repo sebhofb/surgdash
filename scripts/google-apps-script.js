@@ -34,7 +34,11 @@ function doGet(e) {
       var _lm = '';
       try { _lm = PropertiesService.getScriptProperties().getProperty('lastSync') || ''; } catch (_p) {}
       try { var _le = PropertiesService.getScriptProperties().getProperty('lastEdit') || ''; if (_le > _lm) _lm = _le; } catch (_q) {}
-      return _json({ ok: true, meta: true, version: SCRIPT_VERSION, lastModified: _lm, hashes: _readHashes(), secured: !!_syncKey() });
+      // With ?k=... the caller learns whether THAT key is the current one (a cheap, harmless
+      // probe: no data leaves; it lets the app detect a key it holds that is no longer valid).
+      var meta = { ok: true, meta: true, version: SCRIPT_VERSION, lastModified: _lm, hashes: _readHashes(), secured: !!_syncKey() };
+      if (p.k) meta.keyOk = _keyOk(p.k);
+      return _json(meta);
     }
     if (!_keyOk(p.k)) return _unauthorised();
     var SKIP = {'\uD83D\uDCCA Organisation':1, '__SURGdash__':1, '\uD83D\uDCCB SURGdash Backup':1, '\uD83D\uDCCB SURGhub':1};
@@ -359,6 +363,9 @@ function doPost(e) {
       // Rotation: only with the current key.
       var nk = String(d.newKey || '');
       if (nk.length < 16) return _json({ ok: false, error: 'the sync key must be at least 16 characters' });
+      // Replay-safe: if the reply to an accepted change was lost and the app sends the same
+      // change again (now carrying the superseded key), the new key is already current.
+      if (nk === _syncKey()) return _json({ ok: true, version: SCRIPT_VERSION, secured: true, replayed: true });
       if (!_keyOk(d.k)) return _unauthorised();
       PropertiesService.getScriptProperties().setProperty('syncKey', nk);
       return _json({ ok: true, version: SCRIPT_VERSION, secured: true });

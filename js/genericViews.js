@@ -14329,14 +14329,15 @@ function _writeProject(ss, d) {
         const url = appSettings.googleSheetsUrl; if (!url) return;
         const http = (req) => electronAPI.invoke('http-request', req);
         const esc = (t) => App.escapeHtml(t);
-        let info; try { info = await SheetsSync.serverInfo(http, url); } catch (e) { info = { version: 0, reason: String(e && e.message || e) }; }
         const key = await this._sheetsKey();
+        let info; try { info = await SheetsSync.serverInfo(http, url, key); } catch (e) { info = { version: 0, reason: String(e && e.message || e) }; }
         const btn = (fn, label, cls) => `<button data-edit-only onclick="GenericViews.${fn}()" class="px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${cls}">${label}</button>`;
         let html;
         if (!info.version) html = `<span class="text-amber-700">Could not reach the script (${esc(info.reason || 'no answer')}).</span>`;
         else if (!info.canSecure) html = `<span class="text-amber-700">Script version ${info.version} cannot require a key — Copy Script below and redeploy the Web App (version 4), then come back here.</span>`;
         else if (!info.secured) html = `<div class="flex flex-wrap items-center gap-3"><span class="text-red-700 font-medium">Not secured: anyone who obtains the URL can read every learner record and overwrite the Sheet.</span>${btn('_secureSheet', 'Secure this Sheet', 'bg-gsf-boston text-white hover:bg-gsf-prussian')}</div>`;
         else if (!key) html = `<span class="text-amber-700">Secured — but this device has no key. Paste the share link from the administrator into the URL field above and Save.</span>`;
+        else if (info.keyOk === false) html = `<div class="text-amber-700 leading-relaxed"><span class="font-medium">Secured — but the key on this device is not the current one.</span> If you are the administrator: in Apps Script → ⚙ Project Settings → Script Properties, copy the value of <span class="font-mono">syncKey</span> and paste <span class="font-mono">URL#k=that-value</span> into the field above, then Save — or delete that property and click Secure this Sheet here. Otherwise ask the administrator for a fresh share link.</div>`;
         else html = `<div class="flex flex-wrap items-center gap-3"><span class="text-emerald-700 font-medium"><i data-lucide="shield-check" width="12" class="inline"></i> Secured — this device holds the key.</span><button data-edit-only onclick="GenericViews._copySheetsShareLink(this)" class="px-3 py-1.5 rounded-lg text-xs font-bold transition-colors border border-slate-200 text-slate-600 hover:bg-slate-50">Copy share link</button>${btn('_emailSheetsShareLink', 'Email share link…', 'border border-slate-200 text-slate-600 hover:bg-slate-50')}${btn('_rotateSheetsKey', 'Rotate key', 'border border-slate-200 text-slate-600 hover:bg-slate-50')}<span class="text-[11px] text-slate-400">Colleagues paste the share link (URL + key) into Load Project Data or this URL field; after a rotation, send the new link to everyone.</span></div><div id="sheets-share-link" class="mt-2"></div>`;
         el.innerHTML = html;
         if (window.lucide) lucide.createIcons();
