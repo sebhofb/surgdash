@@ -112,6 +112,16 @@ Follow-ups:
   ambassadors sync are already at the cap; the UI's Tailwind Play-CDN build is
   the main interactive-speed item left (needs a visual check after).
 
+## Done — dashboard tab bar fits again (11 September 2026)
+
+Thirteen tabs ran off the right edge and broke mid-label. The bar is now a
+full-width wrapping flex row; pills are `whitespace-nowrap` and a little tighter;
+the long names are shortened (Conflict, Physicians, Nurses, Compare, Journeys,
+Lookup) with the full name as a tooltip; Data Health and Learner lookup sit in a
+right-aligned tools group behind a divider. Tab keys are unchanged, so the
+remembered tab (uiState) and the HTML-snapshot tab list still work.
+`test_dash_pills.js` evaluates the pill block straight from ui.js.
+
 ## Done — Google Sheets sync rebuilt: compressed, fingerprinted, retried (11 September 2026)
 
 Seb: "It is slow, and sometimes fails for the SURGfund part … can this be much much

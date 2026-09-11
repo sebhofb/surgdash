@@ -3769,21 +3769,28 @@ Object.assign(window.App, {
             ];
 
             const dt = this._dashTab || 'overview';
-            const dashPills = [
-                ['overview', 'Overview', 'layout-dashboard'],
-                ['learners', 'Learners', 'users'],
-                ['geography', 'Geography', 'globe'],
-                ['performance', 'Performance', 'award'],
-                ['feedback', 'Feedback', 'message-square'],
-                ['conflict', 'Conflict Settings', 'shield-alert'],
-                ['physicians', 'Physician Reach', 'stethoscope'],
-                ['nurses', 'Nursing Reach', 'heart-pulse'],
-                ['institutions', 'Institutions', 'building-2'],
-                ['compare', 'Compare periods', 'git-compare'],
-                ['journeys', 'Learner journeys', 'route'],
-                ['health', 'Data Health', 'shield-check'],
-                ['lookup', 'Learner lookup', 'user-search', true],   // edit-only: personal data
-            ].map(([k, l, ic, editOnly]) => `<button ${editOnly ? 'data-edit-only ' : ''}onclick="App._dashTab='${k}'; App.renderView()" class="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-bold transition-colors ${dt === k ? 'bg-gsf-prussian text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100'}"><i data-lucide="${ic}" width="15"></i> ${l}</button>`).join('');
+            // 13 views: the analysis tabs, then a right-aligned tools group (checks and an
+            // internal lookup). Short labels with the full name as a tooltip, a pill never
+            // breaks mid-label, and the bar wraps as a whole instead of running off the page.
+            const dashPillDefs = [
+                ['overview', 'Overview', 'layout-dashboard', 'Overview'],
+                ['learners', 'Learners', 'users', 'Learners'],
+                ['geography', 'Geography', 'globe', 'Geography'],
+                ['performance', 'Performance', 'award', 'Performance'],
+                ['feedback', 'Feedback', 'message-square', 'Feedback'],
+                ['conflict', 'Conflict', 'shield-alert', 'Conflict Settings — learners in conflict-affected countries'],
+                ['physicians', 'Physicians', 'stethoscope', 'Physician Reach'],
+                ['nurses', 'Nurses', 'heart-pulse', 'Nursing Reach'],
+                ['institutions', 'Institutions', 'building-2', 'Institutions — who arrives together'],
+                ['compare', 'Compare', 'git-compare', 'Compare periods'],
+                ['journeys', 'Journeys', 'route', 'Learner journeys'],
+            ];
+            const dashToolDefs = [
+                ['health', 'Data Health', 'shield-check', 'Data Health — provenance and quality checks'],
+                ['lookup', 'Lookup', 'user-search', 'Learner lookup — edit mode only (personal data)', true],   // edit-only: personal data
+            ];
+            const dashPill = ([k, l, ic, full, editOnly]) => `<button ${editOnly ? 'data-edit-only ' : ''}title="${this.escapeHtml(full || l)}" onclick="App._dashTab='${k}'; App.renderView()" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold whitespace-nowrap transition-colors ${dt === k ? 'bg-gsf-prussian text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100'}"><i data-lucide="${ic}" width="14"></i> ${l}</button>`;
+            const dashPills = dashPillDefs.map(dashPill).join('') + `<span class="ml-auto flex items-center gap-1 pl-2 border-l border-slate-200">${dashToolDefs.map(dashPill).join('')}</span>`;
 
             const dashContent = this._dashContentHtml(dt, snapData, audSnap, kpiCards);
 
@@ -3808,7 +3815,7 @@ Object.assign(window.App, {
                         </div>
                     </header>
 
-                    <div class="inline-flex items-center gap-1 mb-8 bg-white border rounded-xl p-1 shadow-sm">${dashPills}</div>
+                    <div class="flex flex-wrap items-center gap-1 mb-8 bg-white border rounded-xl p-1 shadow-sm">${dashPills}</div>
 
                     <div data-edit-only class="bg-white border rounded-xl shadow-sm p-4 mb-8">
                         <div class="flex items-center gap-2 mb-2">
