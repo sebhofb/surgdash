@@ -112,7 +112,7 @@ Object.assign(window.App, {
     //                           no scroll jump, no platform-wide redraw;
     //   setIncludePartialMonth  syncs every toggle + caption on the page, then
     //                           redraws charts (or re-renders an HTML-only tab).
-    _DASH_HTML_TABS: ['institutions', 'compare', 'journeys', 'lookup', 'health'],
+    _DASH_HTML_TABS: ['institutions', 'compare', 'journeys'],
     _dashAudSnap() {
         return (this.userHistory || []).find(d => d.Timestamp === this.selectedDate) || (this.userHistory || []).slice().reduce((a, b) => (a && String(a.Timestamp) > String(b.Timestamp) ? a : b), null) || null;
     },
@@ -127,8 +127,8 @@ Object.assign(window.App, {
         if (dt === 'institutions') return this._dashInstitutionsHtml(snapData, audSnap);
         if (dt === 'compare') return this._dashCompareHtml(snapData, audSnap);
         if (dt === 'journeys') return this._dashJourneysHtml(snapData, audSnap);
-        if (dt === 'lookup') return '<div data-no-export>' + this._dashLookupHtml() + '</div>';   // stripped from DOM-based exports
-        if (dt === 'health') return this._dashHealthHtml(snapData, audSnap);
+        // 'health' lives on the Data Sync page and 'lookup' in the Directory since 11 Sep 2026
+        // (see _dashTabKey) — anything else is the overview.
         return this._dashOverviewHtml(snapData, audSnap, kpiCards);
     },
     _dashDraw(dt, audSnap, platSnap) {
@@ -146,8 +146,15 @@ Object.assign(window.App, {
         try { this._currentDraw(); } catch (e) { __swallowed(e, 'redrawCharts'); }
         return true;
     },
+    // The dashboard tab to show. Retired keys (Data Health moved to the Data Sync page,
+    // Learner lookup to the Directory on 11 Sep 2026) may still be remembered on a device.
+    _dashTabKey() {
+        const k = this._dashTab || 'overview';
+        if (k === 'health' || k === 'lookup') { this._dashTab = 'overview'; return 'overview'; }
+        return k;
+    },
     rerenderDashTab() {
-        const dt = this._dashTab || 'overview';
+        const dt = this._dashTabKey();
         const host = document.getElementById('dash-content');
         if (!host || this.view !== 'platform' || dt === 'overview') { this.renderView(); return; }   // the overview's KPI cards need the full pass
         const snapData = this.getAnalyticsSnap(), platSnap = this.getPlatformSnap(), audSnap = this._dashAudSnap();
@@ -802,7 +809,7 @@ Object.assign(window.App, {
             const nMatch = cur.checks.filter(c => c.match).length;
             if (failing.length) {
                 const lead = regrLabels.length ? ('⚠ Provenance REGRESSION — ' + regrLabels.join(', ') + ' no longer reproduce') : ('⚠ Provenance check — ' + failLabels.join(', ') + ' don’t reproduce');
-                this.showMsg(lead + ' from the receipts. Open Data Health → “Re-derive from raw” to investigate.');
+                this.showMsg(lead + ' from the receipts. Open Data Sync → Data health → “Re-derive from raw” to investigate.');
             } else {
                 this.showMsg('✓ Provenance verified — all ' + nMatch + ' numbers reproduce from the receipts');
             }
@@ -3246,6 +3253,15 @@ Object.assign(window.App, {
                         </div>
                         <p class="text-xs text-slate-400">Cover and back pages will be prepended/appended to every generated provider report.</p>
                     </div>
+
+                    <!-- ── Learner lookup (internal support tool; moved here from the dashboard 11 Sep 2026) ── -->
+                    <div data-edit-only data-no-export id="learner-lookup" class="mt-12 mb-8">
+                        <div class="flex items-center gap-2 mb-3">
+                            <i data-lucide="user-search" width="18" class="text-gsf-prussian"></i>
+                            <h2 class="text-lg font-bold text-gsf-prussian">Learner lookup</h2>
+                        </div>
+                        ${this._dashLookupHtml ? this._dashLookupHtml() : ''}
+                    </div>
                 </div>
             `;
         }
@@ -3682,6 +3698,15 @@ Object.assign(window.App, {
                         </div>
                     </div>
 
+                    <!-- ── Data health (moved here from the dashboard 11 Sep 2026) ── -->
+                    <div id="data-health" class="mt-12 mb-8">
+                        <div class="flex items-center gap-2 mb-3">
+                            <i data-lucide="shield-check" width="18" class="text-gsf-prussian"></i>
+                            <h2 class="text-lg font-bold text-gsf-prussian">Data health</h2>
+                        </div>
+                        ${(() => { try { return this._dashHealthHtml(this.getAnalyticsSnap(), this._dashAudSnap ? this._dashAudSnap() : null); } catch (e) { __swallowed(e, 'dataHealth'); return '<p class="text-sm text-slate-400 italic">Data health could not be computed — sync once first.</p>'; } })()}
+                    </div>
+
                     <!-- ── Danger Zone ── -->
                     <div class="max-w-md mb-8" data-edit-only>
                         <div class="bg-red-50 rounded-xl border border-red-200 p-6 space-y-4">
@@ -3768,10 +3793,10 @@ Object.assign(window.App, {
                 })()
             ];
 
-            const dt = this._dashTab || 'overview';
-            // 13 views: the analysis tabs, then a right-aligned tools group (checks and an
-            // internal lookup). Short labels with the full name as a tooltip, a pill never
-            // breaks mid-label, and the bar wraps as a whole instead of running off the page.
+            const dt = this._dashTabKey();
+            // Eleven analysis views. Short labels with the full name as a tooltip, a pill
+            // never breaks mid-label, and the bar wraps as a whole instead of running off
+            // the page. Data Health is on the Data Sync page, Learner lookup in the Directory.
             const dashPillDefs = [
                 ['overview', 'Overview', 'layout-dashboard', 'Overview'],
                 ['learners', 'Learners', 'users', 'Learners'],
@@ -3785,12 +3810,8 @@ Object.assign(window.App, {
                 ['compare', 'Compare', 'git-compare', 'Compare periods'],
                 ['journeys', 'Journeys', 'route', 'Learner journeys'],
             ];
-            const dashToolDefs = [
-                ['health', 'Data Health', 'shield-check', 'Data Health — provenance and quality checks'],
-                ['lookup', 'Lookup', 'user-search', 'Learner lookup — edit mode only (personal data)', true],   // edit-only: personal data
-            ];
             const dashPill = ([k, l, ic, full, editOnly]) => `<button ${editOnly ? 'data-edit-only ' : ''}title="${this.escapeHtml(full || l)}" onclick="App._dashTab='${k}'; App.renderView()" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold whitespace-nowrap transition-colors ${dt === k ? 'bg-gsf-prussian text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100'}"><i data-lucide="${ic}" width="14"></i> ${l}</button>`;
-            const dashPills = dashPillDefs.map(dashPill).join('') + `<span class="ml-auto flex items-center gap-1 pl-2 border-l border-slate-200">${dashToolDefs.map(dashPill).join('')}</span>`;
+            const dashPills = dashPillDefs.map(dashPill).join('');
 
             const dashContent = this._dashContentHtml(dt, snapData, audSnap, kpiCards);
 

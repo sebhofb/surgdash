@@ -121,6 +121,13 @@ Lookup) with the full name as a tooltip; Data Health and Learner lookup sit in a
 right-aligned tools group behind a divider. Tab keys are unchanged, so the
 remembered tab (uiState) and the HTML-snapshot tab list still work.
 `test_dash_pills.js` evaluates the pill block straight from ui.js.
+Second pass the same day: the two tools left the bar altogether — **Learner
+lookup** is a section at the foot of the Directory page (edit-only,
+`data-no-export`), **Data health** a section on the Data Sync page above the
+Danger Zone (computed from `getAnalyticsSnap()` + `_dashAudSnap()`). Eleven
+analysis tabs remain; `_dashTabKey()` maps a remembered `health`/`lookup` tab
+back to the overview. Note: Data Sync is locked for viewers when an edit
+password is set, so Data health is now an editor's view.
 
 ## Done — Google Sheets sync rebuilt: compressed, fingerprinted, retried (11 September 2026)
 
