@@ -1,6 +1,6 @@
 {
   "name": "surgdash",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "SURGdash - Project Management & Analytics Dashboard",
   "author": "Global Surgery Foundation",
   "main": "main.js",

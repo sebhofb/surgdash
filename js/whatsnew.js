@@ -9,6 +9,13 @@
     // this is shown to the team, not to developers. Update this list per release.
     const RELEASES = [
         {
+            v: '2.1.1',
+            date: 'September 2026',
+            items: [
+                { t: 'Fixes after 2.1.0', d: 'A pull can no longer import the Sheet\u2019s own tabs as projects or layout rows as activities, and the app removes any such leftovers at start-up. A sync-key change is never retried blindly; Settings says when this device\u2019s key is not the current one and how to recover. The Apps Script is now plain ASCII so a copy through an editor cannot damage it \u2014 redeploy it once via Settings \u2192 Copy Script.' },
+            ]
+        },
+        {
             v: '2.1.0',
             date: 'September 2026',
             items: [
