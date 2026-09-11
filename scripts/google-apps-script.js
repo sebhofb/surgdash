@@ -1,13 +1,22 @@
-// SURGdash Google Sheets Sync — script version 3 (11 September 2026)
+// SURGdash Google Sheets Sync — script version 4 (11 September 2026)
 // Paste into Google Apps Script → Save → Deploy as Web App
 // Execute as: Me  |  Access: Anyone
 //
+// v4: a SYNC KEY. "Access: Anyone" means anyone holding the URL could read every learner
+// record and overwrite the Sheet. Once the app has set a key (Script Property `syncKey`,
+// via type:'set_key' — only possible while none is set, or with the current key), every
+// read and write must carry it (GET ?k=…, POST body field k); ?meta=1 stays open because
+// it carries no data, and reports secured:true/false so the app can nudge the admin.
 // v3: fingerprints per item (the app skips what the Sheet already holds), SURGhub blob
 // stored compressed as opaque text the app inflates (SDGZ1: prefix), parts written at
 // explicit rows (a retry overwrites, never appends), ?nosurghub=1 pulls, batched tab
 // writes (a project tab is ~12 Sheets calls instead of ~100). Reads legacy data as before.
-var SCRIPT_VERSION = 3;
+var SCRIPT_VERSION = 4;
 var SURGHUB_MARK = 'SDGZ1:';
+
+function _syncKey() { try { return PropertiesService.getScriptProperties().getProperty('syncKey') || ''; } catch (_e) { return ''; } }
+function _keyOk(k) { var want = _syncKey(); return !want || String(k || '') === want; }
+function _unauthorised() { return _json({ ok: false, code: 'unauthorised', error: 'unauthorised — this Sheet requires the sync key; paste the share link from your SURGdash administrator (Settings → Google Sheets → Copy share link)' }); }
 
 // ── doGet: read live data from each project sheet so manual edits are picked up
 function doGet(e) {
@@ -25,8 +34,9 @@ function doGet(e) {
       var _lm = '';
       try { _lm = PropertiesService.getScriptProperties().getProperty('lastSync') || ''; } catch (_p) {}
       try { var _le = PropertiesService.getScriptProperties().getProperty('lastEdit') || ''; if (_le > _lm) _lm = _le; } catch (_q) {}
-      return _json({ ok: true, meta: true, version: SCRIPT_VERSION, lastModified: _lm, hashes: _readHashes() });
+      return _json({ ok: true, meta: true, version: SCRIPT_VERSION, lastModified: _lm, hashes: _readHashes(), secured: !!_syncKey() });
     }
+    if (!_keyOk(p.k)) return _unauthorised();
     var SKIP = {'📊 Organisation':1, '__SURGdash__':1, '📋 SURGdash Backup':1, '📋 SURGhub':1};
     var projects = [];
     ss.getSheets().forEach(function(sheet) {
@@ -338,6 +348,16 @@ function _date(v) {
 function doPost(e) {
   try {
     var d  = JSON.parse(e.postData.contents);
+    if (d.type === 'set_key') {
+      // First key: allowed while none is set (the admin does this right after deploying).
+      // Rotation: only with the current key.
+      var nk = String(d.newKey || '');
+      if (nk.length < 16) return _json({ ok: false, error: 'the sync key must be at least 16 characters' });
+      if (!_keyOk(d.k)) return _unauthorised();
+      PropertiesService.getScriptProperties().setProperty('syncKey', nk);
+      return _json({ ok: true, version: SCRIPT_VERSION, secured: true });
+    }
+    if (!_keyOk(d.k)) return _unauthorised();
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     if (d.type === 'org_summary') {
       _writeOrgSummary(ss, d);

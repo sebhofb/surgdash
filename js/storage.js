@@ -74,6 +74,10 @@
         if (key === 'surgdash_cert_index')      return path.join('settings', 'cert_index.json');
         // Background-sync schedule + run log (backgroundSync.js) — device-local like the above.
         if (key === 'surgdash_bg_sync')         return path.join('settings', 'bg_sync.json');
+        // The Google Sheets sync key (scripts/google-apps-script.js v4). Device-local like the
+        // API credentials: never enumerated, pushed, exported or restored — it travels only
+        // inside the share link the administrator hands to colleagues.
+        if (key === 'surgdash_sheets_key')      return path.join('settings', 'sheets_key.json');
         if (key === 'surgdash_onboarding')      return path.join('settings', 'onboarding.json');
         if (key === 'surgdash_edit_password')  return path.join('settings', 'edit_password.json');
         if (key === 'report_cover_path')     return path.join('settings', 'report_cover_path.json');

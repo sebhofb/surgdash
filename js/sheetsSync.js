@@ -31,6 +31,7 @@ window.SheetsSync = (function () {
     const MARK = 'SDGZ1:';                 // prefix of a compressed SURGhub blob (gzip → base64)
     const CELL_CHARS = 49000;              // Sheets cell limit is 50,000
     const SCRIPT_MIN_FAST = 3;             // script version that understands fingerprints, startRow, MARK, ?nosurghub
+    const SCRIPT_MIN_KEY = 4;              // script version that can require a sync key
     const RETRY_WAITS_MS = [5000, 15000];  // between attempts (3 attempts total)
     const TRANSIENT_RE = /failed while accessing|service invoked too many times|too many requests|temporarily|timed? ?out|exceeded maximum|rate limit|internal error|backend error|service error|did not respond|network error|net::|ECONN|EAI_AGAIN|socket hang up/i;
 
@@ -99,7 +100,10 @@ window.SheetsSync = (function () {
             if (/<html|<!doctype/i.test(b)) return { kind: 'transient', message: 'the script returned an HTML page (' + (res.statusCode || '?') + ')' };
             return { kind: 'transient', message: 'invalid response (' + (res.statusCode || '?') + '): ' + b.slice(0, 120).replace(/\s+/g, ' ') };
         }
-        if (r && r.ok === false) return { kind: TRANSIENT_RE.test(String(r.error || '')) ? 'transient' : 'fatal', message: r.error || 'Script returned an error' };
+        if (r && r.ok === false) {
+            if (r.code === 'unauthorised' || /^unauthori[sz]ed/i.test(String(r.error || ''))) return { kind: 'fatal', code: 'unauthorised', message: r.error || 'unauthorised' };
+            return { kind: TRANSIENT_RE.test(String(r.error || '')) ? 'transient' : 'fatal', message: r.error || 'Script returned an error' };
+        }
         return { kind: 'ok', value: r };
     }
     async function request(http, req, opts) {
@@ -124,16 +128,41 @@ window.SheetsSync = (function () {
             await cfg.sleep(wait);
         }
         const err = new Error(last.message + (attempts > 1 && last.kind !== 'fatal' ? ' (after ' + attempts + ' attempts)' : ''));
-        err.kind = last.kind;
+        err.kind = last.kind; if (last.code) err.code = last.code;
         throw err;
     }
-    const post = (http, url, body, opts) => request(http, { url, method: 'POST', headers: { 'Content-Type': 'application/json' }, body }, opts);
+    // The sync key rides in the POST body (field k) and as ?k= on GETs — Apps Script web
+    // apps cannot read request headers. A key is only attached when the caller has one.
+    const withKey = (url, key) => key ? url + (url.indexOf('?') >= 0 ? '&' : '?') + 'k=' + encodeURIComponent(key) : url;
+    const postJson = (http, url, obj, opts) => { opts = opts || {}; if (opts.key) obj.k = opts.key; return request(http, { url, method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(obj) }, opts); };
+    const post = (http, url, body, opts) => { opts = opts || {}; if (opts.key && typeof body === 'string') { try { const o = JSON.parse(body); o.k = opts.key; body = JSON.stringify(o); } catch (_) {} } return request(http, { url, method: 'POST', headers: { 'Content-Type': 'application/json' }, body }, opts); };
     const get = (http, url, opts) => request(http, { url, method: 'GET' }, opts);
+
+    // ── share links & keys ────────────────────────────────────────────────────
+    // Colleagues paste ONE string: the Web App URL with the key after '#k=' (or '?k=').
+    function parseShareLink(text) {
+        const s = String(text || '').trim();
+        const m = s.match(/^([^#?]+(?:\?(?!k=)[^#]*)?)(?:[#?&]k=([A-Za-z0-9._~-]+))?\s*$/);
+        if (!m) return { url: s, key: '' };
+        let url = m[1].replace(/[?&]$/, '');
+        return { url, key: m[2] || '' };
+    }
+    const makeShareLink = (url, key) => key ? String(url).replace(/#.*$/, '') + '#k=' + key : String(url);
+    function generateKey() {
+        const u8 = new Uint8Array(24); crypto.getRandomValues(u8);
+        return Array.from(u8).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+    // Set the first key (server has none) or rotate (needs the current key).
+    async function setKey(http, url, opts) {
+        opts = opts || {};
+        const r = await request(http, { url, method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'set_key', newKey: opts.newKey, k: opts.currentKey || '' }) }, { attempts: 2, timeoutMs: cfg.metaTimeoutMs * 2, waitsMs: [3000] });
+        return !!(r && r.ok);
+    }
 
     // ── server capabilities (?meta=1) ─────────────────────────────────────────
     // → { version, hashes: { projects: {id: hash}, org, surghub }, lastModified, fast, reason? }
     async function serverInfo(http, url) {
-        const info = { version: 0, hashes: { projects: {}, org: '', surghub: '' }, lastModified: '', fast: false };
+        const info = { version: 0, hashes: { projects: {}, org: '', surghub: '' }, lastModified: '', fast: false, secured: false, canSecure: false };
         let r;
         try { r = await get(http, url + (url.indexOf('?') >= 0 ? '&' : '?') + 'meta=1', { attempts: 2, timeoutMs: cfg.metaTimeoutMs, waitsMs: [2000] }); }
         catch (e) { info.reason = 'unreachable: ' + e.message; return info; }
@@ -145,6 +174,8 @@ window.SheetsSync = (function () {
             info.hashes.org = r.hashes.org || ''; info.hashes.surghub = r.hashes.surghub || '';
         }
         info.fast = info.version >= SCRIPT_MIN_FAST;
+        info.canSecure = info.version >= SCRIPT_MIN_KEY;
+        info.secured = !!r.secured;
         if (!info.fast) info.reason = 'script version ' + info.version + ' — redeploy for the fast sync';
         return info;
     }
@@ -163,7 +194,9 @@ window.SheetsSync = (function () {
         const onRetry = (msg, n, wait) => { s.retries++; log('[Sheets] ' + msg + ' — retrying in ' + Math.round(wait / 1000) + ' s (attempt ' + (n + 1) + ')'); progress('Retrying after: ' + msg + '…', null); };
         progress('Checking the Google Apps Script…', 1);
         const info = await serverInfo(http, url);
-        s.fast = info.fast; s.serverVersion = info.version; s.serverReason = info.reason || '';
+        s.fast = info.fast; s.serverVersion = info.version; s.serverReason = info.reason || ''; s.secured = info.secured;
+        const key = ctx.key || '';
+        if (info.secured && !key) { s.errors.push('This Sheet requires the sync key and this device has none — paste the share link from the administrator (Settings → Google Sheets).'); s.ok = false; s.ms = Date.now() - t0; s.org = s.surghub = s.backup = 'failed'; return s; }
         const total = ctx.projects.length + 3;
         const allPayloads = [], hashes = [];
 
@@ -178,7 +211,7 @@ window.SheetsSync = (function () {
                 allPayloads.push(obj); hashes.push(h);
                 if (obj._truncated && (obj._truncated.events || obj._truncated.kpiLog)) s.truncated.push(obj.name || obj.shortName || p.id);
                 if (s.fast && !ctx.force && info.hashes.projects[p.id] === h) { s.projects.skipped.push(p.id); continue; }
-                await post(http, url, JSON.stringify(obj), { onRetry });
+                await postJson(http, url, obj, { onRetry, key });
                 s.projects.pushed.push(p.id);
             } catch (e) { s.projects.failed.push(p.id); s.errors.push((p.name || p.id) + ': ' + e.message); log('[Sheets] project failed: ' + label + ' — ' + e.message); }
         }
@@ -188,7 +221,7 @@ window.SheetsSync = (function () {
         try {
             const orgHash = await sha256Hex(hashes.join('|') + '|' + hashes.length);
             if (s.fast && !ctx.force && s.projects.failed.length === 0 && info.hashes.org === orgHash) s.org = 'skipped';
-            else { await post(http, url, JSON.stringify({ type: 'org_summary', generatedAt: new Date().toLocaleString(), projects: allPayloads, hash: orgHash }), { onRetry }); s.org = 'pushed'; }
+            else { await postJson(http, url, { type: 'org_summary', generatedAt: new Date().toLocaleString(), projects: allPayloads, hash: orgHash }, { onRetry, key }); s.org = 'pushed'; }
         } catch (e) { s.org = 'failed'; s.errors.push('Organisation summary: ' + e.message); }
 
         // 3. SURGhub blob + 4. slim backup
@@ -212,14 +245,14 @@ window.SheetsSync = (function () {
                         const body = { type: 'surghub_chunk', part: p + 1, totalParts, syncedAt: s.syncedAt, data: text.slice(p * PART, (p + 1) * PART) };
                         if (s.fast) { body.startRow = 2 + p * cfg.partRows; body.totalRows = totalRows; body.format = 'gz64'; body.hash = hash; }
                         // Legacy scripts append at the last row: a retry there would duplicate rows, so one attempt only.
-                        await post(http, url, JSON.stringify(body), { onRetry, timeoutMs: cfg.partTimeoutMs, attempts: s.fast ? cfg.attempts : 1 });
+                        await postJson(http, url, body, { onRetry, timeoutMs: cfg.partTimeoutMs, attempts: s.fast ? cfg.attempts : 1, key });
                     }
                     s.surghub = 'pushed';
                 }
             } catch (e) { s.surghub = 'failed'; s.errors.push('SURGhub data: ' + e.message + ' — nothing was lost locally; run Sync again.'); }
             progress('Backup…', ((ctx.projects.length + 2.6) / total) * 100);
             try {
-                await post(http, url, JSON.stringify({ type: 'full_backup', syncedAt: s.syncedAt, appSettings: collected.appSettings || {}, customQualityKpis: collected.customQualityKpis || [], projects: allPayloads, rawStorage: collected.rawStorage || {} }), { onRetry, timeoutMs: cfg.partTimeoutMs });
+                await postJson(http, url, { type: 'full_backup', syncedAt: s.syncedAt, appSettings: collected.appSettings || {}, customQualityKpis: collected.customQualityKpis || [], projects: allPayloads, rawStorage: collected.rawStorage || {} }, { onRetry, timeoutMs: cfg.partTimeoutMs, key });
                 s.backup = 'pushed';
             } catch (e) { s.backup = 'failed'; s.errors.push('Backup: ' + e.message); }
         } else { s.surghub = 'failed'; s.backup = 'failed'; }
@@ -251,6 +284,7 @@ window.SheetsSync = (function () {
     async function pullPlan(http, url, opts) {
         opts = opts || {};
         const info = await serverInfo(http, url);
+        if (info.secured && !opts.key) return { skip: false, reason: '', info, unauthorised: true };
         if (!info.fast) return { skip: false, reason: '', info };
         if (opts.localDirty && opts.silent) return { skip: true, reason: 'dirty', info };
         if (opts.localHash && info.hashes.surghub && info.hashes.surghub === opts.localHash) return { skip: true, reason: 'unchanged', info };
@@ -259,7 +293,7 @@ window.SheetsSync = (function () {
     // GET the mirror; a packed SURGhub blob is inflated + parsed here so callers see an object.
     async function fetchMirror(http, url, opts) {
         opts = opts || {};
-        const u = url + (url.indexOf('?') >= 0 ? '&' : '?') + (opts.nosurghub ? 'nosurghub=1' : 'full=1');
+        const u = withKey(url + (url.indexOf('?') >= 0 ? '&' : '?') + (opts.nosurghub ? 'nosurghub=1' : 'full=1'), opts.key);
         const r = await get(http, u, { timeoutMs: opts.timeoutMs || cfg.pullTimeoutMs, attempts: opts.attempts != null ? opts.attempts : 2, waitsMs: [5000], onRetry: opts.onRetry });
         if (isPacked(r.surghubStorage)) {
             try { r.surghubStorage = JSON.parse(await unpackBlob(r.surghubStorage)); }
@@ -268,5 +302,5 @@ window.SheetsSync = (function () {
         return r;
     }
 
-    return { MARK, CELL_CHARS, SCRIPT_MIN_FAST, cfg, bytesToBase64, base64ToBytes, gzip, gunzip, sha256Hex, packBlob, unpackBlob, isPacked, payloadHash, request, post, get, serverInfo, push, describe, pullPlan, fetchMirror, _classify };
+    return { MARK, CELL_CHARS, SCRIPT_MIN_FAST, SCRIPT_MIN_KEY, cfg, bytesToBase64, base64ToBytes, gzip, gunzip, sha256Hex, packBlob, unpackBlob, isPacked, payloadHash, request, post, postJson, get, withKey, serverInfo, push, describe, pullPlan, fetchMirror, parseShareLink, makeShareLink, generateKey, setKey, _classify };
 })();

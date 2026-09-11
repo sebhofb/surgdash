@@ -11132,6 +11132,7 @@ function initProjectMap(pid){
         const customKpis = allKpis.filter(k => !k.preset);
         const appSettings = await Projects.getAppSettings();
         const autoPullOn = !!(await Storage.getItem('surgdash_autopull_enabled'));
+        setTimeout(() => { try { this._sheetsRefreshKeyStatus(); } catch (_) { __swallowed(_); } }, 60);   // fills #sheets-key-status once the page is on screen
 
         const presetRows = presetKpis.map(kpi => `
             <div class="flex items-center gap-3 p-3 rounded-lg bg-slate-50 border border-slate-200">
@@ -11222,6 +11223,10 @@ function initProjectMap(pid){
                                     class="flex-1 px-3 py-2 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-gsf-boston/30" />
                                 <button onclick="GenericViews._saveOrgSheetsUrl()" class="px-4 py-2 bg-gsf-boston text-white rounded-lg text-sm font-bold hover:bg-gsf-prussian transition-colors">Save</button>
                             </div>
+                        </div>
+                        <div>
+                            <label class="block text-[10px] font-bold text-slate-400 mb-1 uppercase tracking-wide">Sync key <span class="font-normal text-slate-300">(who may read and write the Sheet)</span></label>
+                            <div id="sheets-key-status" class="text-xs text-slate-500">${appSettings.googleSheetsUrl ? 'Checking the deployed script…' : 'Save the Apps Script URL first.'}</div>
                         </div>
                         <div>
                             <label class="block text-[10px] font-bold text-slate-400 mb-1 uppercase tracking-wide">Spreadsheet URL <span class="font-normal text-slate-300">(for the Open Sheet button)</span></label>
@@ -13823,8 +13828,10 @@ function _writeProject(ss, d) {
     // as an object. opts.nosurghub leaves the blob out of the download.
     async _sheetsGet(targetUrl, opts) {
         const http = (req) => electronAPI.invoke('http-request', req);
-        try { return await SheetsSync.fetchMirror(http, targetUrl, opts || {}); }
+        opts = Object.assign({ key: await this._sheetsKey() }, opts || {});
+        try { return await SheetsSync.fetchMirror(http, targetUrl, opts); }
         catch (err) {
+            if (err.code === 'unauthorised') throw new Error('This Sheet requires the sync key and this device has none (or an old one). Paste the share link from your SURGdash administrator into Settings → Google Sheets → Apps Script URL.');
             const hint = /HTML page/i.test(err.message)
                 ? '\n\nThe script returned an HTML page — this usually means the Apps Script deployment needs to be updated. Open Apps Script → Deploy → Manage deployments → create a New Deployment with the latest code, then paste the new URL here.'
                 : '';
@@ -13969,11 +13976,22 @@ function _writeProject(ss, d) {
         App.renderView();
     },
 
+    // The sync key this device holds for the Sheet (device-local, never pushed or exported).
+    async _sheetsKey() { try { const k = await Storage.getItem('surgdash_sheets_key'); return typeof k === 'string' ? k : ''; } catch (_) { return ''; } },
+    // Accept the Web App URL with or without the key colleagues get in the share link
+    // (…/exec#k=KEY). Stores both; returns the bare URL.
+    async _sheetsStoreShareLink(text) {
+        const { url, key } = SheetsSync.parseShareLink(text);
+        if (key) await Storage.setItem('surgdash_sheets_key', key, { internal: true });
+        return { url, key };
+    },
+
     // POST via main-process HTTP (redirects handled there), with the transport's
     // retries for transient failures (network, timeout, HTML error pages).
     async _sheetsPost(targetUrl, data, opts) {
         const http = (req) => electronAPI.invoke('http-request', req);
-        return SheetsSync.post(http, targetUrl, data, opts || {});
+        opts = Object.assign({ key: await this._sheetsKey() }, opts || {});
+        return SheetsSync.post(http, targetUrl, data, opts);
     },
 
     async _buildProjectPayload(project) {
@@ -14073,7 +14091,8 @@ function _writeProject(ss, d) {
     },
 
     async _saveViewerSheetsUrlAndPull() {
-        const url = (document.getElementById('viewer-sheets-url')?.value || '').trim();
+        const _raw = (document.getElementById('viewer-sheets-url')?.value || '').trim();
+        const { url } = _raw ? await this._sheetsStoreShareLink(_raw) : { url: '' };   // the share link carries the sync key
         const statusEl = document.getElementById('viewer-load-status');
         const btn = document.getElementById('viewer-load-btn');
         if (!url) {
@@ -14295,10 +14314,66 @@ function _writeProject(ss, d) {
     },
 
     async _saveOrgSheetsUrl() {
-        const url = (document.getElementById('org-sheets-url')?.value || '').trim();
+        const raw = (document.getElementById('org-sheets-url')?.value || '').trim();
+        const { url, key } = raw ? await this._sheetsStoreShareLink(raw) : { url: '', key: '' };
         await Projects.saveAppSettings({ googleSheetsUrl: url || null });
-        App.showMsg(url ? 'Apps Script URL saved.' : 'URL cleared.');
+        App.showMsg(url ? ('Apps Script URL saved' + (key ? ' — sync key stored on this device.' : '.')) : 'URL cleared.');
         App.renderView();
+    },
+
+    // Sync-key row on the settings page: asks the script (?meta=1) whether it requires a
+    // key, whether this device holds one, and offers Secure / Copy share link / Rotate.
+    async _sheetsRefreshKeyStatus() {
+        const el = document.getElementById('sheets-key-status'); if (!el) return;
+        const appSettings = await Projects.getAppSettings();
+        const url = appSettings.googleSheetsUrl; if (!url) return;
+        const http = (req) => electronAPI.invoke('http-request', req);
+        const esc = (t) => App.escapeHtml(t);
+        let info; try { info = await SheetsSync.serverInfo(http, url); } catch (e) { info = { version: 0, reason: String(e && e.message || e) }; }
+        const key = await this._sheetsKey();
+        const btn = (fn, label, cls) => `<button data-edit-only onclick="GenericViews.${fn}()" class="px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${cls}">${label}</button>`;
+        let html;
+        if (!info.version) html = `<span class="text-amber-700">Could not reach the script (${esc(info.reason || 'no answer')}).</span>`;
+        else if (!info.canSecure) html = `<span class="text-amber-700">Script version ${info.version} cannot require a key — Copy Script below and redeploy the Web App (version 4), then come back here.</span>`;
+        else if (!info.secured) html = `<div class="flex flex-wrap items-center gap-3"><span class="text-red-700 font-medium">Not secured: anyone who obtains the URL can read every learner record and overwrite the Sheet.</span>${btn('_secureSheet', 'Secure this Sheet', 'bg-gsf-boston text-white hover:bg-gsf-prussian')}</div>`;
+        else if (!key) html = `<span class="text-amber-700">Secured — but this device has no key. Paste the share link from the administrator into the URL field above and Save.</span>`;
+        else html = `<div class="flex flex-wrap items-center gap-3"><span class="text-emerald-700 font-medium"><i data-lucide="shield-check" width="12" class="inline"></i> Secured — this device holds the key.</span>${btn('_copySheetsShareLink', 'Copy share link', 'border border-slate-200 text-slate-600 hover:bg-slate-50')}${btn('_rotateSheetsKey', 'Rotate key', 'border border-slate-200 text-slate-600 hover:bg-slate-50')}<span class="text-[11px] text-slate-400">Colleagues paste the share link (URL + key) into Load Project Data or this URL field; after a rotation, send the new link to everyone.</span></div>`;
+        el.innerHTML = html;
+        if (window.lucide) lucide.createIcons();
+    },
+    async _secureSheet() {
+        const appSettings = await Projects.getAppSettings(); const url = appSettings.googleSheetsUrl; if (!url) return;
+        if (!confirm('Secure this Sheet?\n\nA sync key is generated on this device and set in the script. From then on every read and write needs it — every colleague must paste the new share link (URL + key) once. Nothing else changes.')) return;
+        const http = (req) => electronAPI.invoke('http-request', req);
+        const newKey = SheetsSync.generateKey();
+        try {
+            const ok = await SheetsSync.setKey(http, url, { newKey, currentKey: await this._sheetsKey() });
+            if (!ok) throw new Error('the script did not accept the key');
+            await Storage.setItem('surgdash_sheets_key', newKey, { internal: true });
+            try { await navigator.clipboard.writeText(SheetsSync.makeShareLink(url, newKey)); } catch (_) { __swallowed(_); }
+            App.showMsg('Sheet secured ✓ — share link copied to the clipboard; send it to colleagues who pull from this Sheet.');
+        } catch (e) { alert('Could not secure the Sheet: ' + (e && e.message || e)); }
+        this._sheetsRefreshKeyStatus();
+    },
+    async _rotateSheetsKey() {
+        const appSettings = await Projects.getAppSettings(); const url = appSettings.googleSheetsUrl; if (!url) return;
+        const cur = await this._sheetsKey(); if (!cur) { App.showMsg('This device has no key to rotate with.', true); return; }
+        if (!confirm('Rotate the sync key?\n\nThe old share link stops working immediately; every colleague needs the new one.')) return;
+        const http = (req) => electronAPI.invoke('http-request', req);
+        const newKey = SheetsSync.generateKey();
+        try {
+            const ok = await SheetsSync.setKey(http, url, { newKey, currentKey: cur });
+            if (!ok) throw new Error('the script refused (wrong current key?)');
+            await Storage.setItem('surgdash_sheets_key', newKey, { internal: true });
+            try { await navigator.clipboard.writeText(SheetsSync.makeShareLink(url, newKey)); } catch (_) { __swallowed(_); }
+            App.showMsg('Key rotated ✓ — new share link copied to the clipboard.');
+        } catch (e) { alert('Could not rotate the key: ' + (e && e.message || e)); }
+        this._sheetsRefreshKeyStatus();
+    },
+    async _copySheetsShareLink() {
+        const appSettings = await Projects.getAppSettings(); const url = appSettings.googleSheetsUrl; const key = await this._sheetsKey();
+        if (!url) return;
+        try { await navigator.clipboard.writeText(SheetsSync.makeShareLink(url, key)); App.showMsg(key ? 'Share link (URL + sync key) copied.' : 'URL copied (no key on this device).'); } catch (e) { alert('Clipboard unavailable: ' + (e && e.message || e)); }
     },
 
     async _saveOrgSheetsViewUrl() {
@@ -14423,7 +14498,7 @@ function _writeProject(ss, d) {
         let s;
         try {
             s = await SheetsSync.push({
-                url, http, force: !!opts.force,
+                url, http, force: !!opts.force, key: await this._sheetsKey(),
                 projects: projects.map(p => ({ id: p.id, name: p.name, shortName: p.shortName || '', _proj: p })),
                 buildPayload: (p) => this._buildProjectPayload(p._proj),
                 collect,
@@ -14580,7 +14655,7 @@ function _writeProject(ss, d) {
             let _plan = { skip: false, reason: '' };
             try {
                 const _localDirty = !!(await Storage.getItem('surghub_unsynced_local'));
-                _plan = await SheetsSync.pullPlan(_http, url, { silent, localDirty: _localDirty, localHash: appSettings.googleSheetsSurghubHash || '' });
+                _plan = await SheetsSync.pullPlan(_http, url, { silent, localDirty: _localDirty, localHash: appSettings.googleSheetsSurghubHash || '', key: await this._sheetsKey() });
             } catch (_) { __swallowed(_); }
             const result = await this._sheetsGet(url, { nosurghub: _plan.skip });
             result._surghubPlan = _plan;
