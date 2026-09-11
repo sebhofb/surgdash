@@ -126,7 +126,9 @@ Object.assign(window.App, {
     // the remembered one. Viewer-mode renders are not recorded, so the startup
     // screen cannot overwrite the memory. Creation flows are never remembered, and
     // a remembered course, provider or project that no longer exists falls back.
-    _SCREEN_SKIP: ['new-project', 'project-setup', 'project-entry'],
+    // 'home' is the launch screen, never a destination to come back to — remembering
+    // it would make "continue where you left off" point at the page you are on.
+    _SCREEN_SKIP: ['new-project', 'project-setup', 'project-entry', 'home'],
     _SURGHUB_VIEWS: ['platform', 'provider', 'course', 'upload', 'audience', 'ambassadors', 'manage', 'sh-milestones', 'sh-reports', 'methodology'],
     _rememberScreen() {
         if (!this._uiState || !this.editUnlocked || !this.view || this._SCREEN_SKIP.includes(this.view)) return;
@@ -159,6 +161,9 @@ Object.assign(window.App, {
     // Called by unlockEdit(): restore only if nothing was navigated since the startup render.
     _restoreLastScreenOnUnlock() {
         if (this._startupViewKey && this._lastRenderedViewKey && this._lastRenderedViewKey !== this._startupViewKey) return false;
+        // Unlocking on Home stays on Home: its "Continue" button is the way off it,
+        // so editors are not thrown to another screen the moment they type a password.
+        if (this.view === 'home') return false;
         return this._restoreLastScreen();
     },
 

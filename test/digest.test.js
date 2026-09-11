@@ -30,7 +30,7 @@ function mk(opts) {
     document: { getElementById: () => null },
     navigator: { clipboard: { async writeText(t) { ctx.clip = t; } } },
     electronAPI: { openExternal(h) { ctx.opened = h; } },
-    Projects: { registry: [{ id: 'p1', type: 'generic', name: 'Nakuru', shortName: 'Nakuru' }, { id: 's1', type: 'generic', isSample: true, name: 'Sample' }], async getKpiLog(id) { return id === 'p1' ? [{ timestamp: '2026-09-09T10:00:00Z' }, { timestamp: '2026-08-01T10:00:00Z' }] : []; }, async getEvents(id) { return id === 'p1' ? [{ date: '2026-09-10' }] : []; }, async getAppSettings() { return { googleSheetsLastSync: '2026-09-13T20:00:00Z' }; } },
+    Projects: { registry: [{ id: 'p1', type: 'generic', name: 'Nakuru', shortName: 'Nakuru' }, { id: 's1', type: 'generic', isSample: true, name: 'Sample' }], async getKpiLog(id) { return id === 'p1' ? [{ timestamp: '2026-09-09T10:00:00Z' }, { timestamp: String(new Date(2026, 8, 8, 16, 12, 39)) }, { timestamp: '2026-08-01T10:00:00Z' }] : []; }, async getEvents(id) { return id === 'p1' ? [{ date: '2026-09-10' }] : []; }, async getAppSettings() { return { googleSheetsLastSync: '2026-09-13T20:00:00Z' }; } },
   };
   ctx.window = ctx;
   ctx.App = { view: 'upload', msgs: [], renders: 0, data: courses, userHistory: [{ Timestamp: '2026-09-06', TotalUsers: 63000, TotalCertificates: 33500 }, { Timestamp: '2026-09-11', TotalUsers: 63615, TotalCertificates: 33688 }], ambassadorData: { TotalReferrals: 3300 },
@@ -67,7 +67,8 @@ function mk(opts) {
   check('long lists are capped in the text', h.App._digestListCap(['a','b','c','d'], 2) === 'a, b and 2 more' && h.App._digestListCap(['a'], 2) === 'a');
   check('accounts: 2 new (8 & 13 Sep), 1 new prev (1 Sep); 3 logged in this week, 1 prev', d.accounts.newAcc === 2 && d.accounts.newAccPrev === 1 && d.accounts.active === 3 && d.accounts.activePrev === 1, JSON.stringify(d.accounts));
   check('platform totals from the newest snapshot', d.platform.totalUsers === 63615 && d.platform.totalCertificates === 33688 && d.platform.snapshotDate === '2026-09-11');
-  check('SURGfund: 1 KPI edit + 1 activity this week for Nakuru; the sample is ignored', d.surgfund.kpiEdits === 1 && d.surgfund.activities === 1 && d.surgfund.projects.length === 1 && d.surgfund.projects[0].name === 'Nakuru');
+  check('SURGfund: KPI edits counted whether the stamp is ISO or the raw Date.toString() the app used to write (that mis-parse reported zero until 11 Sep 2026)', d.surgfund.kpiEdits === 2, JSON.stringify(d.surgfund));
+  check('SURGfund: 1 activity this week for Nakuru; the sample is ignored', d.surgfund.activities === 1 && d.surgfund.projects.length === 1 && d.surgfund.projects[0].name === 'Nakuru');
   check('health: 2 background runs this week (1 failed), enrolment sync date + mode, Sheets date, 1 provenance check failing (the no-receipt one excluded), data through 11 Sep', d.health.bgRuns === 2 && d.health.bgFailed === 1 && d.health.enrolMode === 'incremental' && d.health.sheetsLastSync === '2026-09-13T20:00:00Z' && d.health.provenanceFailing === 1 && d.health.dataThrough === '2026-09-11', JSON.stringify(d.health));
   check('ambassadors: total now, no previous digest → no delta', d.ambassadors.totalReferrals === 3300 && d.ambassadors.prevTotal === null && d.week === '2026-W38' && d.snapshot.totalReferrals === 3300);
 

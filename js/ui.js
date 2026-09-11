@@ -2279,6 +2279,16 @@ Object.assign(window.App, {
 
         let html = '';
 
+        // ── Home (distinctive card button, above everything) ──
+        const homeActive = cur === 'home';
+        html += `<div class="mb-2 px-2">
+            <button data-proj="home" onclick="App.switchProject('home')" class="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-bold transition-all ${homeActive ? 'bg-gradient-to-r from-gsf-polo/30 to-gsf-boston/20 text-white ring-1 ring-gsf-polo/50 shadow-sm shadow-gsf-polo/20' : 'bg-gradient-to-r from-white/8 to-gsf-polo/8 text-slate-200 hover:from-white/12 hover:to-gsf-polo/15 hover:text-white'}" title="Where things stand: totals, this week, what needs attention">
+                <span class="flex items-center justify-center w-7 h-7 rounded-lg ${homeActive ? 'bg-gsf-polo/40' : 'bg-gsf-polo/15'}"><i data-lucide="home" width="14" class="${homeActive ? 'text-white' : 'text-gsf-polo/70'}"></i></span>
+                <span class="flex-1 text-left">Home</span>
+                <span class="active-dot w-1.5 h-1.5 rounded-full bg-gsf-polo shrink-0 ${homeActive ? 'opacity-100' : 'opacity-0'}"></span>
+            </button>
+        </div>`;
+
         // ── Organisation (distinctive card button) ──
         const orgActive = cur === 'org';
         const hubActive = cur === 'surghub';
@@ -2443,8 +2453,8 @@ Object.assign(window.App, {
         const tabsEl = document.getElementById('view-tabs');
         if (!tabsEl) return;
 
-        // No tab bar for new-project view
-        if (this.view === 'new-project') { tabsEl.innerHTML = ''; return; }
+        // No tab bar for the new-project view, nor for Home (one screen, no tabs)
+        if (this.view === 'new-project' || this.view === 'home') { tabsEl.innerHTML = ''; this._lastTabBarProject = null; return; }
 
         const project = this.getCurrentProject();
         const projectKey = this.currentProject;
@@ -2864,6 +2874,14 @@ Object.assign(window.App, {
         const _stripFade = () => {
             if (sameView) body.querySelectorAll('.fade-in').forEach(el => el.classList.remove('fade-in'));
         };
+
+        // Home — the screen the app opens on (home.js). Paints from what is already
+        // in memory, then fills in the seven-day figures when they are ready.
+        if (this.view === 'home' && this.renderHome) {
+            this.renderHome(body);
+            _stripFade();
+            return;
+        }
 
         // New project creation view (works regardless of current project)
         if (this.view === 'new-project' && window.GenericViews) {

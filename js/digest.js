@@ -33,6 +33,17 @@ Object.assign(window.App, {
         return { from: this._digestIso(from), to: this._digestIso(to), prevFrom: this._digestIso(prevFrom), prevTo: this._digestIso(prevTo) };
     },
     _digestIn(day, from, to) { return !!day && day >= from && day <= to; },
+    // The ISO day of a stored stamp. Not everything on disk is ISO: KPI-log entries were
+    // written with Date.toString() ("Fri Sep 04 2026 16:12:39 GMT+0200 ..."), so slicing
+    // the first ten characters gave "Fri Sep 04" — a string that matches no window, which
+    // is why SURGfund KPI edits always read zero (found 11 Sep 2026). Parse, then format.
+    _digestDayOf(v) {
+        const s = String(v == null ? '' : v);
+        if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+        if (!s) return '';
+        const d = new Date(s);
+        return isNaN(d) ? '' : this._digestIso(d);
+    },
 
     // Due on/after the chosen weekday (1 = Monday … 7 = Sunday) once per ISO week — so a
     // Monday the app was closed is caught up on Tuesday, but never twice in a week.
@@ -115,8 +126,8 @@ Object.assign(window.App, {
             if (window.Projects && Projects.registry) {
                 for (const p of Projects.registry.filter(p => p.type === 'generic' && !p.isSample)) {
                     let k = 0, a = 0;
-                    try { (await Projects.getKpiLog(p.id) || []).forEach(l => { if (inW(String(l.timestamp || '').slice(0, 10))) k++; }); } catch (e) { __swallowed(e, 'digest.kpilog'); }
-                    try { (await Projects.getEvents(p.id) || []).forEach(ev => { if (inW(String(ev.date || '').slice(0, 10))) a++; }); } catch (e) { __swallowed(e, 'digest.events'); }
+                    try { (await Projects.getKpiLog(p.id) || []).forEach(l => { if (inW(this._digestDayOf(l.timestamp))) k++; }); } catch (e) { __swallowed(e, 'digest.kpilog'); }
+                    try { (await Projects.getEvents(p.id) || []).forEach(ev => { if (inW(this._digestDayOf(ev.date))) a++; }); } catch (e) { __swallowed(e, 'digest.events'); }
                     if (k || a) surgfund.projects.push({ name: p.shortName || p.name, kpiEdits: k, activities: a });
                     surgfund.kpiEdits += k; surgfund.activities += a;
                 }

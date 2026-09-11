@@ -9,6 +9,15 @@
     // this is shown to the team, not to developers. Update this list per release.
     const RELEASES = [
         {
+            v: '2.1.2',
+            date: 'September 2026',
+            items: [
+                { t: 'A Home screen', d: 'SURGdash now opens on one page that says where things stand: the platform totals, what moved in the last seven days against the seven before, the courses behind that movement, anything that needs attention, and the SURGfund reporting position. Everything on it is already on disk \u2014 it never calls LearnWorlds and never starts a sync. \u201cContinue\u201d takes you back to the screen you had open; untick \u201cOpen Home on launch\u201d and the app goes straight there instead.' },
+                { t: 'SURGfund KPI edits were being counted as zero', d: 'KPI-log entries written before this release carry a plain date stamp rather than a standard one, which the weekly digest could not read \u2014 so \u201cedits this week\u201d always said zero. Both Home and the digest now read either form. Last week\u2019s two edits on Nakuru OSS were real.' },
+                { t: 'Deleting a project removes all of it', d: 'A deleted project used to leave its KPI actuals and quarter comments behind.' },
+            ]
+        },
+        {
             v: '2.1.1',
             date: 'September 2026',
             items: [

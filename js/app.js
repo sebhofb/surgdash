@@ -152,7 +152,7 @@ window.App = {
                 if (purged.projects || purged.events) setTimeout(() => this.showMsg('Cleaned up after a bad Sheets pull: ' + (purged.projects ? purged.projects + ' bogus project' + (purged.projects === 1 ? '' : 's') + ' (' + purged.names.join(', ') + ')' : '') + (purged.projects && purged.events ? ' and ' : '') + (purged.events ? purged.events + ' bogus activit' + (purged.events === 1 ? 'y' : 'ies') : '') + ' removed. Push to Sheets to rewrite the tabs.', 'warn'), 1500);
             } catch (e) { __swallowed(e, 'purge'); }
             const lastProject = await Storage.getItem('surgdash_last_project');
-            if (lastProject && (lastProject === 'org' || Projects.getProject(lastProject))) {
+            if (lastProject && (lastProject === 'home' || lastProject === 'org' || Projects.getProject(lastProject))) {
                 this.currentProject = lastProject;
             } else {
                 // Fresh install or post-wipe: land on the Org overview by default so
@@ -242,9 +242,17 @@ window.App = {
         if (dates.length > 0) this.selectedDate = dates[dates.length - 1];
         else this.selectedDate = this.updateDate;
 
-        // Viewer mode: always start on the org dashboard so colleagues
-        // land on the "Welcome to Live View" setup screen immediately
-        if (!this.editUnlocked) {
+        // Home is the launch screen (home.js) — unless this device opted out, or there
+        // is nothing to show yet: a fresh install with neither SURGhub data nor projects
+        // must land on the org dashboard, which carries the "Load Project Data" card.
+        const _hasSomething = (this.data && this.data.length > 0)
+            || !!(window.Projects && Projects.registry && Projects.registry.some(p => p.type === 'generic' && !p.isSample));
+        if (this._homeOnLaunch && this._homeOnLaunch() && _hasSomething) {
+            this.currentProject = 'home';
+            this.view = 'home';
+        } else if (!this.editUnlocked) {
+            // Viewer mode: start on the org dashboard so colleagues
+            // land on the "Welcome to Live View" setup screen immediately
             this.currentProject = 'org';
             this.view = 'org-dashboard';
         } else {
@@ -287,6 +295,7 @@ window.App = {
     },
 
     getCurrentProject() {
+        if (this.currentProject === 'home') return Projects.HOME_PROJECT;
         if (this.currentProject === 'org') return Projects.ORG_PROJECT;
         return Projects.getProject(this.currentProject) || Projects.getProject('surghub');
     },
@@ -326,7 +335,9 @@ window.App = {
     async switchProject(projectId) {
         this.currentProject = projectId;
         await Storage.setItem('surgdash_last_project', projectId);
-        if (projectId === 'org') {
+        if (projectId === 'home') {
+            this.view = 'home';
+        } else if (projectId === 'org') {
             this.view = 'org-dashboard';
         } else {
             const project = this.getCurrentProject();
