@@ -25,7 +25,7 @@ Object.assign(window.App, {
     BG_IDLE_MS: 3 * 60 * 1000,      // no mouse / keyboard for this long = quiet moment
     BG_DEFAULT_HOUR: 2,             // earliest hour (local) a day's run may start
 
-    _bgDefaults() { return { enabled: false, hour: this.BG_DEFAULT_HOUR, cards: { learners: true, enrolments: true }, lastRun: null, lastError: null, history: [] }; },
+    _bgDefaults() { return { enabled: false, hour: this.BG_DEFAULT_HOUR, cards: { learners: true, enrolments: true, publish: false }, lastRun: null, lastError: null, history: [] }; },
     async _bgLoad() {
         if (this._bgSettings) return this._bgSettings;
         let v = null; try { v = await Storage.getItem(this.BG_KEY); } catch (e) { __swallowed(e, 'bg.load'); }
@@ -124,6 +124,20 @@ Object.assign(window.App, {
                     return parts.join(' · ') || 'done';
                 });
             }
+            if (s.cards.publish) {
+                // Publish the refreshed data to Google Sheets, so viewers wake up to it. Editor
+                // devices only: a device that auto-pulls is a viewer and must never overwrite
+                // the cloud with what it holds. Unchanged parts cost nothing (fingerprints).
+                await step('Publish to Sheets', async () => {
+                    if (await Storage.getItem('surgdash_autopull_enabled')) return 'skipped — this device auto-pulls (viewer), so it does not publish';
+                    const appSettings = await Projects.getAppSettings();
+                    if (!appSettings || !appSettings.googleSheetsUrl) return 'skipped — no Apps Script URL configured';
+                    if (!window.GenericViews || !GenericViews._sheetsPushRun || !window.SheetsSync) return 'skipped — sync module not loaded';
+                    const r = await GenericViews._sheetsPushRun({ progress: (t) => this._bgProgress(t, null) });
+                    if (!r.ok) throw new Error(r.errors.join(' · '));
+                    return SheetsSync.describe(r).split('\n')[0];
+                });
+            }
         } catch (e) {
             steps.push({ label: 'Run', ok: false, note: 'stopped: ' + String((e && e.message) || e), ms: 0 });
         } finally {
@@ -196,6 +210,7 @@ Object.assign(window.App, {
                                 <div class="flex items-center gap-3 text-slate-600">
                                     <label class="inline-flex items-center gap-1.5 cursor-pointer"><input type="checkbox" data-edit-only ${s.cards.learners ? 'checked' : ''} onchange="App._bgSet({ cards: { learners: this.checked } })"> Card 3</label>
                                     <label class="inline-flex items-center gap-1.5 cursor-pointer"><input type="checkbox" data-edit-only ${s.cards.enrolments ? 'checked' : ''} onchange="App._bgSet({ cards: { enrolments: this.checked } })"> Card 2</label>
+                                    <label class="inline-flex items-center gap-1.5 cursor-pointer" title="Editor device only: after the cards, push the refreshed data to Google Sheets so colleagues wake up to it. Unchanged parts are skipped. Never runs on a device that auto-pulls."><input type="checkbox" data-edit-only ${s.cards.publish ? 'checked' : ''} onchange="App._bgSet({ cards: { publish: this.checked } })"> Publish to Sheets</label>
                                 </div>
                                 <button data-edit-only onclick="App._bgRunNow()" ${this._bgRunning ? 'disabled' : ''} class="px-3 py-1.5 border rounded-lg font-bold text-slate-600 hover:text-gsf-boston hover:bg-slate-50 disabled:opacity-40" title="Run both cards now, silently, the way the schedule would">Run now</button>
                             </div>

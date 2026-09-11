@@ -14443,32 +14443,21 @@ function _writeProject(ss, d) {
         if (o) o.remove();
     },
 
-    async _syncToSheets(opts) {
+    // The push itself, with no UI: builds the payloads, runs SheetsSync.push, then updates
+    // the local stamps and dirty flags. Used by the Sync-to-Sheets button and by the nightly
+    // background sync's publish step. opts: { url?, force?, progress(text, pct)? }. Returns
+    // the push summary; throws only when the push cannot start at all.
+    async _sheetsPushRun(opts) {
         opts = opts || {};
         const appSettings = await Projects.getAppSettings();
-        // Allow live edit in the URL field to take precedence
-        const url = (document.getElementById('org-sheets-url')?.value || '').trim()
-                 || appSettings.googleSheetsUrl || '';
-        if (!url) {
-            alert('Please enter the Google Apps Script Web App URL first, then click Save URL.'); return;
-        }
-        if (!window.SheetsSync) { alert('The sync module did not load — restart the app.'); return; }
+        const url = (opts.url || appSettings.googleSheetsUrl || '').trim();
+        if (!url) throw new Error('No Google Apps Script URL is configured (Settings → Google Sheets).');
+        if (!window.SheetsSync) throw new Error('The sync module did not load — restart the app.');
 
         // Include the sample project too — it gives the recipient a fully-populated
         // example tab so they can see how a complete project sheet looks. The sample
         // is flagged (isSample) so the Apps Script excludes it from org-wide totals.
         const projects = Projects.registry.filter(p => p.type === 'generic');
-
-        const btn = document.getElementById('sheets-sync-btn');
-        const setBtn = (label, disabled = true) => {
-            if (!btn) return;
-            btn.disabled = disabled;
-            btn.innerHTML = label;
-            if (window.lucide) lucide.createIcons();
-        };
-        setBtn('<span style="display:inline-block;animation:spin 1s linear infinite">↻</span> Syncing…');
-        this._showSyncOverlay();
-        this._updateSyncOverlay('Preparing…', 2);
 
         // What the backup carries. SURGhub keys go to their own sheet (compressed when
         // the script is current); everything else rides in the slim backup.
@@ -14495,23 +14484,14 @@ function _writeProject(ss, d) {
             return { surghubStorage, rawStorage, appSettings: appSettingsNow, customQualityKpis };
         };
         const http = (req) => electronAPI.invoke('http-request', req);
-        let s;
-        try {
-            s = await SheetsSync.push({
-                url, http, force: !!opts.force, key: await this._sheetsKey(),
-                projects: projects.map(p => ({ id: p.id, name: p.name, shortName: p.shortName || '', _proj: p })),
-                buildPayload: (p) => this._buildProjectPayload(p._proj),
-                collect,
-                progress: (text, pct) => { this._updateSyncOverlay(text, pct); setBtn(`<span style="display:inline-block;animation:spin 1s linear infinite">↻</span> ${App.escapeHtml(text)}`); },
-                log: (m) => console.warn(m),
-            });
-        } catch (err) {
-            console.error('Sheets sync failed:', err);
-            this._hideSyncOverlay();
-            alert('Sync failed: ' + err.message);
-            setBtn('<i data-lucide="sheet" width="14"></i> Sync to Sheets', false);
-            return;
-        }
+        const s = await SheetsSync.push({
+            url, http, force: !!opts.force, key: await this._sheetsKey(),
+            projects: projects.map(p => ({ id: p.id, name: p.name, shortName: p.shortName || '', _proj: p })),
+            buildPayload: (p) => this._buildProjectPayload(p._proj),
+            collect,
+            progress: opts.progress || (() => {}),
+            log: (m) => console.warn(m),
+        });
 
         if (s.surghub === 'pushed' || s.surghub === 'skipped') {
             // The cloud now holds exactly this device's SURGhub data: pulls may apply the
@@ -14521,9 +14501,7 @@ function _writeProject(ss, d) {
             if (s.surghubHash) await Projects.saveAppSettings({ googleSheetsSurghubHash: s.surghubHash }, { internal: true });
             console.log('[SURGhub] Cloud ' + s.surghub + ' at', s.syncedAt, '— pull-overwrite block lifted.');
         }
-
         // Save URL and timestamp centrally (internal write — we just pushed everything).
-        this._updateSyncOverlay('Finalising…', 99);
         await Projects.saveAppSettings({ googleSheetsUrl: url, googleSheetsLastSync: s.syncedAt }, { internal: true });
         // The server stamps its OWN lastSync (its clock, at the END of this multi-part
         // upload). Adopt that as our last-synced marker — otherwise the freshness check
@@ -14532,6 +14510,43 @@ function _writeProject(ss, d) {
             const _meta = await App._fetchCloudMeta();
             if (_meta && _meta.ok && _meta.lastModified) await Projects.saveAppSettings({ googleSheetsLastSync: _meta.lastModified }, { internal: true });
         } catch (_) { /* best-effort — falls back to local syncedAt */ }
+        // Clear the in-memory dirty flag ONLY on a fully clean push — if anything failed,
+        // stay dirty so the data isn't falsely recorded as "synced" and then overwritten
+        // by the next pull.
+        if (App.markClean && s.ok) App.markClean();
+        return s;
+    },
+
+    // The Sync-to-Sheets button: overlay + progress around _sheetsPushRun.
+    async _syncToSheets(opts) {
+        opts = opts || {};
+        const appSettings = await Projects.getAppSettings();
+        // Allow live edit in the URL field to take precedence
+        const url = (document.getElementById('org-sheets-url')?.value || '').trim()
+                 || appSettings.googleSheetsUrl || '';
+        if (!url) {
+            alert('Please enter the Google Apps Script Web App URL first, then click Save URL.'); return;
+        }
+        const btn = document.getElementById('sheets-sync-btn');
+        const setBtn = (label, disabled = true) => {
+            if (!btn) return;
+            btn.disabled = disabled;
+            btn.innerHTML = label;
+            if (window.lucide) lucide.createIcons();
+        };
+        setBtn('<span style="display:inline-block;animation:spin 1s linear infinite">↻</span> Syncing…');
+        this._showSyncOverlay();
+        this._updateSyncOverlay('Preparing…', 2);
+        let s;
+        try {
+            s = await this._sheetsPushRun({ url, force: !!opts.force, progress: (text, pct) => { this._updateSyncOverlay(text, pct); setBtn(`<span style="display:inline-block;animation:spin 1s linear infinite">↻</span> ${App.escapeHtml(text)}`); } });
+        } catch (err) {
+            console.error('Sheets sync failed:', err);
+            this._hideSyncOverlay();
+            alert('Sync failed: ' + err.message);
+            setBtn('<i data-lucide="sheet" width="14"></i> Sync to Sheets', false);
+            return;
+        }
         this._updateSyncOverlay('Done ✓', 100);
         await new Promise(r => setTimeout(r, 350));
         this._hideSyncOverlay();
@@ -14541,10 +14556,6 @@ function _writeProject(ss, d) {
         else alert(`Sync completed with ${s.errors.length} error${s.errors.length !== 1 ? 's' : ''}:\n\n${s.errors.join('\n')}\n\n${line}`);
         setBtn('<i data-lucide="sheet" width="14"></i> Sync to Sheets', false);
         App.renderView();
-        // Clear the in-memory dirty flag ONLY on a fully clean sync — if any push
-        // failed (project/org/SURGhub/backup), stay dirty so the data isn't falsely
-        // recorded as "synced" and then overwritten by the next pull.
-        if (App.markClean && s.ok) App.markClean();
     },
 
     // True if any of a project's local data files were modified after baselineMs
