@@ -384,6 +384,8 @@ window.Projects = {
         await Storage.removeItem(`surgdash_quality_data_${projectId}`);
         await Storage.removeItem(`surgdash_budget_${projectId}`);
         await Storage.removeItem(`surgdash_facilities_${projectId}`);
+        await Storage.removeItem(`surgdash_actuals_${projectId}`);
+        await Storage.removeItem(`surgdash_kpi_quarter_comments_${projectId}`);
         return true;
     },
 

@@ -132,10 +132,14 @@ window.App = {
             if (this._bgSyncStart) this._bgSyncStart();   // nightly background sync of cards 2 + 3 (backgroundSync.js)
 
             // Stamp the real app version into the sidebar (single source of truth:
-            // package.json, exposed via preload). Falls back to the hardcoded label.
+            // package.json, exposed via preload). No hardcoded fallback: the old one sat at
+            // v2.0.8 for five releases, so when the version is unknown the badge goes away.
             try {
                 const _v = document.getElementById('app-version');
-                if (_v && window.electronAPI && window.electronAPI.appVersion) _v.textContent = 'v' + window.electronAPI.appVersion;
+                if (_v) {
+                    const ver = window.electronAPI && window.electronAPI.appVersion;
+                    if (ver) _v.textContent = 'v' + ver; else _v.remove();
+                }
             } catch (_) { __swallowed(_); }
 
             // Restore the "blend the sample project in/out" preference (viewer-toggleable).

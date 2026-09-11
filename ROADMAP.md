@@ -112,6 +112,34 @@ Follow-ups:
   ambassadors sync are already at the cap; the UI's Tailwind Play-CDN build is
   the main interactive-speed item left (needs a visual check after).
 
+## Done — 2.1.1 shipped; the sync-key split-brain fixed (11 September 2026, evening)
+
+- Rotating the key failed with "unauthorised" although the app held the key it
+  had just set: the script had accepted a rotation whose reply was lost, and the
+  client's blind retry carried the superseded key, so the server ended up with a
+  key the app did not know. Now `set_key` is replay-safe (a `newKey` that is
+  already current answers OK), `?meta=1&k=…` reports `keyOk`,
+  `SheetsSync.setKey` never retries blindly but asks whether the new key took
+  (success only when the script is secured and accepts it), and the Settings key
+  row explains the recovery (copy the `syncKey` Script Property into `URL#k=…`,
+  or delete it and click Secure this Sheet again). `npm test` = 223 checks; a
+  piped `tail` had once hidden a failing exit code from CI — the runner's exit
+  code is what CI sees now.
+- Release 2.1.1 was published directly (no draft any more) at 14:30 UTC;
+  `latest-mac.yml` resolves to 2.1.1, so installed apps update themselves on
+  their next launch.
+- Recovery completed on Seb's Mac: replay-safe script deployed (meta reports
+  `keyOk`), Sheet secured with a fresh key (the one that had been pasted into a
+  chat is void), a full Sync to Sheets rewrote the tabs; a keyed read returns
+  the 8 real projects and no junk; the start-up cleanup removed the 3 junk
+  projects and 14 junk activities.
+- `Projects.deleteProject` now also removes a project's actuals and quarter
+  comments — it had left an empty `actuals.json` behind for every deleted
+  project (the start-up cleanup relies on it).
+- The sidebar version badge no longer has a hardcoded fallback (it read v2.0.8
+  since that release when preload could not report the version); it shows the
+  reported version or nothing.
+
 ## Done — after a damaged copy of the Apps Script (11 September 2026, evening)
 
 The v4 script was pasted via a `.txt` opened in TextEdit, which re-encoded every
