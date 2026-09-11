@@ -25,18 +25,19 @@ Object.assign(window.App, {
     BG_IDLE_MS: 3 * 60 * 1000,      // no mouse / keyboard for this long = quiet moment
     BG_DEFAULT_HOUR: 2,             // earliest hour (local) a day's run may start
 
-    _bgDefaults() { return { enabled: false, hour: this.BG_DEFAULT_HOUR, cards: { learners: true, enrolments: true, publish: false }, lastRun: null, lastError: null, history: [] }; },
+    _bgDefaults() { return { enabled: false, hour: this.BG_DEFAULT_HOUR, cards: { learners: true, enrolments: true, publish: false }, digest: { enabled: true, day: 1, narrative: false }, lastRun: null, lastError: null, history: [] }; },
     async _bgLoad() {
         if (this._bgSettings) return this._bgSettings;
         let v = null; try { v = await Storage.getItem(this.BG_KEY); } catch (e) { __swallowed(e, 'bg.load'); }
         const d = this._bgDefaults();
-        this._bgSettings = Object.assign(d, (v && typeof v === 'object') ? v : {}, { cards: Object.assign(d.cards, (v && v.cards) || {}) });
+        this._bgSettings = Object.assign(d, (v && typeof v === 'object') ? v : {}, { cards: Object.assign(d.cards, (v && v.cards) || {}), digest: Object.assign(d.digest, (v && v.digest) || {}) });
         return this._bgSettings;
     },
     async _bgSave() { try { await Storage.setItem(this.BG_KEY, this._bgSettings, { internal: true }); } catch (e) { __swallowed(e, 'bg.save'); } },
     async _bgSet(patch) {
         const s = await this._bgLoad();
         if (patch && patch.cards) { Object.assign(s.cards, patch.cards); delete patch.cards; }
+        if (patch && patch.digest) { Object.assign(s.digest, patch.digest); delete patch.digest; }
         Object.assign(s, patch || {});
         if (typeof s.hour !== 'number' || s.hour < 0 || s.hour > 23) s.hour = this.BG_DEFAULT_HOUR;
         await this._bgSave();
@@ -136,6 +137,17 @@ Object.assign(window.App, {
                     const r = await GenericViews._sheetsPushRun({ progress: (t) => this._bgProgress(t, null) });
                     if (!r.ok) throw new Error(r.errors.join(' · '));
                     return SheetsSync.describe(r).split('\n')[0];
+                });
+            }
+            // Weekly digest (digest.js): on/after the chosen weekday, once per week, from
+            // the figures the cards just refreshed.
+            if (this._digestDue && this.buildWeeklyDigest && this._digestDue(s, new Date(), await this._digestLoad())) {
+                await step('Weekly digest', async () => {
+                    const d = await this.buildWeeklyDigest();
+                    await this._digestStore(d);
+                    let note = 'generated for ' + d.week + ' (' + d.from + ' → ' + d.to + ')';
+                    if (s.digest && s.digest.narrative) { try { await this.digestWriteNarrative({ silent: true }); note += ' with narrative'; } catch (e) { note += ' — narrative failed: ' + String((e && e.message) || e); } }
+                    return note;
                 });
             }
         } catch (e) {
