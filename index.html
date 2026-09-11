@@ -347,6 +347,20 @@
             <button onclick="App._dismissCloudBanner()" title="Dismiss" class="px-2 py-1 rounded bg-white/10 hover:bg-white/20 transition-colors text-white/80 text-[11px]"><i data-lucide="x" width="11"></i></button>
         </div>
     </div>
+    <!-- Sync-key banner: shown when a pull is refused because the Sheet now requires the
+         sync key this device does not hold. The colleague pastes the share link right here
+         (GenericViews._saveShareLinkFromBanner) instead of hunting for Settings. -->
+    <div id="sync-key-banner" class="shrink-0 items-center justify-between gap-3 px-4 py-2 bg-gsf-prussian text-white text-xs font-semibold z-50" style="display:none;">
+        <div class="flex items-center gap-2 min-w-0">
+            <i data-lucide="key-round" width="14" class="shrink-0"></i>
+            <span id="sync-key-text">Updates are paused: this Google Sheet now requires a sync key. Paste the share link your SURGdash administrator sent you.</span>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+            <input id="sync-key-input" type="text" data-viewer-allowed placeholder="https://script.google.com/…/exec#k=…" class="w-80 px-2 py-1 rounded text-[11px] text-slate-800 bg-white outline-none" onkeydown="if(event.key==='Enter'){event.preventDefault();GenericViews._saveShareLinkFromBanner();}" />
+            <button data-viewer-allowed onclick="GenericViews._saveShareLinkFromBanner()" class="px-3 py-1 rounded bg-white/20 hover:bg-white/35 transition-colors text-white text-[11px] flex items-center gap-1 font-bold"><i data-lucide="check" width="11"></i> Save &amp; pull</button>
+            <button data-viewer-allowed onclick="GenericViews._hideSyncKeyBanner()" title="Hide for now" class="px-2 py-1 rounded bg-white/10 hover:bg-white/20 transition-colors text-white/80 text-[11px]"><i data-lucide="x" width="11"></i></button>
+        </div>
+    </div>
 
     <!-- Sample-active banner — shown on every SURGfund tab (not SURGhub) whenever the
          demonstration project is blended into the figures, so demo data is never mistaken for real data. -->

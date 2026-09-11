@@ -13831,7 +13831,7 @@ function _writeProject(ss, d) {
         opts = Object.assign({ key: await this._sheetsKey() }, opts || {});
         try { return await SheetsSync.fetchMirror(http, targetUrl, opts); }
         catch (err) {
-            if (err.code === 'unauthorised') throw new Error('This Sheet requires the sync key and this device has none (or an old one). Paste the share link from your SURGdash administrator into Settings → Google Sheets → Apps Script URL.');
+            if (err.code === 'unauthorised') { const e2 = new Error('This Sheet requires the sync key and this device has none (or an old one). Paste the share link from your SURGdash administrator.'); e2.code = 'unauthorised'; throw e2; }
             const hint = /HTML page/i.test(err.message)
                 ? '\n\nThe script returned an HTML page — this usually means the Apps Script deployment needs to be updated. Open Apps Script → Deploy → Manage deployments → create a New Deployment with the latest code, then paste the new URL here.'
                 : '';
@@ -14337,7 +14337,7 @@ function _writeProject(ss, d) {
         else if (!info.canSecure) html = `<span class="text-amber-700">Script version ${info.version} cannot require a key — Copy Script below and redeploy the Web App (version 4), then come back here.</span>`;
         else if (!info.secured) html = `<div class="flex flex-wrap items-center gap-3"><span class="text-red-700 font-medium">Not secured: anyone who obtains the URL can read every learner record and overwrite the Sheet.</span>${btn('_secureSheet', 'Secure this Sheet', 'bg-gsf-boston text-white hover:bg-gsf-prussian')}</div>`;
         else if (!key) html = `<span class="text-amber-700">Secured — but this device has no key. Paste the share link from the administrator into the URL field above and Save.</span>`;
-        else html = `<div class="flex flex-wrap items-center gap-3"><span class="text-emerald-700 font-medium"><i data-lucide="shield-check" width="12" class="inline"></i> Secured — this device holds the key.</span><button data-edit-only onclick="GenericViews._copySheetsShareLink(this)" class="px-3 py-1.5 rounded-lg text-xs font-bold transition-colors border border-slate-200 text-slate-600 hover:bg-slate-50">Copy share link</button>${btn('_rotateSheetsKey', 'Rotate key', 'border border-slate-200 text-slate-600 hover:bg-slate-50')}<span class="text-[11px] text-slate-400">Colleagues paste the share link (URL + key) into Load Project Data or this URL field; after a rotation, send the new link to everyone.</span></div><div id="sheets-share-link" class="mt-2"></div>`;
+        else html = `<div class="flex flex-wrap items-center gap-3"><span class="text-emerald-700 font-medium"><i data-lucide="shield-check" width="12" class="inline"></i> Secured — this device holds the key.</span><button data-edit-only onclick="GenericViews._copySheetsShareLink(this)" class="px-3 py-1.5 rounded-lg text-xs font-bold transition-colors border border-slate-200 text-slate-600 hover:bg-slate-50">Copy share link</button>${btn('_emailSheetsShareLink', 'Email share link…', 'border border-slate-200 text-slate-600 hover:bg-slate-50')}${btn('_rotateSheetsKey', 'Rotate key', 'border border-slate-200 text-slate-600 hover:bg-slate-50')}<span class="text-[11px] text-slate-400">Colleagues paste the share link (URL + key) into Load Project Data or this URL field; after a rotation, send the new link to everyone.</span></div><div id="sheets-share-link" class="mt-2"></div>`;
         el.innerHTML = html;
         if (window.lucide) lucide.createIcons();
     },
@@ -14378,6 +14378,29 @@ function _writeProject(ss, d) {
     },
     // The share-link button: confirms on the button itself (the toast lives bottom-right,
     // easy to miss) and shows the link, key masked, with a field to copy from by hand.
+    _showSyncKeyBanner() { const el = document.getElementById('sync-key-banner'); if (!el) return; el.style.display = 'flex'; if (window.lucide) lucide.createIcons(); },
+    _hideSyncKeyBanner() { const el = document.getElementById('sync-key-banner'); if (el) el.style.display = 'none'; },
+    // A colleague pastes the share link into the banner: store URL + key, hide it, pull.
+    async _saveShareLinkFromBanner() {
+        const raw = (document.getElementById('sync-key-input')?.value || '').trim();
+        if (!raw) { App.showMsg('Paste the share link first.', true); return; }
+        if (!raw.includes('script.google.com')) { App.showMsg('That does not look like a SURGdash share link.', true); return; }
+        const { url, key } = await this._sheetsStoreShareLink(raw);
+        if (!key) { App.showMsg('This link carries no sync key — ask your administrator for the share link (Settings → Google Sheets → Copy share link).', true); return; }
+        await Projects.saveAppSettings({ googleSheetsUrl: url }, { internal: true });
+        this._hideSyncKeyBanner();
+        App.showMsg('Sync key saved — pulling…');
+        await this._pullFromSheets(false);
+    },
+    // Opens the mail app with a ready-made message carrying the share link and the one instruction.
+    async _emailSheetsShareLink() {
+        const appSettings = await Projects.getAppSettings(); const url = appSettings.googleSheetsUrl; const key = await this._sheetsKey();
+        if (!url || !key) { App.showMsg('Secure the Sheet first — there is no key to send.', true); return; }
+        const link = SheetsSync.makeShareLink(url, key);
+        const body = 'Hi all,\n\nSURGdash now protects our Google Sheet with a sync key, so your app needs this link once:\n\n' + link + '\n\nOpen SURGdash. If it shows a dark banner saying updates are paused, paste the link there and click Save & pull. Otherwise go to Settings → Google Sheets, paste it into the Apps Script URL field and click Save. That is all — the link is not a web page, so do not open it in a browser.\n\nThanks!';
+        const href = 'mailto:?subject=' + encodeURIComponent('SURGdash: new sync link (paste once)') + '&body=' + encodeURIComponent(body);
+        try { if (window.electronAPI && electronAPI.openExternal) electronAPI.openExternal(href); else window.open(href); } catch (e) { App.showMsg('Could not open your mail app: ' + (e && e.message || e), true); }
+    },
     async _copySheetsShareLink(btn) {
         const appSettings = await Projects.getAppSettings(); const url = appSettings.googleSheetsUrl; const key = await this._sheetsKey();
         if (!url) return;
@@ -14685,6 +14708,7 @@ function _writeProject(ss, d) {
                 const _localDirty = !!(await Storage.getItem('surghub_unsynced_local'));
                 _plan = await SheetsSync.pullPlan(_http, url, { silent, localDirty: _localDirty, localHash: appSettings.googleSheetsSurghubHash || '', key: await this._sheetsKey() });
             } catch (_) { __swallowed(_); }
+            if (_plan.unauthorised) { const e = new Error('This Sheet requires the sync key and this device has none (or an old one). Paste the share link from your SURGdash administrator.'); e.code = 'unauthorised'; throw e; }
             const result = await this._sheetsGet(url, { nosurghub: _plan.skip });
             result._surghubPlan = _plan;
             const remoteProjects = result.projects || [];
@@ -14985,7 +15009,9 @@ function _writeProject(ss, d) {
             console.error('Sheets pull error:', err);
             if (statusEl) statusEl.innerHTML = origStatus;
             if (pullBanner) pullBanner.remove();
-            if (!silent) alert('Pull failed: ' + err.message);
+            const _needsKey = err.code === 'unauthorised' || /requires the sync key/i.test(String(err.message || ''));
+            if (_needsKey) this._showSyncKeyBanner();
+            if (!silent && !_needsKey) alert('Pull failed: ' + err.message);
             setBtn('<i data-lucide="download" width="12" class="text-emerald-600"></i> Pull', false);
         }
     },
