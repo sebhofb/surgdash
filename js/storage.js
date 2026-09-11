@@ -119,7 +119,11 @@
                 'social': 'surghub_social', 'completion': 'surghub_completion', 'accounts': 'surghub_accounts',
                 'selected_testimonials': 'surghub_selected_testimonials',
                 'milestones': 'surghub_milestones',
-                'improvement_ai': 'surghub_improvement_ai'
+                'improvement_ai': 'surghub_improvement_ai',
+                // Raw feedback-survey responses (updater.js Surveys sync). Its reverse entry
+                // sat in the settings/ map by mistake, so keys() never listed it: it was
+                // missing from every Sheets push, local backup, restore and wipe until 11 Sep 2026.
+                'survey_raw': 'surghub_survey_raw'
             };
             return reverseMap[shMatch[1]] || null;
         }
@@ -138,7 +142,6 @@
                 'report_period': 'report_period',
                 'report_data_through': 'report_data_through',
                 'last_seen_version': 'last_seen_version',
-                'surghub_survey_raw': 'surghub_survey_raw',
                 'surgdash_triage_silenced': 'surgdash_triage_silenced',
                 'surgdash_sync_log': 'surgdash_sync_log',
                 'learnworlds_client_id': 'learnworlds_client_id',

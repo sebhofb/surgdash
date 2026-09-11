@@ -153,6 +153,15 @@ pulls made the script parse 150 MB server-side. New transport `js/sheetsSync.js`
 - Verified with 36 checks (`test_sheets_sync.js`): the real v3 and previous scripts
   run in a VM against an in-memory Sheets model; the client protocol runs against
   them end-to-end (push, skip, edit-one, retry-a-part, legacy, pull decisions).
+- Verified live after Seb redeployed (11 Sep 11:21): `?meta=1` → version 3, 8 project
+  fingerprints, org + SURGhub fingerprints equal to this device's; the full pull
+  returned a 15.3 MB packed blob that inflates to 112 MB and is byte-identical to
+  the local files for all 22 pushed keys. That check also exposed a pre-existing
+  gap: `surghub_survey_raw` (the raw feedback-survey responses, 151 courses) had its
+  reverse key-map entry in the wrong branch of `storage.js relativeToKey`, so
+  `Storage.keys()` never listed it — it was missing from every Sheets push, local
+  JSON backup, restore and wipe. Fixed (`test_storage_keys.js`); the next push
+  adds ~1.7 MB compressed and viewers get survey responses on their next pull.
 - Not done (deliberately): per-key SURGhub deltas (the nightly sync rewrites the
   big keys anyway), parallel part uploads (5 parts are fast enough; concurrency on
   one sheet is a risk), Drive-file transport (new scope, 50 MB blob limit).
