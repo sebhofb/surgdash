@@ -174,7 +174,9 @@ window.SheetsSync = (function () {
             const r = await request(http, { url, method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'set_key', newKey: opts.newKey, k: opts.currentKey || '' }) }, { attempts: 1, timeoutMs: cfg.metaTimeoutMs * 3 });
             if (r && r.ok) return true;
         } catch (e) { err = e; }
-        try { const probe = await serverInfo(http, url, opts.newKey); if (probe.keyOk === true) return true; } catch (_) {}
+        // Only a SECURED script that accepts the new key proves the change took (an unsecured
+        // script accepts any key, which proves nothing).
+        try { const probe = await serverInfo(http, url, opts.newKey); if (probe.secured && probe.keyOk === true) return true; } catch (_) {}
         if (err) throw err;
         return false;
     }
