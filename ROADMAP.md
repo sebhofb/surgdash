@@ -112,6 +112,19 @@ Follow-ups:
   ambassadors sync are already at the cap; the UI's Tailwind Play-CDN build is
   the main interactive-speed item left (needs a visual check after).
 
+## Done — the tests live in the repo; release 2.1.0 prepared (11 September 2026)
+
+- `npm test` runs ten fixture-based suites (`test/*.test.js`, 214 checks, ~70 s, no
+  network, no app data); `npm run test:live` adds three suites that read this
+  Mac's SURGdash data folder and are skipped when it is absent. `test/run.js`
+  sums the PASS/FAIL lines and exits non-zero on any failure;
+  `.github/workflows/test.yml` runs `npm test` on every push to `main`. The
+  previous Apps Script is pinned as `test/fixtures/google-apps-script-v2.js`.
+  Tests are excluded from the app bundle (`build.files`). The ambassador-bridge
+  harness was tied to one day's live numbers and was not committed — a
+  fixture-based version is a follow-up.
+- Version 2.1.0 with a What's New entry covering everything since 2.0.13.
+
 ## Done — the endpoint is secured, the nightly run publishes, and a weekly digest (11 September 2026)
 
 Seb's picks from the "next level" list. Three builds, each with its own harness:

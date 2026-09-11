@@ -9,6 +9,22 @@
     // this is shown to the team, not to developers. Update this list per release.
     const RELEASES = [
         {
+            v: '2.1.0',
+            date: 'September 2026',
+            items: [
+                { t: 'Learner dates straight from LearnWorlds', d: 'Card 2 now syncs every learner\u2019s enrolments, progress and certificates from the API, with exact dates. It saves as it goes, resumes where it stopped, and after the first full pass a daily refresh takes minutes. The User Progress spreadsheet is a fallback, not the routine.' },
+                { t: 'The app refreshes itself overnight', d: 'Background sync on the Data Sync page: once a day at a quiet moment, cards 3 and 2 run by themselves and, if you tick it, the result is published to Google Sheets so colleagues open a fresh dashboard.' },
+                { t: 'Google Sheets sync: many times faster, and secured', d: 'SURGhub data travels compressed (about a tenth of the size), unchanged parts are skipped, and failures are retried. A sync key now protects the Sheet \u2014 colleagues paste one share link, once. Needs the Apps Script redeployed (Settings \u2192 Copy Script).' },
+                { t: 'Weekly digest', d: 'What moved in the last seven days against the seven before: courses opened, enrolments, certificates, new accounts, top courses and providers, and the data health behind it. Copy it or open it in Mail. Optional AI narrative written from those figures only.' },
+                { t: 'Learner journeys tab', d: 'The funnel from enrolment to certificate per course and provider, courses per learner, where learners go next, the most travelled learning paths, time to certificate, and activation after sign-up.' },
+                { t: 'Institutions and Compare periods', d: 'Who arrives together (email domains, institutional rollouts, dominance flags) and any two periods side by side.' },
+                { t: 'Trend sparklines', d: 'A tiny 13-month enrolment trend next to every course and provider, in the app and in the HTML snapshot.' },
+                { t: 'Learner lookup', d: 'An internal support tool at the foot of the Directory page (edit mode only, never exported): a learner\u2019s courses, dates and certificates in one place.' },
+                { t: 'Data health, on the Data Sync page', d: 'Freshness, consistency checks, what changed since the last snapshot and the provenance re-derive now live with the syncs that produce them. Ambassador attribution rebuilds itself after every sync.' },
+                { t: 'Smaller things you will notice', d: 'The app opens on the screen you had last; the dashboard tab bar fits; toasts sit bottom-right, away from the navigation; targeted redraws instead of full re-renders; Sync Everything includes card 2.' },
+            ]
+        },
+        {
             v: '2.0.13',
             date: 'July 2026',
             items: [
