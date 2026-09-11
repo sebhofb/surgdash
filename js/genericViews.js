@@ -14337,7 +14337,7 @@ function _writeProject(ss, d) {
         else if (!info.canSecure) html = `<span class="text-amber-700">Script version ${info.version} cannot require a key — Copy Script below and redeploy the Web App (version 4), then come back here.</span>`;
         else if (!info.secured) html = `<div class="flex flex-wrap items-center gap-3"><span class="text-red-700 font-medium">Not secured: anyone who obtains the URL can read every learner record and overwrite the Sheet.</span>${btn('_secureSheet', 'Secure this Sheet', 'bg-gsf-boston text-white hover:bg-gsf-prussian')}</div>`;
         else if (!key) html = `<span class="text-amber-700">Secured — but this device has no key. Paste the share link from the administrator into the URL field above and Save.</span>`;
-        else html = `<div class="flex flex-wrap items-center gap-3"><span class="text-emerald-700 font-medium"><i data-lucide="shield-check" width="12" class="inline"></i> Secured — this device holds the key.</span>${btn('_copySheetsShareLink', 'Copy share link', 'border border-slate-200 text-slate-600 hover:bg-slate-50')}${btn('_rotateSheetsKey', 'Rotate key', 'border border-slate-200 text-slate-600 hover:bg-slate-50')}<span class="text-[11px] text-slate-400">Colleagues paste the share link (URL + key) into Load Project Data or this URL field; after a rotation, send the new link to everyone.</span></div>`;
+        else html = `<div class="flex flex-wrap items-center gap-3"><span class="text-emerald-700 font-medium"><i data-lucide="shield-check" width="12" class="inline"></i> Secured — this device holds the key.</span><button data-edit-only onclick="GenericViews._copySheetsShareLink(this)" class="px-3 py-1.5 rounded-lg text-xs font-bold transition-colors border border-slate-200 text-slate-600 hover:bg-slate-50">Copy share link</button>${btn('_rotateSheetsKey', 'Rotate key', 'border border-slate-200 text-slate-600 hover:bg-slate-50')}<span class="text-[11px] text-slate-400">Colleagues paste the share link (URL + key) into Load Project Data or this URL field; after a rotation, send the new link to everyone.</span></div><div id="sheets-share-link" class="mt-2"></div>`;
         el.innerHTML = html;
         if (window.lucide) lucide.createIcons();
     },
@@ -14350,8 +14350,8 @@ function _writeProject(ss, d) {
             const ok = await SheetsSync.setKey(http, url, { newKey, currentKey: await this._sheetsKey() });
             if (!ok) throw new Error('the script did not accept the key');
             await Storage.setItem('surgdash_sheets_key', newKey, { internal: true });
-            try { await navigator.clipboard.writeText(SheetsSync.makeShareLink(url, newKey)); } catch (_) { __swallowed(_); }
-            App.showMsg('Sheet secured ✓ — share link copied to the clipboard; send it to colleagues who pull from this Sheet.');
+            const copied = await this._sheetsCopyText(SheetsSync.makeShareLink(url, newKey));
+            App.showMsg('Sheet secured ✓ — ' + (copied ? 'share link copied to the clipboard; ' : '') + 'send the share link (Copy share link) to colleagues who pull from this Sheet.');
         } catch (e) { alert('Could not secure the Sheet: ' + (e && e.message || e)); }
         this._sheetsRefreshKeyStatus();
     },
@@ -14365,15 +14365,32 @@ function _writeProject(ss, d) {
             const ok = await SheetsSync.setKey(http, url, { newKey, currentKey: cur });
             if (!ok) throw new Error('the script refused (wrong current key?)');
             await Storage.setItem('surgdash_sheets_key', newKey, { internal: true });
-            try { await navigator.clipboard.writeText(SheetsSync.makeShareLink(url, newKey)); } catch (_) { __swallowed(_); }
-            App.showMsg('Key rotated ✓ — new share link copied to the clipboard.');
+            const copied = await this._sheetsCopyText(SheetsSync.makeShareLink(url, newKey));
+            App.showMsg('Key rotated ✓ — ' + (copied ? 'new share link copied to the clipboard.' : 'use Copy share link to get the new link.'));
         } catch (e) { alert('Could not rotate the key: ' + (e && e.message || e)); }
         this._sheetsRefreshKeyStatus();
     },
-    async _copySheetsShareLink() {
+    // Copy text to the clipboard: main process first (works whatever the focus / permission
+    // state), the web API as a fallback. Resolves true when something was copied.
+    async _sheetsCopyText(text) {
+        try { if (window.electronAPI && electronAPI.invoke && (await electronAPI.invoke('clipboard-write-text', text)) === true) return true; } catch (_) { __swallowed(_); }
+        try { await navigator.clipboard.writeText(text); return true; } catch (_) { return false; }
+    },
+    // The share-link button: confirms on the button itself (the toast lives bottom-right,
+    // easy to miss) and shows the link, key masked, with a field to copy from by hand.
+    async _copySheetsShareLink(btn) {
         const appSettings = await Projects.getAppSettings(); const url = appSettings.googleSheetsUrl; const key = await this._sheetsKey();
         if (!url) return;
-        try { await navigator.clipboard.writeText(SheetsSync.makeShareLink(url, key)); App.showMsg(key ? 'Share link (URL + sync key) copied.' : 'URL copied (no key on this device).'); } catch (e) { alert('Clipboard unavailable: ' + (e && e.message || e)); }
+        const link = SheetsSync.makeShareLink(url, key);
+        const ok = await this._sheetsCopyText(link);
+        if (btn) { const label = btn.innerHTML; btn.innerHTML = ok ? 'Copied ✓' : 'Copy failed'; btn.disabled = true; setTimeout(() => { btn.innerHTML = label; btn.disabled = false; }, 2200); }
+        const host = document.getElementById('sheets-share-link');
+        if (host) {
+            const masked = key ? link.replace(key, key.slice(0, 4) + '…' + key.slice(-4)) : link;
+            host.innerHTML = `<p class="text-[11px] ${ok ? 'text-emerald-700' : 'text-amber-700'} mb-1">${ok ? 'Share link copied to the clipboard' : 'The clipboard refused — select the link below and copy it (Cmd+C)'}: <span class="font-mono break-all">${App.escapeHtml(masked)}</span></p>
+                <input type="text" readonly value="${App.escapeHtml(link)}" onfocus="this.select()" onclick="this.select()" class="w-full px-2 py-1 border rounded text-[11px] font-mono text-slate-600 bg-slate-50" title="The full share link — select all and copy" />`;
+        }
+        if (ok) App.showMsg(key ? 'Share link (URL + sync key) copied.' : 'URL copied (no key on this device).');
     },
 
     async _saveOrgSheetsViewUrl() {

@@ -42,7 +42,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
         const ALLOWED = [
             'generate-pdf', 'merge-pdfs', 'pick-folder', 'pick-pdf-file',
             'write-file', 'read-file', 'pick-xlsx-open-path', 'pick-json-open-path',
-            'pick-geo-file', 'capture-page', 'clipboard-write-image',
+            'pick-geo-file', 'capture-page', 'clipboard-write-image', 'clipboard-write-text',
             'pick-save-path', 'http-request'
         ];
         if (!ALLOWED.includes(channel)) {

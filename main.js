@@ -581,6 +581,11 @@ ipcMain.handle('capture-page', async (event, rect) => {
   }
 });
 
+ipcMain.handle('clipboard-write-text', async (event, text) => {
+  try { clipboard.writeText(String(text == null ? '' : text)); return true; }
+  catch (e) { console.error('clipboard-write-text error:', e); return false; }
+});
+
 ipcMain.handle('clipboard-write-image', async (event, dataUrl) => {
   try {
     const img = nativeImage.createFromDataURL(dataUrl);
