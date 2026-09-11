@@ -1,54 +1,93 @@
-// SURGdash Google Sheets Sync
+// SURGdash Google Sheets Sync — script version 3 (11 September 2026)
 // Paste into Google Apps Script → Save → Deploy as Web App
 // Execute as: Me  |  Access: Anyone
+//
+// v3: fingerprints per item (the app skips what the Sheet already holds), SURGhub blob
+// stored compressed as opaque text the app inflates (SDGZ1: prefix), parts written at
+// explicit rows (a retry overwrites, never appends), ?nosurghub=1 pulls, batched tab
+// writes (a project tab is ~12 Sheets calls instead of ~100). Reads legacy data as before.
+var SCRIPT_VERSION = 3;
+var SURGHUB_MARK = 'SDGZ1:';
 
 // ── doGet: read live data from each project sheet so manual edits are picked up
 function doGet(e) {
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
-    // Cheap freshness check (?meta=1): return ONLY the last-change time so the app can
-    // detect new cloud data without downloading everything. lastModified reflects REAL
-    // changes only: lastSync (a push from the app) or lastEdit (a manual cell edit, via
-    // onEdit). We deliberately do NOT fold in DriveApp.getLastUpdated() — Google advances
-    // a Spreadsheet's Drive modified-time on its own (overnight re-index / background
-    // re-save), which produced false "new data available" nudges on a quiet morning.
+    var p = (e && e.parameter) || {};
+    // Cheap freshness check (?meta=1): return ONLY the last-change time (+ what this
+    // deployment can do and the fingerprints of what it holds) so the app can decide
+    // without downloading everything. lastModified reflects REAL changes only: lastSync
+    // (a push from the app) or lastEdit (a manual cell edit, via onEdit). We deliberately
+    // do NOT fold in DriveApp.getLastUpdated() — Google advances a Spreadsheet's Drive
+    // modified-time on its own (overnight re-index / background re-save), which produced
+    // false "new data available" nudges on a quiet morning.
     if (e && e.parameter && e.parameter.meta) {
       var _lm = '';
       try { _lm = PropertiesService.getScriptProperties().getProperty('lastSync') || ''; } catch (_p) {}
       try { var _le = PropertiesService.getScriptProperties().getProperty('lastEdit') || ''; if (_le > _lm) _lm = _le; } catch (_q) {}
-      return _json({ ok: true, meta: true, lastModified: _lm });
+      return _json({ ok: true, meta: true, version: SCRIPT_VERSION, lastModified: _lm, hashes: _readHashes() });
     }
     var SKIP = {'📊 Organisation':1, '__SURGdash__':1, '📋 SURGdash Backup':1, '📋 SURGhub':1};
     var projects = [];
     ss.getSheets().forEach(function(sheet) {
       if (SKIP[sheet.getName()]) return;
-      var p = _readProjectSheet(sheet);
-      if (p) projects.push(p);
+      var pr = _readProjectSheet(sheet);
+      if (pr) projects.push(pr);
     });
 
-    // Include SURGhub data if available
-    var surghubStorage = _readSurghubSheet(ss);
-
-    var response = { ok: true, projects: projects };
-    if (surghubStorage) response.surghubStorage = surghubStorage;
+    var response = { ok: true, version: SCRIPT_VERSION, projects: projects };
+    // SURGhub data unless the app already holds this very blob (?nosurghub=1).
+    if (!p.nosurghub) {
+      var surghubStorage = _readSurghubSheet(ss);
+      if (surghubStorage) response.surghubStorage = surghubStorage;
+      var h = _readHashes();
+      if (h.surghub) response.surghubHash = h.surghub;
+    }
     return _json(response);
   } catch(err) { return _json({ ok: false, error: err.message }); }
 }
 
+// Fingerprints of what the Sheet holds, stamped by the app's pushes (hash:p:<id>,
+// hash:org, hash:surghub). The app skips an item whose fingerprint is already here.
+function _readHashes() {
+  var out = { projects: {}, org: '', surghub: '' };
+  try {
+    var all = PropertiesService.getScriptProperties().getProperties();
+    Object.keys(all).forEach(function(k) {
+      if (k.indexOf('hash:p:') === 0) out.projects[k.substring(7)] = all[k];
+      else if (k === 'hash:org') out.org = all[k];
+      else if (k === 'hash:surghub') out.surghub = all[k];
+    });
+  } catch (_e) {}
+  return out;
+}
+function _setHash(key, value) {
+  try {
+    var props = PropertiesService.getScriptProperties();
+    if (value) props.setProperty('hash:' + key, String(value)); else props.deleteProperty('hash:' + key);
+  } catch (_e) {}
+}
+
 // ── Read SURGhub data from dedicated sheet (chunks stored as rows) ────────────
+// Rows 2+: [part row no, syncedAt (row 2 only), text chunk]. Since v3 the header row's
+// columns D–F hold [expected rows, format, fingerprint]; a blob with fewer rows than
+// expected is a half-finished upload and is not served. A chunk text starting with
+// SURGHUB_MARK is compressed by the app and returned AS IS (the app inflates it);
+// anything else is legacy plain JSON and is parsed here as before.
 function _readSurghubSheet(ss) {
   var sheet = ss.getSheetByName('📋 SURGhub');
   if (!sheet) return null;
   var vals = sheet.getDataRange().getValues();
   if (vals.length < 2) return null;
-
-  // Row 1 is header, rows 2+ have: [partNum, syncedAt, jsonChunk]
-  var json = '';
+  var expected = Number(vals[0][3]) || 0;
+  var dataRows = 0, json = '';
   for (var r = 1; r < vals.length; r++) {
-    json += String(vals[r][2] || '');
+    var c = String(vals[r][2] || '');
+    if (c) { dataRows++; json += c; }
   }
   if (!json) return null;
-
+  if (expected && dataRows < expected) { Logger.log('SURGhub blob incomplete: ' + dataRows + '/' + expected + ' rows'); return null; }
+  if (json.substring(0, SURGHUB_MARK.length) === SURGHUB_MARK) return json;
   try {
     return JSON.parse(json);
   } catch(e) {
@@ -302,6 +341,7 @@ function doPost(e) {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     if (d.type === 'org_summary') {
       _writeOrgSummary(ss, d);
+      _setHash('org', d.hash);
     } else if (d.type === 'full_backup') {
       _storeFullBackup(ss, d);
     } else if (d.type === 'surghub_chunk') {
@@ -309,10 +349,11 @@ function doPost(e) {
     } else {
       _writeProject(ss, d);
       _storeRaw(ss, d);       // save JSON snapshot for doGet
+      if (d.id) _setHash('p:' + d.id, d.hash);
     }
     // Stamp the last-change time so the app's ?meta=1 freshness check works.
     try { PropertiesService.getScriptProperties().setProperty('lastSync', new Date().toISOString()); } catch(_e) {}
-    return _json({ ok: true });
+    return _json({ ok: true, version: SCRIPT_VERSION });
   } catch(err) { return _json({ ok: false, error: err.message }); }
 }
 
@@ -389,24 +430,30 @@ function _storeFullBackup(ss, d) {
   SpreadsheetApp.flush();
 }
 
-// ── SURGhub chunked upload (client streams the big payload in ~4.4MB parts;
-//    part 1 resets the sheet, later parts append — final layout is identical
-//    to _storeSurghubSheet so doGet/_readSurghubSheet keep working) ──────────
+// ── SURGhub chunked upload (client streams the big payload in parts; part 1 resets
+//    the sheet; final layout is what _readSurghubSheet reads) ───────────────────
+// v3 clients send startRow (where this part's rows go — a retried part overwrites the
+// same rows instead of appending), totalRows (so a half-finished upload is detectable),
+// format ('gz64' = compressed text the app inflates) and hash (the blob's fingerprint,
+// advertised via ?meta only once the LAST part has landed). Older clients send none of
+// these and get the old behaviour: rows appended after the last one.
 function _storeSurghubChunk(ss, d) {
   var SHEET_NAME = '📋 SURGhub';
   var sheet = ss.getSheetByName(SHEET_NAME);
   if (!sheet) sheet = ss.insertSheet(SHEET_NAME);
-  if (Number(d.part) === 1) {
+  var part = Number(d.part) || 1, totalParts = Number(d.totalParts) || 1;
+  if (part === 1) {
     sheet.clearContents(); sheet.clearFormats();
-    sheet.getRange(1, 1, 1, 3).setValues([['Part', 'Synced At', 'JSON Chunk']])
-      .setFontWeight('bold').setBackground('#002F4C').setFontColor('#FFFFFF');
+    sheet.getRange(1, 1, 1, 6).setValues([['Part', 'Synced At', 'JSON Chunk', Number(d.totalRows) || '', d.format || 'json', d.hash || '']]);
+    sheet.getRange(1, 1, 1, 3).setFontWeight('bold').setBackground('#002F4C').setFontColor('#FFFFFF');
     sheet.setColumnWidth(1, 50);
     sheet.setColumnWidth(2, 180);
     sheet.setColumnWidth(3, 400);
+    _setHash('surghub', '');   // the previous blob is gone; the new fingerprint is stamped when the last part lands
   }
   var json = String(d.data || '');
   var CHUNK = 49000;
-  var start = Math.max(sheet.getLastRow() - 1, 0); // chunk rows already stored
+  var start = d.startRow ? Math.max(Number(d.startRow) - 2, 0) : Math.max(sheet.getLastRow() - 1, 0); // chunk rows before this part
   var rows = [];
   for (var i = 0; i < json.length; i += CHUNK) {
     var n = start + rows.length + 1;
@@ -416,10 +463,11 @@ function _storeSurghubChunk(ss, d) {
     sheet.getRange(start + 2, 1, rows.length, 3).setValues(rows);
     sheet.getRange(start + 2, 3, rows.length, 1).setWrap(false);
   }
+  if (part === totalParts && d.hash) _setHash('surghub', d.hash);
   SpreadsheetApp.flush();
 }
 
-// ── SURGhub dedicated sheet (chunks stored as rows) ──────────────────────────
+// ── SURGhub dedicated sheet (chunks stored as rows) — legacy single-POST path ──
 function _storeSurghubSheet(ss, surghubStorage, syncedAt) {
   var SHEET_NAME = '📋 SURGhub';
   var sheet = ss.getSheetByName(SHEET_NAME);
@@ -451,8 +499,70 @@ function _storeSurghubSheet(ss, surghubStorage, syncedAt) {
   sheet.setColumnWidth(2, 180);
   sheet.setColumnWidth(3, 400);
   sheet.getRange(2, 3, rows.length, 1).setWrap(false);
+  _setHash('surghub', '');
   SpreadsheetApp.flush();
 }
+
+// ── Buffered tab writer ───────────────────────────────────────────────────────
+// Rows and formats are collected first, then written with a handful of range calls
+// (one setValues for the whole block, one call per format grid, one merge per header)
+// instead of one or two Sheets calls PER ROW — a project tab went from ~100 calls to
+// about a dozen, the organisation summary from ~150. Cell contents and positions are
+// exactly what the per-row writer produced, so _readProjectSheet is unchanged.
+function _block(sheet, cols) {
+  var rows = [], ops = [], W = cols || 9;
+  var b = {
+    next: function() { return rows.length + 1; },                       // 1-based row the next wr() lands on
+    wr:   function(vals) { rows.push(vals.slice()); return rows.length; }, // → its row number
+    skip: function(n) { for (var i = 0; i < (n || 1); i++) rows.push([]); },
+    // fmt(row, col, nRows, nCols, { bold, bg, fc, fs, italic, merge, num })
+    fmt:  function(r1, c1, nr, nc, f) { ops.push({ r: r1, c: c1, nr: nr, nc: nc, f: f || {} }); },
+    hdr:  function(label, bg, fc, fs) { var r = b.wr([label]); b.fmt(r, 1, 1, W, { merge: true, bold: true, bg: bg || '#002F4C', fc: fc || '#FFFFFF', fs: fs || 10 }); return r; },
+    flush: function() {
+      var n = rows.length; if (!n) return;
+      var maxC = W; rows.forEach(function(r) { if (r.length > maxC) maxC = r.length; });
+      var grid = [], weights = [], bgs = [], fcs = [], styles = [], sizes = [], any = { bold: false, bg: false, fc: false, italic: false, fs: false };
+      for (var i = 0; i < n; i++) {
+        var r = rows[i].slice(); while (r.length < maxC) r.push('');
+        grid.push(r); weights.push(_fill(maxC, 'normal')); bgs.push(_fill(maxC, null)); fcs.push(_fill(maxC, null)); styles.push(_fill(maxC, 'normal')); sizes.push(_fill(maxC, 10));
+      }
+      // Text format BEFORE the values so date-like strings stay text.
+      ops.forEach(function(o) { if (o.f.num === '@') sheet.getRange(o.r, o.c, o.nr, o.nc).setNumberFormat('@'); });
+      sheet.getRange(1, 1, n, maxC).setValues(grid);
+      ops.forEach(function(o) {
+        for (var i = o.r - 1; i < o.r - 1 + o.nr; i++) for (var j = o.c - 1; j < o.c - 1 + o.nc; j++) {
+          if (i < 0 || j < 0 || i >= n || j >= maxC) continue;
+          if (o.f.bold)   { weights[i][j] = 'bold';  any.bold = true; }
+          if (o.f.bg)     { bgs[i][j] = o.f.bg;      any.bg = true; }
+          if (o.f.fc)     { fcs[i][j] = o.f.fc;      any.fc = true; }
+          if (o.f.italic) { styles[i][j] = 'italic'; any.italic = true; }
+          if (o.f.fs)     { sizes[i][j] = o.f.fs;    any.fs = true; }
+        }
+      });
+      var all = sheet.getRange(1, 1, n, maxC);
+      try {
+        if (any.bold)   all.setFontWeights(weights);
+        if (any.bg)     all.setBackgrounds(bgs);
+        if (any.fc)     all.setFontColors(fcs);
+        if (any.italic) all.setFontStyles(styles);
+        if (any.fs)     all.setFontSizes(sizes);
+      } catch (gridErr) {
+        // Grid setters refused (should not happen) — fall back to per-op formatting.
+        ops.forEach(function(o) {
+          var rg = sheet.getRange(o.r, o.c, o.nr, o.nc);
+          if (o.f.bold) rg.setFontWeight('bold'); if (o.f.bg) rg.setBackground(o.f.bg); if (o.f.fc) rg.setFontColor(o.f.fc);
+          if (o.f.italic) rg.setFontStyle('italic'); if (o.f.fs) rg.setFontSize(o.f.fs);
+        });
+      }
+      ops.forEach(function(o) {
+        if (o.f.merge) sheet.getRange(o.r, o.c, o.nr, o.nc).merge();
+        if (o.f.num && o.f.num !== '@') sheet.getRange(o.r, o.c, o.nr, o.nc).setNumberFormat(o.f.num);
+      });
+    }
+  };
+  return b;
+}
+function _fill(n, v) { var a = []; for (var i = 0; i < n; i++) a.push(v); return a; }
 
 // ── Organisation summary sheet (first tab) ────────────────────────────────────
 function _writeOrgSummary(ss, data) {
@@ -475,30 +585,19 @@ function _writeOrgSummary(ss, data) {
   sheet.clearContents();
   sheet.clearFormats();
 
-  var row = 1;
   var cols = 9;
-
-  function hdr(label, bg) {
-    sheet.getRange(row, 1, 1, cols).merge()
-      .setValue(label).setFontWeight('bold')
-      .setBackground(bg || '#002F4C').setFontColor(bg ? '#002F4C' : '#FFFFFF').setFontSize(10);
-    row++;
-  }
+  var b = _block(sheet, cols);
+  function hdr(label, bg) { b.hdr(label, bg || '#002F4C', bg ? '#002F4C' : '#FFFFFF', 10); }
   function wr(vals, bold, bg) {
-    var r = sheet.getRange(row, 1, 1, vals.length);
-    r.setValues([vals]);
-    if (bold) r.setFontWeight('bold');
-    if (bg)   r.setBackground(bg);
-    row++;
+    var r = b.wr(vals);
+    if (bold || bg) b.fmt(r, 1, 1, vals.length, { bold: !!bold, bg: bg || null });
+    return r;
   }
 
   // Title
-  sheet.getRange(row, 1, 1, cols).merge()
-    .setValue('Organisation KPI Summary').setFontSize(16).setFontWeight('bold').setFontColor('#002F4C');
-  row++;
-  sheet.getRange(row, 1, 1, cols).merge()
-    .setValue('Generated: ' + data.generatedAt).setFontColor('#64748b').setFontSize(9);
-  row += 2;
+  var r = b.wr(['Organisation KPI Summary']); b.fmt(r, 1, 1, cols, { merge: true, fs: 16, bold: true, fc: '#002F4C' });
+  r = b.wr(['Generated: ' + data.generatedAt]); b.fmt(r, 1, 1, cols, { merge: true, fc: '#64748b', fs: 9 });
+  b.skip();
 
   var kpiKeys = ['hcw_strengthened','patients_reached','facilities_strengthened','population_access'];
 
@@ -517,23 +616,21 @@ function _writeOrgSummary(ss, data) {
     yr = Number(yr);
     hdr(yr + ' — KPI Results (Plan vs Actual)');
     // Row 1: KPI group names merged over Plan + Actual
-    sheet.getRange(row, 1, 1, 9).setValues([['Project','HCW','','Patients','','Facilities','','Population','']]).setFontWeight('bold').setBackground('#E8F0F8');
-    [[2,3],[4,5],[6,7],[8,9]].forEach(function(p) { sheet.getRange(row, p[0], 1, 2).merge(); });
-    row++;
+    r = b.wr(['Project','HCW','','Patients','','Facilities','','Population','']); b.fmt(r, 1, 1, 9, { bold: true, bg: '#E8F0F8' });
+    [[2,3],[4,5],[6,7],[8,9]].forEach(function(p) { b.fmt(r, p[0], 1, 2, { merge: true }); });
     // Row 2: Plan / Actual sub-headers
-    sheet.getRange(row, 1, 1, 9).setValues([['','Plan','Actual','Plan','Actual','Plan','Actual','Plan','Actual']]).setFontWeight('bold');
-    [2,4,6,8].forEach(function(c) { sheet.getRange(row, c).setBackground('#FEF3C7'); });
-    [3,5,7,9].forEach(function(c) { sheet.getRange(row, c).setBackground('#DCFCE7'); });
-    row++;
+    r = b.wr(['','Plan','Actual','Plan','Actual','Plan','Actual','Plan','Actual']); b.fmt(r, 1, 1, 9, { bold: true });
+    [2,4,6,8].forEach(function(c) { b.fmt(r, c, 1, 1, { bg: '#FEF3C7' }); });
+    [3,5,7,9].forEach(function(c) { b.fmt(r, c, 1, 1, { bg: '#DCFCE7' }); });
     var totT = {}, totA = {};
     kpiKeys.forEach(function(k) { totT[k] = 0; totA[k] = 0; });
-    var dataStart = row;
+    var dataStart = b.next();
     orderedProjects.forEach(function(p) {
       var y = (p.years||[]).find(function(y) { return y.year === yr; }) || { targets:{}, actuals:{} };
       var label = p.isSample ? (p.name + ' (sample)') : p.name;
-      wr([label].concat(kpiKeys.reduce(function(a, k) { a.push(y.targets[k]||'', y.actuals[k]||''); return a; }, [])));
+      var pr = wr([label].concat(kpiKeys.reduce(function(a, k) { a.push(y.targets[k]||'', y.actuals[k]||''); return a; }, [])));
       if (p.isSample) {
-        sheet.getRange(row - 1, 1, 1, 9).setFontColor('#94a3b8').setFontStyle('italic');
+        b.fmt(pr, 1, 1, 9, { fc: '#94a3b8', italic: true });
       } else {
         kpiKeys.forEach(function(k) { totT[k] += Number(y.targets[k])||0; totA[k] += Number(y.actuals[k])||0; });
       }
@@ -541,8 +638,8 @@ function _writeOrgSummary(ss, data) {
     wr(['TOTAL (excl. sample)'].concat(kpiKeys.reduce(function(a, k) { a.push(totT[k]||'', totA[k]||''); return a; }, [])), true, '#FEF3C7');
     // Number format for data rows + total
     var numRows = orderedProjects.length + 1;
-    sheet.getRange(dataStart, 2, numRows, 8).setNumberFormat('#,##0');
-    row++;
+    b.fmt(dataStart, 2, numRows, 8, { num: '#,##0' });
+    b.skip();
   });
 
   // ── Per-quarter org rollup (cumulative actuals, real projects only) ──
@@ -558,10 +655,8 @@ function _writeOrgSummary(ss, data) {
       });
       if (!anyQ) return;
       hdr(yr + ' — Quarterly Actuals (cumulative, all projects)');
-      sheet.getRange(row, 1, 1, 5).setValues([['Quarter','HCW','Patients','Facilities','Population']])
-        .setFontWeight('bold').setBackground('#DCFCE7');
-      row++;
-      var qStart = row;
+      r = b.wr(['Quarter','HCW','Patients','Facilities','Population']); b.fmt(r, 1, 1, 5, { bold: true, bg: '#DCFCE7' });
+      var qStart = b.next();
       [1,2,3,4].forEach(function(q) {
         var sums = { hcw_strengthened:0, patients_reached:0, facilities_strengthened:0, population_access:0 };
         var any = false;
@@ -574,11 +669,12 @@ function _writeOrgSummary(ss, data) {
         if (!any) return;
         wr(['Q' + q, sums.hcw_strengthened||'', sums.patients_reached||'', sums.facilities_strengthened||'', sums.population_access||'']);
       });
-      sheet.getRange(qStart, 2, row - qStart, 4).setNumberFormat('#,##0');
-      row++;
+      if (b.next() > qStart) b.fmt(qStart, 2, b.next() - qStart, 4, { num: '#,##0' });
+      b.skip();
     });
   }
 
+  b.flush();
   // Formatting: even column widths
   sheet.setColumnWidth(1, 200);
   [2,3,4,5,6,7,8,9].forEach(function(c) { sheet.setColumnWidth(c, 100); });
@@ -593,17 +689,12 @@ function _writeProject(ss, d) {
   sheet.clearContents();
   sheet.clearFormats();
 
-  var row = 1;
-  function hdr(label) {
-    sheet.getRange(row, 1, 1, 9).merge()
-      .setValue(label).setFontWeight('bold').setBackground('#002F4C').setFontColor('#FFFFFF').setFontSize(10);
-    row++;
-  }
+  var b = _block(sheet, 9);
+  function hdr(label) { b.hdr(label); }
   function wr(vals, bold) {
-    var r = sheet.getRange(row, 1, 1, vals.length);
-    r.setValues([vals]);
-    if (bold) r.setFontWeight('bold').setBackground('#E8F0F8');
-    row++;
+    var r = b.wr(vals);
+    if (bold) b.fmt(r, 1, 1, vals.length, { bold: true, bg: '#E8F0F8' });
+    return r;
   }
 
   hdr('PROJECT INFO');
@@ -613,14 +704,9 @@ function _writeProject(ss, d) {
   wr(['Description', d.description||'']);
   wr(['Color', d.color||'']);
   wr(['Icon', d.icon||'']);
-  // Write dates as text to prevent Google Sheets auto-conversion
-  var dateRange;
-  sheet.getRange(row, 1, 1, 2).setValues([['Start Date', d.startDate||'']]);
-  sheet.getRange(row, 2).setNumberFormat('@');
-  row++;
-  sheet.getRange(row, 1, 1, 2).setValues([['End Date', d.endDate||'']]);
-  sheet.getRange(row, 2).setNumberFormat('@');
-  row++;
+  // Dates as text (the cell is formatted '@' before the value lands) to prevent Google Sheets auto-conversion
+  var r = b.wr(['Start Date', d.startDate||'']); b.fmt(r, 2, 1, 1, { num: '@' });
+  r = b.wr(['End Date', d.endDate||'']); b.fmt(r, 2, 1, 1, { num: '@' });
   wr(['HCW Multiplier', d.hcwMultiplierEnabled ? 'Yes' : 'No']);
   wr(['HCW Multiplier Rate', d.hcwMultiplierRate !== undefined ? d.hcwMultiplierRate : '']);
   wr(['Quality KPIs', (d.enabledQualityKpis||[]).join(', ')]);
@@ -629,7 +715,7 @@ function _writeProject(ss, d) {
   if (d.sheetsTabUrl) wr(['Sheets Tab URL', d.sheetsTabUrl]);
   if ((d.locations||[]).length > 0) wr(['Locations', JSON.stringify(d.locations)]);
   wr(['Synced At', d.syncedAt||'']);
-  row++;
+  b.skip();
 
   hdr('LINKS');
   wr(['GSF Page', d.linkGsf||'']);
@@ -637,18 +723,17 @@ function _writeProject(ss, d) {
   (d.linksExtra||[]).forEach(function(l, i) {
     wr(['Extra Link ' + (i + 1), l.url||'', l.label||'']);
   });
-  row++;
+  b.skip();
 
   hdr('KPIs BY YEAR');
   // Row 1: KPI names merged over Plan + Actual columns
-  sheet.getRange(row, 1, 1, 9).setValues([['Year','HCW','','Patients','','Facilities','','Population','']]).setFontWeight('bold').setBackground('#E8F0F8');
-  [[2,3],[4,5],[6,7],[8,9]].forEach(function(p) { sheet.getRange(row, p[0], 1, 2).merge(); });
-  row++;
+  r = b.wr(['Year','HCW','','Patients','','Facilities','','Population','']); b.fmt(r, 1, 1, 9, { bold: true, bg: '#E8F0F8' });
+  [[2,3],[4,5],[6,7],[8,9]].forEach(function(p) { b.fmt(r, p[0], 1, 2, { merge: true }); });
   // Row 2: Plan / Actual sub-headers with amber (plan) and green (actual) highlights
-  sheet.getRange(row, 1, 1, 9).setValues([['','Plan','Actual','Plan','Actual','Plan','Actual','Plan','Actual']]).setFontWeight('bold');
-  [2,4,6,8].forEach(function(c) { sheet.getRange(row, c).setBackground('#FEF3C7'); });
-  [3,5,7,9].forEach(function(c) { sheet.getRange(row, c).setBackground('#DCFCE7'); });
-  row++;
+  r = b.wr(['','Plan','Actual','Plan','Actual','Plan','Actual','Plan','Actual']); b.fmt(r, 1, 1, 9, { bold: true });
+  [2,4,6,8].forEach(function(c) { b.fmt(r, c, 1, 1, { bg: '#FEF3C7' }); });
+  [3,5,7,9].forEach(function(c) { b.fmt(r, c, 1, 1, { bg: '#DCFCE7' }); });
+  var kpiDataStart = b.next();
   (d.years||[]).forEach(function(yr) {
     wr([yr.year,
         yr.targets.hcw_strengthened||'',       yr.actuals.hcw_strengthened||'',
@@ -657,21 +742,16 @@ function _writeProject(ss, d) {
         yr.targets.population_access||'',       yr.actuals.population_access||'']);
   });
   // Apply thousands number format to KPI data area
-  if ((d.years||[]).length > 0) {
-    var kpiDataStart = row - (d.years||[]).length;
-    sheet.getRange(kpiDataStart, 2, (d.years||[]).length, 8).setNumberFormat('#,##0');
-  }
-  row++;
+  if ((d.years||[]).length > 0) b.fmt(kpiDataStart, 2, (d.years||[]).length, 8, { num: '#,##0' });
+  b.skip();
 
   // ── KPIs BY QUARTER (cumulative actuals) ──
   // Quarterly figures are cumulative: Q1 = Jan–Mar running total, Q4 = full-year total.
   var hasQuarterly = (d.years||[]).some(function(yr) { return yr.quarters && Object.keys(yr.quarters).length; });
   if (hasQuarterly) {
     hdr('KPIs BY QUARTER (cumulative actuals)');
-    sheet.getRange(row, 1, 1, 6).setValues([['Year','Quarter','HCW','Patients','Facilities','Population']])
-      .setFontWeight('bold').setBackground('#DCFCE7');
-    row++;
-    var qStart = row;
+    r = b.wr(['Year','Quarter','HCW','Patients','Facilities','Population']); b.fmt(r, 1, 1, 6, { bold: true, bg: '#DCFCE7' });
+    var qStart = b.next();
     var qCount = 0;
     (d.years||[]).forEach(function(yr) {
       if (!yr.quarters) return;
@@ -688,8 +768,8 @@ function _writeProject(ss, d) {
         qCount++;
       });
     });
-    if (qCount > 0) sheet.getRange(qStart, 3, qCount, 4).setNumberFormat('#,##0');
-    row++;
+    if (qCount > 0) b.fmt(qStart, 3, qCount, 4, { num: '#,##0' });
+    b.skip();
   }
 
   var hasComments = (d.years||[]).some(function(yr) {
@@ -706,15 +786,16 @@ function _writeProject(ss, d) {
         if (tc || ac) wr([yr.year, labels[i], tc||'', ac||'']);
       });
     });
-    row++;
+    b.skip();
   }
 
   // KPI Change Log
   if ((d.kpiLog||[]).length > 0) {
     hdr('KPI CHANGE LOG');
     wr(['Timestamp','Year','Note','HCW Plan','HCW Actual','Patients Plan','Patients Actual','Facilities Plan','Facilities Actual'], true);
-    var logStart = row;
-    (d.kpiLog||[]).slice(0, 100).forEach(function(entry) {
+    var logStart = b.next();
+    var logRows = (d.kpiLog||[]).slice(0, 100);
+    logRows.forEach(function(entry) {
       var ts = entry.timestamp ? new Date(entry.timestamp).toLocaleString() : '';
       var t = entry.targets || {};
       var a = entry.actuals || {};
@@ -723,8 +804,8 @@ function _writeProject(ss, d) {
           t.patients_reached||'', a.patients_reached||'',
           t.facilities_strengthened||'', a.facilities_strengthened||'']);
     });
-    sheet.getRange(logStart, 4, (d.kpiLog||[]).length, 6).setNumberFormat('#,##0');
-    row++;
+    b.fmt(logStart, 4, logRows.length, 6, { num: '#,##0' });
+    b.skip();
   }
 
   if ((d.qualityData||[]).length > 0) {
@@ -735,7 +816,7 @@ function _writeProject(ss, d) {
       var tgt = q.target !== undefined && q.target !== null ? q.target : '';
       wr([q.kpiId||'', q.year||'', q.quarter||'', tgt, act]);
     });
-    row++;
+    b.skip();
   }
 
   // ── ACTIVITIES (grouped by year, with HCW contribution tracking) ──
@@ -760,43 +841,39 @@ function _writeProject(ss, d) {
   hdr('ACTIVITIES — HCW TRACKING (by year)');
   if (events.length === 0) {
     wr(['No activities logged yet.']);
-    row++;
+    b.skip();
   } else {
     evYears.forEach(function(y) {
       var list = byYear[y];
       var yTotal = 0, yNew = 0;
       list.forEach(function(ev){ yTotal += Number(ev.hcw_count)||0; yNew += Number(ev.hcw_new_count)||0; });
       // Year sub-header band
-      sheet.getRange(row, 1, 1, 8).merge()
-        .setValue(y + '  ·  ' + list.length + ' activit' + (list.length===1?'y':'ies') + '  ·  ' + yTotal.toLocaleString() + ' HCWs (' + yNew.toLocaleString() + ' new)')
-        .setFontWeight('bold').setBackground('#E8F0F8').setFontColor('#002F4C');
-      row++;
+      var br = b.wr([y + '  ·  ' + list.length + ' activit' + (list.length===1?'y':'ies') + '  ·  ' + yTotal.toLocaleString() + ' HCWs (' + yNew.toLocaleString() + ' new)']);
+      b.fmt(br, 1, 1, 8, { merge: true, bold: true, bg: '#E8F0F8', fc: '#002F4C' });
       // Column headers (Start + End date range)
-      sheet.getRange(row, 1, 1, 8).setValues([['Start','End','Type','Title','HCWs','New HCWs','Facilities','Notes']])
-        .setFontWeight('bold').setFontColor('#64748b').setFontSize(9);
-      row++;
-      var blockStart = row;
+      var hr = b.wr(['Start','End','Type','Title','HCWs','New HCWs','Facilities','Notes']);
+      b.fmt(hr, 1, 1, 8, { bold: true, fc: '#64748b', fs: 9 });
+      var blockStart = b.next();
       list.forEach(function(ev) {
-        wr([ev.date||'', ev.endDate||'', TYPE_LABELS[ev.type] || ev.type || '',
+        b.wr([ev.date||'', ev.endDate||'', TYPE_LABELS[ev.type] || ev.type || '',
             ev.title||'', ev.hcw_count||'', ev.hcw_new_count||'',
             (ev.facilities_count != null ? ev.facilities_count : ((ev.facilities||[]).length || '')),
             ev.notes||'']);
       });
       // Subtotal row
-      sheet.getRange(row, 1, 1, 8).setValues([['', '', '', 'Year total', yTotal, yNew, '', '']])
-        .setFontWeight('bold').setBackground('#FEF9C3');
-      row++;
+      var sr = b.wr(['', '', '', 'Year total', yTotal, yNew, '', '']);
+      b.fmt(sr, 1, 1, 8, { bold: true, bg: '#FEF9C3' });
       // Number format for the HCW columns in this block (incl subtotal)
-      sheet.getRange(blockStart, 5, (row - blockStart), 2).setNumberFormat('#,##0');
-      row++; // spacer between years
+      b.fmt(blockStart, 5, sr - blockStart + 1, 2, { num: '#,##0' });
+      b.skip(); // spacer between years
     });
   }
-  row++;
+  b.skip();
 
   hdr('UPDATES');
   wr(['Date','Tag','Title','Body'], true);
   (d.updates||[]).forEach(function(u) { wr([u.date||'', (u.tags||[]).join(', '), u.title||'', u.body||'']); });
-  row++;
+  b.skip();
 
   if ((d.facilities||[]).length > 0) {
     hdr('FACILITIES');
@@ -807,6 +884,7 @@ function _writeProject(ss, d) {
     });
   }
 
+  b.flush();
   // Formatting: set column widths. Cols 3 & 4 carry titles/notes so make them wide.
   sheet.setColumnWidth(1, 120);
   sheet.setColumnWidth(2, 120);

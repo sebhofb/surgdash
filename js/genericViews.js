@@ -13257,7 +13257,7 @@ ${additionalPages.map((inner, i) => `
         try {
             const _p = electronAPI.path.join(electronAPI.appPath, 'scripts', 'google-apps-script.js');
             const _code = electronAPI.fs.readFileSync(_p, 'utf8');
-            if (_code && _code.indexOf('surghub_chunk') !== -1 && _code.indexOf('parameter.meta') !== -1) return _code;
+            if (_code && _code.indexOf('surghub_chunk') !== -1 && (_code.indexOf('parameter.meta') !== -1 || _code.indexOf('SCRIPT_VERSION') !== -1)) return _code;
         } catch (_) { /* fall through to the inline fallback */ }
         return `// SURGdash Google Sheets Sync
 // Paste into Google Apps Script → Save → Deploy as Web App
@@ -13818,21 +13818,17 @@ function _writeProject(ss, d) {
 }`;
     },
 
-    // GET via main-process HTTP (handles redirects automatically)
-    async _sheetsGet(targetUrl) {
-        const res = await electronAPI.invoke('http-request', { url: targetUrl, method: 'GET' });
-        if (res.error) throw new Error(res.error);
-        const body = res.body;
-        try {
-            const r = JSON.parse(body);
-            if (r.ok === false) throw new Error(r.error || 'Script error');
-            return r;
-        } catch (_) {
-            const preview = body.slice(0, 300).replace(/\s+/g, ' ').trim();
-            const hint = body.includes('<html') || body.includes('<!DOCTYPE')
+    // GET the mirror via main-process HTTP (redirects handled there). A compressed
+    // SURGhub blob (v3 scripts) is inflated here, so callers always see surghubStorage
+    // as an object. opts.nosurghub leaves the blob out of the download.
+    async _sheetsGet(targetUrl, opts) {
+        const http = (req) => electronAPI.invoke('http-request', req);
+        try { return await SheetsSync.fetchMirror(http, targetUrl, opts || {}); }
+        catch (err) {
+            const hint = /HTML page/i.test(err.message)
                 ? '\n\nThe script returned an HTML page — this usually means the Apps Script deployment needs to be updated. Open Apps Script → Deploy → Manage deployments → create a New Deployment with the latest code, then paste the new URL here.'
                 : '';
-            throw new Error(`Invalid response from Apps Script.${hint}\n\nResponse preview: ${preview}`);
+            throw new Error(`Google Sheets did not answer properly: ${err.message}${hint}`);
         }
     },
 
@@ -13973,29 +13969,11 @@ function _writeProject(ss, d) {
         App.renderView();
     },
 
-    // POST via main-process HTTP (handles redirects automatically)
-    async _sheetsPost(targetUrl, data) {
-        // Apps Script can stall on large payloads — never hang the UI: 90s cap.
-        const res = await Promise.race([
-            this._sheetsPostRaw(targetUrl, data),
-            new Promise((_, rej) => setTimeout(() => rej(new Error('Google Sheets did not respond within 90s — try again (large payloads can need a second push).')), 90000))
-        ]);
-        return res;
-    },
-
-    async _sheetsPostRaw(targetUrl, data) {
-        const res = await electronAPI.invoke('http-request', {
-            url: targetUrl,
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: data
-        });
-        if (res.error) throw new Error(res.error);
-        try {
-            const r = JSON.parse(res.body);
-            if (!r.ok) throw new Error(r.error || 'Script returned an error');
-            return r;
-        } catch (_) { return { ok: true }; }
+    // POST via main-process HTTP (redirects handled there), with the transport's
+    // retries for transient failures (network, timeout, HTML error pages).
+    async _sheetsPost(targetUrl, data, opts) {
+        const http = (req) => electronAPI.invoke('http-request', req);
+        return SheetsSync.post(http, targetUrl, data, opts || {});
     },
 
     async _buildProjectPayload(project) {
@@ -14390,7 +14368,8 @@ function _writeProject(ss, d) {
         if (o) o.remove();
     },
 
-    async _syncToSheets() {
+    async _syncToSheets(opts) {
+        opts = opts || {};
         const appSettings = await Projects.getAppSettings();
         // Allow live edit in the URL field to take precedence
         const url = (document.getElementById('org-sheets-url')?.value || '').trim()
@@ -14398,12 +14377,12 @@ function _writeProject(ss, d) {
         if (!url) {
             alert('Please enter the Google Apps Script Web App URL first, then click Save URL.'); return;
         }
+        if (!window.SheetsSync) { alert('The sync module did not load — restart the app.'); return; }
 
         // Include the sample project too — it gives the recipient a fully-populated
         // example tab so they can see how a complete project sheet looks. The sample
         // is flagged (isSample) so the Apps Script excludes it from org-wide totals.
         const projects = Projects.registry.filter(p => p.type === 'generic');
-        const totalSteps = projects.length + 2; // + org summary + full backup
 
         const btn = document.getElementById('sheets-sync-btn');
         const setBtn = (label, disabled = true) => {
@@ -14416,157 +14395,81 @@ function _writeProject(ss, d) {
         this._showSyncOverlay();
         this._updateSyncOverlay('Preparing…', 2);
 
-        const errors    = [];
-        const syncedAt  = new Date().toISOString();
-        const allPayloads = [];
-
-        // Push each project
-        for (let i = 0; i < projects.length; i++) {
-            const p = projects[i];
-            const stepLabel = `${p.shortName || p.name}`;
-            setBtn(`<span style="display:inline-block;animation:spin 1s linear infinite">↻</span> ${i + 1}/${totalSteps}: ${App.escapeHtml(stepLabel)}…`);
-            this._updateSyncOverlay(`Syncing project ${i + 1}/${projects.length}: ${stepLabel}`, ((i + 1) / totalSteps) * 100);
-            try {
-                const payloadStr = await this._buildProjectPayload(p);
-                await this._sheetsPost(url, payloadStr);
-                allPayloads.push(JSON.parse(payloadStr));
-            } catch (err) {
-                console.error(`Sheets sync error (${p.name}):`, err);
-                errors.push(`${p.name}: ${err.message}`);
-            }
-        }
-
-        // Push org summary
-        const orgStep = projects.length + 1;
-        setBtn(`<span style="display:inline-block;animation:spin 1s linear infinite">↻</span> ${orgStep}/${totalSteps}: Organisation summary…`);
-        this._updateSyncOverlay('Pushing organisation summary…', (orgStep / totalSteps) * 100);
-        try {
-            const orgPayload = JSON.stringify({
-                type: 'org_summary',
-                generatedAt: new Date().toLocaleString(),
-                projects: allPayloads
-            });
-            await this._sheetsPost(url, orgPayload);
-        } catch (err) {
-            console.error('Sheets org summary error:', err);
-            errors.push(`Organisation summary: ${err.message}`);
-        }
-
-        // Push full JSON backup (last step) — this is the biggest step (includes SURGhub data)
-        const backupStep = projects.length + 2;
-        setBtn(`<span style="display:inline-block;animation:spin 1s linear infinite">↻</span> ${backupStep}/${totalSteps}: Full backup…`);
-        this._updateSyncOverlay('Pushing full backup (SURGhub data)…', (backupStep / totalSteps) * 95);
-        try {
-            const appSettings = await Projects.getAppSettings();
+        // What the backup carries. SURGhub keys go to their own sheet (compressed when
+        // the script is current); everything else rides in the slim backup.
+        const collect = async () => {
+            const appSettingsNow = await Projects.getAppSettings();
             const customQualityKpis = (await Storage.getItem('surgdash_custom_quality_kpis')) || [];
-            // Include raw Storage dump for lossless round-trip (all data including SURGhub)
             const allKeys = await Storage.keys();
-            const rawStorage = {};
-            const surghubStorage = {};
-            // Internal sync-state keys — must stay LOCAL so they can guard
-            // pull/push correctly. Shipping them to Sheets would clobber the
-            // dirty-flag on the next pull.
+            const rawStorage = {}, surghubStorage = {};
+            // Internal sync-state keys — must stay LOCAL so they can guard pull/push
+            // correctly. Shipping them to Sheets would clobber the dirty-flag on the next pull.
             const SURGHUB_INTERNAL_KEYS = new Set(['surghub_local_mtime', 'surghub_unsynced_local', 'surghub_last_synced']);
-            // API credentials never leave this machine — they are re-entered
-            // manually after a restore instead of living in the spreadsheet.
-            // The two role-password records stay local too: even hashed, a password
-            // hash in a shared spreadsheet is an offline-cracking target.
+            // API credentials never leave this machine — they are re-entered manually after
+            // a restore instead of living in the spreadsheet. The two role-password records
+            // stay local too: even hashed, a password hash in a shared spreadsheet is an
+            // offline-cracking target.
             const SECRET_KEYS = new Set(['anthropic_api_key', 'learnworlds_api_token', 'learnworlds_client_id',
                                          'surgdash_edit_password', 'surgdash_report_password']);
             for (const key of allKeys) {
                 if (SURGHUB_INTERNAL_KEYS.has(key)) continue;
                 if (SECRET_KEYS.has(key)) continue;
-                if (key.startsWith('surghub_')) {
-                    surghubStorage[key] = await Storage.getItem(key);
-                } else {
-                    rawStorage[key] = await Storage.getItem(key);
-                }
+                if (key.startsWith('surghub_')) surghubStorage[key] = await Storage.getItem(key);
+                else rawStorage[key] = await Storage.getItem(key);
             }
-            // SURGhub data is far too large for one Apps Script POST (~75MB
-            // measured — over the ~50MB request cap): stream it to its own
-            // sheet in ~4.4MB parts, then push a slim backup without it.
-            const surghubJson = JSON.stringify(surghubStorage);
-            const PART_CHARS = 49000 * 90; // 90 sheet rows per POST
-            const totalParts = Math.max(1, Math.ceil(surghubJson.length / PART_CHARS));
-            let chunked = true;
-            try {
-                for (let p = 0; p < totalParts; p++) {
-                    this._updateSyncOverlay(`Pushing SURGhub data (part ${p + 1}/${totalParts})…`, ((backupStep - 1 + ((p + 1) / (totalParts + 1))) / totalSteps) * 95);
-                    await this._sheetsPost(url, JSON.stringify({
-                        type: 'surghub_chunk',
-                        part: p + 1,
-                        totalParts,
-                        syncedAt,
-                        data: surghubJson.slice(p * PART_CHARS, (p + 1) * PART_CHARS)
-                    }));
-                }
-            } catch (err) {
-                // Apps Script deployment predates the chunk route — fall back to
-                // the legacy single POST (only viable for small datasets).
-                console.warn('[Sheets] Chunked SURGhub push failed, falling back to embedded backup:', err.message);
-                chunked = false;
-            }
-            this._updateSyncOverlay('Pushing backup…', (backupStep / totalSteps) * 95);
-            const backupPayload = {
-                type: 'full_backup',
-                syncedAt,
-                appSettings,
-                customQualityKpis,
-                projects: allPayloads,
-                rawStorage
-            };
-            if (!chunked) backupPayload.surghubStorage = surghubStorage;
-            await this._sheetsPost(url, JSON.stringify(backupPayload));
-            if (!chunked) throw new Error('SURGhub data could not be pushed in parts — update the Google Apps Script to the latest version from scripts/google-apps-script.js and redeploy, then sync again.');
-            // Successful push — cloud now matches local SURGhub state, so it's
-            // safe for future pulls to apply the Sheets copy again.
-            await Storage.setItem('surghub_unsynced_local', false);
-            await Storage.setItem('surghub_last_synced', syncedAt);
-            console.log('[SURGhub] Cloud push succeeded at', syncedAt, '— pull-overwrite block lifted.');
+            return { surghubStorage, rawStorage, appSettings: appSettingsNow, customQualityKpis };
+        };
+        const http = (req) => electronAPI.invoke('http-request', req);
+        let s;
+        try {
+            s = await SheetsSync.push({
+                url, http, force: !!opts.force,
+                projects: projects.map(p => ({ id: p.id, name: p.name, shortName: p.shortName || '', _proj: p })),
+                buildPayload: (p) => this._buildProjectPayload(p._proj),
+                collect,
+                progress: (text, pct) => { this._updateSyncOverlay(text, pct); setBtn(`<span style="display:inline-block;animation:spin 1s linear infinite">↻</span> ${App.escapeHtml(text)}`); },
+                log: (m) => console.warn(m),
+            });
         } catch (err) {
-            console.error('Sheets full backup error:', err);
-            errors.push(`Full backup: ${err.message}`);
+            console.error('Sheets sync failed:', err);
+            this._hideSyncOverlay();
+            alert('Sync failed: ' + err.message);
+            setBtn('<i data-lucide="sheet" width="14"></i> Sync to Sheets', false);
+            return;
         }
 
-        // Save URL and timestamp centrally
+        if (s.surghub === 'pushed' || s.surghub === 'skipped') {
+            // The cloud now holds exactly this device's SURGhub data: pulls may apply the
+            // Sheets copy again, and may skip the download while the fingerprint matches.
+            await Storage.setItem('surghub_unsynced_local', false);
+            await Storage.setItem('surghub_last_synced', s.syncedAt);
+            if (s.surghubHash) await Projects.saveAppSettings({ googleSheetsSurghubHash: s.surghubHash }, { internal: true });
+            console.log('[SURGhub] Cloud ' + s.surghub + ' at', s.syncedAt, '— pull-overwrite block lifted.');
+        }
+
+        // Save URL and timestamp centrally (internal write — we just pushed everything).
         this._updateSyncOverlay('Finalising…', 99);
-        // Internal write — we just pushed everything, don't re-trigger auto-sync
-        await Projects.saveAppSettings({ googleSheetsUrl: url, googleSheetsLastSync: syncedAt }, { internal: true });
+        await Projects.saveAppSettings({ googleSheetsUrl: url, googleSheetsLastSync: s.syncedAt }, { internal: true });
         // The server stamps its OWN lastSync (its clock, at the END of this multi-part
         // upload). Adopt that as our last-synced marker — otherwise the freshness check
-        // reads our just-finished push as "new data" (our local syncedAt is the push
-        // START, minutes behind the server's end-of-upload stamp + any clock skew).
+        // reads our just-finished push as "new data".
         try {
             const _meta = await App._fetchCloudMeta();
-            if (_meta && _meta.ok && _meta.lastModified) {
-                await Projects.saveAppSettings({ googleSheetsLastSync: _meta.lastModified }, { internal: true });
-            }
+            if (_meta && _meta.ok && _meta.lastModified) await Projects.saveAppSettings({ googleSheetsLastSync: _meta.lastModified }, { internal: true });
         } catch (_) { /* best-effort — falls back to local syncedAt */ }
         this._updateSyncOverlay('Done ✓', 100);
-        // Brief pause so the user sees 100% before the overlay disappears
         await new Promise(r => setTimeout(r, 350));
         this._hideSyncOverlay();
 
-        // Check for truncation warnings
-        const truncatedNames = allPayloads
-            .filter(p => p._truncated && (p._truncated.events || p._truncated.kpiLog))
-            .map(p => p.name || p.shortName);
-
-        if (errors.length === 0) {
-            let msg = `Synced ${projects.length} project${projects.length !== 1 ? 's' : ''} + org summary ✓`;
-            if (truncatedNames.length > 0) {
-                msg += `\nNote: events/log trimmed for Sheets tab: ${truncatedNames.join(', ')}. Full data is in the backup.`;
-            }
-            App.showMsg(msg);
-        } else {
-            alert(`Sync completed with ${errors.length} error${errors.length !== 1 ? 's' : ''}:\n\n${errors.join('\n')}`);
-        }
+        const line = SheetsSync.describe(s);
+        if (s.ok) App.showMsg(`Synced to Sheets ✓ — ${line}`);
+        else alert(`Sync completed with ${s.errors.length} error${s.errors.length !== 1 ? 's' : ''}:\n\n${s.errors.join('\n')}\n\n${line}`);
         setBtn('<i data-lucide="sheet" width="14"></i> Sync to Sheets', false);
         App.renderView();
         // Clear the in-memory dirty flag ONLY on a fully clean sync — if any push
-        // failed (project/org/SURGhub backup), stay dirty so the data isn't falsely
+        // failed (project/org/SURGhub/backup), stay dirty so the data isn't falsely
         // recorded as "synced" and then overwritten by the next pull.
-        if (App.markClean && errors.length === 0) App.markClean();
+        if (App.markClean && s.ok) App.markClean();
     },
 
     // True if any of a project's local data files were modified after baselineMs
@@ -14670,10 +14573,20 @@ function _writeProject(ss, d) {
         } catch (e) { console.warn('Conflict detection check failed:', e); }
 
         try {
-            const result = await this._sheetsGet(url);
+            // v3 scripts: skip the SURGhub download (the big part) when the cloud holds the
+            // very blob this device last pushed or pulled, or when a silent pull would not
+            // apply it anyway (local SURGhub data is ahead of the cloud).
+            const _http = (req) => electronAPI.invoke('http-request', req);
+            let _plan = { skip: false, reason: '' };
+            try {
+                const _localDirty = !!(await Storage.getItem('surghub_unsynced_local'));
+                _plan = await SheetsSync.pullPlan(_http, url, { silent, localDirty: _localDirty, localHash: appSettings.googleSheetsSurghubHash || '' });
+            } catch (_) { __swallowed(_); }
+            const result = await this._sheetsGet(url, { nosurghub: _plan.skip });
+            result._surghubPlan = _plan;
             const remoteProjects = result.projects || [];
 
-            if (remoteProjects.length === 0 && !result.surghubStorage) {
+            if (remoteProjects.length === 0 && !result.surghubStorage && !_plan.skip) {
                 if (!silent) alert('No project data found in Google Sheets.\n\nRun "Sync to Sheets" first to populate the sheet, then pull back.');
                 setBtn('<i data-lucide="download" width="14"></i> Pull from Sheets', false);
                 if (statusEl) statusEl.innerHTML = origStatus;
@@ -14862,6 +14775,13 @@ function _writeProject(ss, d) {
             let surghubRestored = false;
             let surghubSkipped = false;
             if (pullBanner) pullBanner.innerHTML = '<div class="w-4 h-4 border-2 border-gsf-boston border-t-transparent rounded-full" style="animation:spin 0.8s linear infinite"></div> Syncing SURGhub data…';
+            if (result._surghubPlan && result._surghubPlan.skip) {
+                // Not downloaded: either the cloud blob is the one we already hold (nothing to
+                // do), or local is ahead — which must keep the dirty protection below.
+                if (result._surghubPlan.reason === 'dirty') { surghubSkipped = true; console.log('[SURGhub] Pull: local SURGhub data is ahead of the cloud — not downloaded.'); }
+                else console.log('[SURGhub] Pull: cloud SURGhub data unchanged (fingerprint match) — download skipped.');
+            }
+            if (result.surghubError) console.warn('[SURGhub] ' + result.surghubError);
             if (result.surghubStorage && typeof result.surghubStorage === 'object') {
                 // Guard: if there are unsynced local SURGhub changes (e.g. user just
                 // imported a fresh SURGhub JSON snapshot but hasn't clicked Sync yet),
@@ -14905,6 +14825,8 @@ function _writeProject(ss, d) {
                 const emailDemo = await Storage.getItem('surghub_email_demo');
                 if (emailDemo) App._emailDemoMap = emailDemo;
                 surghubRestored = proceedSurghub;
+                // Remember which cloud blob we now hold, so the next pull can skip the download.
+                if (proceedSurghub && result.surghubHash) { try { await Projects.saveAppSettings({ googleSheetsSurghubHash: result.surghubHash }, { internal: true }); } catch (_) { __swallowed(_); } }
             }
 
             // Internal write — must not re-trigger auto-sync (would create a loop).
@@ -14937,6 +14859,8 @@ function _writeProject(ss, d) {
             if (updated) parts.push(`${updated} updated`);
             if (toDelete.length) parts.push(`${toDelete.length} deleted`);
             if (surghubRestored) parts.push('SURGhub data synced');
+            if (!silent && result._surghubPlan && result._surghubPlan.reason === 'unchanged') parts.push('SURGhub data unchanged (download skipped)');
+            if (result.surghubError) parts.push(result.surghubError);
             if (surghubSkipped) parts.push('SURGhub local kept (push to Sheets to sync)');
             if (skippedDirty.length) parts.push(`${skippedDirty.length} project${skippedDirty.length !== 1 ? 's' : ''} with local edits kept — click Sync to push`);
             if (!silent || parts.length > 0) App.showMsg(`Pull complete: ${parts.join(', ')} ✓`);

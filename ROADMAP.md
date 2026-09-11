@@ -112,6 +112,51 @@ Follow-ups:
   ambassadors sync are already at the cap; the UI's Tailwind Play-CDN build is
   the main interactive-speed item left (needs a visual check after).
 
+## Done — Google Sheets sync rebuilt: compressed, fingerprinted, retried (11 September 2026)
+
+Seb: "It is slow, and sometimes fails for the SURGfund part … can this be much much
+faster?" Measured on the live data: the SURGhub blob is 150 MB across 23 keys, sent
+as 36 sequential 4.4 MB uploads (3,208 cells); every project tab rewritten with
+60–120 Sheets calls each push; one attempt per request with a 90 s cap; a failed
+SURGhub part fell back to embedding all 150 MB in one request (never succeeds);
+pulls made the script parse 150 MB server-side. New transport `js/sheetsSync.js`
+(plain functions with injected I/O) + Apps Script v3 (`scripts/google-apps-script.js`,
+`SCRIPT_VERSION = 3`, needs ONE redeploy — the app detects the version via
+`?meta=1` and uses the old protocol against an old deployment):
+
+- **Compression**: the blob is gzip-compressed in the app (10.7× smaller on the live
+  data: 150 MB → 14 MB → 18.7 MB base64), stored as opaque text with the `SDGZ1:`
+  prefix — 5 uploads and 400 cells instead of 36 and 3,208; the script never parses
+  it, the app inflates on pull (`fetchMirror`). Legacy plain-JSON blobs still read.
+- **Fingerprints**: SHA-256 per project payload (clock stamp blanked), for the org
+  summary (over the project hashes) and for the blob; the script stores them in
+  Script Properties and returns them in `?meta`; an item whose fingerprint the
+  server already holds is skipped. A SURGfund-only edit pushes that tab + org +
+  backup; a day without an API sync pushes no SURGhub bytes at all. `force` pushes
+  everything.
+- **Reliability**: 3 attempts with 5 s / 15 s waits for transient failures (network,
+  timeout, HTML error pages, "failed while accessing document"); a script error
+  such as the 50,000-char cell limit is not retried. SURGhub parts carry
+  `startRow`/`totalRows`, so a retry overwrites the same rows; the blob's
+  fingerprint is advertised only once the last part landed, and a blob with fewer
+  rows than expected is not served. Against a legacy script parts get one attempt
+  (a retry would duplicate rows) and the doomed fallback is gone — the error says
+  nothing was lost locally.
+- **Pulls**: `pullPlan` skips the SURGhub download when the server's fingerprint
+  equals the one this device last pushed or pulled (`googleSheetsSurghubHash`), or
+  when a silent pull would not apply it anyway (local ahead → keeps the dirty
+  protection). Silent pulls stay quiet.
+- **Batched tab writes** in the script (`_block`): a project tab is written with one
+  `setValues` + format grids + header merges — about a third of the calls, values
+  and formats byte-identical to the per-row writer (parity-tested against the
+  previous script from git).
+- Verified with 36 checks (`test_sheets_sync.js`): the real v3 and previous scripts
+  run in a VM against an in-memory Sheets model; the client protocol runs against
+  them end-to-end (push, skip, edit-one, retry-a-part, legacy, pull decisions).
+- Not done (deliberately): per-key SURGhub deltas (the nightly sync rewrites the
+  big keys anyway), parallel part uploads (5 parts are fast enough; concurrency on
+  one sheet is a risk), Drive-file transport (new scope, 50 MB blob limit).
+
 ## Done — after the first full night on the new sync: three follow-ups (11 September 2026)
 
 Checked Seb's Sync Everything of 11 Sep 09:14 against the receipts and the run
