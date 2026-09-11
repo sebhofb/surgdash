@@ -64,11 +64,18 @@ Object.assign(window.App, {
         now = now || new Date();
         if (!s || !s.enabled) return false;
         if (now.getHours() < (typeof s.hour === 'number' ? s.hour : this.BG_DEFAULT_HOUR)) return false;
-        return !(s.lastRun && s.lastRun.day === this._bgDayKey(now));
+        if (s.lastRun && s.lastRun.day === this._bgDayKey(now)) return false;
+        // A sync run by hand today (Sync Everything, or the cards' own buttons) counts as
+        // today's run: every enabled card's stamp (surgdash_sync_log, UTC dates) is today's.
+        const log = (this._syncLog && typeof this._syncLog === 'object') ? this._syncLog : {}, today = now.toISOString().slice(0, 10), cards = s.cards || {};
+        const wanted = [cards.learners && 'learners', cards.enrolments && 'enrolments'].filter(Boolean);
+        if (wanted.length && wanted.every(k => log[k] === today)) return false;
+        return true;
     },
     async _bgTick() {
         const s = await this._bgLoad();
         if (!s.enabled || this._bgRunning || this._apiSyncInFlight) return false;
+        if (!this._syncLog) { try { const v = await Storage.getItem('surgdash_sync_log'); this._syncLog = (v && typeof v === 'object') ? v : {}; } catch (e) { this._syncLog = {}; } }   // stamps of today's hand-run syncs
         if (!this._bgDue(s)) return false;
         if (!this._bgIdle()) return false;
         if (!(await this._bgRefreshCreds())) return false;

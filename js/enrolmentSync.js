@@ -69,6 +69,14 @@ Object.assign(window.App, {
     ENR_HOLD_MIN_MS: 60000,             // silence after a 429: at least this, or the server's Retry-After
     ENR_HOLD_MAX_MS: 15 * 60000,
     ENR_HOLD_REPEAT_MS: 5 * 60000,      // a second 429 this soon after a hold doubles the next hold
+    // A Retry-After this short is an endpoint's ROUTINE limiter, not the penalty box:
+    // /certificates answers 429 + Retry-After 10 when pages come < ~10 s apart (its own
+    // pace, ENR_CERT_GAP_MS). Those are waited out exactly, and the certificate gap widens
+    // a little each time; only ENR_ROUTINE_429_MAX of them within ENR_HOLD_REPEAT_MS on
+    // OTHER endpoints reads as the penalty box. (On 10 Sep the full certificate walk took
+    // 2 h 17 min instead of ~45 min because every routine refusal got a 60 s hold, doubling.)
+    ENR_ROUTINE_429_S: 15,
+    ENR_ROUTINE_429_MAX: 8,
     // A users listing made by the Learners sync (card 3) within this many minutes is
     // reused instead of listing again — the nightly run lists once, not twice.
     ENR_LISTING_REUSE_MIN: 30,
@@ -133,8 +141,21 @@ Object.assign(window.App, {
     // happens again soon after; then continue single-file and a third slower. Keeping
     // one worker going while another waited is what turned a 60 s refusal into two
     // hours at one request a minute.
-    _enrRateLimited(e) {
+    _enrRateLimited(e, path) {
         const now = Date.now(), server = Number(e && e.retryAfterMs) || 0;
+        if (server > 0 && server <= this.ENR_ROUTINE_429_S * 1000) {
+            this._enrRoutine429 = (this._enrRoutine429 || []).filter(t => now - t < this.ENR_HOLD_REPEAT_MS); this._enrRoutine429.push(now);
+            const isCert = path === '/certificates';
+            if (isCert || this._enrRoutine429.length < this.ENR_ROUTINE_429_MAX) {
+                const hold = server + 1000;
+                this._enrPausedUntil = Math.max(this._enrPausedUntil || 0, now + hold);
+                if (isCert) this._enrCertGapMs = Math.min(15000, (this._enrCertGapMs || this.ENR_CERT_GAP_MS) + 250);
+                if (this._enrStats) this._enrStats.pauses++;
+                const base = this._enrLastStatus ? this._enrLastStatus.text : 'Enrolments & progress';
+                this._updateApiSyncOverlay(`${base} · ${isCert ? 'certificate endpoint' : 'API'} asked for a ${Math.round(server / 1000)} s pause`, null);
+                return hold;
+            }
+        }
         let hold = Math.min(this.ENR_HOLD_MAX_MS, Math.max(this.ENR_HOLD_MIN_MS, server));
         // A sibling request refused in the same breath (another worker was in flight)
         // extends the current hold; a refusal soon AFTER a hold ended doubles the next.
@@ -172,7 +193,7 @@ Object.assign(window.App, {
     // One paced GET that outlives transient failures (see the constants above).
     async _enrGet(LW, path, params) {
         for (let attempt = 0; ; attempt++) {
-            await this._enrPace(path === '/certificates' ? this.ENR_CERT_GAP_MS : 0);
+            await this._enrPace(path === '/certificates' ? (this._enrCertGapMs || this.ENR_CERT_GAP_MS) : 0);
             if (this._enrStats) this._enrStats.requests++;
             this._enrInFlight = (this._enrInFlight || 0) + 1;
             let r, err = null;
@@ -186,7 +207,7 @@ Object.assign(window.App, {
             if (this._enrErrorKind(e) !== 'transient') throw e;
             const n = attempt + 1;
             if (n >= this.ENR_RETRY_MAX_ATTEMPTS) throw new Error(`Gave up after ${n} attempts over ~${Math.round(this._enrRetryTotalS() / 3600)} h — last error: ${e.message || e}`);
-            if (this._enrIs429(e)) { this._enrRateLimited(e); continue; }   // the hold lives in the pacer; the retry waits there
+            if (this._enrIs429(e)) { this._enrRateLimited(e, path); continue; }   // the hold lives in the pacer; the retry waits there
             if (this._enrStats) this._enrStats.retries++;
             const waitS = attempt < this.ENR_RETRY_WAITS_S.length ? this.ENR_RETRY_WAITS_S[attempt] : this.ENR_RETRY_MAX_WAIT_S;
             console.warn(`[enrolments] ${this._enrShortErr(e)} — retrying in ${this._enrFmtWait(waitS)} (attempt ${n}/${this.ENR_RETRY_MAX_ATTEMPTS})`);
@@ -456,7 +477,11 @@ Object.assign(window.App, {
             if (carry) onLine(carry);
         } finally { try { fs.closeSync(fd); } catch (e) { __swallowed(e, 'enrolments.receipt'); } }
     },
-    _enrParseReceipt(pullDir, skipIds) {
+    // `savedAt` (account id → epoch of its last saved fetch, meta.fetchedAt): a body
+    // captured at or before that time is already in the store — skip it too. Otherwise
+    // every new run re-merged the accounts of every receipt still on disk (1,451 on
+    // 11 Sep), and "from the receipt" stopped meaning "recovered".
+    _enrParseReceipt(pullDir, skipIds, savedAt) {
         const path = electronAPI.path;
         const users = new Map(), perUser = new Map(), certs = [];
         let lastCertT = 0, accountsAfterCert = 0;   // the run moves on to accounts only after a COMPLETE certificate pass
@@ -469,7 +494,7 @@ Object.assign(window.App, {
             if (h) { p = h[2]; t = Number(h[1]) || 0; }
             else { try { o = JSON.parse(line); } catch (e) { return; } p = String(o.path || ''); t = Number(o.t) || 0; }
             const m = perUserRe.exec(p);
-            if (m) { if (lastCertT) accountsAfterCert++; const ts = Math.floor((t || 0) / 1000); if (ts && (!fetchedAt[m[1]] || ts > fetchedAt[m[1]])) fetchedAt[m[1]] = ts; if (skipIds && skipIds[m[1]]) return; }
+            if (m) { if (lastCertT) accountsAfterCert++; const ts = Math.floor((t || 0) / 1000); if (ts && (!fetchedAt[m[1]] || ts > fetchedAt[m[1]])) fetchedAt[m[1]] = ts; if (skipIds && skipIds[m[1]]) return; if (savedAt && ts && savedAt[m[1]] >= ts) return; }
             else if (p !== '/users' && p !== '/certificates') return;
             let b; try { o = o || JSON.parse(line); b = JSON.parse(o.body); } catch (e) { return; }
             if (p === '/users') { (b.data || []).forEach(u => { if (u && u.id && u.email) users.set(String(u.id), { id: String(u.id), email: String(u.email).toLowerCase().trim(), first: u.first_name || '', last: u.last_name || '', lastLogin: Number(u.last_login) || 0, created: Number(u.created) || 0 }); }); return; }
@@ -601,8 +626,8 @@ Object.assign(window.App, {
 
         this._apiSyncInFlight = true;
         if (LW.resetAbort) LW.resetAbort();   // an earlier Cancel must not end this run at its first request
-        this._enrGapMs = null; this._enrPausedUntil = 0; this._enrSingleFile = false; this._enrHoldMs = 0; this._enrHoldEndsAt = 0; this._enrInFlight = 0;
-        this._enrStats = { retries: 0, slowdowns: 0, requests: 0, rateLimits: 0 }; const sessionT0 = Date.now(); this._enrLastStatus = null;
+        this._enrGapMs = null; this._enrPausedUntil = 0; this._enrSingleFile = false; this._enrHoldMs = 0; this._enrHoldEndsAt = 0; this._enrInFlight = 0; this._enrCertGapMs = 0; this._enrRoutine429 = [];
+        this._enrStats = { retries: 0, slowdowns: 0, requests: 0, rateLimits: 0, pauses: 0 }; const sessionT0 = Date.now(); this._enrLastStatus = null;
         try { await this._backupSurghubBeforeSync(); } catch (e) { __swallowed(e, 'enrolments.backup'); }
         if (!opts.silent) this._showApiSyncOverlay('Enrolments & progress (API)');
         this._enrStatus('Preparing…', 0);
@@ -656,7 +681,7 @@ Object.assign(window.App, {
                 let harvested = 0;
                 for (let d = 0; d < dirs.length; d++) {
                     this._enrStatus(`Reading receipt ${d + 1}/${dirs.length} from earlier sessions…`, 1);
-                    const parsed = this._enrParseReceipt(dirs[d], Object.assign({}, priorProcessed, run.processed));
+                    const parsed = this._enrParseReceipt(dirs[d], Object.assign({}, priorProcessed, run.processed), meta.fetchedAt);
                     harvested += this._enrCertIndexAdd(certIndex, parsed.certs);
                     // A receipt whose run went on to fetch accounts after its last
                     // certificate page holds a COMPLETE pass (the pass throws on any

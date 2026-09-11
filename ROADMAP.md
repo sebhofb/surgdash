@@ -112,6 +112,40 @@ Follow-ups:
   ambassadors sync are already at the cap; the UI's Tailwind Play-CDN build is
   the main interactive-speed item left (needs a visual check after).
 
+## Done — after the first full night on the new sync: three follow-ups (11 September 2026)
+
+Checked Seb's Sync Everything of 11 Sep 09:14 against the receipts and the run
+record: every stage completed, the listing was reused from card 3, 129 accounts
+and 18 certificate pages fetched in 9 minutes with no refusal, fetch times now
+cover all 63,615 accounts (12,652 credited to the full pass), 13 new
+certificates. Three things were still wrong and are fixed here:
+
+- **Routine certificate refusals were treated as the penalty box.** The
+  `/certificates` endpoint answers 429 + Retry-After 10 when pages come
+  < ~10 s apart; last night's 3-day full walk (246 pages) took 2 h 17 min
+  instead of ~45 min because each such refusal got a ≥ 60 s hold, doubling.
+  Now a Retry-After ≤ `ENR_ROUTINE_429_S` (15 s) is waited out exactly (+1 s),
+  the certificate gap widens 250 ms per refusal (`_enrCertGapMs`, ≤ 15 s), and
+  only `ENR_ROUTINE_429_MAX` (8) such refusals within 5 min on OTHER endpoints
+  read as the penalty box. Counted as `pauses`, not `rateLimits`.
+- **"1,451 from the receipt" was a re-merge, not a recovery.** The harvest
+  skipped only the previous run's processed ids, so every new run re-merged the
+  accounts of every receipt still on disk. `_enrParseReceipt(dir, skipIds,
+  savedAt)` now also skips a capture at or before the account's saved fetch
+  time (`meta.fetchedAt`); "from the receipt" again means recovered captures.
+- **The nightly job would have redone cards 3 and 2 today.** `_bgDue` treats a
+  hand-run sync as today's run when every enabled card's `surgdash_sync_log`
+  stamp is today's; `_bgTick` loads the stamps if not cached.
+- Not a bug: card 3's "63,526 learners" vs the listing's 63,615 accounts — the
+  89 have no parseable sign-up date or one before May 2023 and are skipped by
+  the demographics count. The provenance strip's one ▲ ("Growth-timeline
+  coverage 219/220") is `pen-programme-en`: 2 learners, no growth timeline yet
+  because the growth-timeline pull dates from 14 June — run "Sync Growth
+  Timelines" (30–60 min) when convenient; it affects only that course's
+  2 learners in the Platform-Growth trend.
+- Checks: `test_enr_ratelimit.js` 19, `test_enr_fast.js` 13,
+  `test_enr_parallel.js` 14, `test_bgsync.js` 30.
+
 ## Done — card 2: why the afternoon run crawled, and the fix (10 September 2026)
 
 Seb's run after the parallel build showed "8,530 accounts this session · ~13 h
