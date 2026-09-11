@@ -423,17 +423,26 @@ window.App = {
         return hist;
     },
 
-    showMsg(msg, isError = false) {
-        // Non-blocking toast notification
+    // Toasts stack in the bottom-right corner. They used to sit top-right, where they
+    // covered the view tabs and the buttons at the right end of that bar (Seb, 11 Sep
+    // 2026); bottom-left is the What's New card's spot, so bottom-right it is. Newest
+    // toast at the bottom, older ones pushed up; they slide up into place.
+    _toastContainer() {
         let container = document.getElementById('toast-container');
         if (!container) {
             container = document.createElement('div');
             container.id = 'toast-container';
-            container.style.cssText = 'position:fixed;top:16px;right:16px;z-index:9999;display:flex;flex-direction:column;gap:8px;pointer-events:none;max-width:420px;';
+            container.style.cssText = 'position:fixed;bottom:20px;right:20px;z-index:9999;display:flex;flex-direction:column;align-items:flex-end;gap:8px;pointer-events:none;max-width:420px;';
             document.body.appendChild(container);
         }
+        return container;
+    },
+
+    showMsg(msg, isError = false) {
+        // Non-blocking toast notification
+        const container = this._toastContainer();
         const toast = document.createElement('div');
-        toast.style.cssText = `pointer-events:auto;padding:12px 18px;border-radius:10px;font-size:13px;font-weight:500;line-height:1.4;color:#fff;box-shadow:0 4px 20px rgba(0,0,0,0.18);opacity:0;transform:translateX(20px);transition:opacity 0.3s,transform 0.3s;font-family:'Inter',sans-serif;`
+        toast.style.cssText = `pointer-events:auto;padding:12px 18px;border-radius:10px;font-size:13px;font-weight:500;line-height:1.4;color:#fff;box-shadow:0 4px 20px rgba(0,0,0,0.18);opacity:0;transform:translateY(12px);transition:opacity 0.3s,transform 0.3s;font-family:'Inter',sans-serif;`
             + (isError === 'warn'
                 ? 'background:linear-gradient(135deg,#f59e0b,#d97706);'      // amber — attention / action available
                 : isError
@@ -442,25 +451,19 @@ window.App = {
         toast.textContent = msg;
         container.appendChild(toast);
         // Animate in
-        requestAnimationFrame(() => { toast.style.opacity = '1'; toast.style.transform = 'translateX(0)'; });
+        requestAnimationFrame(() => { toast.style.opacity = '1'; toast.style.transform = 'translateY(0)'; });
         // Auto-dismiss after 4s
         setTimeout(() => {
             toast.style.opacity = '0';
-            toast.style.transform = 'translateX(20px)';
+            toast.style.transform = 'translateY(12px)';
             setTimeout(() => toast.remove(), 300);
         }, 4000);
     },
 
     showUndo(msg, undoCallback, timeout = 8000) {
-        let container = document.getElementById('toast-container');
-        if (!container) {
-            container = document.createElement('div');
-            container.id = 'toast-container';
-            container.style.cssText = 'position:fixed;top:16px;right:16px;z-index:9999;display:flex;flex-direction:column;gap:8px;pointer-events:none;max-width:420px;';
-            document.body.appendChild(container);
-        }
+        const container = this._toastContainer();
         const toast = document.createElement('div');
-        toast.style.cssText = 'pointer-events:auto;padding:12px 18px;border-radius:10px;font-size:13px;font-weight:500;line-height:1.4;color:#fff;box-shadow:0 4px 20px rgba(0,0,0,0.18);opacity:0;transform:translateX(20px);transition:opacity 0.3s,transform 0.3s;font-family:\'Inter\',sans-serif;background:linear-gradient(135deg,#334155,#1e293b);display:flex;align-items:center;gap:12px;';
+        toast.style.cssText = 'pointer-events:auto;padding:12px 18px;border-radius:10px;font-size:13px;font-weight:500;line-height:1.4;color:#fff;box-shadow:0 4px 20px rgba(0,0,0,0.18);opacity:0;transform:translateY(12px);transition:opacity 0.3s,transform 0.3s;font-family:\'Inter\',sans-serif;background:linear-gradient(135deg,#334155,#1e293b);display:flex;align-items:center;gap:12px;';
         const textSpan = document.createElement('span');
         textSpan.textContent = msg;
         textSpan.style.flex = '1';
@@ -475,7 +478,7 @@ window.App = {
             if (dismissed) return;
             dismissed = true;
             toast.style.opacity = '0';
-            toast.style.transform = 'translateX(20px)';
+            toast.style.transform = 'translateY(12px)';
             setTimeout(() => toast.remove(), 300);
         };
 
@@ -488,7 +491,7 @@ window.App = {
         toast.appendChild(textSpan);
         toast.appendChild(undoBtn);
         container.appendChild(toast);
-        requestAnimationFrame(() => { toast.style.opacity = '1'; toast.style.transform = 'translateX(0)'; });
+        requestAnimationFrame(() => { toast.style.opacity = '1'; toast.style.transform = 'translateY(0)'; });
 
         const timer = setTimeout(dismiss, timeout);
         return () => { clearTimeout(timer); dismiss(); };

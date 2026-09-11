@@ -112,6 +112,13 @@ Follow-ups:
   ambassadors sync are already at the cap; the UI's Tailwind Play-CDN build is
   the main interactive-speed item left (needs a visual check after).
 
+## Done — toasts moved to the bottom-right corner (11 September 2026)
+
+`App.showMsg` / `showUndo` toasts were anchored top-right, over the view tabs and
+the buttons at the right end of that bar. One shared `_toastContainer()` now
+anchors them bottom-right (bottom-left belongs to the What's New card), newest at
+the bottom, sliding up into place.
+
 ## Done — dashboard tab bar fits again (11 September 2026)
 
 Thirteen tabs ran off the right edge and broke mid-label. The bar is now a
