@@ -14387,7 +14387,7 @@ function _writeProject(ss, d) {
         const host = document.getElementById('sheets-share-link');
         if (host) {
             const masked = key ? link.replace(key, key.slice(0, 4) + '…' + key.slice(-4)) : link;
-            host.innerHTML = `<p class="text-[11px] ${ok ? 'text-emerald-700' : 'text-amber-700'} mb-1">${ok ? 'Share link copied to the clipboard' : 'The clipboard refused — select the link below and copy it (Cmd+C)'}: <span class="font-mono break-all">${App.escapeHtml(masked)}</span></p>
+            host.innerHTML = `<p class="text-[11px] ${ok ? 'text-emerald-700' : 'text-amber-700'} mb-1">${ok ? 'Share link copied to the clipboard' : 'The clipboard refused — select the link below and copy it (Cmd+C)'}: <span class="font-mono break-all">${App.escapeHtml(masked)}</span> — it is not a web page; colleagues paste it into SURGdash (Load Project Data, or this URL field).</p>
                 <input type="text" readonly value="${App.escapeHtml(link)}" onfocus="this.select()" onclick="this.select()" class="w-full px-2 py-1 border rounded text-[11px] font-mono text-slate-600 bg-slate-50" title="The full share link — select all and copy" />`;
         }
         if (ok) App.showMsg(key ? 'Share link (URL + sync key) copied.' : 'URL copied (no key on this device).');
