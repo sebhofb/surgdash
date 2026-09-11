@@ -10,6 +10,13 @@ Signing + notarization are unchanged from before (that's what makes the install 
 
 ---
 
+## After `npm run release`
+
+Since 2.1.0 the publisher creates a **published** release directly (`build.publish[0].releaseType: "release"`).
+Before that it created a **draft**, which the auto-updater cannot see — if a release ever shows as
+Draft on GitHub, publish it there (or `gh release edit vX.Y.Z --draft=false --latest`), otherwise nobody
+receives it.
+
 ## Before every release
 
 ```sh

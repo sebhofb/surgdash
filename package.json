@@ -19,7 +19,8 @@
       {
         "provider": "github",
         "owner": "sebhofb",
-        "repo": "surgdash"
+        "repo": "surgdash",
+        "releaseType": "release"
       }
     ],
     "mac": {
