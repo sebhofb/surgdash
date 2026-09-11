@@ -352,6 +352,25 @@ window.Projects = {
         return project;
     },
 
+    // Remove what a pull from a damaged script left behind (11 Sep 2026): "projects" that are
+    // really the Sheet's own tabs, and "activities" that are really layout rows (a band, the
+    // "No activities logged yet." placeholder). Real activities always carry an ISO date.
+    // Idempotent; called once at start-up. Returns what it removed.
+    async purgeSheetArtifacts() {
+        const out = { projects: 0, events: 0, names: [] };
+        const reserved = (n) => !!(window.SheetsSync && SheetsSync.isReservedTabName(n));
+        for (const p of this.registry.filter(p => p.type === 'generic' && (reserved(p.name) || reserved(p.shortName)))) {
+            if (await this.deleteProject(p.id)) { out.projects++; out.names.push(p.name); }
+        }
+        for (const p of this.registry.filter(p => p.type === 'generic')) {
+            let events; try { events = await Storage.getItem(`surgdash_events_${p.id}`); } catch (e) { continue; }
+            if (!Array.isArray(events) || !events.length) continue;
+            const kept = events.filter(ev => ev && /^\d{4}-\d{2}-\d{2}/.test(String(ev.date || '')));
+            if (kept.length !== events.length) { out.events += events.length - kept.length; await Storage.setItem(`surgdash_events_${p.id}`, kept); }
+        }
+        return out;
+    },
+
     async deleteProject(projectId) {
         if (projectId === 'surghub') return false;
         this.registry = this.registry.filter(p => p.id !== projectId);

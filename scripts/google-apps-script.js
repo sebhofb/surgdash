@@ -1,11 +1,11 @@
-// SURGdash Google Sheets Sync — script version 4 (11 September 2026)
-// Paste into Google Apps Script → Save → Deploy as Web App
+// SURGdash Google Sheets Sync - script version 4 (11 September 2026)
+// Paste into Google Apps Script -> Save -> Deploy as Web App
 // Execute as: Me  |  Access: Anyone
 //
 // v4: a SYNC KEY. "Access: Anyone" means anyone holding the URL could read every learner
 // record and overwrite the Sheet. Once the app has set a key (Script Property `syncKey`,
-// via type:'set_key' — only possible while none is set, or with the current key), every
-// read and write must carry it (GET ?k=…, POST body field k); ?meta=1 stays open because
+// via type:'set_key' - only possible while none is set, or with the current key), every
+// read and write must carry it (GET ?k=..., POST body field k); ?meta=1 stays open because
 // it carries no data, and reports secured:true/false so the app can nudge the admin.
 // v3: fingerprints per item (the app skips what the Sheet already holds), SURGhub blob
 // stored compressed as opaque text the app inflates (SDGZ1: prefix), parts written at
@@ -16,9 +16,9 @@ var SURGHUB_MARK = 'SDGZ1:';
 
 function _syncKey() { try { return PropertiesService.getScriptProperties().getProperty('syncKey') || ''; } catch (_e) { return ''; } }
 function _keyOk(k) { var want = _syncKey(); return !want || String(k || '') === want; }
-function _unauthorised() { return _json({ ok: false, code: 'unauthorised', error: 'unauthorised — this Sheet requires the sync key; paste the share link from your SURGdash administrator (Settings → Google Sheets → Copy share link)' }); }
+function _unauthorised() { return _json({ ok: false, code: 'unauthorised', error: 'unauthorised \u2014 this Sheet requires the sync key; paste the share link from your SURGdash administrator (Settings \u2192 Google Sheets \u2192 Copy share link)' }); }
 
-// ── doGet: read live data from each project sheet so manual edits are picked up
+// -- doGet: read live data from each project sheet so manual edits are picked up
 function doGet(e) {
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -27,7 +27,7 @@ function doGet(e) {
     // deployment can do and the fingerprints of what it holds) so the app can decide
     // without downloading everything. lastModified reflects REAL changes only: lastSync
     // (a push from the app) or lastEdit (a manual cell edit, via onEdit). We deliberately
-    // do NOT fold in DriveApp.getLastUpdated() — Google advances a Spreadsheet's Drive
+    // do NOT fold in DriveApp.getLastUpdated() - Google advances a Spreadsheet's Drive
     // modified-time on its own (overnight re-index / background re-save), which produced
     // false "new data available" nudges on a quiet morning.
     if (e && e.parameter && e.parameter.meta) {
@@ -37,7 +37,7 @@ function doGet(e) {
       return _json({ ok: true, meta: true, version: SCRIPT_VERSION, lastModified: _lm, hashes: _readHashes(), secured: !!_syncKey() });
     }
     if (!_keyOk(p.k)) return _unauthorised();
-    var SKIP = {'📊 Organisation':1, '__SURGdash__':1, '📋 SURGdash Backup':1, '📋 SURGhub':1};
+    var SKIP = {'\uD83D\uDCCA Organisation':1, '__SURGdash__':1, '\uD83D\uDCCB SURGdash Backup':1, '\uD83D\uDCCB SURGhub':1};
     var projects = [];
     ss.getSheets().forEach(function(sheet) {
       if (SKIP[sheet.getName()]) return;
@@ -78,14 +78,14 @@ function _setHash(key, value) {
   } catch (_e) {}
 }
 
-// ── Read SURGhub data from dedicated sheet (chunks stored as rows) ────────────
+// -- Read SURGhub data from dedicated sheet (chunks stored as rows) ------------
 // Rows 2+: [part row no, syncedAt (row 2 only), text chunk]. Since v3 the header row's
-// columns D–F hold [expected rows, format, fingerprint]; a blob with fewer rows than
+// columns D-F hold [expected rows, format, fingerprint]; a blob with fewer rows than
 // expected is a half-finished upload and is not served. A chunk text starting with
 // SURGHUB_MARK is compressed by the app and returned AS IS (the app inflates it);
 // anything else is legacy plain JSON and is parsed here as before.
 function _readSurghubSheet(ss) {
-  var sheet = ss.getSheetByName('📋 SURGhub');
+  var sheet = ss.getSheetByName('\uD83D\uDCCB SURGhub');
   if (!sheet) return null;
   var vals = sheet.getDataRange().getValues();
   if (vals.length < 2) return null;
@@ -111,6 +111,7 @@ function _readProjectSheet(sheet) {
   if (!vals.length) return null;
 
   var project = { name: sheet.getName(), shortName: '', years: [], events: [], updates: [], kpiLog: [], linksExtra: [], qualityData: [], facilities: [], locations: [] };
+  var sawInfo = false;   // only a tab written by _writeProject (PROJECT INFO header) is a project
   var section = null;
   var kpiHeaderSeen = false;
   var evHeaderSeen  = false;
@@ -124,8 +125,8 @@ function _readProjectSheet(sheet) {
     var row   = vals[i];
     var first = String(row[0] || '').trim();
 
-    // Detect section headers (merged cells with dark background — value in col A)
-    if (first === 'PROJECT INFO')        { section = 'info';     continue; }
+    // Detect section headers (merged cells with dark background - value in col A)
+    if (first === 'PROJECT INFO')        { section = 'info';     sawInfo = true; continue; }
     if (first === 'LINKS')              { section = 'links';    continue; }
     if (first === 'KPIs BY YEAR')        { section = 'kpis';     kpiHeaderSeen = false; continue; }
     if (first.indexOf('KPIs BY QUARTER') === 0) { section = 'quarters'; qtrHeaderSeen = false; continue; }
@@ -138,7 +139,7 @@ function _readProjectSheet(sheet) {
     if (first === '')                    { continue; }
 
     if (section === 'info') {
-      if (first === '⚠ SAMPLE')          project.isSample           = true;
+      if (first === '\u26A0 SAMPLE')          project.isSample           = true;
       if (first === 'Name')              project.name               = String(row[1] || '');
       if (first === 'Short Name')        project.shortName          = String(row[1] || '');
       if (first === 'Description')       project.description        = String(row[1] || '');
@@ -270,14 +271,19 @@ function _readProjectSheet(sheet) {
     }
 
     if (section === 'events') {
-      // The grouped layout interleaves: year-band rows (col A contains '·'),
+      // The grouped layout interleaves: year-band rows (col A contains '*'),
       // per-year column headers (col A === 'Start' or 'Date'), activity rows,
       // and subtotal rows (col D === 'Year total'). Only parse genuine activity rows.
       var c0 = String(row[0] || '').trim();
       if (!c0) continue;
       if (c0 === 'Start' || c0 === 'Date') continue;   // per-year column header
-      if (c0.indexOf('·') >= 0) continue;              // year-band row
+      if (c0.indexOf('\u00B7') >= 0) continue;              // year-band row
       if (String(row[3] || '').trim() === 'Year total') continue; // subtotal
+      // An activity row starts with its ISO date. Anything else here is layout - the
+      // "No activities logged yet." placeholder, a band whose marker got mangled - and
+      // must never become an activity (that happened on 11 Sep 2026 via a copy of this
+      // script whose non-ASCII characters had been re-encoded).
+      if (!/^\d{4}-\d{2}-\d{2}/.test(c0)) continue;
       // Activity row: col A = start date, col B = optional end date.
       var endD = String(row[1] || '').trim();
       project.events.push({
@@ -325,7 +331,7 @@ function _readProjectSheet(sheet) {
     }
   }
 
-  return project.name ? project : null;
+  return (project.name && sawInfo) ? project : null;
 }
 
 function _num(v) {
@@ -344,7 +350,7 @@ function _date(v) {
   return s;
 }
 
-// ── doPost: write project data or org summary ─────────────────────────────────
+// -- doPost: write project data or org summary ---------------------------------
 function doPost(e) {
   try {
     var d  = JSON.parse(e.postData.contents);
@@ -388,7 +394,7 @@ function _json(obj) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
-// ── Raw JSON store (hidden sheet) ─────────────────────────────────────────────
+// -- Raw JSON store (hidden sheet) ---------------------------------------------
 function _storeRaw(ss, d) {
   var sheet = ss.getSheetByName('__SURGdash__');
   if (!sheet) {
@@ -406,9 +412,9 @@ function _storeRaw(ss, d) {
   else sheet.appendRow(newRow);
 }
 
-// ── Full JSON backup sheet ────────────────────────────────────────────────────
+// -- Full JSON backup sheet ----------------------------------------------------
 function _storeFullBackup(ss, d) {
-  var SHEET_NAME = '📋 SURGdash Backup';
+  var SHEET_NAME = '\uD83D\uDCCB SURGdash Backup';
   var sheet = ss.getSheetByName(SHEET_NAME);
   if (sheet) { sheet.clearContents(); sheet.clearFormats(); }
   else { sheet = ss.insertSheet(SHEET_NAME); }
@@ -438,7 +444,7 @@ function _storeFullBackup(ss, d) {
   for (var c = 0; c < chunks.length; c++) dataRow.push(chunks[c]);
   sheet.getRange(2, 1, 1, dataRow.length).setValues([dataRow]);
 
-  // Formatting (batched — a per-column loop here used to make thousands of
+  // Formatting (batched - a per-column loop here used to make thousands of
   // sequential Sheets calls and blow the client timeout on big backups)
   sheet.setColumnWidth(1, 180);
   sheet.setColumnWidth(2, 70);
@@ -450,15 +456,15 @@ function _storeFullBackup(ss, d) {
   SpreadsheetApp.flush();
 }
 
-// ── SURGhub chunked upload (client streams the big payload in parts; part 1 resets
-//    the sheet; final layout is what _readSurghubSheet reads) ───────────────────
-// v3 clients send startRow (where this part's rows go — a retried part overwrites the
+// -- SURGhub chunked upload (client streams the big payload in parts; part 1 resets
+//    the sheet; final layout is what _readSurghubSheet reads) -------------------
+// v3 clients send startRow (where this part's rows go - a retried part overwrites the
 // same rows instead of appending), totalRows (so a half-finished upload is detectable),
 // format ('gz64' = compressed text the app inflates) and hash (the blob's fingerprint,
 // advertised via ?meta only once the LAST part has landed). Older clients send none of
 // these and get the old behaviour: rows appended after the last one.
 function _storeSurghubChunk(ss, d) {
-  var SHEET_NAME = '📋 SURGhub';
+  var SHEET_NAME = '\uD83D\uDCCB SURGhub';
   var sheet = ss.getSheetByName(SHEET_NAME);
   if (!sheet) sheet = ss.insertSheet(SHEET_NAME);
   var part = Number(d.part) || 1, totalParts = Number(d.totalParts) || 1;
@@ -487,9 +493,9 @@ function _storeSurghubChunk(ss, d) {
   SpreadsheetApp.flush();
 }
 
-// ── SURGhub dedicated sheet (chunks stored as rows) — legacy single-POST path ──
+// -- SURGhub dedicated sheet (chunks stored as rows) - legacy single-POST path --
 function _storeSurghubSheet(ss, surghubStorage, syncedAt) {
-  var SHEET_NAME = '📋 SURGhub';
+  var SHEET_NAME = '\uD83D\uDCCB SURGhub';
   var sheet = ss.getSheetByName(SHEET_NAME);
   if (sheet) { sheet.clearContents(); sheet.clearFormats(); }
   else { sheet = ss.insertSheet(SHEET_NAME); }
@@ -523,17 +529,17 @@ function _storeSurghubSheet(ss, surghubStorage, syncedAt) {
   SpreadsheetApp.flush();
 }
 
-// ── Buffered tab writer ───────────────────────────────────────────────────────
+// -- Buffered tab writer -------------------------------------------------------
 // Rows and formats are collected first, then written with a handful of range calls
 // (one setValues for the whole block, one call per format grid, one merge per header)
-// instead of one or two Sheets calls PER ROW — a project tab went from ~100 calls to
+// instead of one or two Sheets calls PER ROW - a project tab went from ~100 calls to
 // about a dozen, the organisation summary from ~150. Cell contents and positions are
 // exactly what the per-row writer produced, so _readProjectSheet is unchanged.
 function _block(sheet, cols) {
   var rows = [], ops = [], W = cols || 9;
   var b = {
     next: function() { return rows.length + 1; },                       // 1-based row the next wr() lands on
-    wr:   function(vals) { rows.push(vals.slice()); return rows.length; }, // → its row number
+    wr:   function(vals) { rows.push(vals.slice()); return rows.length; }, // \u2192 its row number
     skip: function(n) { for (var i = 0; i < (n || 1); i++) rows.push([]); },
     // fmt(row, col, nRows, nCols, { bold, bg, fc, fs, italic, merge, num })
     fmt:  function(r1, c1, nr, nc, f) { ops.push({ r: r1, c: c1, nr: nr, nc: nc, f: f || {} }); },
@@ -567,7 +573,7 @@ function _block(sheet, cols) {
         if (any.italic) all.setFontStyles(styles);
         if (any.fs)     all.setFontSizes(sizes);
       } catch (gridErr) {
-        // Grid setters refused (should not happen) — fall back to per-op formatting.
+        // Grid setters refused (should not happen) - fall back to per-op formatting.
         ops.forEach(function(o) {
           var rg = sheet.getRange(o.r, o.c, o.nr, o.nc);
           if (o.f.bold) rg.setFontWeight('bold'); if (o.f.bg) rg.setBackground(o.f.bg); if (o.f.fc) rg.setFontColor(o.f.fc);
@@ -584,13 +590,13 @@ function _block(sheet, cols) {
 }
 function _fill(n, v) { var a = []; for (var i = 0; i < n; i++) a.push(v); return a; }
 
-// ── Organisation summary sheet (first tab) ────────────────────────────────────
+// -- Organisation summary sheet (first tab) ------------------------------------
 function _writeOrgSummary(ss, data) {
-  var NAME = '📊 Organisation';
+  var NAME = '\uD83D\uDCCA Organisation';
 
   // Delete sheets for projects no longer in SURGdash (match by shortName or name)
   var PROTECTED = {};
-  [NAME, '__SURGdash__', '📋 SURGdash Backup', '📋 SURGhub'].forEach(function(n) { PROTECTED[n] = 1; });
+  [NAME, '__SURGdash__', '\uD83D\uDCCB SURGdash Backup', '\uD83D\uDCCB SURGhub'].forEach(function(n) { PROTECTED[n] = 1; });
   var currentNames = {};
   (data.projects || []).forEach(function(p) { currentNames[(p.shortName || p.name || '').substring(0, 95)] = 1; });
   ss.getSheets().forEach(function(s) {
@@ -634,7 +640,7 @@ function _writeOrgSummary(ss, data) {
   years = Object.keys(yearSet).sort();
   years.forEach(function(yr) {
     yr = Number(yr);
-    hdr(yr + ' — KPI Results (Plan vs Actual)');
+    hdr(yr + ' \u2014 KPI Results (Plan vs Actual)');
     // Row 1: KPI group names merged over Plan + Actual
     r = b.wr(['Project','HCW','','Patients','','Facilities','','Population','']); b.fmt(r, 1, 1, 9, { bold: true, bg: '#E8F0F8' });
     [[2,3],[4,5],[6,7],[8,9]].forEach(function(p) { b.fmt(r, p[0], 1, 2, { merge: true }); });
@@ -662,7 +668,7 @@ function _writeOrgSummary(ss, data) {
     b.skip();
   });
 
-  // ── Per-quarter org rollup (cumulative actuals, real projects only) ──
+  // -- Per-quarter org rollup (cumulative actuals, real projects only) --
   // For each year, sum the cumulative quarterly actuals across all real projects.
   var hasAnyQuarterly = realProjects.some(function(p){ return (p.years||[]).some(function(y){ return y.quarters && Object.keys(y.quarters).length; }); });
   if (hasAnyQuarterly) {
@@ -674,7 +680,7 @@ function _writeOrgSummary(ss, data) {
         return y && y.quarters && Object.keys(y.quarters).length;
       });
       if (!anyQ) return;
-      hdr(yr + ' — Quarterly Actuals (cumulative, all projects)');
+      hdr(yr + ' \u2014 Quarterly Actuals (cumulative, all projects)');
       r = b.wr(['Quarter','HCW','Patients','Facilities','Population']); b.fmt(r, 1, 1, 5, { bold: true, bg: '#DCFCE7' });
       var qStart = b.next();
       [1,2,3,4].forEach(function(q) {
@@ -701,7 +707,7 @@ function _writeOrgSummary(ss, data) {
   SpreadsheetApp.flush();
 }
 
-// ── Per-project sheet ─────────────────────────────────────────────────────────
+// -- Per-project sheet ---------------------------------------------------------
 function _writeProject(ss, d) {
   var sheetName = (d.shortName || d.name || 'Project').substring(0, 95);
   var sheet = ss.getSheetByName(sheetName);
@@ -718,7 +724,7 @@ function _writeProject(ss, d) {
   }
 
   hdr('PROJECT INFO');
-  if (d.isSample) wr(['⚠ SAMPLE', 'Demonstration project — excluded from organisation totals'], true);
+  if (d.isSample) wr(['\u26A0 SAMPLE', 'Demonstration project \u2014 excluded from organisation totals'], true);
   wr(['Name', d.name||''], true);
   wr(['Short Name', d.shortName||'']);
   wr(['Description', d.description||'']);
@@ -765,8 +771,8 @@ function _writeProject(ss, d) {
   if ((d.years||[]).length > 0) b.fmt(kpiDataStart, 2, (d.years||[]).length, 8, { num: '#,##0' });
   b.skip();
 
-  // ── KPIs BY QUARTER (cumulative actuals) ──
-  // Quarterly figures are cumulative: Q1 = Jan–Mar running total, Q4 = full-year total.
+  // -- KPIs BY QUARTER (cumulative actuals) --
+  // Quarterly figures are cumulative: Q1 = Jan-Mar running total, Q4 = full-year total.
   var hasQuarterly = (d.years||[]).some(function(yr) { return yr.quarters && Object.keys(yr.quarters).length; });
   if (hasQuarterly) {
     hdr('KPIs BY QUARTER (cumulative actuals)');
@@ -839,7 +845,7 @@ function _writeProject(ss, d) {
     b.skip();
   }
 
-  // ── ACTIVITIES (grouped by year, with HCW contribution tracking) ──
+  // -- ACTIVITIES (grouped by year, with HCW contribution tracking) --
   // Each activity shows total + new HCWs; a subtotal row per year sums the contribution.
   var TYPE_LABELS = {
     training_mentoring: 'Training / Mentoring',
@@ -858,7 +864,7 @@ function _writeProject(ss, d) {
   });
   var evYears = Object.keys(byYear).sort().reverse();
 
-  hdr('ACTIVITIES — HCW TRACKING (by year)');
+  hdr('ACTIVITIES \u2014 HCW TRACKING (by year)');
   if (events.length === 0) {
     wr(['No activities logged yet.']);
     b.skip();
@@ -868,7 +874,7 @@ function _writeProject(ss, d) {
       var yTotal = 0, yNew = 0;
       list.forEach(function(ev){ yTotal += Number(ev.hcw_count)||0; yNew += Number(ev.hcw_new_count)||0; });
       // Year sub-header band
-      var br = b.wr([y + '  ·  ' + list.length + ' activit' + (list.length===1?'y':'ies') + '  ·  ' + yTotal.toLocaleString() + ' HCWs (' + yNew.toLocaleString() + ' new)']);
+      var br = b.wr([y + '  \u00B7  ' + list.length + ' activit' + (list.length===1?'y':'ies') + '  \u00B7  ' + yTotal.toLocaleString() + ' HCWs (' + yNew.toLocaleString() + ' new)']);
       b.fmt(br, 1, 1, 8, { merge: true, bold: true, bg: '#E8F0F8', fc: '#002F4C' });
       // Column headers (Start + End date range)
       var hr = b.wr(['Start','End','Type','Title','HCWs','New HCWs','Facilities','Notes']);

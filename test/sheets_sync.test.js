@@ -200,7 +200,14 @@ function diffDumps(a, b) {
     check('project tabs: identical merges', mergesEq);
     const parsedOld = PROJECTS.map(p => oldS.ctx._readProjectSheet(oldS.ss.getSheetByName((p.shortName || p.name).slice(0, 95))));
     const parsedNew = PROJECTS.map(p => newS.ctx._readProjectSheet(newS.ss.getSheetByName((p.shortName || p.name).slice(0, 95))));
-    check('project tabs read back identically by the pull parser', JSON.stringify(parsedOld) === JSON.stringify(parsedNew) && parsedNew[0].years.length === 2 && parsedNew[0].events.length === 3);
+    // the v2 parser turned the "No activities logged yet." placeholder into an activity; the current one must not
+    const scrub = (p) => Object.assign({}, p, { events: (p.events || []).filter(e => /^\d{4}-\d{2}-\d{2}/.test(String(e.date || ''))) });
+    check('project tabs read back identically by the pull parser (once the old parser\'s placeholder-activity is discounted)', JSON.stringify(parsedOld.map(scrub)) === JSON.stringify(parsedNew) && parsedNew[0].years.length === 2 && parsedNew[0].events.length === 3);
+    check('a project without activities reads back with NONE (the placeholder row is layout, not an activity)', parsedNew[1].events.length === 0 && parsedOld[1].events.length === 1);
+    // a tab that is not a project (org-summary-like rows, or a colleague\'s notes) is not a project
+    const foreign = newS.ss.insertSheet('Notes'); foreign.getRange(1, 1, 3, 2).setValues([['2025 - KPI Results', ''], ['Project', 'HCW'], ['Nakuru', 12]]);
+    check('_readProjectSheet: a tab without a PROJECT INFO section is not a project', newS.ctx._readProjectSheet(foreign) === null && newS.get({ nosurghub: '1' }).projects.every(p => p.name !== 'Notes'));
+    check('the script file is pure ASCII (no character a copy through an editor could re-encode)', [...NEW_SRC].every(c => c.charCodeAt(0) < 128) && /\\uD83D\\uDCCA Organisation/i.test(NEW_SRC));
     const callsOldP = oldS.ss.calls, callsNewP = newS.ss.calls;
     oldS.ss.calls = 0; newS.ss.calls = 0;
     const org = { type: 'org_summary', generatedAt: 'Thu 11 Sep', projects: PROJECTS };
@@ -317,6 +324,9 @@ function diffDumps(a, b) {
     check('storage: surgdash_sheets_key is forward-mapped only (device-local)', /surgdash_sheets_key'\)\s+return path\.join\('settings', 'sheets_key\.json'\)/.test(st) && !/'sheets_key': 'surgdash_sheets_key'/.test(st));
     const idx = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
     check('refused pull → paste-here banner (also on silent pulls); Email share link button; unauthorised code kept on the rethrown error', /id="sync-key-banner"/.test(idx) && /id="sync-key-input"/.test(idx) && /_saveShareLinkFromBanner\(\)/.test(idx) && /_showSyncKeyBanner\(\) \{/.test(gv) && /if \(_needsKey\) this\._showSyncKeyBanner\(\);/.test(gv) && /if \(_plan\.unauthorised\)/.test(gv) && /e2\.code = 'unauthorised'/.test(gv) && /async _emailSheetsShareLink\(\)/.test(gv) && /_emailSheetsShareLink', 'Email share link…'/.test(gv));
+    check('isReservedTabName: the Sheet\'s own tabs, also with re-encoded emoji; real projects pass', SS.isReservedTabName('\ud83d\udcca Organisation') && SS.isReservedTabName('\ud83d\udccb SURGhub') && SS.isReservedTabName('\ud83d\udccb SURGdash Backup') && SS.isReservedTabName('__SURGdash__') && SS.isReservedTabName('\u00fc\u00ec\u00e4 Organisation') && SS.isReservedTabName('SURGhub') && !SS.isReservedTabName('Nakuru OSS') && !SS.isReservedTabName('Organisation Development Kenya') && !SS.isReservedTabName(''));
+    const pjs = fs.readFileSync(path.join(ROOT, 'js/projects.js'), 'utf8'), appjs = fs.readFileSync(path.join(ROOT, 'js/app.js'), 'utf8');
+    check('pulls drop reserved tab names (both paths); pushes refuse them; start-up cleanup wired', (gv.match(/!\(window\.SheetsSync && SheetsSync\.isReservedTabName\(p\.name\)\)/g) || []).length === 2 && /SheetsSync\.isReservedTabName\(p\.shortName\)\)\);/.test(gv) && /async purgeSheetArtifacts\(\)/.test(pjs) && /Projects\.purgeSheetArtifacts\(\)/.test(appjs));
     check('genericViews: both URL fields go through _sheetsStoreShareLink; push and pull carry the key; settings row + Secure/Rotate/Copy handlers exist', (gv.match(/_sheetsStoreShareLink\(/g) || []).length >= 3 && /key: await this\._sheetsKey\(\),\s*$/m.test(gv) && /pullPlan\(_http, url, \{[^}]*key: await this\._sheetsKey\(\)/.test(gv) && /id="sheets-key-status"/.test(gv) && /async _secureSheet\(\)/.test(gv) && /async _rotateSheetsKey\(\)/.test(gv) && /async _copySheetsShareLink\(btn\)/.test(gv) && /clipboard-write-text/.test(gv));
   }
   console.log(`\n${ok}/${ok + bad} passed`); process.exit(bad ? 1 : 0);

@@ -112,6 +112,29 @@ Follow-ups:
   ambassadors sync are already at the cap; the UI's Tailwind Play-CDN build is
   the main interactive-speed item left (needs a visual check after).
 
+## Done — after a damaged copy of the Apps Script (11 September 2026, evening)
+
+The v4 script was pasted via a `.txt` opened in TextEdit, which re-encoded every
+non-ASCII character (the em dash came back as `‚Äî`, the emoji tab names likewise).
+The deployed script therefore no longer recognised its own tabs: `doGet` returned
+`📊 Organisation`, `📋 SURGhub` and `📋 SURGdash Backup` as projects, and its
+activity parser, whose year-band marker had been mangled, turned band rows and
+the "No activities logged yet." placeholder into activities — a pull then wrote
+three junk projects and two junk activities per project into the local store. Fixes:
+
+- `scripts/google-apps-script.js` is **pure ASCII** now (non-ASCII in code as
+  `\uXXXX` escapes, identical at runtime; a test asserts it) — no copy path can
+  damage it again. Its parser only accepts tabs with a PROJECT INFO section and
+  only activity rows that start with an ISO date (the placeholder row used to
+  become an activity even with a correct script).
+- `SheetsSync.isReservedTabName`: pulls drop such names, pushes refuse them (a
+  project named `📋 SURGhub` would have overwritten the blob's tab).
+- `Projects.purgeSheetArtifacts()` at start-up: removes reserved-name projects
+  and activities without an ISO date; a toast reports what it removed.
+- Recovery on Seb's Mac: restart (cleanup runs) → Copy Script from the app (never
+  via TextEdit) → redeploy → Sync to Sheets (rewrites every tab; any mojibake-
+  named tabs are deleted as non-project tabs).
+
 ## Done — the tests live in the repo; release 2.1.0 prepared (11 September 2026)
 
 - `npm test` runs ten fixture-based suites (`test/*.test.js`, 214 checks, ~70 s, no

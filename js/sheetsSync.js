@@ -86,6 +86,17 @@ window.SheetsSync = (function () {
     }
     const isPacked = (v) => typeof v === 'string' && v.slice(0, MARK.length) === MARK;
 
+    // The Sheet's own tabs (org summary, SURGhub blob, backup, hidden JSON) — never projects,
+    // whether they arrive spelled correctly or with re-encoded emoji (\u00fc\u00ec... for the
+    // \ud83d\udcca / \ud83d\udccb markers). Pulls drop them, pushes refuse them.
+    function isReservedTabName(name) {
+        const s = String(name || '').trim();
+        if (!s) return false;
+        if (/^(?:\ud83d\udcca|\ud83d\udccb|__|\u00fc\u00ec)/.test(s)) return true;
+        const core = s.replace(/^[^A-Za-z0-9]+/, '').toLowerCase();
+        return core === 'organisation' || core === 'surghub' || core === 'surgdash backup' || core === '__surgdash__';
+    }
+
     // Project payload fingerprint: the payload with its clock stamp blanked.
     async function payloadHash(obj) { return sha256Hex(JSON.stringify(Object.assign({}, obj, { syncedAt: '' }))); }
 
@@ -302,5 +313,5 @@ window.SheetsSync = (function () {
         return r;
     }
 
-    return { MARK, CELL_CHARS, SCRIPT_MIN_FAST, SCRIPT_MIN_KEY, cfg, bytesToBase64, base64ToBytes, gzip, gunzip, sha256Hex, packBlob, unpackBlob, isPacked, payloadHash, request, post, postJson, get, withKey, serverInfo, push, describe, pullPlan, fetchMirror, parseShareLink, makeShareLink, generateKey, setKey, _classify };
+    return { MARK, CELL_CHARS, SCRIPT_MIN_FAST, SCRIPT_MIN_KEY, cfg, bytesToBase64, base64ToBytes, gzip, gunzip, sha256Hex, packBlob, unpackBlob, isPacked, payloadHash, request, post, postJson, get, withKey, serverInfo, push, describe, pullPlan, fetchMirror, parseShareLink, makeShareLink, generateKey, setKey, isReservedTabName, _classify };
 })();

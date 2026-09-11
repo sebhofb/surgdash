@@ -14130,7 +14130,7 @@ function _writeProject(ss, d) {
         // Run the pull with progress callback
         try {
             const result = await this._sheetsGet(url);
-            const remoteProjects = result.projects || [];
+            const remoteProjects = (result.projects || []).filter(p => p && p.name && !(window.SheetsSync && SheetsSync.isReservedTabName(p.name)));   // never the Sheet's own tabs
             const progressEl = document.getElementById('viewer-pull-progress');
             const barEl = document.getElementById('viewer-pull-bar');
             const total = remoteProjects.length + (result.surghubStorage ? 1 : 0);
@@ -14497,7 +14497,11 @@ function _writeProject(ss, d) {
         // Include the sample project too — it gives the recipient a fully-populated
         // example tab so they can see how a complete project sheet looks. The sample
         // is flagged (isSample) so the Apps Script excludes it from org-wide totals.
-        const projects = Projects.registry.filter(p => p.type === 'generic');
+        // A project named like one of the Sheet's own tabs would overwrite that tab (the org
+        // summary, or the SURGhub blob itself) — such entries only ever come from a bad pull.
+        const projects = Projects.registry.filter(p => p.type === 'generic' && !(SheetsSync.isReservedTabName(p.name) || SheetsSync.isReservedTabName(p.shortName)));
+        const refused = Projects.registry.filter(p => p.type === 'generic').length - projects.length;
+        if (refused) console.warn('[Sheets] ' + refused + ' project(s) named like a Sheet tab were not pushed — remove them (Projects.purgeSheetArtifacts runs at start-up).');
 
         // What the backup carries. SURGhub keys go to their own sheet (compressed when
         // the script is current); everything else rides in the slim backup.
@@ -14711,7 +14715,7 @@ function _writeProject(ss, d) {
             if (_plan.unauthorised) { const e = new Error('This Sheet requires the sync key and this device has none (or an old one). Paste the share link from your SURGdash administrator.'); e.code = 'unauthorised'; throw e; }
             const result = await this._sheetsGet(url, { nosurghub: _plan.skip });
             result._surghubPlan = _plan;
-            const remoteProjects = result.projects || [];
+            const remoteProjects = (result.projects || []).filter(p => p && p.name && !(window.SheetsSync && SheetsSync.isReservedTabName(p.name)));   // never the Sheet's own tabs
 
             if (remoteProjects.length === 0 && !result.surghubStorage && !_plan.skip) {
                 if (!silent) alert('No project data found in Google Sheets.\n\nRun "Sync to Sheets" first to populate the sheet, then pull back.');

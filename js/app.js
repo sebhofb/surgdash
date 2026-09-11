@@ -143,6 +143,10 @@ window.App = {
 
             // Load project registry
             await Projects.loadRegistry();
+            try {
+                const purged = await Projects.purgeSheetArtifacts();
+                if (purged.projects || purged.events) setTimeout(() => this.showMsg('Cleaned up after a bad Sheets pull: ' + (purged.projects ? purged.projects + ' bogus project' + (purged.projects === 1 ? '' : 's') + ' (' + purged.names.join(', ') + ')' : '') + (purged.projects && purged.events ? ' and ' : '') + (purged.events ? purged.events + ' bogus activit' + (purged.events === 1 ? 'y' : 'ies') : '') + ' removed. Push to Sheets to rewrite the tabs.', 'warn'), 1500);
+            } catch (e) { __swallowed(e, 'purge'); }
             const lastProject = await Storage.getItem('surgdash_last_project');
             if (lastProject && (lastProject === 'org' || Projects.getProject(lastProject))) {
                 this.currentProject = lastProject;
