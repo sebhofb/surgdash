@@ -8,7 +8,9 @@
     "start": "electron .",
     "build:mac": "electron-builder --mac",
     "build:mac:arm64": "electron-builder --mac --arm64",
-    "release": "electron-builder --mac --publish always"
+    "release": "electron-builder --mac --publish always",
+    "test": "node test/run.js",
+    "test:live": "node test/run.js --live"
   },
   "build": {
     "appId": "com.gsf.surgdash",
@@ -50,6 +52,8 @@
     "afterSign": "scripts/notarize.js",
     "files": [
       "**/*",
+      "!.github/**/*",
+      "!test/**/*",
       "!node_modules/.cache",
       "build/**/*"
     ]

@@ -10,6 +10,18 @@ Signing + notarization are unchanged from before (that's what makes the install 
 
 ---
 
+## Before every release
+
+```sh
+npm test            # ~1–2 min: every fixture-based suite must end with OK
+npm run test:live   # optional: also the suites that read this Mac's SURGdash data
+```
+
+GitHub runs `npm test` on every push to `main` (`.github/workflows/test.yml`), so a red mark
+next to a commit means a check failed — do not release from a red commit.
+
+---
+
 ## A. One-time setup (you, once)
 
 1. **Create the GitHub repo.** Make a repo named **`surgdash`** under your GitHub org or account. A **public** repo is simplest (no token ends up in the app, and the code holds no secrets — credentials live only on each user's machine).
