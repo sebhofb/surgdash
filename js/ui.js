@@ -3017,6 +3017,9 @@ Object.assign(window.App, {
                                 <button onclick="App.generateAllProviderReports()" class="flex items-center justify-center gap-2 py-3 px-4 bg-white border border-slate-200 text-gsf-prussian font-bold rounded-lg hover:border-gsf-boston hover:text-gsf-boston hover:shadow-md transition-all shadow-sm">
                                     <i data-lucide="folder-down" width="18" class="text-gsf-boston"></i> All PDF Reports
                                 </button>
+                                <button onclick="App.exportAllUnitarCourseReports()" title="One Excel file per course: totals, anonymised participants, and the assumptions behind the gaps" class="flex items-center justify-center gap-2 py-3 px-4 bg-white border border-slate-200 text-gsf-prussian font-bold rounded-xl hover:border-gsf-boston transition-colors text-sm">
+                                    <i data-lucide="file-spreadsheet" width="18" class="text-gsf-boston"></i> All UNITAR Reports
+                                </button>
                                 <button onclick="App.exportAllAnonymizedUserData()" class="flex items-center justify-center gap-2 py-3 px-4 bg-white border border-slate-200 text-gsf-prussian font-bold rounded-lg hover:border-gsf-boston hover:text-gsf-boston hover:shadow-md transition-all shadow-sm">
                                     <i data-lucide="users" width="18" class="text-gsf-boston"></i> All User Data Exports
                                 </button>
@@ -4235,6 +4238,7 @@ Object.assign(window.App, {
                                 <input type="checkbox" ${this.isCourseIncluded(this.selectedCourse) ? 'checked' : ''} onchange="App.toggleCourseIncludedByName('${this.escapeJsArg(this.selectedCourse)}', this.checked)">
                                 ${this.isCourseIncluded(this.selectedCourse) ? 'Included in analytics' : 'Excluded from analytics'}
                             </label>
+                            <button data-edit-only data-report-ok onclick="App.exportUnitarCourseReport()" title="One Excel file for this course: totals, anonymised participants, and the assumptions behind the gaps" class="flex items-center gap-1.5 px-3.5 py-2 bg-white border border-slate-200 text-gsf-prussian font-bold rounded-lg text-xs hover:border-gsf-boston transition-colors"><i data-lucide="file-spreadsheet" width="13"></i> UNITAR report</button>
                             <button data-edit-only data-report-ok onclick="App.exportCurrentCoursePackage()" class="flex items-center gap-1.5 px-3.5 py-2 bg-amber-500 text-white font-bold rounded-lg text-xs shadow-sm hover:bg-amber-600 transition-colors" title="One folder ({provider}/{course}) with the course PDF + web report + anonymized users + anonymized feedback (Excel)"><i data-lucide="package" width="14"></i> Report Package</button>
                         </div>
                     </div>

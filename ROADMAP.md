@@ -112,6 +112,43 @@ Follow-ups:
   ambassadors sync are already at the cap; the UI's Tailwind Play-CDN build is
   the main interactive-speed item left (needs a visual check after).
 
+## Done — UNITAR course reports (15 September 2026)
+
+UNITAR uploads each course to its reporting system as an "event" with its participants
+attached, so the unit is one course, one Excel file. `js/unitarExport.js`:
+`App.exportUnitarCourseReport(course)` from the course page, and
+`App.exportAllUnitarCourseReports()` for a folder of them from Data Sync.
+
+Three sheets. **Summary**: the totals, then a block per dimension (country with ISO
+codes, career stage, gender, organisation type, profession) giving participants, % of
+those recorded, % of all records, and an estimate for the full enrolment.
+**Participants**: one anonymised row each, with the exact enrolment, start, completion
+and certificate dates joined from the enrolment records. **Method and assumptions**:
+prose, not footnotes.
+
+**Two gaps, reported separately, because they are different things.**
+1. *Enrolments with no participant record.* The demographic file is short of the
+   platform's own enrolment count on 169 of 218 courses (126 learners, 1.7%, on
+   Essential Burn Care). The enrolment total is the platform figure; the difference is
+   printed on the summary and explained on the method sheet.
+2. *Fields blank for a participant we do hold.* Gender and organisation type come only
+   from the sign-up survey, never from the API. Platform-wide: country 82.5%, career
+   stage 79.4%, profession 70.4%, gender 70.4%, organisation type 66.8%. Per course it
+   swings widely, so the gap is recomputed and printed per file.
+
+**The estimate** applies the recorded shares to the full enrolment, allocated by largest
+remainder so each estimated column sums exactly to the enrolment total. The method sheet
+says in plain words that this assumes non-responders resemble responders, that it is a
+projection rather than a count, and that it is least reliable where the recorded share is
+lowest.
+
+**Privacy.** No name, no email, no cross-course identifier: participant numbers restart at
+1 in every file. Professions are folded through `Taxonomy.canonProf` (the raw tags carry
+`nurse` and `nursing` separately, 17 tags to 11 cadres). The method sheet counts
+categories below five participants and warns that, in a small course, one of those plus
+the other columns can point to an individual. Courses switched off in the Directory are
+skipped by the batch run.
+
 ## Done — a silent SURGfund mis-count, found and fixed (11 September 2026, evening)
 
 KPI-log entries are stored with `Date.toString()` ("Fri Sep 04 2026 16:12:39 GMT+0200

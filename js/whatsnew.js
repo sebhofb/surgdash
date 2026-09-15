@@ -12,6 +12,7 @@
             v: '2.1.2',
             date: 'September 2026',
             items: [
+                { t: 'UNITAR course reports', d: 'One Excel file per course, for uploading a course to UNITAR as an event. Sheet 1 is the totals and the breakdown by country, career stage, gender, organisation type and profession, in numbers and percentages, with ISO country codes. Sheet 2 is the participants, anonymised \u2014 no name, no email, and numbering that restarts in every file so nobody can be followed between courses. Sheet 3 states where every figure comes from, how big the gaps are, and what is assumed when one is filled. On a course page, or for every course at once from Data Sync.' },
                 { t: 'SURGfund KPI edits were being counted as zero', d: 'KPI-log entries written before this release carry a plain date stamp rather than a standard one, which the weekly digest could not read \u2014 so \u201cedits this week\u201d always said zero. Both Home and the digest now read either form. Last week\u2019s two edits on Nakuru OSS were real.' },
                 { t: 'Deleting a project removes all of it', d: 'A deleted project used to leave its KPI actuals and quarter comments behind.' },
             ]
