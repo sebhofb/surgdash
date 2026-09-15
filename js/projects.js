@@ -54,17 +54,6 @@ window.Projects = {
         return et._legacy || t;
     },
 
-    // Home is a screen, not a project: no data of its own, it only reads. Shaped
-     // like ORG_PROJECT so getCurrentProject()/renderView() need no special case.
-    HOME_PROJECT: {
-        id: 'home',
-        name: 'Home',
-        type: 'home',
-        description: 'Where things stand',
-        color: '#4389C8',
-        icon: 'home'
-    },
-
     ORG_PROJECT: {
         id: 'org',
         name: 'Organisation',

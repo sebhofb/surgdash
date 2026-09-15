@@ -112,50 +112,26 @@ Follow-ups:
   ambassadors sync are already at the cap; the UI's Tailwind Play-CDN build is
   the main interactive-speed item left (needs a visual check after).
 
-## Done — a Home screen, and a silent SURGfund mis-count (11 September 2026, evening)
+## Done — a silent SURGfund mis-count, found and fixed (11 September 2026, evening)
 
-`js/home.js` — one page the app opens on, routed like `org`: a `Projects.HOME_PROJECT`
-pseudo-project (`type: 'home'`), its own sidebar card above Organisation, no tab bar,
-`App.renderHome(body)` dispatched from `renderView` before any project view.
+KPI-log entries are stored with `Date.toString()` ("Fri Sep 04 2026 16:12:39 GMT+0200
+…"), so `String(timestamp).slice(0, 10)` yielded "Fri Sep 04" — a string that matches no
+ISO window. `digest.js` had counted SURGfund KPI edits that way since it was written, so
+**every weekly digest reported zero edits**; the week of 4–10 Sep really had two, on
+Nakuru OSS. Dates now go through `_digestDayOf`, which accepts an ISO prefix or anything
+`Date` can parse and returns a local ISO day; an unparseable stamp is ignored rather than
+guessed at. Regression test in `test/digest.test.js`.
 
-- **What it shows.** Platform totals and a freshness line; the last 7 full days against
-  the 7 before (courses opened, enrolments, certificates, new accounts, logins) with the
-  previous figure beside each; the five most-opened courses; an attention list; the
-  SURGfund position. Every figure is read from disk — Home never calls LearnWorlds and
-  never starts a sync.
-- **The window is the digest's window** (`_digestWindow`), deliberately: Home and the
-  weekly digest must never disagree about what "this week" means. The test loads
-  `digest.js` alongside `home.js` so a divergence would fail.
-- **Two-stage paint.** Hero, actions and attention come from memory, so the page appears
-  at once; the seven-day figures need the 108k completion rows, so they are built after
-  first paint (~150 ms) and cached in `surgdash_home` → `settings/home.json`
-  (forward-only: never enumerated, pushed, exported or restored). The cache is reused
-  until the day turns **or** the data stamp changes — a sync during the day shows up.
-  Placeholders read "calculating", never a zero.
-- **Attention list** (cheap sources only): data age, provenance checks that no longer
-  reproduce, a background sync that failed or has not run for 3 days, unpublished local
-  changes, this year's missing KPI figures, a digest waiting. An empty device says so
-  rather than reporting all-clear.
-- **SURGfund reports reporting progress, not "untouched for N days".** No real project
-  uses the activity log, so a staleness line would sit on Home permanently with nothing
-  anyone could do about it. "2026 figures entered for 0 of 7" is the signal that exists
-  for every project and can actually be cleared.
-- **Launch.** Home opens the app unless the device unticks "Open Home on launch"
-  (`_uiState.homeOnLaunch`, device-local) or there is nothing to show yet — a fresh
-  install still lands on the org dashboard, which carries the "Load Project Data" card.
-  Home is in `_SCREEN_SKIP`, and `_restoreLastScreenOnUnlock` stays put when the view is
-  `home`, so unlocking does not throw an editor off the page.
+**Rule this leaves behind:** never slice a stored stamp. Project events and updates are
+ISO on disk; KPI logs and update ids are not.
 
-**The bug Home surfaced:** KPI-log entries are stored with `Date.toString()`
-("Fri Sep 04 2026 16:12:39 GMT+0200 …"), so `String(timestamp).slice(0, 10)` yielded
-"Fri Sep 04" — a string that matches no ISO window. `digest.js` had counted SURGfund KPI
-edits that way since it was written, so **every digest reported zero edits**; the week of
-4–10 Sep really had two, on Nakuru OSS. Both modules now go through `_digestDayOf`, which
-accepts an ISO prefix or anything `Date` can parse and returns a local ISO day; an
-unparseable stamp is ignored rather than guessed at. Regression tests in both suites.
+Also: `deleteProject` now removes a project's actuals and quarter comments (it used to
+leave an empty `actuals.json` behind for every deleted project). Version 2.1.2.
 
-Also: `deleteProject` now removes a project's actuals and quarter comments (it left an
-empty `actuals.json` behind for every deleted project). Version 2.1.2.
+**Not kept:** a start-up Home screen (`js/home.js`, one page of totals / this week /
+attention / SURGfund, routed as a pseudo-project) was built the same evening and removed
+the same week — Seb did not want the app to open on a cover page. It is in the history at
+`b9f18c7` if the idea ever comes back; the mis-count above is what it was worth finding.
 
 ## Done — 2.1.1 shipped; the sync-key split-brain fixed (11 September 2026, evening)
 

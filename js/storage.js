@@ -80,8 +80,6 @@
         if (key === 'surgdash_sheets_key')      return path.join('settings', 'sheets_key.json');
         // The latest weekly digest (digest.js) — device-local like the above.
         if (key === 'surgdash_digest')          return path.join('settings', 'digest.json');
-        // Home's cached seven-day figures (home.js) — a derived cache, device-local.
-        if (key === 'surgdash_home')            return path.join('settings', 'home.json');
         if (key === 'surgdash_onboarding')      return path.join('settings', 'onboarding.json');
         if (key === 'surgdash_edit_password')  return path.join('settings', 'edit_password.json');
         if (key === 'report_cover_path')     return path.join('settings', 'report_cover_path.json');
