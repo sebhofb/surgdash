@@ -3,24 +3,34 @@
 // UNITAR uploads each course to its reporting system as an "event" with its
 // participants attached, so the unit of export is one course, one file.
 //
-// Three sheets. "Summary" carries the totals and the breakdown of participants by
-// country, career stage, gender, organisation type and profession — each in numbers
-// and in percentages. "Participants" is the anonymised participant list: no name, no
-// email, no identifier that follows anyone between courses. "Method and assumptions"
-// states, in plain words, where every figure comes from, exactly how large the gaps
-// are, and what is assumed when a gap is filled.
+// Two sheets, and deliberately no third. "Summary" is the totals and the breakdown
+// of participants by country, career stage, gender, organisation type and profession
+// — one count column and one percentage column, nothing else. "Participants" is the
+// anonymised list: no name, no email, no identifier that follows anyone between
+// courses. The workings live on the app's Methodology page (ui.js,
+// _unitarMethodologyHtml) rather than in the file, so what UNITAR receives stays
+// short enough to read.
 //
-// TWO GAPS, and they are different things. (1) Some enrolled learners have no
-// demographic record at all — the participant file is a little short of the platform's
-// own enrolment count on most courses. (2) Among the participants who do have a
-// record, some fields are blank: gender and organisation type come only from the
-// sign-up survey, never from the API, so they are blank for roughly a third.
-// Both are reported per course, and the estimated columns are labelled as estimates.
+// ONE ENROLMENT NUMBER. The platform's own course total and the number of
+// participant records differ slightly on most courses; the file reports the
+// participants it actually lists, so every figure in it ties back to the
+// participant sheet. The difference is explained on the Methodology page.
 //
-// The estimate assumes the learners who did not answer are distributed like those who
-// did. That is an assumption, not a measurement, and the method sheet says so. Shares
-// are allocated by largest remainder, so the estimated column sums exactly to the
-// enrolment total rather than drifting by a unit or two through rounding.
+// WHERE A FIELD IS BLANK the participants who did not state it are spread across the
+// stated categories in the same proportions, so each block sums to the participant
+// total. Every block says how many people stated it, so the reader can see how much
+// of the block is measured. Allocation is by largest remainder, so the column sums
+// exactly rather than drifting a unit or two through rounding.
+//
+// PERIOD. Reports can be limited to enrolments inside a window (a calendar year, or
+// any range of months), for both the single and the batch run.
+//
+// COURSE LAUNCH. LearnWorlds gives a creation date, but courses sit private for
+// reviewers for months before going live, so creation is not launch. The launch month
+// is read from the enrolment curve instead: the first month that rises decisively out
+// of the quiet pre-release tail and stays up. Validated against the whole catalogue
+// (15 Sep 2026): it fires on 140 of 215 courses, and falls back to the first enrolment
+// month on the small ones, which is stated rather than dressed up as a launch.
 Object.assign(window.App, {
 
     UNITAR_DIMENSIONS: [
@@ -31,7 +41,55 @@ Object.assign(window.App, {
         { key: 'profession', label: 'Profession', source: 'Learner profile, supplemented by the sign-up survey' },
     ],
     UNITAR_UNKNOWN: 'Not recorded',
-    UNITAR_SMALL_CELL: 5,     // categories below this are counted and flagged on the method sheet
+    UNITAR_SMALL_CELL: 5,     // categories below this are flagged on the Methodology page
+    // Launch detection, tuned on the real catalogue: a launch month must carry at least
+    // LAUNCH_MIN enrolments, be at least LAUNCH_JUMP times the average of the months
+    // before it, and be at least LAUNCH_FWD of the months that follow (so a single
+    // pre-release trickle month is not mistaken for the launch).
+    UNITAR_LAUNCH_MIN: 10,
+    UNITAR_LAUNCH_JUMP: 4,
+    UNITAR_LAUNCH_FWD: 0.25,
+
+    _unitarMonth(v) { const s = String(v == null ? '' : v); return /^\d{4}-\d{2}/.test(s) ? s.slice(0, 7) : ''; },
+    _unitarAddMonths(m, k) {
+        let [y, mo] = String(m).split('-').map(Number);
+        mo += k; y += Math.floor((mo - 1) / 12); mo = ((mo - 1) % 12 + 12) % 12 + 1;
+        return y + '-' + String(mo).padStart(2, '0');
+    },
+    _unitarMonthName(m) {
+        if (!/^\d{4}-\d{2}$/.test(String(m || ''))) return '';
+        const M = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+        const p = String(m).split('-');
+        return M[Number(p[1]) - 1] + ' ' + p[0];
+    },
+    _unitarMedian(a) { const s = a.slice().sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : 0; },
+
+    // When the course actually went live, read from the enrolment curve.
+    // Returns { month, basis: 'ramp' | 'first' | 'none', before } — `before` is how many
+    // enrolments happened in the quiet months ahead of it (reviewer access, typically).
+    _unitarLaunch(monthCounts) {
+        const keys = Object.keys(monthCounts).filter(k => /^\d{4}-\d{2}$/.test(k)).sort();
+        if (!keys.length) return { month: '', basis: 'none', before: 0 };
+        const grid = [];
+        for (let m = keys[0]; m <= keys[keys.length - 1]; m = this._unitarAddMonths(m, 1)) grid.push({ m, n: monthCounts[m] || 0 });
+        for (let i = 0; i < grid.length; i++) {
+            const n = grid[i].n;
+            if (n < this.UNITAR_LAUNCH_MIN) continue;
+            const before = grid.slice(0, i).map(g => g.n);
+            const mean = before.length ? before.reduce((s, x) => s + x, 0) / before.length : 0;
+            if (i && n < this.UNITAR_LAUNCH_JUMP * mean) continue;
+            if (n < this.UNITAR_LAUNCH_FWD * this._unitarMedian(grid.slice(i, i + 3).map(g => g.n))) continue;
+            return { month: grid[i].m, basis: 'ramp', before: before.reduce((s, x) => s + x, 0) };
+        }
+        return { month: keys[0], basis: 'first', before: 0 };
+    },
+
+    // 'YYYY-MM'..'YYYY-MM', either end open. A period label for the sheet and the file name.
+    _unitarPeriodLabel(from, to) {
+        if (!from && !to) return 'All time';
+        if (from && to && from.slice(0, 4) === to.slice(0, 4) && from.slice(5) === '01' && to.slice(5) === '12') return from.slice(0, 4);
+        return (from ? this._unitarMonthName(from) : 'the start') + ' to ' + (to ? this._unitarMonthName(to) : 'now');
+    },
 
     _unitarKnown(v) {
         const s = String(v == null ? '' : v).trim();
@@ -85,9 +143,21 @@ Object.assign(window.App, {
 
         // Enrolment records carry the exact dates; joined on the same anonymous id.
         const comp = {};
-        (opts.completion || []).forEach(r => { if (r && r.uid && r.course === courseName) comp[r.uid] = r; });
+        const monthCounts = {};
+        (opts.completion || []).forEach(r => {
+            if (!r || r.course !== courseName) return;
+            if (r.uid) comp[r.uid] = r;
+            const m = this._unitarMonth(r.enrolled_date);
+            if (m) monthCounts[m] = (monthCounts[m] || 0) + 1;
+        });
+        // Read before any period filter: the launch is a property of the course, not of
+        // the window someone happens to be reporting on.
+        const launch = this._unitarLaunch(monthCounts);
 
-        const participants = people.map((u, i) => {
+        const from = this._unitarMonth(opts.from), to = this._unitarMonth(opts.to);
+        const period = { from, to, label: this._unitarPeriodLabel(from, to), set: !!(from || to) };
+
+        const all = people.map((u, i) => {
             const c = u.user_uid ? comp[u.user_uid] : null;
             return {
                 n: i + 1,
@@ -100,28 +170,36 @@ Object.assign(window.App, {
                 completedOn: this._unitarDay(c && c.completion_date),
                 certificateOn: this._unitarDay(c && c.certificate_date),
                 minutes: Math.round(this._unitarNum(c && c.time_minutes != null ? c.time_minutes : u.course_minutes)),
-                completed: c ? !!c.completed : String(u.has_certificate || '').toLowerCase() === 'yes',
                 certificate: c ? !!c.certificate : String(u.has_certificate || '').toLowerCase() === 'yes',
             };
         });
 
-        const records = participants.length;
-        const platform = snap ? this._unitarNum(snap.Learners) : 0;
-        // The reporting base: the platform's enrolment count when it has one, because that
-        // is the figure every other SURGhub report shows. Never below the records we hold.
-        const enrolled = Math.max(platform, records);
+        // A period selects on the enrolment date. A participant whose enrolment date the
+        // platform never recorded cannot be placed in a window, so a period excludes them
+        // rather than guessing; the count is reported so the omission is visible.
+        const inPeriod = (p) => {
+            if (!period.set) return true;
+            const m = this._unitarMonth(p.enrolled);
+            if (!m) return false;
+            return (!from || m >= from) && (!to || m <= to);
+        };
+        const undated = period.set ? all.filter(p => !this._unitarMonth(p.enrolled)).length : 0;
+        const participants = all.filter(inPeriod).map((p, i) => Object.assign({}, p, { n: i + 1 }));
 
+        const records = participants.length;
         const minutes = participants.map(p => p.minutes).filter(m => m > 0).sort((a, b) => a - b);
+        // ONE enrolment number: the participants this file actually lists. The platform's
+        // own course total differs a little on most courses (see the Methodology page);
+        // reporting both invited a question nobody needed to answer.
         const totals = {
-            enrolled, records, platform,
-            missingRecords: Math.max(0, enrolled - records),
+            participants: records,
             started: participants.filter(p => p.started).length,
-            completed: participants.filter(p => p.completed).length,
             certificates: participants.filter(p => p.certificate).length,
-            platformCertificates: snap ? this._unitarNum(snap.Certificates) : 0,
             learningMinutes: participants.reduce((s, p) => s + p.minutes, 0),
             medianMinutes: minutes.length ? minutes[Math.floor(minutes.length / 2)] : 0,
             withEnrolDate: participants.filter(p => p.enrolled).length,
+            excludedUndated: undated,
+            platform: snap ? this._unitarNum(snap.Learners) : 0,     // kept for the Methodology page, never printed in the file
         };
         totals.certRate = this._unitarPct(totals.certificates, records);
 
@@ -131,18 +209,20 @@ Object.assign(window.App, {
             const names = Object.keys(tally).sort((a, b) => tally[b] - tally[a] || a.localeCompare(b));
             const counts = names.map(v => tally[v]);
             const known = counts.reduce((s, n) => s + n, 0);
-            const est = this._unitarAllocate(counts, known ? enrolled : 0);
+            // The single reported figure per category: the stated counts spread over every
+            // participant, so the block sums to the participant total.
+            const spread = this._unitarAllocate(counts, known ? records : 0);
             return {
                 key: d.key, label: d.label, source: d.source,
-                known, notRecorded: records - known, records, enrolled,
+                known, notRecorded: records - known, records,
+                statedPct: this._unitarPct(known, records),
                 categories: names.length,
                 smallCategories: counts.filter(n => n > 0 && n < this.UNITAR_SMALL_CELL).length,
                 rows: names.map((v, i) => ({
-                    value: v, n: counts[i],
-                    pctKnown: this._unitarPct(counts[i], known),
-                    pctRecords: this._unitarPct(counts[i], records),
-                    estimate: est[i],
-                    estimatePct: this._unitarPct(est[i], enrolled),
+                    value: v,
+                    stated: counts[i],                                   // measured, kept for the app
+                    n: spread[i],                                        // reported
+                    pct: this._unitarPct(spread[i], records),
                 })),
             };
         });
@@ -152,7 +232,7 @@ Object.assign(window.App, {
             provider: (snap && snap.Provider) || '',
             generatedAt: now.toISOString(),
             dataThrough: snap ? String(snap.Timestamp || '').slice(0, 10) : '',
-            totals, dimensions, participants,
+            launch, period, totals, dimensions, participants,
         };
     },
 
@@ -160,8 +240,6 @@ Object.assign(window.App, {
     _unitarSheets(r) {
         const n = (v) => Math.round(Number(v) || 0);
         // Percentages go in as plain numbers to one decimal under a column headed "%".
-        // A real percentage cell would need a number format per cell; this reads the same
-        // in Excel, survives a CSV round-trip, and cannot be mis-formatted.
         const pct = (v) => Math.round((Number(v) || 0) * 10) / 10;
         const S = [];
 
@@ -170,86 +248,47 @@ Object.assign(window.App, {
         a.push(['SURGhub course report for UNITAR']);
         a.push(['Course', r.course]);
         a.push(['Provider', r.provider || 'Not recorded']);
-        a.push(['Course data through', r.dataThrough || 'unknown']);
+        a.push(['Course launched', r.launch.month
+            ? this._unitarMonthName(r.launch.month) + (r.launch.basis === 'ramp' ? '' : ' (first enrolment; too few enrolments to identify a launch)')
+            : 'Unknown']);
+        a.push(['Reporting period', r.period.label]);
+        a.push(['Data through', r.dataThrough || 'unknown']);
         a.push(['Report generated', String(r.generatedAt).slice(0, 10)]);
         a.push([]);
         a.push(['TOTALS']);
-        a.push(['Enrolled learners', n(r.totals.enrolled)]);
-        a.push(['Participant records in this file', n(r.totals.records)]);
-        a.push(['Enrolled learners with no participant record', n(r.totals.missingRecords), r.totals.missingRecords ? 'See "Method and assumptions", gap 1' : '']);
+        a.push(['Participants', n(r.totals.participants)]);
         a.push(['Started the course', n(r.totals.started)]);
-        a.push(['Completed the course', n(r.totals.completed)]);
         a.push(['Certificates earned', n(r.totals.certificates)]);
-        a.push(['Certificate rate (of participant records)', pct(r.totals.certRate)]);
+        a.push(['Certificate rate (%)', pct(r.totals.certRate)]);
         a.push(['Total learning time (hours)', Math.round(r.totals.learningMinutes / 60)]);
         a.push(['Median learning time per participant (minutes)', n(r.totals.medianMinutes)]);
         a.push([]);
+        a.push(['Where a participant did not state their country, career stage, gender, organisation type or profession, they are spread across the stated categories in the same proportions, so every block below adds up to the participant total. Each block says how many people stated it. Full workings are on the Methodology page of SURGdash.']);
+        a.push([]);
 
         r.dimensions.forEach(d => {
-            a.push([d.label.toUpperCase()]);
-            a.push(['Recorded for ' + n(d.known) + ' of ' + n(d.records) + ' participants'
-                + (d.notRecorded ? ' — ' + n(d.notRecorded) + ' not recorded' : '')]);
             const iso = d.key === 'country';
-            a.push([d.label, 'Participants', '% of those recorded', '% of all participant records', 'Estimated, all enrolled', '% of all enrolled'].concat(iso ? ['ISO code'] : []));
-            d.rows.forEach(row => a.push([row.value, n(row.n), pct(row.pctKnown), pct(row.pctRecords), n(row.estimate), pct(row.estimatePct)].concat(iso ? [this._unitarISO(row.value)] : [])));
-            if (d.notRecorded) a.push([this.UNITAR_UNKNOWN, n(d.notRecorded), '', pct(this._unitarPct(d.notRecorded, d.records)), '', '']);
-            a.push(['Total', n(d.records), d.known ? pct(100) : '', pct(100), d.known ? n(d.enrolled) : '', d.known ? pct(100) : '']);
+            a.push([d.label.toUpperCase()]);
+            a.push(['Stated by ' + n(d.known) + ' of ' + n(d.records) + ' participants (' + pct(d.statedPct) + '%)']);
+            a.push([d.label, '# participants', '% participants'].concat(iso ? ['ISO code'] : []));
+            d.rows.forEach(row => a.push([row.value, n(row.n), pct(row.pct)].concat(iso ? [this._unitarISO(row.value)] : [])));
+            a.push(['Total', n(d.known ? d.records : 0), d.known ? 100 : 0]);
             a.push([]);
         });
-        S.push({ name: 'Summary', aoa: a, cols: [46, 14, 20, 26, 22, 16, 10], bold: [0, 6], headerRows: this._unitarHeaderRows(a) });
+        S.push({ name: 'Summary', aoa: a, cols: [50, 16, 16, 10], headerRows: this._unitarHeaderRows(a) });
 
         // ── Participants ──
         const head = ['Participant', 'Sign-up month', 'Country', 'ISO code', 'Career stage', 'Gender', 'Organisation type', 'Profession',
-            'Enrolled', 'Started', 'Completed', 'Certificate earned', 'Learning time (minutes)', 'Completed', 'Certificate'];
+            'Enrolled', 'Started', 'Certificate earned', 'Learning time (minutes)', 'Certificate'];
         const p = [head];
         const shown = (v) => this._unitarKnown(v) ? String(v).trim() : this.UNITAR_UNKNOWN;
         r.participants.forEach(x => p.push([
             x.n, x.signupMonth || this.UNITAR_UNKNOWN, shown(x.country), x.iso || '', shown(x.career_stage), shown(x.gender),
             shown(x.organisation_type), shown(x.profession),
-            x.enrolled || '', x.started || '', x.completedOn || '', x.certificateOn || '',
-            x.minutes || 0, x.completed ? 'Yes' : 'No', x.certificate ? 'Yes' : 'No',
+            x.enrolled || '', x.started || '', x.certificateOn || '',
+            x.minutes || 0, x.certificate ? 'Yes' : 'No',
         ]));
-        S.push({ name: 'Participants', aoa: p, cols: [11, 14, 24, 10, 22, 14, 24, 30, 12, 12, 12, 16, 20, 11, 12], bold: [0], headerRows: [0], freeze: true });
-
-        // ── Method and assumptions ──
-        const m = [];
-        const say = (k, v) => m.push([k, v == null ? '' : String(v)]);
-        say('METHOD AND ASSUMPTIONS', '');
-        say('Course', r.course);
-        say('', '');
-        say('WHAT THIS FILE IS', 'One SURGhub course, its enrolment totals, and its participants with no name, no email address and no identifier that follows a person from one course to another. The participant numbers restart at 1 in every file, so participant 7 here is not participant 7 in any other file.');
-        say('', '');
-        say('GAP 1 — ENROLLED LEARNERS WITH NO PARTICIPANT RECORD', '');
-        say('Enrolled learners', Math.round(r.totals.enrolled) + (r.totals.platform ? ' (the platform enrolment count for this course)' : ' (counted from the participant records; the platform had no total for this course)'));
-        say('Participant records held', Math.round(r.totals.records));
-        say('Difference', Math.round(r.totals.missingRecords) + (r.totals.missingRecords ? ' learners, ' + this._unitarPct(r.totals.missingRecords, r.totals.enrolled) + '% of enrolments, appear in the platform total but have no demographic record. They are counted in the enrolment total and in the estimated columns, and they are absent from the participant list.' : ' — every enrolled learner has a record.'));
-        say('', '');
-        say('GAP 2 — FIELDS NOT RECORDED FOR A PARTICIPANT WE DO HOLD', '');
-        say('Why', 'Gender and organisation type are never supplied by the learning platform. They come only from the sign-up survey, which is voluntary, so they are blank for every learner who did not answer it. Country comes from the learner account and is more complete.');
-        m.push(['Field', 'Recorded', 'Not recorded', 'Recorded %', 'Source']);
-        r.dimensions.forEach(d => m.push([d.label, Math.round(d.known), Math.round(d.notRecorded), this._unitarPct(d.known, d.records) + '%', d.source]));
-        say('', '');
-        say('HOW VALUES ARE TIDIED', '');
-        say('Profession', 'The platform stores a raw tag, so one cadre arrives under several spellings ("nurse" and "nursing", "anesthesiology" and "anaesthesiologist"). Tags are folded into the cadres SURGhub reports everywhere else; anything unrecognised becomes "Other".');
-        say('Country', 'Reported as the learner wrote it, with the ISO 3166-1 alpha-2 code alongside where the country is recognised. A blank code means the spelling could not be matched, not that the country is missing.');
-        say('', '');
-        say('THE ASSUMPTION BEHIND THE ESTIMATED COLUMNS', '');
-        say('What is assumed', 'The learners who did not answer are assumed to be spread across the categories in the same proportions as the learners who did. The recorded share of each category is applied to the full enrolment total.');
-        say('What that means', 'The estimated column is a projection, not a count. Treat the "Participants" column as the measured figure and the estimated column as an indication of scale.');
-        say('Why it may be wrong', 'The learners who answer a voluntary survey are not necessarily like those who do not. This assumption has not been tested against an independent source, and it will be least reliable where the recorded share is lowest.');
-        say('Rounding', 'Estimates are allocated by largest remainder, so each estimated column sums exactly to the enrolment total.');
-        say('', '');
-        say('SMALL CATEGORIES', '');
-        const small = r.dimensions.reduce((s, d) => s + d.smallCategories, 0);
-        say('Categories with fewer than ' + this.UNITAR_SMALL_CELL + ' participants', String(small) + (small ? ' — in a small course, a single-person category combined with other columns can point to an individual. Consider grouping or withholding those rows before sharing outside the reporting system.' : ''));
-        say('', '');
-        say('HOW THE TOTALS ARE DEFINED', '');
-        say('Enrolled', 'A learner registered on the course.');
-        say('Started', 'A learner with a recorded start date. Recorded for ' + Math.round(r.totals.started) + ' of ' + Math.round(r.totals.records) + ' participants; a blank start date means the platform holds none, not that the learner did nothing.');
-        say('Completed', 'The platform marks the course as completed for that learner.');
-        say('Certificate earned', 'A certificate was issued. The platform total for this course is ' + Math.round(r.totals.platformCertificates) + '.');
-        say('Learning time', 'Minutes recorded by the platform. Time spent outside the platform is not captured.');
-        S.push({ name: 'Method and assumptions', aoa: m, cols: [46, 78, 16, 16, 46], bold: [0], headerRows: this._unitarHeaderRows(m), wrap: true });
+        S.push({ name: 'Participants', aoa: p, cols: [11, 14, 24, 10, 22, 14, 24, 30, 12, 12, 16, 20, 12], headerRows: [0], freeze: true });
 
         return S;
     },
@@ -261,9 +300,35 @@ Object.assign(window.App, {
             const first = String(row[0] == null ? '' : row[0]);
             if (!first) return;
             if (first === first.toUpperCase() && /[A-Z]/.test(first) && row.filter(c => c !== '' && c != null).length <= 2) out.push(i);
-            else if (row.length > 3 && /^(Country|Career stage|Gender|Organisation type|Profession|Participant|Field)$/.test(first)) out.push(i);
+            else if (row.length > 2 && String(row[1] || '') === '# participants') out.push(i);
         });
         return out;
+    },
+
+    // ── the workings, on the app's Methodology page ───────────────────────
+    // These deliberately do NOT travel inside the workbook: UNITAR asked for a file
+    // short enough to read. This section lives in the same module as the code it
+    // describes so the two cannot drift apart. Rendered by ui.js's methodology view.
+    _unitarMethodologyHtml() {
+        const row = (k, v) => '<tr class="border-b last:border-0 align-top"><td class="py-2 pr-4 font-bold text-gsf-prussian whitespace-nowrap">' + k + '</td><td class="py-2 text-slate-600">' + v + '</td></tr>';
+        return '<div class="bg-white rounded-xl border shadow-sm p-6" id="unitar-methodology">'
+            + '<h2 class="text-lg font-bold text-gsf-prussian mb-3 flex items-center gap-2"><i data-lucide="file-spreadsheet" width="20" class="text-gsf-boston"></i> UNITAR course reports</h2>'
+            + '<p class="text-sm text-slate-600 mb-4">One Excel file per course, for uploading a course to UNITAR as an event. The file carries a summary and the participant list only; everything about how those figures are produced lives here.</p>'
+            + '<table class="w-full text-sm border-collapse mb-4"><tbody>'
+            + row('Participants', 'The one enrolment figure the report uses, and the number of rows on the participant sheet. SURGhub also holds a course-level total from the platform, which runs a little higher on most courses because it counts registrations for which no learner record came back. The report does not print both: every figure in it rests on the participants it lists, so the sheets always reconcile with each other. The difference is typically under two per cent.')
+            + row('Reporting period', 'A period selects learners by <strong>enrolment date</strong>, not by activity. A learner who enrolled in 2024 and earned a certificate in 2025 belongs to 2024. Learners whose enrolment date the platform never recorded cannot be placed in a window, so a period excludes them; with no period set they are all included.')
+            + row('Course launched', 'LearnWorlds records when a course was created, but courses sit private for reviewers for months before going live, so creation is not launch. The month is read from the enrolment curve instead: the first month carrying at least ' + this.UNITAR_LAUNCH_MIN + ' enrolments, at least ' + this.UNITAR_LAUNCH_JUMP + ' times the average of the months before it, and not dwarfed by the months that follow. Where a course is too small for that test the report shows the first enrolment month and says so on the sheet.')
+            + row('Certificates', 'Certificates issued. The platform also marks courses "completed", which matches the certificate count to within a handful on most courses and answers the same question, so the report carries certificates only.')
+            + row('Started', 'Learners with a recorded start date. A blank start date means the platform holds none, not that the learner did nothing.')
+            + row('Country, career stage, gender, organisation type, profession', 'Country and profession come from the learner account. Career stage, gender and organisation type come only from the voluntary sign-up survey, never from the API, so they are blank for everyone who did not answer it. Each block on the summary states how many participants stated it.')
+            + row('Filling the gap', 'Participants who did not state a field are spread across the stated categories in the same proportions, so every block adds up to the participant total. This assumes the people who did not answer resemble those who did. It is a projection, not a count, and it is least reliable where the stated share is lowest. Shares are allocated by largest remainder, so each column sums exactly rather than drifting through rounding.')
+            + row('Professions', 'The platform stores a free tag, so one cadre arrives under several spellings ("nurse" and "nursing", "anesthesiology" and "anaesthesiologist"). Tags are folded into the cadres used everywhere else in SURGdash; anything unrecognised becomes "Other".')
+            + row('Countries', 'Reported as the learner wrote them, with the ISO 3166-1 alpha-2 code alongside where the spelling is recognised. A blank code means the spelling could not be matched, not that the country is missing.')
+            + row('Anonymity', 'No name, no email address, and no identifier that follows a person between courses: participant numbers restart at 1 in every file. Courses switched off in the Directory are skipped by the batch run.')
+            + row('Small categories', 'On a small course a category holding one or two people, read with the other columns, can point to an individual. Consider grouping or withholding those rows before the file leaves the reporting system.')
+            + '</tbody></table>'
+            + '<p class="text-xs text-slate-400">Produced by the "UNITAR report" button on a course page, or "All UNITAR Reports" on Data Sync.</p>'
+            + '</div>';
     },
 
     // ── writing ───────────────────────────────────────────────────────────
@@ -290,9 +355,49 @@ Object.assign(window.App, {
         return { X, wb };
     },
 
-    _unitarFileName(courseName) {
+    _unitarFileName(courseName, period) {
         const safe = String(courseName).replace(/[^a-z0-9]+/gi, '_').replace(/^_|_$/g, '').slice(0, 60);
-        return 'UNITAR_' + (safe || 'course') + '_' + new Date().toISOString().slice(0, 10) + '.xlsx';
+        const p = (period && (period.from || period.to))
+            ? '_' + String(period.label).replace(/[^a-z0-9]+/gi, '_').replace(/^_|_$/g, '')
+            : '';
+        return 'UNITAR_' + (safe || 'course') + p + '_' + new Date().toISOString().slice(0, 10) + '.xlsx';
+    },
+
+    // ── the period dialog ─────────────────────────────────────────────────
+    // Resolves to { from, to } ('YYYY-MM', either end may be empty) or null if cancelled.
+    _unitarAskPeriod(title) {
+        return new Promise(resolve => {
+            const years = [...new Set((this._rawCompletion || []).map(r => String((r && r.enrolled_date) || '').slice(0, 4)).filter(y => /^\d{4}$/.test(y)))].sort().reverse().slice(0, 6);
+            const el = document.createElement('div');
+            el.id = 'unitar-period-dialog';
+            el.style.cssText = 'position:fixed;inset:0;background:rgba(0,47,76,0.85);display:flex;align-items:center;justify-content:center;z-index:10000';
+            el.innerHTML = '<div style="background:#fff;border-radius:16px;padding:28px 32px;max-width:520px;width:92%">'
+                + '<div style="font-size:18px;font-weight:800;color:#002F4C;margin-bottom:6px">' + this.escapeHtml(title || 'Reporting period') + '</div>'
+                + '<div style="font-size:13px;color:#64748b;margin-bottom:18px">Include only learners who <strong>enrolled</strong> inside the period. Leave either end empty for an open range.</div>'
+                + '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px">'
+                + '<button data-y="" style="padding:6px 14px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;font-size:12px;font-weight:700;color:#002F4C;cursor:pointer">All time</button>'
+                + years.map(y => '<button data-y="' + y + '" style="padding:6px 14px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;font-size:12px;font-weight:700;color:#002F4C;cursor:pointer">' + y + '</button>').join('')
+                + '</div>'
+                + '<div style="display:flex;gap:12px;align-items:flex-end;margin-bottom:20px">'
+                + '<label style="flex:1;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.06em">From<input type="month" id="unitar-from" style="display:block;width:100%;margin-top:5px;padding:8px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px"></label>'
+                + '<label style="flex:1;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.06em">To<input type="month" id="unitar-to" style="display:block;width:100%;margin-top:5px;padding:8px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px"></label>'
+                + '</div>'
+                + '<div style="display:flex;justify-content:flex-end;gap:8px">'
+                + '<button id="unitar-cancel" style="padding:9px 18px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;font-size:13px;font-weight:700;color:#64748b;cursor:pointer">Cancel</button>'
+                + '<button id="unitar-ok" style="padding:9px 22px;border-radius:8px;border:0;background:#002F4C;font-size:13px;font-weight:700;color:#fff;cursor:pointer">Create report</button>'
+                + '</div></div>';
+            document.body.appendChild(el);
+            const f = el.querySelector('#unitar-from'), t = el.querySelector('#unitar-to');
+            el.querySelectorAll('[data-y]').forEach(b => b.onclick = () => {
+                const y = b.getAttribute('data-y');
+                f.value = y ? y + '-01' : ''; t.value = y ? y + '-12' : '';
+            });
+            const done = (v) => { el.remove(); resolve(v); };
+            el.querySelector('#unitar-cancel').onclick = () => done(null);
+            el.querySelector('#unitar-ok').onclick = () => done({ from: f.value || '', to: t.value || '' });
+            el.onclick = (ev) => { if (ev.target === el) done(null); };
+            setTimeout(() => { try { f.focus(); } catch (e) { __swallowed(e); } }, 30);
+        });
     },
 
     async _unitarContext() {
@@ -307,15 +412,16 @@ Object.assign(window.App, {
         if (!course) return alert('Open a course first.');
         try {
             const ctx = await this._unitarContext();
-            const report = this.buildUnitarReport(course, ctx);
-            if (!report.totals.records) return alert('No participant records for "' + course + '".\n\nRun Sync Learners (and upload the sign-up survey) first.');
-            const savePath = await electronAPI.invoke('pick-save-path', this._unitarFileName(course));
+            const period = await this._unitarAskPeriod('UNITAR report — ' + course);
+            if (!period) return;
+            const report = this.buildUnitarReport(course, Object.assign({}, ctx, period));
+            if (!report.totals.participants) return alert('No participants for "' + course + '"' + (report.period.set ? ' in ' + report.period.label : '') + '.');
+            const savePath = await electronAPI.invoke('pick-save-path', this._unitarFileName(course, report.period));
             if (!savePath) return;
             const { X, wb } = this._unitarWorkbook(report);
             const out = X.write(wb, { bookType: 'xlsx', type: 'array' });
             electronAPI.fs.writeFileSync(savePath, new Uint8Array(out));
-            this.showMsg('UNITAR report saved — ' + this.formatNumber(report.totals.records) + ' participants, '
-                + this.formatNumber(report.totals.missingRecords) + ' enrolments without a record.', 'success');
+            this.showMsg('UNITAR report saved — ' + this.formatNumber(report.totals.participants) + ' participants · ' + report.period.label + '.', 'success');
         } catch (e) {
             console.error('[UNITAR]', e);
             alert('Could not build the report: ' + (e && e.message || e));
@@ -331,7 +437,10 @@ Object.assign(window.App, {
             const courses = this.isCourseIncluded ? all.filter(c => this.isCourseIncluded(c)) : all;
             const excluded = all.length - courses.length;
             if (!courses.length) return alert('No participant data. Run Sync Learners first.');
-            if (!confirm('Write one UNITAR report per course?\n\n' + courses.length + ' courses, one .xlsx each, into a folder you choose.'
+            const period = await this._unitarAskPeriod('UNITAR reports — ' + courses.length + ' courses');
+            if (!period) return;
+            const label = this._unitarPeriodLabel(this._unitarMonth(period.from), this._unitarMonth(period.to));
+            if (!confirm('Write one UNITAR report per course?\n\nPeriod: ' + label + '\n' + courses.length + ' courses, one .xlsx each, into a folder you choose.'
                 + (excluded ? '\n\n' + excluded + ' course' + (excluded === 1 ? '' : 's') + ' excluded from analytics will be skipped.' : ''))) return;
             const folder = await electronAPI.invoke('pick-folder');
             if (!folder) return;
@@ -342,17 +451,17 @@ Object.assign(window.App, {
                 if (this._reportCancelled) break;
                 if (this._showReportProgress) this._showReportProgress('UNITAR report ' + (i + 1) + '/' + courses.length + ': ' + courses[i], true);
                 try {
-                    const report = this.buildUnitarReport(courses[i], ctx);
-                    if (!report.totals.records) { skipped++; continue; }
+                    const report = this.buildUnitarReport(courses[i], Object.assign({}, ctx, period));
+                    if (!report.totals.participants) { skipped++; continue; }   // nobody enrolled in the period
                     const { X, wb } = this._unitarWorkbook(report);
                     const out = X.write(wb, { bookType: 'xlsx', type: 'array' });
-                    fs.writeFileSync(path.join(folder, this._unitarFileName(courses[i])), new Uint8Array(out));
+                    fs.writeFileSync(path.join(folder, this._unitarFileName(courses[i], report.period)), new Uint8Array(out));
                     ok++;
                 } catch (e) { console.error('[UNITAR]', courses[i], e); skipped++; }
             }
             if (this._hideReportProgress) this._hideReportProgress();
-            alert((this._reportCancelled ? 'Cancelled. ' : 'Done. ') + ok + ' report' + (ok === 1 ? '' : 's') + ' written'
-                + (skipped ? ', ' + skipped + ' course' + (skipped === 1 ? '' : 's') + ' skipped for want of participant data' : '') + '\n\n' + folder);
+            alert((this._reportCancelled ? 'Cancelled. ' : 'Done. ') + ok + ' report' + (ok === 1 ? '' : 's') + ' written for ' + label
+                + (skipped ? ', ' + skipped + ' course' + (skipped === 1 ? '' : 's') + ' skipped — no participants in the period' : '') + '\n\n' + folder);
         } catch (e) {
             if (this._hideReportProgress) this._hideReportProgress();
             console.error('[UNITAR]', e);

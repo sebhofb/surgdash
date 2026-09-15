@@ -4398,6 +4398,8 @@ Object.assign(window.App, {
 
                     ${this._conflictMethodologyHtml()}
 
+                    ${this._unitarMethodologyHtml ? this._unitarMethodologyHtml() : ''}
+
                     <div class="bg-white rounded-xl border shadow-sm p-6">
                         <h2 class="text-lg font-bold text-gsf-prussian mb-3 flex items-center gap-2"><i data-lucide="bar-chart-2" width="20" class="text-gsf-boston"></i> Timeline Charts & Scale Factors</h2>
                         <p class="text-sm text-slate-600 mb-3">Timeline charts (learner/certificate growth) are built from Step 3 learner data, which records individual user registration and certificate dates.</p>

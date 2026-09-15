@@ -112,6 +112,37 @@ Follow-ups:
   ambassadors sync are already at the cap; the UI's Tailwind Play-CDN build is
   the main interactive-speed item left (needs a visual check after).
 
+## Done — UNITAR reports simplified, with a period and a launch month (15 September 2026)
+
+Seb's verdict on the first cut: too complicated. Reworked the same afternoon.
+
+- **One enrolment number.** The report gives the participants it lists and nothing else.
+  The platform's own course total runs a little higher on most courses; printing both,
+  with an explanation, raised a question nobody needed answered. The difference is on the
+  Methodology page. Every figure in the file now reconciles with the participant sheet.
+- **Certificates only.** "Completed the course" matched the certificate count to within a
+  handful and answered the same question. Gone from both sheets.
+- **Two data columns per block**: `# participants` and `% participants`. The stated counts
+  are spread over every participant so each block sums to the total, one note on the
+  summary says so, and each block states how many people stated the field. The four-column
+  two-base layout is gone.
+- **The method sheet is gone.** Its content is a section on the app's Methodology page
+  (`_unitarMethodologyHtml`, defined in `unitarExport.js` beside the code it describes and
+  rendered by ui.js, so the two cannot drift). The launch thresholds quoted there are read
+  from the constants; a test asserts it.
+- **Reporting period**, for the single run and the batch: a year button or any range of
+  months, selecting on **enrolment date**. This was the reported bug — the batch had no
+  filter at all, so it returned everyone. Learners whose enrolment date the platform never
+  recorded cannot be placed in a window, so a period excludes them and the count is kept.
+  The period appears on the summary and in the file name.
+- **Course launched.** LearnWorlds' creation date is not the launch: courses sit private
+  for reviewers for months. The month is read from the enrolment curve — the first month
+  with at least 10 enrolments, at least 4x the average of the months before it, and not
+  dwarfed by the months after. Validated across the catalogue: fires on 140 of 215
+  courses, median pre-release tail 4 months; the rest fall back to the first enrolment
+  month and the sheet says which. Burn Care: created Sep 2024, launched Oct 2024.
+  Surgical Foundations: created Feb 2023, launched Jun 2023 after 21 reviewer enrolments.
+
 ## Done — UNITAR course reports (15 September 2026)
 
 UNITAR uploads each course to its reporting system as an "event" with its participants
