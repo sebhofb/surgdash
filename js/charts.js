@@ -579,6 +579,41 @@ window.Charts = {
         this._registerChart(elementId, 'ComboChart', dataTable, fbOpts);
     },
 
+    // Forum posts a month, with the number of different people writing them. Two series
+    // on purpose: ten posts from one person is a different course from ten people posting
+    // once each, and the gap between the lines is exactly that story.
+    drawForumActivity: function(elementId, series) {
+        if (this._deferIfNotReady('drawForumActivity', [elementId, series])) return;
+        const el = document.getElementById(elementId);
+        if (!el) return;
+        if (!series || !series.length) { this.clearChart(elementId, 'No forum posts for this course.'); return; }
+
+        const dataTable = new google.visualization.DataTable();
+        dataTable.addColumn('string', 'Month');
+        dataTable.addColumn('number', 'Posts');
+        dataTable.addColumn('number', 'Learners posting');
+        series.forEach(p => dataTable.addRow([this.formatDate(p.month + '-01'), p.posts, p.people]));
+
+        const opts = {
+            colors: [GSF_COLORS[3], GSF_COLORS[1]],
+            seriesType: 'bars',
+            series: { 0: { type: 'bars', targetAxisIndex: 0, opacity: 0.55 },
+                      1: { type: 'line', targetAxisIndex: 0, lineWidth: 3, pointSize: 4, curveType: 'function' } },
+            chartArea: { left: 55, right: 25, top: 35, bottom: 75, height: '65%' },
+            legend: { position: 'top', textStyle: { fontSize: 11, color: '#64748b' } },
+            hAxis: this.hAxisDefaults(),
+            vAxis: { title: 'Per month', titleTextStyle: { color: '#94a3b8', fontSize: 11, italic: false },
+                     textStyle: { color: '#94a3b8', fontSize: 11 }, viewWindow: { min: 0 }, format: '#,###',
+                     gridlines: { color: '#f1f5f9' } },
+            bar: { groupWidth: '60%' },
+            backgroundColor: 'transparent',
+            animation: { startup: false, duration: 0 },
+            tooltip: { textStyle: { fontSize: 12 } }
+        };
+        new google.visualization.ComboChart(el).draw(dataTable, opts);
+        this._registerChart(elementId, 'ComboChart', dataTable, opts);
+    },
+
     // Cumulative line chart with optional monthly bars
     drawCumulativeTimeline: function(elementId, monthlyData, label, color, showBars, extraOpts) {
         if (this._deferIfNotReady('drawCumulativeTimeline', [elementId, monthlyData, label, color, showBars, extraOpts])) return;
@@ -1066,6 +1101,7 @@ window.Charts = {
         this.drawTimelineLineChart('chart_growth', [JSON.stringify(cTimeline)], [courseName], true, showGrowthBars, 'crs');
         this.drawFeedbackTimeline('chart_feedback_growth', cData, document.getElementById('toggle-crs-fb-bars') && document.getElementById('toggle-crs-fb-bars').checked);
         this.drawCourseMap(courseName);
+        if (window.App && App.forumSeries) this.drawForumActivity('chart_forum_activity', App.forumSeries(App.forumActivity(courseName)));
     },
 
     // Per-course learner map from the course record's CountryStats (collected

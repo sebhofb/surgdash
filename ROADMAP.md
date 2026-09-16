@@ -3,6 +3,27 @@
 Working list of what to build next. Keep entries short; link to code when a
 decision is made. Items move to `js/whatsnew.js` when they ship.
 
+## Done — forum activity per course (16 September 2026)
+
+`js/forumActivity.js` reads LearnWorlds' community API and keeps a monthly series per
+course: posts, and how many different people wrote them. The chart sits on each course
+page under the feedback chart, bars for posts and a line for people, because ten posts
+from one person is a different course from ten people posting once.
+
+- **The join is exact.** Each space carries `usages[].courseId`, so a post reaches its
+  course through its space with no guessing from titles. 475 of 478 spaces have one.
+- **Posts, not comments.** There is no comments endpoint and the field that might have
+  carried replies is empty on every post. The learner segment export the app already
+  imports counts comments, but per learner with no date and no course, so it cannot make a
+  series. Everything is labelled "posts" for that reason.
+- **Counts only.** No user ids, no post text: the sets used to count distinct people never
+  leave `buildForumIndex`. 67 KB for the whole catalogue.
+- **Cost.** `items_per_page=100` is the largest page the API allows, so the whole read is
+  about 135 requests, three minutes at the pace this API tolerates.
+
+Live read (16 Sep 2026): 12,982 posts, 11,970 of them on 155 courses, back to Dec 2024.
+The other 1,012 are in general community spaces that belong to no course.
+
 ## Done — QA forms date the event from the launch, not from 1 January (16 September 2026)
 
 A course that went live in June was not running from January, whatever the reporting

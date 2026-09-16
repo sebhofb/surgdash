@@ -3542,6 +3542,31 @@ Object.assign(window.App, {
                         </div>
                     </div>
 
+                    <!-- ── 7. Forum activity ── -->
+                    <div class="bg-gradient-to-br from-slate-50 to-white border border-slate-200 rounded-2xl p-6 mb-4 shadow-sm">
+                        <div class="flex flex-wrap items-center gap-2 mb-1">
+                            <i data-lucide="messages-square" width="18" class="text-slate-500"></i>
+                            <h2 class="text-lg font-bold text-gsf-prussian">7 · Forum activity</h2>
+                            <span class="text-[10px] font-bold uppercase text-slate-600 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5">Course pages</span>
+                        </div>
+                        <p class="text-sm text-slate-600 max-w-3xl mb-3">What learners write in each course's discussion space, counted by month and shown as a chart on the course page. <strong>Posts only</strong> &mdash; the platform reports no replies, and no post text or learner identity is stored. About 135 requests, three to four minutes.</p>
+                        <div class="flex flex-wrap items-center gap-3">
+                            <button onclick="App.syncForumActivityWithProgress()" class="px-8 py-3 bg-slate-700 hover:bg-slate-800 text-white font-bold rounded-xl transition-colors">Read the forums</button>
+                            <span id="forum-sync-status" class="text-xs text-slate-500">${(() => {
+                                try {
+                                    if (this._forum === undefined && this._forumLoad) {
+                                        this._forum = null;
+                                        this._forumLoad().then(() => { if (this.view === 'upload' && this.renderView) this.renderView(); });
+                                        return 'Checking\u2026';
+                                    }
+                                    if (!this._forum) return 'Not read yet \u2014 course pages show no forum chart until this runs.';
+                                    const t = this._forum.totals || {};
+                                    return this.formatNumber(t.joined || 0) + ' posts across ' + this.formatNumber(t.courses || 0) + ' courses, read ' + (this._forumWhen() || 'earlier') + '.';
+                                } catch (e) { return ''; }
+                            })()}</span>
+                        </div>
+                    </div>
+
                     <!-- ── LearnWorlds API credentials (collapsible) ── -->
                     <details class="bg-white rounded-xl shadow-sm border border-slate-200 mb-6" id="lw-api-creds-panel">
                         <summary class="cursor-pointer p-5 flex items-center gap-3 select-none">
@@ -4333,6 +4358,8 @@ Object.assign(window.App, {
                         <div id="chart_feedback_growth" style="width: 100%; height: 400px;"></div>
                         ${this._partialMonthCaption()}
                     </div>
+
+                    ${this._forumPanelHtml ? this._forumPanelHtml(this.selectedCourse) : ''}
 
                     ${courseFeedbackBank.length > 0 ? `
                         <div class="bg-white p-6 rounded-xl shadow-sm border mb-8">

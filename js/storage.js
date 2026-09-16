@@ -56,6 +56,9 @@
             // Course summaries fetched from LearnWorlds (js/courseDetails.js) — prose the
             // numbers cannot supply, needed for UNITAR's quality-assessment forms.
             'surghub_course_details': path.join('surghub', 'course_details.json'),
+            // Monthly forum-post counts per course (js/forumActivity.js) — counts only,
+            // no user ids and no post text.
+            'surghub_forum':        path.join('surghub', 'forum.json'),
         };
         if (surghubMap[key]) return surghubMap[key];
 
@@ -134,6 +137,7 @@
                 'improvement_ai': 'surghub_improvement_ai',
                 'private_courses': 'surghub_private_courses',
                 'course_details': 'surghub_course_details',
+                'forum': 'surghub_forum',
                 // Raw feedback-survey responses (updater.js Surveys sync). Its reverse entry
                 // sat in the settings/ map by mistake, so keys() never listed it: it was
                 // missing from every Sheets push, local backup, restore and wipe until 11 Sep 2026.
