@@ -3172,6 +3172,7 @@ Object.assign(window.App, {
                                     <th class="py-3 px-3 font-medium text-right w-[70px] cursor-pointer hover:text-gsf-boston select-none" onclick="App._sortCourseDir('responses')">Resp. ${this._shCourseSortCol==='responses' ? (this._shCourseSortAsc ? '&#9650;' : '&#9660;') : '<span class="text-slate-300">&#8597;</span>'}</th>
                                     <th class="py-3 px-3 font-medium text-right w-[60px] cursor-pointer hover:text-gsf-boston select-none" onclick="App._sortCourseDir('rating')">Rating ${this._shCourseSortCol==='rating' ? (this._shCourseSortAsc ? '&#9650;' : '&#9660;') : '<span class="text-slate-300">&#8597;</span>'}</th>
                                     <th class="py-3 px-3 font-medium text-center w-[40px] cursor-pointer hover:text-gsf-boston select-none" onclick="App._sortCourseDir('url')">URL ${this._shCourseSortCol==='url' ? (this._shCourseSortAsc ? '&#9650;' : '&#9660;') : '<span class="text-slate-300">&#8597;</span>'}</th>
+                                    <th class="py-3 px-3 font-medium text-center w-[60px]" title="Private: in-country workshops and other closed cohorts. Left out of UNITAR batch reports unless you tick to include them.">Private</th>
                                     <th class="py-3 px-3 font-medium text-center w-[60px]">Include</th>
                                     <th class="py-3 px-3 font-medium text-center w-[40px]"></th>
                                 </tr></thead>
@@ -3219,6 +3220,7 @@ Object.assign(window.App, {
                                             <td class="py-2 px-3 text-right text-gsf-boston text-xs font-medium">${this.formatNumber(s.Responses)}</td>
                                             <td class="py-2 px-3 text-right text-xs font-medium ${s.Rating >= 4 ? 'text-green-600' : s.Rating > 0 ? 'text-gsf-crimson' : 'text-slate-300'}">${s.Rating > 0 ? s.Rating.toFixed(2) : '-'}</td>
                                             <td class="py-2 px-3 text-center text-xs">${s.URL ? '<span class="text-green-600">Y</span>' : '<span class="text-red-400">N</span>'}</td>
+                                            <td class="py-2 px-3 text-center"><input type="checkbox" data-edit-only ${App.isCoursePrivate && App.isCoursePrivate(s.Course) ? 'checked' : ''} onchange="App.toggleCoursePrivate('${courseEsc}', this.checked)" class="rounded border-slate-300 text-purple-600 focus:ring-purple-500/30" title="Private: an in-country workshop or other closed cohort. Left out of UNITAR batch reports unless you tick to include them. Defaults to what LearnWorlds says." /></td>
                                             <td class="py-2 px-3 text-center"><input type="checkbox" ${s.isExcluded ? '' : 'checked'} onchange="App.toggleExcludeCourse(${s.idx})" title="${s.isExcluded ? 'Click to include in analytics' : 'Click to exclude from analytics'}"></td>
                                             <td class="py-2 px-3 text-center"><button data-edit-only onclick="App.editCourseByIndex(${s.idx})" class="text-gsf-boston hover:text-gsf-prussian text-xs underline">edit</button></td>
                                         </tr>`;

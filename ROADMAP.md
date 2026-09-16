@@ -3,6 +3,21 @@
 Working list of what to build next. Keep entries short; link to code when a
 decision is made. Items move to `js/whatsnew.js` when they ship.
 
+## Next — UNITAR's annual QA form (raised 16 September 2026)
+
+UNITAR wants the quality-assessment form filled per course, annually. The form's
+administrative half is already derivable (title, provider, dates, duration, mode,
+location, fee, focal point, target audience) and the participation half comes from the
+same figures as the report.
+
+**It is blocked on content the app does not hold.** "Event objectives", "Learning
+objectives", "Content and structure" and "Methodology" need each course's summary and
+learning objectives, and SURGdash stores none of it: a course row has Course, Provider,
+URL, Learners, Certificates, timings, ratings and `Access`, and no description field.
+The next step is a course-detail fetch (LearnWorlds `/courses/{id}` or the public
+surghub.org page) into a new store, after which the form itself is a small job. Until
+then the app can only produce a partly-filled form, which is worse than none.
+
 ## Done — enrolments & progress from the API (2 September 2026, commit 2496d86)
 
 The card-2 "User Progress" xlsx is no longer the only source of per-learner
@@ -111,6 +126,33 @@ Follow-ups:
   certificates ~5–10 min. Remaining levers are outside card 2: card 1 and the
   ambassadors sync are already at the cap; the UI's Tailwind Play-CDN build is
   the main interactive-speed item left (needs a visual check after).
+
+## Done — the UNITAR report becomes UNITAR's own template (16 September 2026)
+
+- **The report IS their EMS workbook.** `templates/unitar_ems_template.xls` ships with the
+  app; the export reads it, fills the "Participants" sheet from row 2, leaves "Default
+  Values" untouched and adds "SURGhub summary" in front. The code lists (gender 1-5,
+  nationality ISO2, affiliation ACM/GOVN/…) are read from their own Default Values sheet at
+  export time, so a template update brings its codes with it.
+- **It carries personal data, and that is unavoidable.** Their template marks Surname,
+  Firstname and Email required, so the anonymised list cannot satisfy it. Both entry points
+  confirm before writing, the summary says so on its face, and the Methodology page will
+  need to follow. Verified against Essential Burn Care: all six required columns filled for
+  7,496 of 7,496 rows. Roughly a sixth of learners register a single word as their name;
+  that word goes in both name columns, since both are required and inventing a surname is
+  worse. Learners with no enrolment record have no name or email and leave those blank.
+  Where a learner stated nothing, UNITAR's own "Unreported" codes (gender 5, nationality
+  UN, affiliation UNR) fill the required column.
+- **Full logo.** `build/gsf_logo_full.png`, cropped from the letterhead, replaces the
+  emblem, and `_unitarAddLogo({firstOnly:true})` keeps it on our summary only — UNITAR's
+  sheets must ship exactly as they came, headers and row heights included.
+- **Summary**: the title is bold, and it is signed "Prepared with SURGdash (c) the Global
+  Surgery Foundation".
+- **Private courses classify themselves.** LearnWorlds already marks each course free (146),
+  private (75) or draft (37); private and draft are private by default. The stored value is
+  now an OVERRIDE map holding only the exceptions, so a course that changes on the platform
+  follows it. The tick is on the course page and in the Directory.
+- **Not done: the QA form.** See "Next" below.
 
 ## Done — UNITAR reports: simpler still, branded, and private courses (16 September 2026)
 

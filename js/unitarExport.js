@@ -3,13 +3,17 @@
 // UNITAR uploads each course to its reporting system as an "event" with its
 // participants attached, so the unit of export is one course, one file.
 //
-// Two sheets, and deliberately no third. "Summary" is the totals and the breakdown
-// of participants by country, career stage, gender, organisation type and profession
-// — one count column and one percentage column, nothing else. "Participants" is the
-// anonymised list: no name, no email, no identifier that follows anyone between
-// courses. The workings live on the app's Methodology page (ui.js,
-// _unitarMethodologyHtml) rather than in the file, so what UNITAR receives stays
-// short enough to read.
+// The report IS UNITAR's own upload workbook: their "Participants" sheet filled in,
+// their "Default Values" sheet untouched, and our "SURGhub summary" added in front.
+// The summary is the totals and the breakdown of participants by country, career stage,
+// gender, organisation type and profession — one count column and one percentage column,
+// nothing else. The workings live on the app's Methodology page
+// (_unitarMethodologyHtml) rather than in the file, so what UNITAR receives stays short
+// enough to read.
+//
+// IT CARRIES PERSONAL DATA. Their template marks Surname, Firstname and Email required,
+// so this is the one SURGdash export that is not anonymous. Both entry points warn
+// before writing, and the summary says so on its face.
 //
 // ONE ENROLMENT NUMBER. The platform's own course total and the number of
 // participant records differ slightly on most courses; the file reports the
@@ -100,24 +104,42 @@ Object.assign(window.App, {
         return (from ? this._unitarMonthName(from) : 'the start') + ' to ' + (to ? this._unitarMonthName(to) : 'now');
     },
 
+    // LearnWorlds already knows: it marks each course free / private / draft. That is the
+    // default, so 75 in-country and 37 unreleased courses classify themselves. The stored
+    // value is an OVERRIDE map ({course: true|false}) for the cases where the platform's
+    // answer is not the reporting answer — it only ever holds the exceptions.
     async _unitarPrivateSet() {
-        if (this._privateCourses instanceof Set) return this._privateCourses;
+        if (this._privateCourses) return this._privateCourses;
         let v = null;
         try { v = await Storage.getItem(this.UNITAR_PRIVATE_KEY); } catch (e) { __swallowed(e, 'unitar.private'); }
-        this._privateCourses = new Set(Array.isArray(v) ? v : []);
+        this._privateCourses = (v && typeof v === 'object' && !Array.isArray(v)) ? v
+            : (Array.isArray(v) ? v.reduce((m, k) => { m[k] = true; return m; }, {}) : {});   // migrate the old list
         return this._privateCourses;
     },
+    // What the platform says, before any override.
+    _unitarPlatformPrivate(courseName) {
+        const rows = (this.data || []).filter(d => d && d.Course === courseName && d.Access);
+        if (!rows.length) return false;
+        const newest = rows.sort((a, b) => String(a.Timestamp || '').localeCompare(String(b.Timestamp || ''))).pop();
+        const access = String(newest.Access || '').toLowerCase();
+        return access === 'private' || access === 'draft';
+    },
     isCoursePrivate(courseName) {
-        return !!(this._privateCourses instanceof Set && this._privateCourses.has(String(courseName)));
+        const name = String(courseName);
+        const over = this._privateCourses;
+        if (over && Object.prototype.hasOwnProperty.call(over, name)) return !!over[name];
+        return this._unitarPlatformPrivate(name);
     },
     async toggleCoursePrivate(courseName, priv) {
-        const set = await this._unitarPrivateSet();
+        const over = await this._unitarPrivateSet();
         const name = String(courseName);
-        const on = (priv === undefined) ? !set.has(name) : !!priv;
-        if (on) set.add(name); else set.delete(name);
-        try { await Storage.setItem(this.UNITAR_PRIVATE_KEY, [...set].sort()); } catch (e) { __swallowed(e, 'unitar.private.save'); }
-        this.showMsg(on ? '"' + name + '" marked private — left out of UNITAR batch reports unless you tick to include them.'
-                        : '"' + name + '" is no longer marked private.', 'success');
+        const on = (priv === undefined) ? !this.isCoursePrivate(name) : !!priv;
+        // Only remember it when it disagrees with the platform, so the override map stays
+        // small and a course that changes on LearnWorlds follows it.
+        if (on === this._unitarPlatformPrivate(name)) delete over[name]; else over[name] = on;
+        try { await Storage.setItem(this.UNITAR_PRIVATE_KEY, over); } catch (e) { __swallowed(e, 'unitar.private.save'); }
+        this.showMsg(on ? '"' + name + '" is private — left out of UNITAR batch reports unless you tick to include them.'
+                        : '"' + name + '" is no longer private.', 'success');
         if (this.renderView) this.renderView();
     },
 
@@ -199,6 +221,10 @@ Object.assign(window.App, {
                 started: this._unitarDay(c && c.start_date),
                 completedOn: this._unitarDay(c && c.completion_date),
                 certificateOn: this._unitarDay(c && c.certificate_date),
+                // Identity, for UNITAR's own upload template only — it demands surname,
+                // first name and email. Never used by the Summary sheet.
+                name: (c && c.name) ? String(c.name).trim() : '',
+                email: (c && c.email) ? String(c.email).trim() : '',
                 minutes: Math.round(this._unitarNum(c && c.time_minutes != null ? c.time_minutes : u.course_minutes)),
                 certificate: c ? !!c.certificate : String(u.has_certificate || '').toLowerCase() === 'yes',
             };
@@ -275,7 +301,7 @@ Object.assign(window.App, {
 
         // ── Summary ──
         const a = [];
-        a.push(['SURGhub course report for UNITAR']);
+        a.push(['SURGhub course report for UNITAR']);   // bolded by _unitarHeaderRows
         a.push(['Course', r.course]);
         a.push(['Provider', r.provider || 'Not recorded']);
         a.push(['Course launched', r.launch.month
@@ -296,6 +322,7 @@ Object.assign(window.App, {
         a.push(['Median learning time per participant (minutes)', n(r.totals.medianMinutes)]);
         a.push([]);
         a.push(['Where a participant did not state their country, career stage, gender, organisation type or profession, they are spread across the stated categories in the same proportions, so every block below adds up to the participant total. Each block says how many people stated it. Full workings are on the Methodology page of SURGdash.']);
+        a.push(['The "Participants" sheet is UNITAR\'s own upload template and carries names and email addresses, because UNITAR requires them. Treat this file as personal data.']);
         a.push([]);
 
         r.dimensions.forEach(d => {
@@ -307,21 +334,12 @@ Object.assign(window.App, {
             a.push(['Total', n(d.known ? d.records : 0), d.known ? 100 : 0]);
             a.push([]);
         });
+        a.push([]);
+        a.push(['Prepared with SURGdash \u00a9 the Global Surgery Foundation']);
         S.push({ name: 'Summary', aoa: a, cols: [50, 16, 16, 10], headerRows: this._unitarHeaderRows(a) });
 
-        // ── Participants ──
-        const head = ['Participant', 'Sign-up month', 'Country', 'ISO code', 'Career stage', 'Gender', 'Organisation type', 'Profession',
-            'Enrolled', 'Started', 'Certificate earned', 'Learning time (minutes)', 'Certificate'];
-        const p = [head];
-        const shown = (v) => this._unitarKnown(v) ? String(v).trim() : this.UNITAR_UNKNOWN;
-        r.participants.forEach(x => p.push([
-            x.n, x.signupMonth || this.UNITAR_UNKNOWN, shown(x.country), x.iso || '', shown(x.career_stage), shown(x.gender),
-            shown(x.organisation_type), shown(x.profession),
-            x.enrolled || '', x.started || '', x.certificateOn || '',
-            x.minutes || 0, x.certificate ? 'Yes' : 'No',
-        ]));
-        S.push({ name: 'Participants', aoa: p, cols: [11, 14, 24, 10, 22, 14, 24, 30, 12, 12, 16, 20, 12], headerRows: [0], freeze: true });
-
+        // There is no participant sheet of ours any more: UNITAR's own template sheet is
+        // the participant list, filled in _unitarEmsWorkbook.
         // Leave the top rows clear so the logo has somewhere to sit, and shift the
         // header rows with them. Done last so every index above stays readable.
         return S.map(s => this._unitarWithLogoSpace(s));
@@ -349,6 +367,7 @@ Object.assign(window.App, {
             if (!first) return;
             if (first === first.toUpperCase() && /[A-Z]/.test(first) && row.filter(c => c !== '' && c != null).length <= 2) out.push(i);
             else if (row.length > 2 && String(row[1] || '') === '# participants') out.push(i);
+            else if (first === 'SURGhub course report for UNITAR') out.push(i);
         });
         return out;
     },
@@ -379,6 +398,124 @@ Object.assign(window.App, {
             + '</div>';
     },
 
+    // ── UNITAR's own upload template (EMS) ────────────────────────────────
+    // UNITAR uploads participants through a fixed workbook of theirs, so the report IS
+    // that workbook: their "Participants" sheet filled in, their "Default Values" sheet
+    // untouched, and our Summary added alongside.
+    //
+    // THIS FILE CARRIES PERSONAL DATA. Their template marks Surname, Firstname and Email
+    // as required, so the anonymised participant list cannot satisfy it. The Summary sheet
+    // says so at the top, and the export warns before it writes. It is the one UNITAR
+    // output that is not safe to circulate.
+    //
+    // The code lists (gender 1-5, nationality ISO2, organisational affiliation ACM/GOVN/…)
+    // are read from the template's own "Default Values" sheet at export time rather than
+    // copied into this file, so a template update carries its own codes with it.
+    UNITAR_TEMPLATE: 'templates/unitar_ems_template.xls',
+    UNITAR_EMS_SHEET: 'Participants',
+    UNITAR_EMS_DEFAULTS: 'Default Values',
+
+    // Column pairs on the Default Values sheet: [code, label] side by side.
+    _unitarCodeMap(X, ws, col) {
+        const rows = X.utils.sheet_to_json(ws, { header: 1, blankrows: true, defval: '' });
+        const out = {};
+        rows.slice(1).forEach(r => {
+            const code = String(r[col] == null ? '' : r[col]).trim();
+            const label = String(r[col + 1] == null ? '' : r[col + 1]).trim();
+            if (code && label) out[label.toLowerCase()] = code;
+        });
+        return out;
+    },
+
+    // "Mary Jane Watson" -> { firstname: 'Mary Jane', surname: 'Watson' }; "Watson, Mary" too.
+    // Roughly a sixth of learners register a single word. Surname AND Firstname are both
+    // required by UNITAR, so that word goes in both: it is the only name we hold, and
+    // repeating it is honest where inventing a surname would not be.
+    _unitarSplitName(full) {
+        const s = String(full || '').replace(/\s+/g, ' ').trim();
+        if (!s) return { firstname: '', surname: '' };
+        if (s.indexOf(',') > 0) {
+            const bits = s.split(',');
+            const sur = bits[0].trim(), first = bits.slice(1).join(' ').trim();
+            return { surname: sur || first, firstname: first || sur };
+        }
+        const parts = s.split(' ');
+        if (parts.length === 1) return { firstname: parts[0], surname: parts[0] };
+        return { firstname: parts.slice(0, -1).join(' '), surname: parts[parts.length - 1] };
+    },
+
+    // One EMS row per participant, as an array in the template's column order.
+    _unitarEmsRows(report, maps) {
+        const gender = maps.gender || {}, nat = maps.nationality || {}, org = maps.org || {};
+        const code = (map, value, fallback) => {
+            const k = String(value || '').trim().toLowerCase();
+            return (k && map[k]) || fallback;
+        };
+        return report.participants.map(p => {
+            const nm = this._unitarSplitName(p.name);
+            const row = new Array(this.UNITAR_EMS_COLS).fill('');
+            row[0] = nm.surname;                                            // A  Surname*
+            row[1] = nm.firstname;                                          // B  Firstname*
+            row[5] = code(gender, p.gender, gender['unreported'] || '5');   // F  Gender*
+            row[6] = p.email;                                               // G  Email*
+            row[7] = (p.iso && nat[String(p.iso).toLowerCase()]) ? nat[String(p.iso).toLowerCase()]
+                : (p.iso || code(nat, p.country, nat['unreported'] || 'UN'));  // H  Nationality*
+            row[9] = code(org, p.organisation_type, org['unreported'] || 'UNR'); // J Organizational Affiliation*
+            row[15] = p.started ? '1' : '0';                                // P  Certification of participation
+            row[16] = p.certificate ? '1' : '0';                            // Q  Certification of completion
+            return row;
+        });
+    },
+    UNITAR_EMS_COLS: 49,
+
+    // The finished workbook: their template, filled, with our Summary added.
+    _unitarEmsWorkbook(report, templateBytes) {
+        const X = window.XLSXStyle || window.XLSX;
+        const wb = X.read(templateBytes, { type: 'array' });
+        const ws = wb.Sheets[this.UNITAR_EMS_SHEET];
+        if (!ws) throw new Error('The UNITAR template has no "' + this.UNITAR_EMS_SHEET + '" sheet.');
+        const dv = wb.Sheets[this.UNITAR_EMS_DEFAULTS];
+        const maps = dv ? {
+            gender: this._unitarCodeMap(X, dv, 3),
+            nationality: this._unitarCodeMap(X, dv, 6),
+            org: this._unitarCodeMap(X, dv, 9),
+        } : {};
+        // Nationality is keyed by ISO code in their list, so index it that way too.
+        if (maps.nationality) Object.keys(maps.nationality).forEach(label => { maps.nationality[maps.nationality[label].toLowerCase()] = maps.nationality[label]; });
+
+        const rows = this._unitarEmsRows(report, maps);
+        X.utils.sheet_add_aoa(ws, rows, { origin: 'A2' });
+        const end = X.utils.decode_range(ws['!ref'] || 'A1');
+        ws['!ref'] = X.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: Math.max(end.e.r, rows.length), c: Math.max(end.e.c, this.UNITAR_EMS_COLS - 1) } });
+
+        // Our summary, added as a sheet rather than replacing anything of theirs.
+        const summary = this._unitarSheets(report)[0];
+        const sws = X.utils.aoa_to_sheet(summary.aoa);
+        sws['!cols'] = summary.cols.map(w => ({ wch: w }));
+        if (summary.logoRows) sws['!rows'] = new Array(summary.logoRows).fill({ hpx: this.UNITAR_ROW_PX });
+        if (window.XLSXStyle) (summary.headerRows || []).forEach(ri => {
+            (summary.aoa[ri] || []).forEach((_, ci) => {
+                const cell = sws[X.utils.encode_cell({ r: ri, c: ci })];
+                if (cell) cell.s = { font: { bold: true, sz: ri === summary.logoRows ? 13 : 11, color: { rgb: '002F4C' } } };
+            });
+        });
+        X.utils.book_append_sheet(wb, sws, 'SURGhub summary');
+        // Put the summary first: it is what a person reads; their sheet is what the system eats.
+        wb.SheetNames = ['SURGhub summary'].concat(wb.SheetNames.filter(n => n !== 'SURGhub summary'));
+        return { X, wb, rows: rows.length };
+    },
+
+    async _unitarTemplateBytes() {
+        if (this._emsTemplate !== undefined) return this._emsTemplate;
+        this._emsTemplate = null;
+        try {
+            const fs = electronAPI.fs, path = electronAPI.path;
+            const p = path.join(electronAPI.appPath || '.', 'templates', 'unitar_ems_template.xls');
+            if (fs.existsSync(p)) this._emsTemplate = new Uint8Array(fs.readFileSync(p));
+        } catch (e) { __swallowed(e, 'unitar.template'); }
+        return this._emsTemplate;
+    },
+
     // ── the GSF logo, added to the finished workbook ──────────────────────
     // SheetJS's community build cannot place an image, so the picture parts are added to
     // the .xlsx afterwards. That is safe here because SheetJS writes every entry STORED
@@ -386,7 +523,8 @@ Object.assign(window.App, {
     // an inflate/deflate step at all. Anything unexpected — a deflated entry, a worksheet
     // that already owns relationships — and the original bytes are returned untouched:
     // a report without a logo beats a report Excel refuses to open.
-    UNITAR_LOGO_PX: 66,          // drawn size, square
+    UNITAR_LOGO_W: 150,          // drawn size of the full lock-up, in pixels
+    UNITAR_LOGO_H: 70,
     UNITAR_LOGO_ROWS: 3,         // spacer rows the sheets leave for it
     UNITAR_ROW_PX: 26,
 
@@ -465,18 +603,23 @@ Object.assign(window.App, {
     },
 
     // Put `png` at the top-left of every worksheet in the workbook `bytes`.
-    _unitarAddLogo(bytes, png) {
+    // opts.firstOnly limits the logo to sheet1 — the UNITAR workbook must keep their own
+    // sheets exactly as they shipped them, headers and row heights included.
+    _unitarAddLogo(bytes, png, opts) {
+        opts = opts || {};
         try {
             if (!png || !png.length) return bytes;
             const entries = this._unitarUnzip(bytes);
             if (!entries) return bytes;
             const enc = new TextEncoder(), dec = new TextDecoder();
             const find = (name) => entries.find(e => e.name === name);
-            const sheets = entries.filter(e => /^xl\/worksheets\/sheet\d+\.xml$/.test(e.name));
+            let sheets = entries.filter(e => /^xl\/worksheets\/sheet\d+\.xml$/.test(e.name));
+            if (opts.firstOnly) sheets = sheets.filter(e => /sheet1\.xml$/.test(e.name));
+            if (!sheets.length) return bytes;
             if (!sheets.length) return bytes;
             if (entries.some(e => /^xl\/worksheets\/_rels\//.test(e.name))) return bytes;   // already has relationships
 
-            const ext = Math.round(this.UNITAR_LOGO_PX * 9525);   // pixels → EMU
+            const cx = Math.round(this.UNITAR_LOGO_W * 9525), cy = Math.round(this.UNITAR_LOGO_H * 9525);   // pixels → EMU
             entries.push({ name: 'xl/media/gsf-logo.png', data: png });
 
             sheets.forEach((sheet, i) => {
@@ -487,10 +630,10 @@ Object.assign(window.App, {
                     + '<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
                     + '<xdr:oneCellAnchor>'
                     + '<xdr:from><xdr:col>0</xdr:col><xdr:colOff>57150</xdr:colOff><xdr:row>0</xdr:row><xdr:rowOff>57150</xdr:rowOff></xdr:from>'
-                    + '<xdr:ext cx="' + ext + '" cy="' + ext + '"/>'
+                    + '<xdr:ext cx="' + cx + '" cy="' + cy + '"/>'
                     + '<xdr:pic><xdr:nvPicPr><xdr:cNvPr id="' + (i + 2) + '" name="Global Surgery Foundation" descr="Global Surgery Foundation"/><xdr:cNvPicPr><a:picLocks noChangeAspect="1"/></xdr:cNvPicPr></xdr:nvPicPr>'
                     + '<xdr:blipFill><a:blip xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:embed="rId1"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill>'
-                    + '<xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="' + ext + '" cy="' + ext + '"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr>'
+                    + '<xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="' + cx + '" cy="' + cy + '"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr>'
                     + '</xdr:pic><xdr:clientData/></xdr:oneCellAnchor></xdr:wsDr>') });
                 entries.push({ name: 'xl/drawings/_rels/drawing' + num + '.xml.rels', data: enc.encode(
                     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
@@ -542,7 +685,7 @@ Object.assign(window.App, {
             const fs = electronAPI.fs, path = electronAPI.path;
             // The transparent-background mark: the dark-square version disappears into a
             // white sheet. preload's readFileSync hands back an ArrayBuffer for binaries.
-            for (const name of ['Global Surgery Foundation_logo_symbol.png', 'gsf_logo_symbol.png']) {
+            for (const name of ['gsf_logo_full.png', 'Global Surgery Foundation_logo_symbol.png']) {
                 const p = path.join(electronAPI.appPath || '.', 'build', name);
                 if (fs.existsSync(p)) { this._unitarLogo = new Uint8Array(fs.readFileSync(p)); break; }
             }
@@ -647,12 +790,19 @@ Object.assign(window.App, {
             if (!period) return;
             const report = this.buildUnitarReport(course, Object.assign({}, ctx, period));
             if (!report.totals.participants) return alert('No participants for "' + course + '"' + (report.period.set ? ' in ' + report.period.label : '') + '.');
+            const named = report.participants.filter(p => p.email).length;
+            if (!confirm('This report uses UNITAR\'s upload template, which requires each participant\'s surname, first name and email address.\n\n'
+                + 'The file will therefore contain PERSONAL DATA for ' + this.formatNumber(named) + ' of ' + this.formatNumber(report.totals.participants) + ' participants.\n'
+                + 'Send it to UNITAR only. Continue?')) return;
+            const template = await this._unitarTemplateBytes();
+            if (!template) return alert('The UNITAR template is missing from this installation (templates/unitar_ems_template.xls).');
             const savePath = await electronAPI.invoke('pick-save-path', this._unitarFileName(course, report.period));
             if (!savePath) return;
-            const { X, wb } = this._unitarWorkbook(report);
-            const out = this._unitarAddLogo(new Uint8Array(X.write(wb, { bookType: 'xlsx', type: 'array' })), await this._unitarLogoBytes());
+            const { X, wb } = this._unitarEmsWorkbook(report, template);
+            const out = this._unitarAddLogo(new Uint8Array(X.write(wb, { bookType: 'xlsx', type: 'array' })), await this._unitarLogoBytes(), { firstOnly: true });
             electronAPI.fs.writeFileSync(savePath, out);
-            this.showMsg('UNITAR report saved — ' + this.formatNumber(report.totals.participants) + ' participants · ' + report.period.label + '.', 'success');
+            this.showMsg('UNITAR report saved — ' + this.formatNumber(report.totals.participants) + ' participants · ' + report.period.label
+                + ' · contains personal data.', 'success');
         } catch (e) {
             console.error('[UNITAR]', e);
             alert('Could not build the report: ' + (e && e.message || e));
@@ -678,6 +828,10 @@ Object.assign(window.App, {
             if (!confirm('Write one UNITAR report per course?\n\nPeriod: ' + label + '\n' + courses.length + ' courses, one .xlsx each, into a folder you choose.'
                 + (excluded ? '\n\n' + excluded + ' course' + (excluded === 1 ? '' : 's') + ' excluded from analytics will be skipped.' : '')
                 + (privateCount ? '\n' + privateCount + ' private course' + (privateCount === 1 ? '' : 's') + (period.includePrivate ? ' included.' : ' skipped.') : ''))) return;
+            const template = await this._unitarTemplateBytes();
+            if (!template) return alert('The UNITAR template is missing from this installation (templates/unitar_ems_template.xls).');
+            if (!confirm('These reports use UNITAR\'s upload template, which requires each participant\'s surname, first name and email address.\n\n'
+                + 'Every file will therefore contain PERSONAL DATA. Send them to UNITAR only. Continue?')) return;
             const folder = await electronAPI.invoke('pick-folder');
             if (!folder) return;
             const logo = await this._unitarLogoBytes();
@@ -690,8 +844,8 @@ Object.assign(window.App, {
                 try {
                     const report = this.buildUnitarReport(courses[i], Object.assign({}, ctx, period));
                     if (!report.totals.participants) { skipped++; continue; }   // nobody enrolled in the period
-                    const { X, wb } = this._unitarWorkbook(report);
-                    const out = this._unitarAddLogo(new Uint8Array(X.write(wb, { bookType: 'xlsx', type: 'array' })), logo);
+                    const { X, wb } = this._unitarEmsWorkbook(report, template);
+                    const out = this._unitarAddLogo(new Uint8Array(X.write(wb, { bookType: 'xlsx', type: 'array' })), logo, { firstOnly: true });
                     fs.writeFileSync(path.join(folder, this._unitarFileName(courses[i], report.period)), out);
                     ok++;
                 } catch (e) { console.error('[UNITAR]', courses[i], e); skipped++; }

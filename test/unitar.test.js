@@ -23,9 +23,9 @@ const anonUsers = [
   { course: 'Course B', user_uid: 'u1',  signup_month: '2026-01', country: 'Kenya',   profession: 'surgeon', gender: 'Female', organisation_type: 'Academia',              career_stage: 'In practice',   has_certificate: 'No',  course_minutes: 7 },
 ];
 const completion = [
-  { uid: 'u1', course: 'Course A', enrolled_date: '2026-01-05', start_date: '2026-01-06', completion_date: '2026-01-20', certificate_date: '2026-01-20', completed: true,  certificate: true,  time_minutes: 121.4 },
-  { uid: 'u2', course: 'Course A', enrolled_date: '2026-01-07', start_date: '2026-01-08', completion_date: '',           certificate_date: '',           completed: false, certificate: false, time_minutes: 30 },
-  { uid: 'u4', course: 'Course A', enrolled_date: '2026-02-02', start_date: '',           completion_date: '2026-02-20', certificate_date: '2026-02-21', completed: true,  certificate: true,  time_minutes: 90 },
+  { uid: 'u1', name: 'Mary Jane Watson', email: 'mjw@example.invalid', course: 'Course A', enrolled_date: '2026-01-05', start_date: '2026-01-06', completion_date: '2026-01-20', certificate_date: '2026-01-20', completed: true,  certificate: true,  time_minutes: 121.4 },
+  { uid: 'u2', name: 'Amara',             email: 'a@example.invalid',   course: 'Course A', enrolled_date: '2026-01-07', start_date: '2026-01-08', completion_date: '',           certificate_date: '',           completed: false, certificate: false, time_minutes: 30 },
+  { uid: 'u4', name: 'Okafor, Chidi',     email: 'oc@example.invalid',  course: 'Course A', enrolled_date: '2026-02-02', start_date: '',           completion_date: '2026-02-20', certificate_date: '2026-02-21', completed: true,  certificate: true,  time_minutes: 90 },
   { uid: 'u1', course: 'Course B', enrolled_date: '2026-01-05', start_date: '2026-01-05', completion_date: '', certificate_date: '', completed: false, certificate: false, time_minutes: 7 },
 ];
 const snap = [
@@ -49,6 +49,10 @@ function mk() {
   ctx.countryToISO = (n) => ({ Kenya: 'KE', Nigeria: 'NG', India: 'IN' }[String(n).trim()] || null);
   ctx.App = {
     alerts: [], msgs: [], selectedCourse: 'Course A',
+    data: [{ Course: 'Course A', Access: 'free', Timestamp: '2026-09-11' },
+           { Course: 'Workshop A', Access: 'private', Timestamp: '2026-09-11' },
+           { Course: 'Draft A', Access: 'draft', Timestamp: '2026-09-11' },
+           { Course: 'Workshop A', Access: 'free', Timestamp: '2020-01-01' }],
     formatNumber: (v) => new Intl.NumberFormat('en-US').format(v || 0),
     escapeHtml: (t) => String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])),
     showMsg(m) { this.msgs.push(m); },
@@ -156,120 +160,132 @@ check('participant numbers restart at 1 in every file, so nobody can be followed
 
 // ── the sheets ──
 const sheets = A._unitarSheets(r);
-check('two sheets — the method sheet is gone, its content lives on the Methodology page',
-  sheets.map(s => s.name).join(' | ') === 'Summary | Participants', sheets.map(s => s.name).join(' | '));
-check('every sheet name fits Excel\'s limit and each row fits its column widths',
-  sheets.every(s => s.name.length <= 31 && s.aoa.every(rw => rw.length <= s.cols.length)),
-  JSON.stringify(sheets.map(s => s.name + ' ' + Math.max.apply(null, s.aoa.map(rw => rw.length)) + '/' + s.cols.length)));
+check('only the summary is ours now — UNITAR\'s own template sheet is the participant list',
+  sheets.map(x => x.name).join(' | ') === 'Summary', sheets.map(x => x.name).join(' | '));
+check('every row fits its column widths', sheets.every(x => x.aoa.every(rw => rw.length <= x.cols.length)));
 
-const flat = (s) => s.aoa.map(rw => rw.join('\t')).join('\n');
-const sum = flat(sheets[0]), par = flat(sheets[1]);
+const flat = (x) => x.aoa.map(rw => rw.join('\t')).join('\n');
+const sum = flat(sheets[0]);
 check('the summary leads with one participant figure and no second enrolment number',
-  /Participants\t10/.test(sum) && !/Enrolled learners/.test(sum) && !/participant record/.test(sum));
+  /Participants\t10/.test(sum) && !/Enrolled learners/.test(sum));
 check('the summary carries the launch month and the window the enrolments come from',
   /Course launched\t/.test(sum) && /Enrolments counted\tAll time/.test(sum), (sum.match(/Course launched\t[^\n]*/) || [''])[0]);
 check('a small course says its launch month is really just the first enrolment',
   /first enrolment; too few enrolments to identify a launch/.test(sum));
 check('a period shows on the sheet rather than being silent',
   /Enrolments counted\t2026/.test(flat(A._unitarSheets(build({ from: '2026-01', to: '2026-12' }))[0])));
-check('the totals list participants and certificates only — "started" is gone from the summary too',
-  !/Completed the course/.test(sum) && !/Started the course/.test(sum) && /Participants\t10/.test(sum) && /Certificates earned\t2/.test(sum),
-  (sum.match(/TOTALS[\s\S]{0,200}/) || [''])[0].split('\n').slice(1, 5).join(' · '));
-check('starts are still counted for the app even though the sheet does not print them', r.totals.started === 2);
-check('one line about time, not two: no bare "data through" beside a period',
-  !/Data through/.test(sum) && (sum.match(/Enrolments counted\t[^\n]*/) || []).length === 1,
-  (sum.match(/Enrolments counted\t[^\n]*/) || [''])[0]);
-check('with no period the line says all time and names the date the data runs to',
-  /Enrolments counted\tAll time, up to 11 September 2026/.test(sum), (sum.match(/Enrolments counted\t[^\n]*/) || [''])[0]);
+check('the totals list participants and certificates only',
+  !/Completed the course/.test(sum) && !/Started the course/.test(sum) && /Certificates earned\t2/.test(sum));
+check('one line about time, not two', !/Data through/.test(sum) && (sum.match(/Enrolments counted\t[^\n]*/) || []).length === 1);
 check('with a closed period the line is just the period — no contradictory through-date',
-  (() => { const line = (flat(A._unitarSheets(build({ from: '2026-01', to: '2026-12' }))[0]).match(/Enrolments counted\t[^\n]*/) || [''])[0];
-    return line === 'Enrolments counted\t2026'; })(),
-  (flat(A._unitarSheets(build({ from: '2026-01', to: '2026-12' }))[0]).match(/Enrolments counted\t[^\n]*/) || [''])[0]);
-check('an open-ended period says where it runs to, since that is genuinely useful',
-  (() => { const line = (flat(A._unitarSheets(build({ from: '2026-01' }))[0]).match(/Enrolments counted\t[^\n]*/) || [''])[0];
-    return /onwards, up to 11 September 2026$/.test(line); })(),
-  (flat(A._unitarSheets(build({ from: '2026-01' }))[0]).match(/Enrolments counted\t[^\n]*/) || [''])[0]);
+  (flat(A._unitarSheets(build({ from: '2026-01', to: '2026-12' }))[0]).match(/Enrolments counted\t[^\n]*/) || [''])[0] === 'Enrolments counted\t2026');
+check('an open-ended period says where it runs to',
+  /onwards, up to 11 September 2026$/.test((flat(A._unitarSheets(build({ from: '2026-01' }))[0]).match(/Enrolments counted\t[^\n]*/) || [''])[0]));
 check('each breakdown block has exactly two data columns (plus ISO for country)',
-  r.dimensions.every(d => new RegExp('^' + d.label + '\t# participants\t% participants' + (d.key === 'country' ? '\tISO code' : '') + '$', 'm').test(sum)),
-  (sum.match(/^Gender\t[^\n]*/m) || [''])[0]);
-check('no percentage-of-a-different-base columns survive',
-  !/% of those recorded/.test(sum) && !/% of all/.test(sum) && !/Estimated/.test(sum));
+  r.dimensions.every(d => new RegExp('^' + d.label + '\t# participants\t% participants' + (d.key === 'country' ? '\tISO code' : '') + '$', 'm').test(sum)));
 check('every block states how many people stated the field',
-  r.dimensions.every(d => sum.indexOf('Stated by ' + d.known + ' of ' + d.records + ' participants') > 0),
-  (sum.match(/Stated by [^\n]*/) || [''])[0]);
-check('one note on the summary says the gap is filled by spreading, and where to read more',
+  r.dimensions.every(d => sum.indexOf('Stated by ' + d.known + ' of ' + d.records + ' participants') > 0));
+check('one note says the gap is filled by spreading, and where to read more',
   /spread across the stated categories in the same proportions/.test(sum) && /Methodology page/.test(sum));
 check('each block totals to the participant count', (sum.match(/^Total\t10\t100$/gm) || []).length === r.dimensions.length);
+check('the title is bold, not just another line of text', sheets[0].headerRows.indexOf(sheets[0].logoRows) === 0, JSON.stringify(sheets[0].headerRows.slice(0, 3)));
+check('the summary is signed off', /Prepared with SURGdash \u00a9 the Global Surgery Foundation/.test(sum));
+check('the summary says on its face that the file carries personal data',
+  /Treat this file as personal data/.test(sum) && /UNITAR requires them/.test(sum));
+check('the summary leaves blank rows at the top for the logo, header indices moved with them',
+  sheets[0].logoRows === A.UNITAR_LOGO_ROWS && sheets[0].aoa.slice(0, sheets[0].logoRows).every(rw => rw.length === 0));
 
-check('the participant sheet carries no name, no email and no cross-course identifier',
-  !/email|name|uid|@/i.test(par.replace(/Not recorded/g, '')), par.slice(0, 110));
-check('a blank field reads "Not recorded" rather than looking like a broken cell',
-  /Not recorded/.test(par) && !sheets[1].aoa.slice(1).some(rw => [2, 4, 5, 6, 7].some(i => rw[i] === '')));
-const pHead = sheets[1].logoRows;
-check('the participant sheet drops the completed column and keeps the certificate one',
-  sheets[1].aoa[pHead].indexOf('Completed') === -1 && sheets[1].aoa[pHead].indexOf('Certificate') > 0
-    && sheets[1].aoa[pHead].indexOf('Certificate earned') > 0);
-check('one header row, one row per participant, under the logo spacer',
-  sheets[1].aoa.length === 11 + sheets[1].logoRows && sheets[1].aoa.slice(0, pHead).every(rw => rw.length === 0));
-
-// ── the logo ──
-check('both sheets leave blank rows at the top for the logo, and the header indices move with them',
-  sheets.every(sh => sh.logoRows === A.UNITAR_LOGO_ROWS && sh.headerRows.every(i => i >= sh.logoRows)),
-  JSON.stringify(sheets.map(sh => sh.name + ' pad ' + sh.logoRows + ' heads ' + sh.headerRows.slice(0, 3))));
-check('the participants freeze row sits below the spacer, so scrolling still pins the header',
-  sheets[1].freezeRow === A.UNITAR_LOGO_ROWS + 1, sheets[1].freezeRow);
+// ── UNITAR's own template ──
+check('a full name splits into first name and surname', JSON.stringify(A._unitarSplitName('Mary Jane Watson')) === JSON.stringify({ firstname: 'Mary Jane', surname: 'Watson' }));
+check('"Surname, Firstname" is understood', JSON.stringify(A._unitarSplitName('Watson, Mary')) === JSON.stringify({ surname: 'Watson', firstname: 'Mary' }));
+check('a single-word name fills both required columns rather than leaving one blank',
+  JSON.stringify(A._unitarSplitName('Amara')) === JSON.stringify({ firstname: 'Amara', surname: 'Amara' }));
+check('an empty name stays empty rather than becoming a guess', JSON.stringify(A._unitarSplitName('')) === JSON.stringify({ firstname: '', surname: '' }));
 {
-  const XL = require(ROOT + '/vendor/xlsx.full.min.js');
-  const wb = XL.utils.book_new();
-  XL.utils.book_append_sheet(wb, XL.utils.aoa_to_sheet([[], [], [], ['Title'], ['Course', 'X']]), 'Summary');
-  XL.utils.book_append_sheet(wb, XL.utils.aoa_to_sheet([[], [], [], ['Participant'], [1]]), 'Participants');
-  const plain = new Uint8Array(XL.write(wb, { bookType: 'xlsx', type: 'array' }));
-  const png = new Uint8Array(fs.readFileSync(ROOT + '/build/Global Surgery Foundation_logo_symbol.png'));
-  const out = A._unitarAddLogo(plain, png);
-  const names = (A._unitarUnzip(out) || []).map(e => e.name);
-  check('the logo is added to a finished workbook as real picture parts, one drawing per sheet',
-    names.indexOf('xl/media/gsf-logo.png') >= 0 && names.filter(nm => /^xl\/drawings\/drawing\d+\.xml$/.test(nm)).length === 2
-      && names.filter(nm => /^xl\/worksheets\/_rels\//.test(nm)).length === 2,
-    names.filter(nm => /media|drawing/.test(nm)).join(' | '));
-  const ctXml = new TextDecoder().decode((A._unitarUnzip(out) || []).find(e => e.name === '[Content_Types].xml').data);
-  check('the content types declare the picture and the drawings, or Excel refuses the file',
-    /Extension="png"/.test(ctXml) && (ctXml.match(/drawing\+xml/g) || []).length === 2);
-  const sheetXml = new TextDecoder().decode((A._unitarUnzip(out) || []).find(e => e.name === 'xl/worksheets/sheet1.xml').data);
-  check('the sheet points at its drawing, declares the namespace it needs, and gives the spacer rows a height',
-    /<drawing r:id="rIdDr1"\/>/.test(sheetXml) && /xmlns:r=/.test(sheetXml)
-      && (sheetXml.match(/<row r="\d" ht="[\d.]+" customHeight="1"\/>/g) || []).length === A.UNITAR_LOGO_ROWS,
-    (sheetXml.match(/<row r="1"[^>]*>/) || [''])[0]);
-  check('the rewritten workbook is still a workbook SheetJS can read',
-    (() => { const back = XL.read(Buffer.from(out), { type: 'buffer' }); return back.SheetNames.join() === 'Summary,Participants'; })());
-  check('a compressed workbook is left exactly as it was, rather than half-rewritten',
-    (() => { const z = new Uint8Array(XL.write(wb, { bookType: 'xlsx', type: 'array', compression: true }));
-      return A._unitarAddLogo(z, png) === z && A._unitarUnzip(z) === null; })());
-  check('no logo on disk means a report without a logo, never a failed report',
-    A._unitarAddLogo(plain, null) === plain && A._unitarAddLogo(plain, new Uint8Array(0)) === plain);
-  check('a workbook whose sheets already own relationships is left alone',
-    (() => { const e = A._unitarUnzip(plain); e.push({ name: 'xl/worksheets/_rels/sheet1.xml.rels', data: new Uint8Array([60]) });
-      const z = A._unitarZip(e); return A._unitarAddLogo(z, png) === z; })());
-  check('the checksum is a real CRC32, so the archive is not quietly corrupt',
-    A._unitarCrc32(new TextEncoder().encode('123456789')) === 0xCBF43926, A._unitarCrc32(new TextEncoder().encode('123456789')).toString(16));
+  const maps = { gender: { female: '1', male: '2', unreported: '5' },
+                 nationality: { ke: 'KE', ng: 'NG', unreported: 'UN' },
+                 org: { academia: 'ACM', 'private sector': 'PRI', unreported: 'UNR' } };
+  const rows = A._unitarEmsRows(r, maps);
+  check('one EMS row per participant, in the template\'s column order', rows.length === 10 && rows[0].length === A.UNITAR_EMS_COLS);
+  check('the coded required columns are filled for EVERY participant — that is what makes them fillable',
+    rows.every(rw => rw[5] && rw[7] && rw[9]), JSON.stringify(rows.map(rw => rw[5] + rw[7] + rw[9]).slice(0, 4)));
+  check('surname, first name and email are filled wherever the platform gave us an enrolment record',
+    rows.filter(rw => rw[0] && rw[1] && rw[6]).length === 3
+      && rows[0][0] === 'Watson' && rows[0][1] === 'Mary Jane' && rows[0][6] === 'mjw@example.invalid',
+    JSON.stringify([rows[0][0], rows[0][1], rows[0][6]]));
+  check('a one-word name still fills both name columns', rows[1][0] === 'Amara' && rows[1][1] === 'Amara');
+  check('a "Surname, Firstname" record is not written back to front', rows[3][0] === 'Okafor' && rows[3][1] === 'Chidi');
+  check('a participant with no enrolment record leaves the name columns empty rather than inventing one',
+    rows[8][0] === '' && rows[8][1] === '' && rows[8][6] === '');
+  check('gender, nationality and affiliation map to codes, not to our own wording',
+    rows[0][5] === '1' && rows[0][7] === 'KE' && rows[0][9] === 'ACM', [rows[0][5], rows[0][7], rows[0][9]].join('/'));
+  check('a field nobody stated becomes UNITAR\'s "unreported" code, which is what makes a required column fillable',
+    rows[8][5] === '5' && rows[8][7] === 'UN' && rows[8][9] === 'UNR', [rows[8][5], rows[8][7], rows[8][9]].join('/'));
+  check('participation and completion are the 0/1 flags the template expects',
+    rows[0][15] === '1' && rows[0][16] === '1' && rows[8][15] === '0' && rows[8][16] === '0');
+  check('email goes in the email column and nowhere else',
+    rows.every(rw => rw.filter(v => /@/.test(String(v))).length <= 1));
+  check('the code lists are read from the template at export time, not copied into the code',
+    /_unitarCodeMap\(X, dv, 3\)/.test(fs.readFileSync(ROOT + '/js/unitarExport.js', 'utf8')));
 }
+check('the template ships with the app', fs.existsSync(ROOT + '/templates/unitar_ems_template.xls'));
+check('the template is exempt from the .xls gitignore rule, or it would never reach a colleague',
+  /!templates\/unitar_ems_template\.xls/.test(fs.readFileSync(ROOT + '/.gitignore', 'utf8')));
+check('both entry points warn that the file carries personal data before writing anything',
+  (fs.readFileSync(ROOT + '/js/unitarExport.js', 'utf8').match(/contain PERSONAL DATA/g) || []).length === 2);
 
 // ── private courses ──
-check('a course is not private until it is marked', A.isCoursePrivate('Course A') === false);
-
-check('the private list travels with the data, in both directions',
-  (() => { const st = fs.readFileSync(ROOT + '/js/storage.js', 'utf8');
-    return /'surghub_private_courses': path\.join\('surghub', 'private_courses\.json'\)/.test(st)
-      && /'private_courses': 'surghub_private_courses'/.test(st); })());
+check('LearnWorlds decides by default: a course it marks private is private',
+  A.isCoursePrivate('Workshop A') === true && A.isCoursePrivate('Draft A') === true && A.isCoursePrivate('Course A') === false);
+check('the newest course row wins, so a course that was opened up follows it',
+  A._unitarPlatformPrivate('Workshop A') === true);
+check('an unknown course is not private', A.isCoursePrivate('Nothing') === false);
 check('the batch run leaves private courses out unless the dialog says otherwise',
   /period\.includePrivate \? listed : listed\.filter\(c => !this\.isCoursePrivate\(c\)\)/.test(fs.readFileSync(ROOT + '/js/unitarExport.js', 'utf8')));
 check('the dialog offers the private toggle for the batch only, and counts them',
   (() => { const m = fs.readFileSync(ROOT + '/js/unitarExport.js', 'utf8');
-    return /privateToggle: true, privateCount/.test(m) && /opts\.privateToggle/.test(m)
-      && /_unitarAskPeriod\('UNITAR report — ' \+ course\)/.test(m); })());
-check('the course page carries the private toggle',
-  /toggleCoursePrivate\(/.test(fs.readFileSync(ROOT + '/js/ui.js', 'utf8')));
+    return /privateToggle: true, privateCount/.test(m) && /opts\.privateToggle/.test(m); })());
+check('the toggle is on the course page and in the directory',
+  (() => { const g = fs.readFileSync(ROOT + '/js/ui.js', 'utf8');
+    return (g.match(/toggleCoursePrivate\(/g) || []).length === 2 && />Private</.test(g); })());
 check('every course being private is caught before a folder is picked',
   /Every course is marked private/.test(fs.readFileSync(ROOT + '/js/unitarExport.js', 'utf8')));
+
+// ── the logo ──
+{
+  const XL = require(ROOT + '/vendor/xlsx.full.min.js');
+  const wb = XL.utils.book_new();
+  XL.utils.book_append_sheet(wb, XL.utils.aoa_to_sheet([[], [], [], ['Title'], ['Course', 'X']]), 'Summary');
+  XL.utils.book_append_sheet(wb, XL.utils.aoa_to_sheet([[], [], [], ['Participant'], [1]]), 'Theirs');
+  const plain = new Uint8Array(XL.write(wb, { bookType: 'xlsx', type: 'array' }));
+  const png = new Uint8Array(fs.readFileSync(ROOT + '/build/gsf_logo_full.png'));
+  check('the app ships the full logo lock-up, not just the emblem',
+    fs.existsSync(ROOT + '/build/gsf_logo_full.png') && /gsf_logo_full\.png/.test(fs.readFileSync(ROOT + '/js/unitarExport.js', 'utf8')));
+  check('the logo is drawn as a wide lock-up rather than a square', A.UNITAR_LOGO_W > A.UNITAR_LOGO_H);
+  const out = A._unitarAddLogo(plain, png);
+  const names = (A._unitarUnzip(out) || []).map(e => e.name);
+  check('the logo is added as real picture parts', names.indexOf('xl/media/gsf-logo.png') >= 0 && names.filter(nm => /drawing\d+\.xml$/.test(nm)).length === 2);
+  const one = A._unitarAddLogo(plain, png, { firstOnly: true });
+  const oneNames = (A._unitarUnzip(one) || []).map(e => e.name);
+  check('firstOnly keeps the logo off UNITAR\'s own sheets, which must ship exactly as they are',
+    oneNames.filter(nm => /drawing\d+\.xml$/.test(nm)).length === 1 && oneNames.indexOf('xl/worksheets/_rels/sheet2.xml.rels') < 0,
+    oneNames.filter(nm => /drawing|_rels\/sheet/.test(nm)).join(' | '));
+  const sheetXml = new TextDecoder().decode((A._unitarUnzip(one) || []).find(e => e.name === 'xl/worksheets/sheet1.xml').data);
+  const theirs = new TextDecoder().decode((A._unitarUnzip(one) || []).find(e => e.name === 'xl/worksheets/sheet2.xml').data);
+  check('our sheet gets the drawing and the spacer-row heights; theirs gets neither',
+    /<drawing r:id="rIdDr1"\/>/.test(sheetXml) && (sheetXml.match(/<row r="\d" ht="[\d.]+" customHeight="1"\/>/g) || []).length === A.UNITAR_LOGO_ROWS
+      && !/<drawing /.test(theirs) && !/customHeight/.test(theirs));
+  check('the content types declare the picture and the drawing',
+    (() => { const ct = new TextDecoder().decode((A._unitarUnzip(one) || []).find(e => e.name === '[Content_Types].xml').data);
+      return /Extension="png"/.test(ct) && /drawing\+xml/.test(ct); })());
+  check('the rewritten workbook is still a workbook SheetJS can read',
+    XL.read(Buffer.from(one), { type: 'buffer' }).SheetNames.join() === 'Summary,Theirs');
+  check('a compressed workbook is left exactly as it was',
+    (() => { const z = new Uint8Array(XL.write(wb, { bookType: 'xlsx', type: 'array', compression: true })); return A._unitarAddLogo(z, png) === z; })());
+  check('no logo on disk means a report without a logo, never a failed report',
+    A._unitarAddLogo(plain, null) === plain && A._unitarAddLogo(plain, new Uint8Array(0)) === plain);
+  check('the checksum is a real CRC32', A._unitarCrc32(new TextEncoder().encode('123456789')) === 0xCBF43926);
+}
 
 // ── file naming ──
 check('the file name is safe on every platform and names the course',
@@ -306,21 +322,30 @@ check('the batch run skips courses switched off in the Directory', /isCourseIncl
 // ── marking a course private (async: it reads and writes storage) ──
 (async () => {
   const B = mk();
-  check('a course is private only once it is marked', B.isCoursePrivate('Workshop A') === false);
-  await B.toggleCoursePrivate('Workshop A', true);
-  check('marking a course private is remembered and written as a plain list of names',
-    B.isCoursePrivate('Workshop A') === true && JSON.stringify(B.__store.get('surghub_private_courses')) === '["Workshop A"]',
+  await B._unitarPrivateSet();
+  check('the platform\'s own answer is the starting point, with nothing stored',
+    B.isCoursePrivate('Workshop A') === true && B.isCoursePrivate('Course A') === false && JSON.stringify(B.__store.get('surghub_private_courses')) === undefined);
+  await B.toggleCoursePrivate('Course A', true);
+  check('marking a course private that the platform calls public is remembered as an override',
+    B.isCoursePrivate('Course A') === true && JSON.stringify(B.__store.get('surghub_private_courses')) === '{"Course A":true}',
     JSON.stringify(B.__store.get('surghub_private_courses')));
-  await B.toggleCoursePrivate('Workshop B', true);
-  check('the list holds more than one and stays sorted, so a sync diff stays small',
-    JSON.stringify(B.__store.get('surghub_private_courses')) === '["Workshop A","Workshop B"]');
   await B.toggleCoursePrivate('Workshop A', false);
-  check('unmarking removes it again', B.isCoursePrivate('Workshop A') === false && B.isCoursePrivate('Workshop B') === true);
-  check('the toggle says what it did, in terms of what it changes', /left out of UNITAR batch reports/.test(B.msgs[0] || ''), B.msgs[0]);
+  check('a private course can be opened up for reporting, and that is remembered too',
+    B.isCoursePrivate('Workshop A') === false && B.__store.get('surghub_private_courses')['Workshop A'] === false);
+  await B.toggleCoursePrivate('Course A', false);
+  check('agreeing with the platform again drops the override instead of keeping a stale one',
+    B.isCoursePrivate('Course A') === false && !('Course A' in B.__store.get('surghub_private_courses')),
+    JSON.stringify(B.__store.get('surghub_private_courses')));
+  check('the toggle says what it changes', /left out of UNITAR batch reports/.test(B.msgs[0] || ''), B.msgs[0]);
   const C = mk();
-  C.__store.set('surghub_private_courses', ['Workshop C']);
+  C.__store.set('surghub_private_courses', ['Old List Course']);
   await C._unitarPrivateSet();
-  check('a list saved on another machine is read back on this one', C.isCoursePrivate('Workshop C') === true);
+  check('a list saved by an older version still reads as private, so nothing is silently unmarked',
+    C.isCoursePrivate('Old List Course') === true);
+  const E = mk();
+  E.__store.set('surghub_private_courses', { 'Workshop A': false });
+  await E._unitarPrivateSet();
+  check('an override saved on another machine is honoured here', E.isCoursePrivate('Workshop A') === false);
 
   console.log(`\n${ok}/${ok + bad} passed`); process.exit(bad ? 1 : 0);
 })();
