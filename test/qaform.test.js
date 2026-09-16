@@ -175,9 +175,13 @@ check('partners is the SURGhub partnership itself, named in full, the same on ev
   a.rows['Partners']);
 check('the body that wrote the course is named under additional information instead',
   a.rows['Additional Information'] === 'Course provider: Interburns', a.rows['Additional Information']);
-check('a GSF-run course does not name GSF as its own provider as well',
-  ['GSF - Global Surgery Foundation', 'Global Surgery Foundation', 'GSF', 'Unknown Provider'].every(p =>
-    A.buildQaAnswers('Burns 101', { year: 2025, report: Object.assign({}, report, { provider: p }), detail }).rows['Additional Information'] === ''));
+check('a GSF-authored course names GSF as its provider too — it writes courses as well as running the platform',
+  ['GSF - Global Surgery Foundation', 'GSF'].every(p =>
+    A.buildQaAnswers('Burns 101', { year: 2025, report: Object.assign({}, report, { provider: p }), detail }).rows['Additional Information'] === 'Course provider: ' + p),
+  A.buildQaAnswers('Burns 101', { year: 2025, report: Object.assign({}, report, { provider: 'GSF - Global Surgery Foundation' }), detail }).rows['Additional Information']);
+check('a course with no known provider says nothing rather than "Course provider: Unknown"',
+  A.buildQaAnswers('Burns 101', { year: 2025, report: Object.assign({}, report, { provider: 'Unknown Provider' }), detail }).rows['Additional Information'] === ''
+    && A.buildQaAnswers('Burns 101', { year: 2025, report: Object.assign({}, report, { provider: '' }), detail }).rows['Additional Information'] === '');
 check('the course summary answers "event objectives"', a.rows['Event objectives'] === 'A course about burns.');
 check('event objectives is the summary and nothing else — the objectives are not printed twice',
   (() => { const x = A.buildQaAnswers('Burns 101', { year: 2025, report, detail: withObj });

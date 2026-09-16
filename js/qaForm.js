@@ -35,9 +35,9 @@ Object.assign(window.App, {
 
         const days = (year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)) ? 366 : 365;
         // Partners is the SURGhub partnership itself, the same on every form. The body that
-        // actually wrote the course is named under Additional Information instead.
+        // actually wrote the course is named under Additional Information — including when
+        // that body is GSF, which authors courses as well as running the platform.
         const provider = report.provider && report.provider !== 'Unknown Provider' ? report.provider : '';
-        const isGsf = /global surgery foundation|^gsf\b/i.test(provider);
 
         // "Event objectives" is the course's own summary and nothing else. It briefly
         // carried the learning objectives too, which only printed them twice on the same
@@ -70,7 +70,7 @@ Object.assign(window.App, {
                 'Target audience': detail.targetAudience
                     || 'Surgical, obstetric, anaesthesia and nursing care providers, particularly in low- and middle-income settings.',
                 'Activity’s focal point': 'Michaela DORCIKOVA <Michaela.DORCIKOVA@unitar.org>',
-                'Additional Information': (provider && !isGsf) ? 'Course provider: ' + provider : '',
+                'Additional Information': provider ? 'Course provider: ' + provider : '',
             },
             // Rows the app cannot answer from what it holds, so the caller can say so.
             // "Additional Information" is empty by choice and is not a gap.
