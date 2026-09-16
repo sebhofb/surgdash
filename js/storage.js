@@ -50,6 +50,9 @@
             'surghub_selected_testimonials': path.join('surghub', 'selected_testimonials.json'),
             'surghub_milestones':   path.join('surghub', 'milestones.json'),
             'surghub_improvement_ai': path.join('surghub', 'improvement_ai.json'),
+            // Courses run as closed cohorts (in-country workshops). A curation decision the
+            // whole team shares, so it travels with the data like the course exclusions.
+            'surghub_private_courses': path.join('surghub', 'private_courses.json'),
         };
         if (surghubMap[key]) return surghubMap[key];
 
@@ -126,6 +129,7 @@
                 'selected_testimonials': 'surghub_selected_testimonials',
                 'milestones': 'surghub_milestones',
                 'improvement_ai': 'surghub_improvement_ai',
+                'private_courses': 'surghub_private_courses',
                 // Raw feedback-survey responses (updater.js Surveys sync). Its reverse entry
                 // sat in the settings/ map by mistake, so keys() never listed it: it was
                 // missing from every Sheets push, local backup, restore and wipe until 11 Sep 2026.

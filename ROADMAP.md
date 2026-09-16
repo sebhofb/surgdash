@@ -112,6 +112,29 @@ Follow-ups:
   ambassadors sync are already at the cap; the UI's Tailwind Play-CDN build is
   the main interactive-speed item left (needs a visual check after).
 
+## Done — UNITAR reports: simpler still, branded, and private courses (16 September 2026)
+
+- **Summary trimmed again.** "Started the course" is gone from the totals (still counted
+  for the app, and still a column on the participant sheet). The "Data through <today>"
+  line read as a contradiction beside a 2025 period, so it is folded into one line:
+  *Enrolments counted — 2025*, or *All time, up to 11 September 2026* when the window is
+  open-ended. Dates are written out in words.
+- **The GSF logo sits at the top of both sheets.** SheetJS's community build cannot place
+  an image, so `_unitarAddLogo` adds the picture parts to the finished .xlsx: SheetJS
+  writes every entry STORED, so the container can be unzipped and rewritten without any
+  inflate/deflate step (`_unitarUnzip` / `_unitarZip`, CRC32 included). It also writes the
+  spacer rows' heights, because the community build emits neither blank rows nor row
+  heights and the logo would otherwise sit on the first line of text. Every unexpected
+  case returns the original bytes untouched — a compressed archive, a worksheet that
+  already owns relationships, a missing logo, any exception. A report without a logo beats
+  a report Excel refuses to open. Verified by rendering the real file (`qlmanage`).
+- **Private courses.** `surghub_private_courses` (a list of course names, mapped in both
+  directions in storage.js so it travels with the data, not one laptop). A toggle on the
+  course page marks in-country workshops and other closed cohorts; the batch dialog has an
+  "Include private courses" checkbox, off by default, and the confirmation says how many
+  were skipped or included. The single-course run has no toggle: opening that course is the
+  decision.
+
 ## Done — UNITAR reports simplified, with a period and a launch month (15 September 2026)
 
 Seb's verdict on the first cut: too complicated. Reworked the same afternoon.

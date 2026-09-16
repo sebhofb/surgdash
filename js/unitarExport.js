@@ -41,6 +41,10 @@ Object.assign(window.App, {
         { key: 'profession', label: 'Profession', source: 'Learner profile, supplemented by the sign-up survey' },
     ],
     UNITAR_UNKNOWN: 'Not recorded',
+    // Courses run as in-country workshops rather than open enrolment. Kept as a list of
+    // course names (they survive re-syncs; course ids do not) and travels with the data,
+    // so the classification is the team's, not one laptop's.
+    UNITAR_PRIVATE_KEY: 'surghub_private_courses',
     UNITAR_SMALL_CELL: 5,     // categories below this are flagged on the Methodology page
     // Launch detection, tuned on the real catalogue: a launch month must carry at least
     // LAUNCH_MIN enrolments, be at least LAUNCH_JUMP times the average of the months
@@ -63,6 +67,11 @@ Object.assign(window.App, {
         return M[Number(p[1]) - 1] + ' ' + p[0];
     },
     _unitarMedian(a) { const s = a.slice().sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : 0; },
+    _unitarNiceDate(iso) {
+        if (!/^\d{4}-\d{2}-\d{2}/.test(String(iso || ''))) return 'an unknown date';
+        const p = String(iso).slice(0, 10).split('-');
+        return Number(p[2]) + ' ' + this._unitarMonthName(p[0] + '-' + p[1]);
+    },
 
     // When the course actually went live, read from the enrolment curve.
     // Returns { month, basis: 'ramp' | 'first' | 'none', before } — `before` is how many
@@ -89,6 +98,27 @@ Object.assign(window.App, {
         if (!from && !to) return 'All time';
         if (from && to && from.slice(0, 4) === to.slice(0, 4) && from.slice(5) === '01' && to.slice(5) === '12') return from.slice(0, 4);
         return (from ? this._unitarMonthName(from) : 'the start') + ' to ' + (to ? this._unitarMonthName(to) : 'now');
+    },
+
+    async _unitarPrivateSet() {
+        if (this._privateCourses instanceof Set) return this._privateCourses;
+        let v = null;
+        try { v = await Storage.getItem(this.UNITAR_PRIVATE_KEY); } catch (e) { __swallowed(e, 'unitar.private'); }
+        this._privateCourses = new Set(Array.isArray(v) ? v : []);
+        return this._privateCourses;
+    },
+    isCoursePrivate(courseName) {
+        return !!(this._privateCourses instanceof Set && this._privateCourses.has(String(courseName)));
+    },
+    async toggleCoursePrivate(courseName, priv) {
+        const set = await this._unitarPrivateSet();
+        const name = String(courseName);
+        const on = (priv === undefined) ? !set.has(name) : !!priv;
+        if (on) set.add(name); else set.delete(name);
+        try { await Storage.setItem(this.UNITAR_PRIVATE_KEY, [...set].sort()); } catch (e) { __swallowed(e, 'unitar.private.save'); }
+        this.showMsg(on ? '"' + name + '" marked private — left out of UNITAR batch reports unless you tick to include them.'
+                        : '"' + name + '" is no longer marked private.', 'success');
+        if (this.renderView) this.renderView();
     },
 
     _unitarKnown(v) {
@@ -251,13 +281,15 @@ Object.assign(window.App, {
         a.push(['Course launched', r.launch.month
             ? this._unitarMonthName(r.launch.month) + (r.launch.basis === 'ramp' ? '' : ' (first enrolment; too few enrolments to identify a launch)')
             : 'Unknown']);
-        a.push(['Reporting period', r.period.label]);
-        a.push(['Data through', r.dataThrough || 'unknown']);
-        a.push(['Report generated', String(r.generatedAt).slice(0, 10)]);
+        // One line about time, not two. "Data through <today>" next to a 2025 period read
+        // as a contradiction; the through-date only belongs on an open-ended report.
+        a.push(['Enrolments counted', r.period.set
+            ? r.period.label + (r.period.to ? '' : ' onwards, up to ' + this._unitarNiceDate(r.dataThrough))
+            : 'All time, up to ' + this._unitarNiceDate(r.dataThrough)]);
+        a.push(['Report generated', this._unitarNiceDate(String(r.generatedAt).slice(0, 10))]);
         a.push([]);
         a.push(['TOTALS']);
         a.push(['Participants', n(r.totals.participants)]);
-        a.push(['Started the course', n(r.totals.started)]);
         a.push(['Certificates earned', n(r.totals.certificates)]);
         a.push(['Certificate rate (%)', pct(r.totals.certRate)]);
         a.push(['Total learning time (hours)', Math.round(r.totals.learningMinutes / 60)]);
@@ -290,7 +322,23 @@ Object.assign(window.App, {
         ]));
         S.push({ name: 'Participants', aoa: p, cols: [11, 14, 24, 10, 22, 14, 24, 30, 12, 12, 16, 20, 12], headerRows: [0], freeze: true });
 
-        return S;
+        // Leave the top rows clear so the logo has somewhere to sit, and shift the
+        // header rows with them. Done last so every index above stays readable.
+        return S.map(s => this._unitarWithLogoSpace(s));
+    },
+
+    // Blank rows at the top for the logo, with the header indices moved to match.
+    _unitarWithLogoSpace(sheet) {
+        const pad = this.UNITAR_LOGO_ROWS;
+        const aoa = [];
+        for (let i = 0; i < pad; i++) aoa.push([]);
+        sheet.aoa.forEach(r => aoa.push(r));
+        return Object.assign({}, sheet, {
+            aoa,
+            headerRows: (sheet.headerRows || []).map(i => i + pad),
+            freezeRow: sheet.freeze ? pad + 1 : 0,
+            logoRows: pad,
+        });
     },
 
     // Rows that are section headings (a single non-empty first cell) or column headers.
@@ -331,6 +379,177 @@ Object.assign(window.App, {
             + '</div>';
     },
 
+    // ── the GSF logo, added to the finished workbook ──────────────────────
+    // SheetJS's community build cannot place an image, so the picture parts are added to
+    // the .xlsx afterwards. That is safe here because SheetJS writes every entry STORED
+    // (compression method 0), so the container can be read and rewritten without needing
+    // an inflate/deflate step at all. Anything unexpected — a deflated entry, a worksheet
+    // that already owns relationships — and the original bytes are returned untouched:
+    // a report without a logo beats a report Excel refuses to open.
+    UNITAR_LOGO_PX: 66,          // drawn size, square
+    UNITAR_LOGO_ROWS: 3,         // spacer rows the sheets leave for it
+    UNITAR_ROW_PX: 26,
+
+    _unitarCrc32(bytes) {
+        let table = this._crcTable;
+        if (!table) {
+            table = this._crcTable = new Int32Array(256);
+            for (let i = 0; i < 256; i++) { let c = i; for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1); table[i] = c; }
+        }
+        let crc = -1;
+        for (let i = 0; i < bytes.length; i++) crc = (crc >>> 8) ^ table[(crc ^ bytes[i]) & 0xFF];
+        return (crc ^ -1) >>> 0;
+    },
+
+    // Read a STORED-only zip into [{ name, data }]. Returns null if anything is compressed.
+    _unitarUnzip(bytes) {
+        const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+        const out = [];
+        let off = 0;
+        while (off + 30 <= bytes.length && dv.getUint32(off, true) === 0x04034b50) {
+            const method = dv.getUint16(off + 8, true);
+            const size = dv.getUint32(off + 18, true);
+            const nameLen = dv.getUint16(off + 26, true), extraLen = dv.getUint16(off + 28, true);
+            if (method !== 0) return null;                       // compressed: leave the file alone
+            if (dv.getUint16(off + 6, true) & 0x08) return null;  // streamed sizes: not handled
+            const nameStart = off + 30;
+            const name = new TextDecoder().decode(bytes.subarray(nameStart, nameStart + nameLen));
+            const dataStart = nameStart + nameLen + extraLen;
+            out.push({ name, data: bytes.slice(dataStart, dataStart + size) });
+            off = dataStart + size;
+        }
+        return out.length ? out : null;
+    },
+
+    _unitarZip(entries) {
+        const enc = new TextEncoder();
+        const parts = [], central = [];
+        let offset = 0;
+        entries.forEach(e => {
+            const name = enc.encode(e.name);
+            const crc = this._unitarCrc32(e.data);
+            const local = new Uint8Array(30 + name.length);
+            const ldv = new DataView(local.buffer);
+            ldv.setUint32(0, 0x04034b50, true); ldv.setUint16(4, 20, true); ldv.setUint16(6, 0, true);
+            ldv.setUint16(8, 0, true);                                   // stored
+            ldv.setUint16(10, 0, true); ldv.setUint16(12, 0x21, true);   // fixed date, as SheetJS does
+            ldv.setUint32(14, crc, true); ldv.setUint32(18, e.data.length, true); ldv.setUint32(22, e.data.length, true);
+            ldv.setUint16(26, name.length, true); ldv.setUint16(28, 0, true);
+            local.set(name, 30);
+            parts.push(local, e.data);
+
+            const cen = new Uint8Array(46 + name.length);
+            const cdv = new DataView(cen.buffer);
+            cdv.setUint32(0, 0x02014b50, true); cdv.setUint16(4, 20, true); cdv.setUint16(6, 20, true);
+            cdv.setUint16(8, 0, true); cdv.setUint16(10, 0, true);
+            cdv.setUint16(12, 0, true); cdv.setUint16(14, 0x21, true);
+            cdv.setUint32(16, crc, true); cdv.setUint32(20, e.data.length, true); cdv.setUint32(24, e.data.length, true);
+            cdv.setUint16(28, name.length, true);
+            cdv.setUint32(42, offset, true);
+            cen.set(name, 46);
+            central.push(cen);
+            offset += local.length + e.data.length;
+        });
+        const cenSize = central.reduce((s, c) => s + c.length, 0);
+        const end = new Uint8Array(22);
+        const edv = new DataView(end.buffer);
+        edv.setUint32(0, 0x06054b50, true);
+        edv.setUint16(8, entries.length, true); edv.setUint16(10, entries.length, true);
+        edv.setUint32(12, cenSize, true); edv.setUint32(16, offset, true);
+        const all = parts.concat(central, [end]);
+        const total = all.reduce((s, p) => s + p.length, 0);
+        const outBytes = new Uint8Array(total);
+        let at = 0;
+        all.forEach(p => { outBytes.set(p, at); at += p.length; });
+        return outBytes;
+    },
+
+    // Put `png` at the top-left of every worksheet in the workbook `bytes`.
+    _unitarAddLogo(bytes, png) {
+        try {
+            if (!png || !png.length) return bytes;
+            const entries = this._unitarUnzip(bytes);
+            if (!entries) return bytes;
+            const enc = new TextEncoder(), dec = new TextDecoder();
+            const find = (name) => entries.find(e => e.name === name);
+            const sheets = entries.filter(e => /^xl\/worksheets\/sheet\d+\.xml$/.test(e.name));
+            if (!sheets.length) return bytes;
+            if (entries.some(e => /^xl\/worksheets\/_rels\//.test(e.name))) return bytes;   // already has relationships
+
+            const ext = Math.round(this.UNITAR_LOGO_PX * 9525);   // pixels → EMU
+            entries.push({ name: 'xl/media/gsf-logo.png', data: png });
+
+            sheets.forEach((sheet, i) => {
+                const num = sheet.name.match(/sheet(\d+)\.xml$/)[1];
+                const drawing = 'xl/drawings/drawing' + num + '.xml';
+                entries.push({ name: drawing, data: enc.encode(
+                    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                    + '<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
+                    + '<xdr:oneCellAnchor>'
+                    + '<xdr:from><xdr:col>0</xdr:col><xdr:colOff>57150</xdr:colOff><xdr:row>0</xdr:row><xdr:rowOff>57150</xdr:rowOff></xdr:from>'
+                    + '<xdr:ext cx="' + ext + '" cy="' + ext + '"/>'
+                    + '<xdr:pic><xdr:nvPicPr><xdr:cNvPr id="' + (i + 2) + '" name="Global Surgery Foundation" descr="Global Surgery Foundation"/><xdr:cNvPicPr><a:picLocks noChangeAspect="1"/></xdr:cNvPicPr></xdr:nvPicPr>'
+                    + '<xdr:blipFill><a:blip xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:embed="rId1"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill>'
+                    + '<xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="' + ext + '" cy="' + ext + '"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr>'
+                    + '</xdr:pic><xdr:clientData/></xdr:oneCellAnchor></xdr:wsDr>') });
+                entries.push({ name: 'xl/drawings/_rels/drawing' + num + '.xml.rels', data: enc.encode(
+                    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                    + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                    + '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/gsf-logo.png"/>'
+                    + '</Relationships>') });
+                entries.push({ name: 'xl/worksheets/_rels/sheet' + num + '.xml.rels', data: enc.encode(
+                    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                    + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                    + '<Relationship Id="rIdDr1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing' + num + '.xml"/>'
+                    + '</Relationships>') });
+
+                let xml = dec.decode(sheet.data);
+                if (!/xmlns:r=/.test(xml)) xml = xml.replace('<worksheet ', '<worksheet xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" ');
+                // SheetJS's community build writes no row heights, and omits blank rows
+                // entirely, so the spacer rows would collapse to the default and the logo
+                // would sit on top of the first line of text. Give them a height here.
+                if (!/<row r="1"/.test(xml)) {
+                    let rows = '';
+                    for (let k = 1; k <= this.UNITAR_LOGO_ROWS; k++) rows += '<row r="' + k + '" ht="' + (this.UNITAR_ROW_PX * 0.75) + '" customHeight="1"/>';
+                    xml = xml.replace('<sheetData>', '<sheetData>' + rows);
+                }
+                if (!/<drawing /.test(xml)) xml = xml.replace('</worksheet>', '<drawing r:id="rIdDr1"/></worksheet>');
+                sheet.data = enc.encode(xml);
+            });
+
+            const ct = find('[Content_Types].xml');
+            if (!ct) return bytes;
+            let ctXml = dec.decode(ct.data);
+            if (!/Extension="png"/.test(ctXml)) ctXml = ctXml.replace('<Types ', '<Types ').replace(/(<Types[^>]*>)/, '$1<Default Extension="png" ContentType="image/png"/>');
+            sheets.forEach(sheet => {
+                const num = sheet.name.match(/sheet(\d+)\.xml$/)[1];
+                const part = '/xl/drawings/drawing' + num + '.xml';
+                if (ctXml.indexOf(part) < 0) ctXml = ctXml.replace('</Types>', '<Override PartName="' + part + '" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/></Types>');
+            });
+            ct.data = enc.encode(ctXml);
+
+            return this._unitarZip(entries);
+        } catch (e) {
+            __swallowed(e, 'unitar.logo');
+            return bytes;     // never let branding cost us the report
+        }
+    },
+
+    async _unitarLogoBytes() {
+        if (this._unitarLogo !== undefined) return this._unitarLogo;
+        this._unitarLogo = null;
+        try {
+            const fs = electronAPI.fs, path = electronAPI.path;
+            // The transparent-background mark: the dark-square version disappears into a
+            // white sheet. preload's readFileSync hands back an ArrayBuffer for binaries.
+            for (const name of ['Global Surgery Foundation_logo_symbol.png', 'gsf_logo_symbol.png']) {
+                const p = path.join(electronAPI.appPath || '.', 'build', name);
+                if (fs.existsSync(p)) { this._unitarLogo = new Uint8Array(fs.readFileSync(p)); break; }
+            }
+        } catch (e) { __swallowed(e, 'unitar.logo.read'); }
+        return this._unitarLogo;
+    },
+
     // ── writing ───────────────────────────────────────────────────────────
     _unitarWorkbook(report) {
         const X = window.XLSXStyle || window.XLSX;
@@ -339,7 +558,8 @@ Object.assign(window.App, {
         this._unitarSheets(report).forEach(sheet => {
             const ws = X.utils.aoa_to_sheet(sheet.aoa);
             ws['!cols'] = sheet.cols.map(w => ({ wch: w }));
-            if (sheet.freeze) ws['!freeze'] = { xSplit: 0, ySplit: 1 };
+            if (sheet.logoRows) ws['!rows'] = new Array(sheet.logoRows).fill({ hpx: this.UNITAR_ROW_PX });
+            if (sheet.freezeRow) ws['!freeze'] = { xSplit: 0, ySplit: sheet.freezeRow };
             if (styled) {
                 const heads = new Set(sheet.headerRows || []);
                 sheet.aoa.forEach((row, ri) => {
@@ -365,7 +585,8 @@ Object.assign(window.App, {
 
     // ── the period dialog ─────────────────────────────────────────────────
     // Resolves to { from, to } ('YYYY-MM', either end may be empty) or null if cancelled.
-    _unitarAskPeriod(title) {
+    _unitarAskPeriod(title, opts) {
+        opts = opts || {};
         return new Promise(resolve => {
             const years = [...new Set((this._rawCompletion || []).map(r => String((r && r.enrolled_date) || '').slice(0, 4)).filter(y => /^\d{4}$/.test(y)))].sort().reverse().slice(0, 6);
             const el = document.createElement('div');
@@ -382,6 +603,13 @@ Object.assign(window.App, {
                 + '<label style="flex:1;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.06em">From<input type="month" id="unitar-from" style="display:block;width:100%;margin-top:5px;padding:8px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px"></label>'
                 + '<label style="flex:1;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.06em">To<input type="month" id="unitar-to" style="display:block;width:100%;margin-top:5px;padding:8px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px"></label>'
                 + '</div>'
+                + (opts.privateToggle
+                    ? '<label style="display:flex;gap:9px;align-items:flex-start;margin-bottom:18px;cursor:pointer">'
+                        + '<input type="checkbox" id="unitar-private" style="margin-top:2px">'
+                        + '<span style="font-size:12px;color:#64748b;line-height:1.5">Include private courses'
+                        + (opts.privateCount ? ' <strong>(' + opts.privateCount + ')</strong>' : '')
+                        + ' — in-country workshops and other closed cohorts. Left out by default.</span></label>'
+                    : '')
                 + '<div style="display:flex;justify-content:flex-end;gap:8px">'
                 + '<button id="unitar-cancel" style="padding:9px 18px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;font-size:13px;font-weight:700;color:#64748b;cursor:pointer">Cancel</button>'
                 + '<button id="unitar-ok" style="padding:9px 22px;border-radius:8px;border:0;background:#002F4C;font-size:13px;font-weight:700;color:#fff;cursor:pointer">Create report</button>'
@@ -394,7 +622,10 @@ Object.assign(window.App, {
             });
             const done = (v) => { el.remove(); resolve(v); };
             el.querySelector('#unitar-cancel').onclick = () => done(null);
-            el.querySelector('#unitar-ok').onclick = () => done({ from: f.value || '', to: t.value || '' });
+            el.querySelector('#unitar-ok').onclick = () => {
+                const pv = el.querySelector('#unitar-private');
+                done({ from: f.value || '', to: t.value || '', includePrivate: !!(pv && pv.checked) });
+            };
             el.onclick = (ev) => { if (ev.target === el) done(null); };
             setTimeout(() => { try { f.focus(); } catch (e) { __swallowed(e); } }, 30);
         });
@@ -412,15 +643,15 @@ Object.assign(window.App, {
         if (!course) return alert('Open a course first.');
         try {
             const ctx = await this._unitarContext();
-            const period = await this._unitarAskPeriod('UNITAR report — ' + course);
+            const period = await this._unitarAskPeriod('UNITAR report — ' + course);   // no private toggle: this course was opened on purpose
             if (!period) return;
             const report = this.buildUnitarReport(course, Object.assign({}, ctx, period));
             if (!report.totals.participants) return alert('No participants for "' + course + '"' + (report.period.set ? ' in ' + report.period.label : '') + '.');
             const savePath = await electronAPI.invoke('pick-save-path', this._unitarFileName(course, report.period));
             if (!savePath) return;
             const { X, wb } = this._unitarWorkbook(report);
-            const out = X.write(wb, { bookType: 'xlsx', type: 'array' });
-            electronAPI.fs.writeFileSync(savePath, new Uint8Array(out));
+            const out = this._unitarAddLogo(new Uint8Array(X.write(wb, { bookType: 'xlsx', type: 'array' })), await this._unitarLogoBytes());
+            electronAPI.fs.writeFileSync(savePath, out);
             this.showMsg('UNITAR report saved — ' + this.formatNumber(report.totals.participants) + ' participants · ' + report.period.label + '.', 'success');
         } catch (e) {
             console.error('[UNITAR]', e);
@@ -432,18 +663,24 @@ Object.assign(window.App, {
     async exportAllUnitarCourseReports() {
         try {
             const ctx = await this._unitarContext();
+            await this._unitarPrivateSet();
             const all = [...new Set(ctx.anonUsers.map(u => u && u.course).filter(Boolean))].sort();
             // A course switched off in the Directory is off everywhere, test courses included.
-            const courses = this.isCourseIncluded ? all.filter(c => this.isCourseIncluded(c)) : all;
-            const excluded = all.length - courses.length;
-            if (!courses.length) return alert('No participant data. Run Sync Learners first.');
-            const period = await this._unitarAskPeriod('UNITAR reports — ' + courses.length + ' courses');
+            const listed = this.isCourseIncluded ? all.filter(c => this.isCourseIncluded(c)) : all;
+            const excluded = all.length - listed.length;
+            const privateCount = listed.filter(c => this.isCoursePrivate(c)).length;
+            if (!listed.length) return alert('No participant data. Run Sync Learners first.');
+            const period = await this._unitarAskPeriod('UNITAR reports — ' + listed.length + ' courses', { privateToggle: true, privateCount });
             if (!period) return;
+            const courses = period.includePrivate ? listed : listed.filter(c => !this.isCoursePrivate(c));
+            if (!courses.length) return alert('Every course is marked private. Tick "Include private courses" to report them.');
             const label = this._unitarPeriodLabel(this._unitarMonth(period.from), this._unitarMonth(period.to));
             if (!confirm('Write one UNITAR report per course?\n\nPeriod: ' + label + '\n' + courses.length + ' courses, one .xlsx each, into a folder you choose.'
-                + (excluded ? '\n\n' + excluded + ' course' + (excluded === 1 ? '' : 's') + ' excluded from analytics will be skipped.' : ''))) return;
+                + (excluded ? '\n\n' + excluded + ' course' + (excluded === 1 ? '' : 's') + ' excluded from analytics will be skipped.' : '')
+                + (privateCount ? '\n' + privateCount + ' private course' + (privateCount === 1 ? '' : 's') + (period.includePrivate ? ' included.' : ' skipped.') : ''))) return;
             const folder = await electronAPI.invoke('pick-folder');
             if (!folder) return;
+            const logo = await this._unitarLogoBytes();
             const path = electronAPI.path, fs = electronAPI.fs;
             this._reportCancelled = false;
             let ok = 0, skipped = 0;
@@ -454,8 +691,8 @@ Object.assign(window.App, {
                     const report = this.buildUnitarReport(courses[i], Object.assign({}, ctx, period));
                     if (!report.totals.participants) { skipped++; continue; }   // nobody enrolled in the period
                     const { X, wb } = this._unitarWorkbook(report);
-                    const out = X.write(wb, { bookType: 'xlsx', type: 'array' });
-                    fs.writeFileSync(path.join(folder, this._unitarFileName(courses[i], report.period)), new Uint8Array(out));
+                    const out = this._unitarAddLogo(new Uint8Array(X.write(wb, { bookType: 'xlsx', type: 'array' })), logo);
+                    fs.writeFileSync(path.join(folder, this._unitarFileName(courses[i], report.period)), out);
                     ok++;
                 } catch (e) { console.error('[UNITAR]', courses[i], e); skipped++; }
             }

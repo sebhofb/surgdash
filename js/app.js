@@ -234,6 +234,10 @@ window.App = {
 
             const storedExPro = await Storage.getItem('surghub_excluded_providers');
             this._excludedProviders = new Set(Array.isArray(storedExPro) ? storedExPro : []);
+
+            // Courses run as closed cohorts — read once so the course page can render the
+            // flag without awaiting (unitarExport.js owns the writes).
+            if (this._unitarPrivateSet) { try { await this._unitarPrivateSet(); } catch (e) { __swallowed(e, 'private'); } }
         } catch (e) { 
             console.error("Database Load error", e); 
         }

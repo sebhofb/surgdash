@@ -4238,6 +4238,10 @@ Object.assign(window.App, {
                                 <input type="checkbox" ${this.isCourseIncluded(this.selectedCourse) ? 'checked' : ''} onchange="App.toggleCourseIncludedByName('${this.escapeJsArg(this.selectedCourse)}', this.checked)">
                                 ${this.isCourseIncluded(this.selectedCourse) ? 'Included in analytics' : 'Excluded from analytics'}
                             </label>
+                            <label data-edit-only class="inline-flex items-center gap-2 text-sm font-medium ${App.isCoursePrivate && App.isCoursePrivate(this.selectedCourse) ? 'text-purple-700' : 'text-slate-600'} cursor-pointer" title="In-country workshops and other closed cohorts. Private courses are left out of the UNITAR batch unless you tick to include them.">
+                                <input type="checkbox" ${App.isCoursePrivate && App.isCoursePrivate(this.selectedCourse) ? 'checked' : ''} onchange="App.toggleCoursePrivate('${this.escapeJsArg(this.selectedCourse)}', this.checked)" class="rounded border-slate-300 text-purple-600 focus:ring-purple-500/30" />
+                                Private course
+                            </label>
                             <button data-edit-only data-report-ok onclick="App.exportUnitarCourseReport()" title="One Excel file for this course: totals, anonymised participants, and the assumptions behind the gaps" class="flex items-center gap-1.5 px-3.5 py-2 bg-white border border-slate-200 text-gsf-prussian font-bold rounded-lg text-xs hover:border-gsf-boston transition-colors"><i data-lucide="file-spreadsheet" width="13"></i> UNITAR report</button>
                             <button data-edit-only data-report-ok onclick="App.exportCurrentCoursePackage()" class="flex items-center gap-1.5 px-3.5 py-2 bg-amber-500 text-white font-bold rounded-lg text-xs shadow-sm hover:bg-amber-600 transition-colors" title="One folder ({provider}/{course}) with the course PDF + web report + anonymized users + anonymized feedback (Excel)"><i data-lucide="package" width="14"></i> Report Package</button>
                         </div>

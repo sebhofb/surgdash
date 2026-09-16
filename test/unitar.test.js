@@ -35,10 +35,15 @@ const snap = [
 ];
 
 function mk() {
+  const store = new Map();
   const ctx = { console: { log() {}, warn() {}, error() {} }, Date, Math, JSON, Object, Array, Number, String, Map, Set, RegExp, Error, Promise, Intl, isNaN, isFinite, parseInt, parseFloat, setTimeout,
     __swallowed() {}, alert(m) { ctx.App.alerts.push(m); }, confirm() { return true; },
-    document: { getElementById: () => null }, Storage: { async getItem() { return null; } },
+    TextEncoder, TextDecoder, DataView, Uint8Array, Int32Array, ArrayBuffer,
+    document: { getElementById: () => null },
+    Storage: { async getItem(k) { return store.has(k) ? JSON.parse(JSON.stringify(store.get(k))) : null; },
+               async setItem(k, v) { store.set(k, JSON.parse(JSON.stringify(v))); } },
   };
+  ctx.__store = store;
   ctx.window = ctx;
   ctx.Taxonomy = { canonProf: (v) => /nurs/i.test(v) ? 'Nursing' : (/surg/i.test(v) ? 'Surgeon' : 'Other') };
   ctx.countryToISO = (n) => ({ Kenya: 'KE', Nigeria: 'NG', India: 'IN' }[String(n).trim()] || null);
@@ -50,6 +55,7 @@ function mk() {
   };
   vm.createContext(ctx);
   vm.runInContext(fs.readFileSync(ROOT + '/js/unitarExport.js', 'utf8'), ctx, { filename: 'unitarExport.js' });
+  ctx.App.__store = store;
   return ctx.App;
 }
 
@@ -160,14 +166,29 @@ const flat = (s) => s.aoa.map(rw => rw.join('\t')).join('\n');
 const sum = flat(sheets[0]), par = flat(sheets[1]);
 check('the summary leads with one participant figure and no second enrolment number',
   /Participants\t10/.test(sum) && !/Enrolled learners/.test(sum) && !/participant record/.test(sum));
-check('the summary carries the launch month and the reporting period',
-  /Course launched\t/.test(sum) && /Reporting period\tAll time/.test(sum), (sum.match(/Course launched\t[^\n]*/) || [''])[0]);
+check('the summary carries the launch month and the window the enrolments come from',
+  /Course launched\t/.test(sum) && /Enrolments counted\tAll time/.test(sum), (sum.match(/Course launched\t[^\n]*/) || [''])[0]);
 check('a small course says its launch month is really just the first enrolment',
   /first enrolment; too few enrolments to identify a launch/.test(sum));
 check('a period shows on the sheet rather than being silent',
-  /Reporting period\t2026/.test(flat(A._unitarSheets(build({ from: '2026-01', to: '2026-12' }))[0])));
-check('"completed the course" is absent from the sheet; certificates are present',
-  !/Completed the course/.test(sum) && /Certificates earned\t2/.test(sum));
+  /Enrolments counted\t2026/.test(flat(A._unitarSheets(build({ from: '2026-01', to: '2026-12' }))[0])));
+check('the totals list participants and certificates only — "started" is gone from the summary too',
+  !/Completed the course/.test(sum) && !/Started the course/.test(sum) && /Participants\t10/.test(sum) && /Certificates earned\t2/.test(sum),
+  (sum.match(/TOTALS[\s\S]{0,200}/) || [''])[0].split('\n').slice(1, 5).join(' · '));
+check('starts are still counted for the app even though the sheet does not print them', r.totals.started === 2);
+check('one line about time, not two: no bare "data through" beside a period',
+  !/Data through/.test(sum) && (sum.match(/Enrolments counted\t[^\n]*/) || []).length === 1,
+  (sum.match(/Enrolments counted\t[^\n]*/) || [''])[0]);
+check('with no period the line says all time and names the date the data runs to',
+  /Enrolments counted\tAll time, up to 11 September 2026/.test(sum), (sum.match(/Enrolments counted\t[^\n]*/) || [''])[0]);
+check('with a closed period the line is just the period — no contradictory through-date',
+  (() => { const line = (flat(A._unitarSheets(build({ from: '2026-01', to: '2026-12' }))[0]).match(/Enrolments counted\t[^\n]*/) || [''])[0];
+    return line === 'Enrolments counted\t2026'; })(),
+  (flat(A._unitarSheets(build({ from: '2026-01', to: '2026-12' }))[0]).match(/Enrolments counted\t[^\n]*/) || [''])[0]);
+check('an open-ended period says where it runs to, since that is genuinely useful',
+  (() => { const line = (flat(A._unitarSheets(build({ from: '2026-01' }))[0]).match(/Enrolments counted\t[^\n]*/) || [''])[0];
+    return /onwards, up to 11 September 2026$/.test(line); })(),
+  (flat(A._unitarSheets(build({ from: '2026-01' }))[0]).match(/Enrolments counted\t[^\n]*/) || [''])[0]);
 check('each breakdown block has exactly two data columns (plus ISO for country)',
   r.dimensions.every(d => new RegExp('^' + d.label + '\t# participants\t% participants' + (d.key === 'country' ? '\tISO code' : '') + '$', 'm').test(sum)),
   (sum.match(/^Gender\t[^\n]*/m) || [''])[0]);
@@ -184,10 +205,71 @@ check('the participant sheet carries no name, no email and no cross-course ident
   !/email|name|uid|@/i.test(par.replace(/Not recorded/g, '')), par.slice(0, 110));
 check('a blank field reads "Not recorded" rather than looking like a broken cell',
   /Not recorded/.test(par) && !sheets[1].aoa.slice(1).some(rw => [2, 4, 5, 6, 7].some(i => rw[i] === '')));
+const pHead = sheets[1].logoRows;
 check('the participant sheet drops the completed column and keeps the certificate one',
-  sheets[1].aoa[0].indexOf('Completed') === -1 && sheets[1].aoa[0].indexOf('Certificate') > 0
-    && sheets[1].aoa[0].indexOf('Certificate earned') > 0);
-check('one header row, one row per participant', sheets[1].aoa.length === 11);
+  sheets[1].aoa[pHead].indexOf('Completed') === -1 && sheets[1].aoa[pHead].indexOf('Certificate') > 0
+    && sheets[1].aoa[pHead].indexOf('Certificate earned') > 0);
+check('one header row, one row per participant, under the logo spacer',
+  sheets[1].aoa.length === 11 + sheets[1].logoRows && sheets[1].aoa.slice(0, pHead).every(rw => rw.length === 0));
+
+// ── the logo ──
+check('both sheets leave blank rows at the top for the logo, and the header indices move with them',
+  sheets.every(sh => sh.logoRows === A.UNITAR_LOGO_ROWS && sh.headerRows.every(i => i >= sh.logoRows)),
+  JSON.stringify(sheets.map(sh => sh.name + ' pad ' + sh.logoRows + ' heads ' + sh.headerRows.slice(0, 3))));
+check('the participants freeze row sits below the spacer, so scrolling still pins the header',
+  sheets[1].freezeRow === A.UNITAR_LOGO_ROWS + 1, sheets[1].freezeRow);
+{
+  const XL = require(ROOT + '/vendor/xlsx.full.min.js');
+  const wb = XL.utils.book_new();
+  XL.utils.book_append_sheet(wb, XL.utils.aoa_to_sheet([[], [], [], ['Title'], ['Course', 'X']]), 'Summary');
+  XL.utils.book_append_sheet(wb, XL.utils.aoa_to_sheet([[], [], [], ['Participant'], [1]]), 'Participants');
+  const plain = new Uint8Array(XL.write(wb, { bookType: 'xlsx', type: 'array' }));
+  const png = new Uint8Array(fs.readFileSync(ROOT + '/build/Global Surgery Foundation_logo_symbol.png'));
+  const out = A._unitarAddLogo(plain, png);
+  const names = (A._unitarUnzip(out) || []).map(e => e.name);
+  check('the logo is added to a finished workbook as real picture parts, one drawing per sheet',
+    names.indexOf('xl/media/gsf-logo.png') >= 0 && names.filter(nm => /^xl\/drawings\/drawing\d+\.xml$/.test(nm)).length === 2
+      && names.filter(nm => /^xl\/worksheets\/_rels\//.test(nm)).length === 2,
+    names.filter(nm => /media|drawing/.test(nm)).join(' | '));
+  const ctXml = new TextDecoder().decode((A._unitarUnzip(out) || []).find(e => e.name === '[Content_Types].xml').data);
+  check('the content types declare the picture and the drawings, or Excel refuses the file',
+    /Extension="png"/.test(ctXml) && (ctXml.match(/drawing\+xml/g) || []).length === 2);
+  const sheetXml = new TextDecoder().decode((A._unitarUnzip(out) || []).find(e => e.name === 'xl/worksheets/sheet1.xml').data);
+  check('the sheet points at its drawing, declares the namespace it needs, and gives the spacer rows a height',
+    /<drawing r:id="rIdDr1"\/>/.test(sheetXml) && /xmlns:r=/.test(sheetXml)
+      && (sheetXml.match(/<row r="\d" ht="[\d.]+" customHeight="1"\/>/g) || []).length === A.UNITAR_LOGO_ROWS,
+    (sheetXml.match(/<row r="1"[^>]*>/) || [''])[0]);
+  check('the rewritten workbook is still a workbook SheetJS can read',
+    (() => { const back = XL.read(Buffer.from(out), { type: 'buffer' }); return back.SheetNames.join() === 'Summary,Participants'; })());
+  check('a compressed workbook is left exactly as it was, rather than half-rewritten',
+    (() => { const z = new Uint8Array(XL.write(wb, { bookType: 'xlsx', type: 'array', compression: true }));
+      return A._unitarAddLogo(z, png) === z && A._unitarUnzip(z) === null; })());
+  check('no logo on disk means a report without a logo, never a failed report',
+    A._unitarAddLogo(plain, null) === plain && A._unitarAddLogo(plain, new Uint8Array(0)) === plain);
+  check('a workbook whose sheets already own relationships is left alone',
+    (() => { const e = A._unitarUnzip(plain); e.push({ name: 'xl/worksheets/_rels/sheet1.xml.rels', data: new Uint8Array([60]) });
+      const z = A._unitarZip(e); return A._unitarAddLogo(z, png) === z; })());
+  check('the checksum is a real CRC32, so the archive is not quietly corrupt',
+    A._unitarCrc32(new TextEncoder().encode('123456789')) === 0xCBF43926, A._unitarCrc32(new TextEncoder().encode('123456789')).toString(16));
+}
+
+// ── private courses ──
+check('a course is not private until it is marked', A.isCoursePrivate('Course A') === false);
+
+check('the private list travels with the data, in both directions',
+  (() => { const st = fs.readFileSync(ROOT + '/js/storage.js', 'utf8');
+    return /'surghub_private_courses': path\.join\('surghub', 'private_courses\.json'\)/.test(st)
+      && /'private_courses': 'surghub_private_courses'/.test(st); })());
+check('the batch run leaves private courses out unless the dialog says otherwise',
+  /period\.includePrivate \? listed : listed\.filter\(c => !this\.isCoursePrivate\(c\)\)/.test(fs.readFileSync(ROOT + '/js/unitarExport.js', 'utf8')));
+check('the dialog offers the private toggle for the batch only, and counts them',
+  (() => { const m = fs.readFileSync(ROOT + '/js/unitarExport.js', 'utf8');
+    return /privateToggle: true, privateCount/.test(m) && /opts\.privateToggle/.test(m)
+      && /_unitarAskPeriod\('UNITAR report — ' \+ course\)/.test(m); })());
+check('the course page carries the private toggle',
+  /toggleCoursePrivate\(/.test(fs.readFileSync(ROOT + '/js/ui.js', 'utf8')));
+check('every course being private is caught before a folder is picked',
+  /Every course is marked private/.test(fs.readFileSync(ROOT + '/js/unitarExport.js', 'utf8')));
 
 // ── file naming ──
 check('the file name is safe on every platform and names the course',
@@ -221,4 +303,24 @@ check('both the single and the batch run ask for a period before building anythi
   (mod.match(/await this\._unitarAskPeriod\(/g) || []).length === 2, (mod.match(/await this\._unitarAskPeriod\(/g) || []).length);
 check('the batch run skips courses switched off in the Directory', /isCourseIncluded \? all\.filter/.test(mod));
 
-console.log(`\n${ok}/${ok + bad} passed`); process.exit(bad ? 1 : 0);
+// ── marking a course private (async: it reads and writes storage) ──
+(async () => {
+  const B = mk();
+  check('a course is private only once it is marked', B.isCoursePrivate('Workshop A') === false);
+  await B.toggleCoursePrivate('Workshop A', true);
+  check('marking a course private is remembered and written as a plain list of names',
+    B.isCoursePrivate('Workshop A') === true && JSON.stringify(B.__store.get('surghub_private_courses')) === '["Workshop A"]',
+    JSON.stringify(B.__store.get('surghub_private_courses')));
+  await B.toggleCoursePrivate('Workshop B', true);
+  check('the list holds more than one and stays sorted, so a sync diff stays small',
+    JSON.stringify(B.__store.get('surghub_private_courses')) === '["Workshop A","Workshop B"]');
+  await B.toggleCoursePrivate('Workshop A', false);
+  check('unmarking removes it again', B.isCoursePrivate('Workshop A') === false && B.isCoursePrivate('Workshop B') === true);
+  check('the toggle says what it did, in terms of what it changes', /left out of UNITAR batch reports/.test(B.msgs[0] || ''), B.msgs[0]);
+  const C = mk();
+  C.__store.set('surghub_private_courses', ['Workshop C']);
+  await C._unitarPrivateSet();
+  check('a list saved on another machine is read back on this one', C.isCoursePrivate('Workshop C') === true);
+
+  console.log(`\n${ok}/${ok + bad} passed`); process.exit(bad ? 1 : 0);
+})();
