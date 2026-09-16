@@ -12,11 +12,11 @@
 // Node). Everything is written back STORED, which is a perfectly legal zip and
 // spares us a deflate implementation.
 //
-// WHAT IT CANNOT KNOW. Course summaries come from js/courseDetails.js. Learning
-// objectives are only filled when the course's own description states them —
-// UNITAR's own filled example leaves that row blank, and inventing objectives for a
-// course we did not write would be worse than an empty row. Language and focal point
-// are left for a person: the app holds neither.
+// WHERE THE WORDS COME FROM. js/courseDetails.js: the summary from the LearnWorlds
+// API, and the learning objectives and the language from the public course page, which
+// publishes both. "Event objectives" carries the summary and the objectives together,
+// because UNITAR asked for both there. Nothing is invented: a course whose page states
+// no objectives leaves that row empty, and the export says which rows it left.
 Object.assign(window.App, {
 
     QA_TEMPLATE: 'templates/unitar_qa_form.docx',
@@ -35,18 +35,17 @@ Object.assign(window.App, {
 
         const days = (year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)) ? 366 : 365;
         const provider = report.provider && report.provider !== 'Unknown Provider' ? report.provider : '';
-        const partners = provider ? provider + ', in partnership with the Global Surgery Foundation' : 'Global Surgery Foundation';
+        // Some courses are GSF's own, and "GSF, in partnership with the Global Surgery
+        // Foundation" reads as a joke at our own expense.
+        const isGsf = /global surgery foundation|^gsf\b/i.test(provider);
+        const partners = (!provider || isGsf) ? (provider || 'Global Surgery Foundation')
+            : provider + ', in partnership with the Global Surgery Foundation';
 
-        const countries = (report.dimensions.find(d => d.key === 'country') || { rows: [] }).rows;
-        const top = countries.slice(0, 5).map(r => r.value).join(', ');
-
-        const extra = [
-            n(report.totals.participants) + ' learners enrolled during ' + year + '.',
-            n(report.totals.certificates) + ' certificates were earned (' + (Math.round(report.totals.certRate * 10) / 10) + '% of enrolments).',
-            countries.length ? countries.length + ' countries represented' + (top ? '; most participants came from ' + top + '.' : '.') : '',
-            report.launch.month ? 'The course opened to learners in ' + this._unitarMonthName(report.launch.month) + '.' : '',
-            'Figures prepared with SURGdash, the Global Surgery Foundation.',
-        ].filter(Boolean).join('\n');
+        // "Event objectives" carries the course's own summary AND the learning objectives
+        // its page publishes: UNITAR asked for both in that one row.
+        const objectives = String(detail.objectives || '').trim();
+        const eventObjectives = [String(detail.description || '').trim(),
+            objectives ? 'Learning objectives:\n' + objectives : ''].filter(Boolean).join('\n\n');
 
         return {
             course: courseName, year, report, detail,
@@ -59,25 +58,26 @@ Object.assign(window.App, {
                 'Partners': partners,
                 'Mode of delivery': 'Online',
                 'Location': detail.url || this.coursePublicUrl(detail.courseId) || 'https://www.surghub.org',
-                'Main language(s) of event': '',
+                'Main language(s) of event': detail.language || '',
                 'Registration/enrollment': 'Open enrolment, free of charge, through SURGhub',
                 'Deadline for registration': 'Open',
                 'Fee (in USD)': '0',
                 'Background': 'Almost a third of the global disease burden is surgical, yet over five billion people lack access to safe and affordable surgical care. '
                     + 'SURGhub, the United Nations global surgery learning hub, is a free platform of curated courses for the surgical, obstetric and anaesthesia workforce, '
                     + 'operated by the Global Surgery Foundation. This course is one of those offerings.',
-                'Event objectives': detail.description || '',
-                'Learning objectives': detail.objectives || '',
-                'Content and structure': (detail.description ? 'Self-paced online course hosted on SURGhub. ' : 'Self-paced online course hosted on SURGhub. ')
-                    + (report.totals.medianMinutes ? 'A typical participant spent about ' + n(report.totals.medianMinutes) + ' minutes on it.' : ''),
+                'Event objectives': eventObjectives,
+                'Learning objectives': objectives,
+                'Content and structure': 'Self-paced online course hosted on SURGhub.',
                 'Methodology': 'Asynchronous self-paced e-learning: participants work through the course at their own pace and a certificate is issued on completion.',
                 'Target audience': 'Surgical, obstetric, anaesthesia and nursing care providers, particularly in low- and middle-income settings.',
-                'Activity’s focal point': '',
-                'Additional Information': extra,
+                'Activity’s focal point': 'Michaela DORCIKOVA <Michaela.DORCIKOVA@unitar.org>',
+                'Additional Information': '',
             },
-            // Rows the app deliberately does not answer, so the caller can say so.
-            blanks: ['Main language(s) of event', 'Activity’s focal point']
-                .concat(detail.objectives ? [] : ['Learning objectives'])
+            // Rows the app cannot answer from what it holds, so the caller can say so.
+            // "Additional Information" is empty by choice and is not a gap.
+            blanks: []
+                .concat(detail.language ? [] : ['Main language(s) of event'])
+                .concat(objectives ? [] : ['Learning objectives'])
                 .concat(detail.description ? [] : ['Event objectives']),
         };
     },

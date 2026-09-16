@@ -5,11 +5,13 @@
 // course summary and its objectives, so this fetches the description LearnWorlds
 // holds for every course and keeps it beside the numbers.
 //
-// The description comes from the API (`/courses/{id}`), not by scraping: it is the
-// same text the public course page shows in its meta description, and it arrives as
-// a field rather than as markup to unpick. The public link is built from the course
-// id — `https://www.surghub.org/course/<id>` — because the URL already on the course
-// record is a survey link, not a page a reader can open.
+// Two sources, because neither has everything. The API (`/courses/{id}`) gives the
+// description as a field rather than as markup to unpick. The public course page gives
+// the two things the API does not carry at all: the **learning objectives**, which every
+// SURGhub course publishes as a list, and the **language**, printed on the page as a
+// plain "Language: English" pill. The public link is built from the course id —
+// `https://www.surghub.org/course/<id>` — because the URL already on the course record
+// is a survey link, not a page a reader can open.
 //
 // Paced deliberately. The enrolment sync earned a two-hour penalty box once by being
 // impatient with this API (see js/enrolmentSync.js), so this walks one course at a
@@ -61,6 +63,46 @@ Object.assign(window.App, {
         return s;
     },
 
+    // ── what the public course page carries that the API does not ─────────
+    // The page publishes the objectives as an <h2>Learning Objectives</h2> followed by a
+    // list, and the language as a "Language:" label followed by its value. Both are read
+    // from the rendered markup because LearnWorlds exposes neither through the API.
+    _coursePageFacts(html) {
+        const out = { objectives: [], language: '' };
+        const page = String(html || '');
+        const strip = (h) => h.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&')
+            .replace(/&#39;|&rsquo;/gi, "'").replace(/&quot;/gi, '"').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>')
+            .replace(/\s+/g, ' ').trim();
+
+        // Objectives: the list that follows the heading. The heading's words are split
+        // across spans on the real page ("Learning " + " Objectives"), so compare on letters.
+        const headings = page.match(/<h[12][^>]*>[\s\S]*?<\/h[12]>/gi) || [];
+        for (const h of headings) {
+            if (strip(h).toLowerCase().replace(/[^a-z]/g, '') !== 'learningobjectives') continue;
+            const after = page.slice(page.indexOf(h) + h.length);
+            const ul = after.match(/<ul[^>]*>[\s\S]*?<\/ul>/i);
+            if (!ul) break;
+            const items = ul[0].match(/<li[^>]*>[\s\S]*?<\/li>/gi) || [];
+            out.objectives = items.map(strip).filter(t => t.length > 3).slice(0, 20);
+            break;
+        }
+
+        // Language: the page prints "Language: <strong>English</strong>" in one element, so
+        // the value may sit on the label's own line or on the next one. Splitting on tags
+        // rather than collapsing whitespace keeps that boundary readable.
+        const li = page.search(/Language\s*:/i);
+        if (li >= 0) {
+            const lines = page.slice(li, li + 600).replace(/<[^>]+>/g, '\n').split('\n')
+                .map(t => strip(t)).filter(Boolean);
+            if (lines.length) {
+                const first = lines[0].replace(/^Language\s*:\s*/i, '').trim();
+                const value = first || (lines[1] || '');
+                if (value && value.length <= 80 && /[A-Za-z]/.test(value)) out.language = value;
+            }
+        }
+        return out;
+    },
+
     // Some descriptions carry their own objectives section. Where one exists it is the
     // best answer to UNITAR's "learning objectives"; where none does we say so rather
     // than paraphrasing the summary back at them.
@@ -71,6 +113,20 @@ Object.assign(window.App, {
         const tail = m[1].trim();
         const lines = tail.split('\n').map(l => l.replace(/^[\s•\-\*\d.)]+/, '').trim()).filter(Boolean);
         return lines.slice(0, 12).join('\n');
+    },
+
+    // The rendered course page, through the main process (the renderer cannot reach
+    // arbitrary hosts). A page that will not load costs that course its objectives and
+    // its language, never the whole run.
+    async _fetchCoursePage(courseId) {
+        const empty = { objectives: [], language: '' };
+        const url = this.coursePublicUrl(courseId);
+        if (!url) return empty;
+        try {
+            const res = await electronAPI.invoke('http-request', { url, method: 'GET', timeoutMs: 30000 });
+            if (!res || res.statusCode !== 200 || !res.body) return empty;
+            return this._coursePageFacts(res.body);
+        } catch (e) { __swallowed(e, 'courseDetails.page.' + courseId); return empty; }
     },
 
     async syncCourseDetails(opts) {
@@ -94,11 +150,15 @@ Object.assign(window.App, {
                 const r = await LearnWorlds.apiGet('/courses/' + encodeURIComponent(c.CourseId));
                 const d = (r && r.data) ? r.data : r;
                 const description = this._courseCleanDescription(d && d.description);
+                const page = await this._fetchCoursePage(c.CourseId);
                 map[c.Course] = {
                     courseId: c.CourseId,
                     title: (d && d.title) ? String(d.title) : c.Course,
                     description,
-                    objectives: this._courseObjectives(description),
+                    // The page's list is the real answer; a description that happens to
+                    // spell out objectives is the fallback.
+                    objectives: page.objectives.length ? page.objectives.join('\n') : this._courseObjectives(description),
+                    language: page.language,
                     categories: (d && Array.isArray(d.categories)) ? d.categories.map(x => String((x && x.name) || x)).filter(Boolean) : [],
                     author: (d && d.author) ? String((d.author.username) || d.author) : '',
                     access: (d && d.access) ? String(d.access) : (c.Access || ''),

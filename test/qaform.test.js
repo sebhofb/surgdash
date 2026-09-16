@@ -85,8 +85,32 @@ check('the course-summary store travels with the SURGhub data, in both direction
 check('the fetch is paced, because this API has bitten us before',
   A.COURSE_DETAILS_GAP_MS >= 1000 && /await new Promise\(res => setTimeout\(res, this\.COURSE_DETAILS_GAP_MS\)\)/.test(fs.readFileSync(ROOT + '/js/courseDetails.js', 'utf8')));
 
+// ── what the public course page carries ──
+{
+  const page = '<h2><span>Learning </span><span> Objectives</span></h2>'
+    + '<ul><li><span class="icon"></span><div>Understand what Global Surgery is today</div></li>'
+    + '<li><div>Identify current challenges</div></li></ul>'
+    + '<div>Language: <strong>English</strong></div>';
+  const f = A._coursePageFacts(page);
+  check('the objectives list is read from the page, heading split across spans and all',
+    f.objectives.length === 2 && f.objectives[0] === 'Understand what Global Surgery is today', JSON.stringify(f.objectives));
+  check('the language is read from the page, where it is printed as a label and a value', f.language === 'English', JSON.stringify(f.language));
+  check('a page with no objectives section yields none rather than grabbing the wrong list',
+    A._coursePageFacts('<h2>Structure</h2><ul><li><div>Module 1</div></li></ul>').objectives.length === 0);
+  check('a page with no language leaves it empty', A._coursePageFacts('<h2>Learning Objectives</h2><ul><li><div>x y z</div></li></ul>').language === '');
+  check('the value is taken even when it sits on the next line rather than beside the label',
+    A._coursePageFacts('<div>Language:</div><div>French</div>').language === 'French');
+  check('a page that is not a course page cannot poison the fields',
+    (() => { const g = A._coursePageFacts('<html><body>nothing here</body></html>'); return g.objectives.length === 0 && g.language === ''; })());
+  check('the page fetch never takes the whole run down with it',
+    /catch \(e\) \{ __swallowed\(e, 'courseDetails\.page\./.test(fs.readFileSync(ROOT + '/js/courseDetails.js', 'utf8')));
+  check('the page list beats a description that happens to mention objectives',
+    /page\.objectives\.length \? page\.objectives\.join/.test(fs.readFileSync(ROOT + '/js/courseDetails.js', 'utf8')));
+}
+
 // ── the answers ──
-const detail = { courseId: 'burns-101', title: 'Burns 101', description: 'A course about burns.', objectives: '', url: 'https://www.surghub.org/course/burns-101' };
+const detail = { courseId: 'burns-101', title: 'Burns 101', description: 'A course about burns.', objectives: '', language: 'English', url: 'https://www.surghub.org/course/burns-101' };
+const withObj = Object.assign({}, detail, { objectives: 'Assess a burn\nResuscitate' });
 const a = A.buildQaAnswers('Burns 101', { year: 2025, report, detail });
 check('the form covers the year asked for, both ends', a.rows['Date of event'] === '2025/1/1 – 2025/12/31' && a.year === 2025);
 check('a leap year is 366 days, not 365', A.buildQaAnswers('Burns 101', { year: 2024, report, detail }).rows['Duration of event'].indexOf('366 days') === 0);
@@ -95,20 +119,29 @@ check('the title comes from the course record, the location from its public link
 check('the provider is named as the partner, alongside GSF', a.rows['Partners'] === 'Interburns, in partnership with the Global Surgery Foundation', a.rows['Partners']);
 check('a course with no known provider still names GSF',
   A.buildQaAnswers('Burns 101', { year: 2025, report: Object.assign({}, report, { provider: 'Unknown Provider' }), detail }).rows['Partners'] === 'Global Surgery Foundation');
+check('a GSF course is not put "in partnership with" itself',
+  ['GSF - Global Surgery Foundation', 'Global Surgery Foundation', 'GSF'].every(p =>
+    !/in partnership/.test(A.buildQaAnswers('Burns 101', { year: 2025, report: Object.assign({}, report, { provider: p }), detail }).rows['Partners'])),
+  A.buildQaAnswers('Burns 101', { year: 2025, report: Object.assign({}, report, { provider: 'GSF - Global Surgery Foundation' }), detail }).rows['Partners']);
 check('the course summary answers "event objectives"', a.rows['Event objectives'] === 'A course about burns.');
-check('learning objectives stay empty unless the course states them, as in UNITAR\'s own example',
-  a.rows['Learning objectives'] === '' && a.blanks.indexOf('Learning objectives') >= 0);
-check('when the course does state objectives they are used',
-  A.buildQaAnswers('Burns 101', { year: 2025, report, detail: Object.assign({}, detail, { objectives: 'Assess a burn' }) }).rows['Learning objectives'] === 'Assess a burn');
-check('the additional information carries the year\'s participation, from the same figures as the report',
-  /2 learners enrolled during 2025/.test(a.rows['Additional Information']) && /1 certificates? were earned/.test(a.rows['Additional Information'])
-    && /countries represented/.test(a.rows['Additional Information']),
-  a.rows['Additional Information'].split('\n')[0]);
-check('the figures are attributed', /Figures prepared with SURGdash, the Global Surgery Foundation\./.test(a.rows['Additional Information']));
-check('what the app cannot know is named rather than invented',
-  a.rows['Main language(s) of event'] === '' && a.rows['Activity’s focal point'] === ''
-    && a.blanks.indexOf('Main language(s) of event') >= 0 && a.blanks.indexOf('Activity’s focal point') >= 0,
-  JSON.stringify(a.blanks));
+check('event objectives carry the summary AND the learning objectives, which is what UNITAR asked for',
+  (() => { const x = A.buildQaAnswers('Burns 101', { year: 2025, report, detail: withObj });
+    return x.rows['Event objectives'] === 'A course about burns.\n\nLearning objectives:\nAssess a burn\nResuscitate'; })(),
+  JSON.stringify(A.buildQaAnswers('Burns 101', { year: 2025, report, detail: withObj }).rows['Event objectives']));
+check('the objectives still stand alone in their own row',
+  A.buildQaAnswers('Burns 101', { year: 2025, report, detail: withObj }).rows['Learning objectives'] === 'Assess a burn\nResuscitate');
+check('a course whose page states no objectives leaves both rows honest rather than padded',
+  a.rows['Learning objectives'] === '' && a.rows['Event objectives'] === 'A course about burns.' && a.blanks.indexOf('Learning objectives') >= 0);
+check('the language is filled from the course page',
+  a.rows['Main language(s) of event'] === 'English' && a.blanks.indexOf('Main language(s) of event') < 0);
+check('a course page with no language stated leaves the row empty and says so',
+  (() => { const x = A.buildQaAnswers('Burns 101', { year: 2025, report, detail: Object.assign({}, detail, { language: '' }) });
+    return x.rows['Main language(s) of event'] === '' && x.blanks.indexOf('Main language(s) of event') >= 0; })());
+check('the focal point is UNITAR\'s own', a.rows['Activity’s focal point'] === 'Michaela DORCIKOVA <Michaela.DORCIKOVA@unitar.org>');
+check('additional information is left empty on purpose, and is not reported as a gap',
+  a.rows['Additional Information'] === '' && a.blanks.indexOf('Additional Information') < 0);
+check('content and structure says what the course is, without the learning-time aside',
+  a.rows['Content and structure'] === 'Self-paced online course hosted on SURGhub.', a.rows['Content and structure']);
 check('a course with no fetched summary says so, rather than filling the row with filler',
   (() => { const x = A.buildQaAnswers('Burns 101', { year: 2025, report, detail: {} });
     return x.rows['Event objectives'] === '' && x.blanks.indexOf('Event objectives') >= 0; })());
@@ -158,10 +191,15 @@ check('angle brackets and ampersands in an answer cannot break the document',
   check('the answers are in the document', /Essential|Burns 101/.test(doc) && /Interburns, in partnership/.test(doc) && /surghub\.org\/course\/burns-101/.test(doc));
   check('UNITAR\'s own labels and styling survive untouched',
     /QUALITY ASSESMENT/i.test(doc.replace(/<[^>]+>/g, '')) && /w:tblPr/.test(doc));
-  check('the example answers UNITAR shipped are gone, not left beside ours',
-    !/United Nations Global Surgery Learning Hub/.test(doc) && !/Michaela/.test(doc));
+  check('the example answers UNITAR shipped are replaced, not left beside ours',
+    !/United Nations Global Surgery Learning Hub/.test(doc) && !/E-Learning Platform/.test(doc)
+      && !/Frontline surgical care workers/.test(doc));
+  check('the focal point UNITAR asked for is on the form', /Michaela DORCIKOVA/.test(doc));
   check('the rewritten archive is a valid zip our own reader can walk', !!back && back.length > 20);
-  check('nothing personal reaches the form', !/@/.test(doc.replace(/xmlns[^"]*"[^"]*"/g, '')) || !/[a-z0-9]+@[a-z0-9]+\.[a-z]/i.test(doc));
+  check('the only address on the form is UNITAR\'s own focal point — no learner reaches it',
+    (() => { const mails = (doc.replace(/xmlns[^"]*"[^"]*"/g, '').match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g) || []);
+      return mails.length > 0 && mails.every(m => /@unitar\.org$/i.test(m)); })(),
+    (doc.match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g) || []).join(', '));
 
   // ── the year dialog (Electron has no prompt()) ──
   check('no code path calls prompt(), which throws in Electron rather than returning null',

@@ -3,6 +3,28 @@
 Working list of what to build next. Keep entries short; link to code when a
 decision is made. Items move to `js/whatsnew.js` when they ship.
 
+## Done — QA forms carry the real objectives, and the language (16 September 2026)
+
+Seb's pass over the first forms:
+
+- **Learning objectives come from the course page, not the description.** Every SURGhub
+  course publishes them as an `<h2>Learning Objectives</h2>` followed by a list; the API
+  carries none of it. `_coursePageFacts` reads that list, and the description's own
+  objectives section is now only the fallback. "Event objectives" carries the summary and
+  the objectives together, which is what UNITAR asked for; the objectives also keep their
+  own row.
+- **Language is filled automatically.** The page prints "Language: **English**" as a meta
+  pill, so there is nothing to detect — it is read, not guessed.
+- Removed the "a typical participant spent about N minutes" aside from "Content and
+  structure"; "Additional Information" is now deliberately empty; the focal point is
+  Michaela DORCIKOVA <Michaela.DORCIKOVA@unitar.org>.
+- A GSF-run course is no longer described as being "in partnership with" the Global
+  Surgery Foundation.
+
+The course-summary sync therefore fetches two things per course: the API description and
+the rendered page. A page that will not load costs that course its objectives and its
+language, never the run.
+
 ## Done — UNITAR's annual QA form, and the course text behind it (16 September 2026)
 
 - **`js/courseDetails.js`** fetches each course's summary from LearnWorlds
