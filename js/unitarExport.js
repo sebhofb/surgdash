@@ -316,10 +316,8 @@ Object.assign(window.App, {
         a.push(['Certificates earned', n(r.totals.certificates)]);
         a.push(['Certificate rate (%)', pct(r.totals.certRate)]);
         a.push(['Total learning time (hours)', Math.round(r.totals.learningMinutes / 60)]);
-        a.push(['Median learning time per participant (minutes)', n(r.totals.medianMinutes)]);
         a.push([]);
         a.push(['Where a participant did not state their country, career stage, gender, organisation type or profession, they are spread across the stated categories in the same proportions, so every block below adds up to the participant total. Each block says how many people stated it. Full workings are on the Methodology page of SURGdash.']);
-        a.push(['The "Participants" sheet is UNITAR\'s own upload template. Name and email columns are left blank: UNITAR marks them required, but filling them would identify every learner.']);
         a.push([]);
 
         r.dimensions.forEach(d => {

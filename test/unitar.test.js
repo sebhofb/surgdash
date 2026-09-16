@@ -190,8 +190,11 @@ check('one note says the gap is filled by spreading, and where to read more',
 check('each block totals to the participant count', (sum.match(/^Total\t10\t100$/gm) || []).length === r.dimensions.length);
 check('the title is bold, not just another line of text', sheets[0].headerRows.indexOf(sheets[0].logoRows) === 0, JSON.stringify(sheets[0].headerRows.slice(0, 3)));
 check('the summary is signed off', /Prepared with SURGdash \u00a9 the Global Surgery Foundation/.test(sum));
-check('the summary says on its face that the name columns are deliberately empty',
-  /Name and email columns are left blank/.test(sum) && /would identify every learner/.test(sum));
+check('the summary carries no aside about the participant sheet or the blank name columns',
+  !/Name and email columns/.test(sum) && !/identify every learner/.test(sum) && !/upload template/.test(sum));
+check('the median learning time is gone from the totals; the total hours remain',
+  !/Median learning time/.test(sum) && /Total learning time \(hours\)/.test(sum),
+  (sum.match(/TOTALS[\s\S]{0,180}/) || [''])[0].split('\n').slice(1, 6).join(' · '));
 check('the summary leaves blank rows at the top for the logo, header indices moved with them',
   sheets[0].logoRows === A.UNITAR_LOGO_ROWS && sheets[0].aoa.slice(0, sheets[0].logoRows).every(rw => rw.length === 0));
 
