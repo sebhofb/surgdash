@@ -177,13 +177,43 @@ Object.assign(window.App, {
         return 'UNITAR_QA_' + (safe || 'course') + '_' + year + '.docx';
     },
 
-    _qaYear() {
-        const y = new Date().getFullYear();
-        const answer = prompt('Which year should the quality-assessment form cover?', String(y - 1));
-        if (answer === null) return null;
-        const n = parseInt(String(answer).trim(), 10);
-        if (!(n >= 2000 && n <= 2100)) { alert('That is not a year I can use.'); return null; }
-        return n;
+    // Electron has no prompt() — it is one of the few browser dialogs Chromium refuses to
+    // implement there, and calling it throws rather than returning null. Same small modal
+    // as the reporting-period picker instead. Resolves to a year, or null if cancelled.
+    _qaYear(title) {
+        return new Promise(resolve => {
+            const thisYear = new Date().getFullYear();
+            const years = [thisYear, thisYear - 1, thisYear - 2, thisYear - 3];
+            const el = document.createElement('div');
+            el.id = 'qa-year-dialog';
+            el.style.cssText = 'position:fixed;inset:0;background:rgba(0,47,76,0.85);display:flex;align-items:center;justify-content:center;z-index:10000';
+            el.innerHTML = '<div style="background:#fff;border-radius:16px;padding:28px 32px;max-width:460px;width:92%">'
+                + '<div style="font-size:18px;font-weight:800;color:#002F4C;margin-bottom:6px">' + this.escapeHtml(title || 'Quality-assessment form') + '</div>'
+                + '<div style="font-size:13px;color:#64748b;margin-bottom:18px">Which year should the form cover? Participation figures count learners who <strong>enrolled</strong> in that year.</div>'
+                + '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px">'
+                + years.map(y => '<button data-y="' + y + '" style="padding:8px 18px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;font-size:13px;font-weight:700;color:#002F4C;cursor:pointer">' + y + '</button>').join('')
+                + '</div>'
+                + '<label style="display:block;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.06em;margin-bottom:20px">Or another year'
+                + '<input type="number" id="qa-year-input" min="2000" max="2100" step="1" value="' + (thisYear - 1) + '" style="display:block;width:140px;margin-top:5px;padding:8px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px"></label>'
+                + '<div style="display:flex;justify-content:flex-end;gap:8px">'
+                + '<button id="qa-cancel" style="padding:9px 18px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;font-size:13px;font-weight:700;color:#64748b;cursor:pointer">Cancel</button>'
+                + '<button id="qa-ok" style="padding:9px 22px;border-radius:8px;border:0;background:#002F4C;font-size:13px;font-weight:700;color:#fff;cursor:pointer">Create form</button>'
+                + '</div></div>';
+            document.body.appendChild(el);
+            const input = el.querySelector('#qa-year-input');
+            const done = (v) => { el.remove(); resolve(v); };
+            const take = (raw) => {
+                const n = parseInt(String(raw).trim(), 10);
+                if (!(n >= 2000 && n <= 2100)) { input.style.borderColor = '#D03734'; input.focus(); return; }
+                done(n);
+            };
+            el.querySelectorAll('[data-y]').forEach(b => b.onclick = () => take(b.getAttribute('data-y')));
+            el.querySelector('#qa-cancel').onclick = () => done(null);
+            el.querySelector('#qa-ok').onclick = () => take(input.value);
+            el.onclick = (ev) => { if (ev.target === el) done(null); };
+            input.onkeydown = (ev) => { if (ev.key === 'Enter') take(input.value); };
+            setTimeout(() => { try { input.focus(); input.select(); } catch (e) { __swallowed(e); } }, 30);
+        });
     },
 
     async exportQaForm(courseName) {
@@ -195,7 +225,7 @@ Object.assign(window.App, {
                 if (!confirm('No course summary has been fetched for "' + course + '" yet, so the objectives rows will be blank.\n\n'
                     + 'Data Sync → "Fetch course summaries" fills them in. Create the form anyway?')) return;
             }
-            const year = this._qaYear();
+            const year = await this._qaYear('QA form \u2014 ' + course);
             if (year == null) return;
             const ctx = await this._unitarContext();
             const { bytes, answers, filled } = await this.buildQaDocument(course, { year, ctx });
@@ -219,7 +249,7 @@ Object.assign(window.App, {
             const listed = this.isCourseIncluded ? all.filter(c => this.isCourseIncluded(c)) : all;
             const courses = listed.filter(c => !this.isCoursePrivate(c));
             if (!courses.length) return alert('No courses to report on.');
-            const year = this._qaYear();
+            const year = await this._qaYear('QA forms \u2014 ' + courses.length + ' courses');
             if (year == null) return;
             const missing = courses.filter(c => !this.courseDetail(c).description).length;
             if (!confirm('Write a UNITAR quality-assessment form for each course?\n\n'

@@ -20,7 +20,30 @@ function mk(opts) {
   const ctx = { console: { log() {}, warn() {}, error() {} }, Date, Math, JSON, Object, Array, Number, String, Map, Set, RegExp, Error, Promise, Intl, isNaN, isFinite, parseInt, parseFloat, setTimeout,
     __swallowed() {}, alert(m) { ctx.App.alerts.push(m); }, confirm() { return true; }, prompt() { return '2025'; },
     TextEncoder, TextDecoder, DataView, Uint8Array, Int32Array, ArrayBuffer, DecompressionStream, Response,
-    document: { getElementById: () => null },
+    document: {
+      getElementById: () => null,
+      // Enough of a DOM for the year dialog, which is the only way into the export now.
+      createElement() {
+        const nodes = {};
+        const stub = (sel) => nodes[sel] || (nodes[sel] = { value: '', style: {}, focus() {}, select() {}, getAttribute: (a) => (sel.match(/\[data-y="(\d+)"\]/) || [])[1] });
+        const el = {
+          id: '', style: {}, _html: '',
+          set innerHTML(v) { this._html = v; }, get innerHTML() { return this._html; },
+          querySelector: (sel) => stub(sel),
+          querySelectorAll: (sel) => {
+            if (sel !== '[data-y]') return [];
+            return (el._html.match(/data-y="(\d+)"/g) || []).map(m => {
+              const y = m.match(/\d+/)[0];
+              return Object.assign(stub('[data-y="' + y + '"]'), { getAttribute: () => y });
+            });
+          },
+          remove() { el.removed = true; },
+        };
+        ctx.App.__dialog = el;   // mk() hands back ctx.App, so hang it there
+        return el;
+      },
+      body: { appendChild() {} },
+    },
     Storage: { async getItem(k) { return store.has(k) ? JSON.parse(JSON.stringify(store.get(k))) : null; },
                async setItem(k, v) { store.set(k, JSON.parse(JSON.stringify(v))); } },
   };
@@ -139,6 +162,41 @@ check('angle brackets and ampersands in an answer cannot break the document',
     !/United Nations Global Surgery Learning Hub/.test(doc) && !/Michaela/.test(doc));
   check('the rewritten archive is a valid zip our own reader can walk', !!back && back.length > 20);
   check('nothing personal reaches the form', !/@/.test(doc.replace(/xmlns[^"]*"[^"]*"/g, '')) || !/[a-z0-9]+@[a-z0-9]+\.[a-z]/i.test(doc));
+
+  // ── the year dialog (Electron has no prompt()) ──
+  check('no code path calls prompt(), which throws in Electron rather than returning null',
+    ['qaForm.js', 'unitarExport.js', 'courseDetails.js'].every(f =>
+      !/[^a-zA-Z_.]prompt\(/.test(fs.readFileSync(ROOT + '/js/' + f, 'utf8').split('\n').filter(l => l.indexOf('//') !== 0 && l.trim().indexOf('//') !== 0).join('\n'))),
+    'checked qaForm, unitarExport, courseDetails');
+  check('both entry points await the year dialog rather than reading a value straight back',
+    (fs.readFileSync(ROOT + '/js/qaForm.js', 'utf8').match(/await this\._qaYear\(/g) || []).length === 2);
+  {
+    const C = mk();
+    const p1 = C._qaYear('t');
+    check('the dialog is a promise, and a year button settles it',
+      p1 instanceof Promise && !!C.__dialog && /Create form/.test(C.__dialog.innerHTML));
+    const buttons = C.__dialog.querySelectorAll('[data-y]');
+    check('it offers this year and the three before it', buttons.length === 4);
+    buttons[1].onclick();
+    check('picking a year resolves to that year and closes the dialog',
+      (await p1) === new Date().getFullYear() - 1 && C.__dialog.removed === true, await p1);
+
+    const D = mk();
+    const p2 = D._qaYear('t');
+    D.__dialog.querySelector('#qa-cancel').onclick();
+    check('cancelling resolves to null, so the caller stops', (await p2) === null);
+
+    const E = mk();
+    const p3 = E._qaYear('t');
+    const input = E.__dialog.querySelector('#qa-year-input');
+    input.value = '1066';
+    E.__dialog.querySelector('#qa-ok').onclick();
+    check('a year outside the allowed range is refused in place instead of resolving',
+      E.__dialog.removed !== true && input.style.borderColor === '#D03734', input.style.borderColor);
+    input.value = '2024';
+    E.__dialog.querySelector('#qa-ok').onclick();
+    check('correcting it then works', (await p3) === 2024);
+  }
 
   console.log(`\n${ok}/${ok + bad} passed`); process.exit(bad ? 1 : 0);
 })();
