@@ -11,9 +11,10 @@
 // (_unitarMethodologyHtml) rather than in the file, so what UNITAR receives stays short
 // enough to read.
 //
-// IT CARRIES PERSONAL DATA. Their template marks Surname, Firstname and Email required,
-// so this is the one SURGdash export that is not anonymous. Both entry points warn
-// before writing, and the summary says so on its face.
+// IT STAYS ANONYMOUS. Their template marks Surname, Firstname and Email required, but
+// those three columns are left blank on purpose: filling them would identify every
+// learner. If UNITAR ever refuses the upload without them, the names and addresses are
+// in the completion store and only _unitarEmsRows has to change.
 //
 // ONE ENROLMENT NUMBER. The platform's own course total and the number of
 // participant records differ slightly on most courses; the file reports the
@@ -221,10 +222,6 @@ Object.assign(window.App, {
                 started: this._unitarDay(c && c.start_date),
                 completedOn: this._unitarDay(c && c.completion_date),
                 certificateOn: this._unitarDay(c && c.certificate_date),
-                // Identity, for UNITAR's own upload template only — it demands surname,
-                // first name and email. Never used by the Summary sheet.
-                name: (c && c.name) ? String(c.name).trim() : '',
-                email: (c && c.email) ? String(c.email).trim() : '',
                 minutes: Math.round(this._unitarNum(c && c.time_minutes != null ? c.time_minutes : u.course_minutes)),
                 certificate: c ? !!c.certificate : String(u.has_certificate || '').toLowerCase() === 'yes',
             };
@@ -322,7 +319,7 @@ Object.assign(window.App, {
         a.push(['Median learning time per participant (minutes)', n(r.totals.medianMinutes)]);
         a.push([]);
         a.push(['Where a participant did not state their country, career stage, gender, organisation type or profession, they are spread across the stated categories in the same proportions, so every block below adds up to the participant total. Each block says how many people stated it. Full workings are on the Methodology page of SURGdash.']);
-        a.push(['The "Participants" sheet is UNITAR\'s own upload template and carries names and email addresses, because UNITAR requires them. Treat this file as personal data.']);
+        a.push(['The "Participants" sheet is UNITAR\'s own upload template. Name and email columns are left blank: UNITAR marks them required, but filling them would identify every learner.']);
         a.push([]);
 
         r.dimensions.forEach(d => {
@@ -403,10 +400,8 @@ Object.assign(window.App, {
     // that workbook: their "Participants" sheet filled in, their "Default Values" sheet
     // untouched, and our Summary added alongside.
     //
-    // THIS FILE CARRIES PERSONAL DATA. Their template marks Surname, Firstname and Email
-    // as required, so the anonymised participant list cannot satisfy it. The Summary sheet
-    // says so at the top, and the export warns before it writes. It is the one UNITAR
-    // output that is not safe to circulate.
+    // Surname, Firstname and Email are left blank even though UNITAR marks them required:
+    // the report stays anonymous unless and until UNITAR insists otherwise.
     //
     // The code lists (gender 1-5, nationality ISO2, organisational affiliation ACM/GOVN/…)
     // are read from the template's own "Default Values" sheet at export time rather than
@@ -427,23 +422,6 @@ Object.assign(window.App, {
         return out;
     },
 
-    // "Mary Jane Watson" -> { firstname: 'Mary Jane', surname: 'Watson' }; "Watson, Mary" too.
-    // Roughly a sixth of learners register a single word. Surname AND Firstname are both
-    // required by UNITAR, so that word goes in both: it is the only name we hold, and
-    // repeating it is honest where inventing a surname would not be.
-    _unitarSplitName(full) {
-        const s = String(full || '').replace(/\s+/g, ' ').trim();
-        if (!s) return { firstname: '', surname: '' };
-        if (s.indexOf(',') > 0) {
-            const bits = s.split(',');
-            const sur = bits[0].trim(), first = bits.slice(1).join(' ').trim();
-            return { surname: sur || first, firstname: first || sur };
-        }
-        const parts = s.split(' ');
-        if (parts.length === 1) return { firstname: parts[0], surname: parts[0] };
-        return { firstname: parts.slice(0, -1).join(' '), surname: parts[parts.length - 1] };
-    },
-
     // One EMS row per participant, as an array in the template's column order.
     _unitarEmsRows(report, maps) {
         const gender = maps.gender || {}, nat = maps.nationality || {}, org = maps.org || {};
@@ -452,16 +430,18 @@ Object.assign(window.App, {
             return (k && map[k]) || fallback;
         };
         return report.participants.map(p => {
-            const nm = this._unitarSplitName(p.name);
             const row = new Array(this.UNITAR_EMS_COLS).fill('');
-            row[0] = nm.surname;                                            // A  Surname*
-            row[1] = nm.firstname;                                          // B  Firstname*
+            // A Surname*, B Firstname* and G Email* are deliberately LEFT BLANK. UNITAR
+            // marks them required, but filling them would turn this into a personal-data
+            // export of every learner. The columns stay empty until UNITAR says it cannot
+            // accept the upload without them; the data exists in the completion store if
+            // that day comes.
             row[5] = code(gender, p.gender, gender['unreported'] || '5');   // F  Gender*
-            row[6] = p.email;                                               // G  Email*
             row[7] = (p.iso && nat[String(p.iso).toLowerCase()]) ? nat[String(p.iso).toLowerCase()]
                 : (p.iso || code(nat, p.country, nat['unreported'] || 'UN'));  // H  Nationality*
             row[9] = code(org, p.organisation_type, org['unreported'] || 'UNR'); // J Organizational Affiliation*
-            row[15] = p.started ? '1' : '0';                                // P  Certification of participation
+            // P (certification of participation) stays blank: a learner either earned the
+            // certificate or did not, and there is no second, lesser certificate to report.
             row[16] = p.certificate ? '1' : '0';                            // Q  Certification of completion
             return row;
         });
@@ -790,10 +770,6 @@ Object.assign(window.App, {
             if (!period) return;
             const report = this.buildUnitarReport(course, Object.assign({}, ctx, period));
             if (!report.totals.participants) return alert('No participants for "' + course + '"' + (report.period.set ? ' in ' + report.period.label : '') + '.');
-            const named = report.participants.filter(p => p.email).length;
-            if (!confirm('This report uses UNITAR\'s upload template, which requires each participant\'s surname, first name and email address.\n\n'
-                + 'The file will therefore contain PERSONAL DATA for ' + this.formatNumber(named) + ' of ' + this.formatNumber(report.totals.participants) + ' participants.\n'
-                + 'Send it to UNITAR only. Continue?')) return;
             const template = await this._unitarTemplateBytes();
             if (!template) return alert('The UNITAR template is missing from this installation (templates/unitar_ems_template.xls).');
             const savePath = await electronAPI.invoke('pick-save-path', this._unitarFileName(course, report.period));
@@ -801,8 +777,7 @@ Object.assign(window.App, {
             const { X, wb } = this._unitarEmsWorkbook(report, template);
             const out = this._unitarAddLogo(new Uint8Array(X.write(wb, { bookType: 'xlsx', type: 'array' })), await this._unitarLogoBytes(), { firstOnly: true });
             electronAPI.fs.writeFileSync(savePath, out);
-            this.showMsg('UNITAR report saved — ' + this.formatNumber(report.totals.participants) + ' participants · ' + report.period.label
-                + ' · contains personal data.', 'success');
+            this.showMsg('UNITAR report saved — ' + this.formatNumber(report.totals.participants) + ' participants · ' + report.period.label + '.', 'success');
         } catch (e) {
             console.error('[UNITAR]', e);
             alert('Could not build the report: ' + (e && e.message || e));
@@ -830,8 +805,6 @@ Object.assign(window.App, {
                 + (privateCount ? '\n' + privateCount + ' private course' + (privateCount === 1 ? '' : 's') + (period.includePrivate ? ' included.' : ' skipped.') : ''))) return;
             const template = await this._unitarTemplateBytes();
             if (!template) return alert('The UNITAR template is missing from this installation (templates/unitar_ems_template.xls).');
-            if (!confirm('These reports use UNITAR\'s upload template, which requires each participant\'s surname, first name and email address.\n\n'
-                + 'Every file will therefore contain PERSONAL DATA. Send them to UNITAR only. Continue?')) return;
             const folder = await electronAPI.invoke('pick-folder');
             if (!folder) return;
             const logo = await this._unitarLogoBytes();

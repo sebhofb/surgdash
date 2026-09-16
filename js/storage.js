@@ -53,6 +53,9 @@
             // Courses run as closed cohorts (in-country workshops). A curation decision the
             // whole team shares, so it travels with the data like the course exclusions.
             'surghub_private_courses': path.join('surghub', 'private_courses.json'),
+            // Course summaries fetched from LearnWorlds (js/courseDetails.js) — prose the
+            // numbers cannot supply, needed for UNITAR's quality-assessment forms.
+            'surghub_course_details': path.join('surghub', 'course_details.json'),
         };
         if (surghubMap[key]) return surghubMap[key];
 
@@ -130,6 +133,7 @@
                 'milestones': 'surghub_milestones',
                 'improvement_ai': 'surghub_improvement_ai',
                 'private_courses': 'surghub_private_courses',
+                'course_details': 'surghub_course_details',
                 // Raw feedback-survey responses (updater.js Surveys sync). Its reverse entry
                 // sat in the settings/ map by mistake, so keys() never listed it: it was
                 // missing from every Sheets push, local backup, restore and wipe until 11 Sep 2026.

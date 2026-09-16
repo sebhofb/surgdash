@@ -3,20 +3,29 @@
 Working list of what to build next. Keep entries short; link to code when a
 decision is made. Items move to `js/whatsnew.js` when they ship.
 
-## Next — UNITAR's annual QA form (raised 16 September 2026)
+## Done — UNITAR's annual QA form, and the course text behind it (16 September 2026)
 
-UNITAR wants the quality-assessment form filled per course, annually. The form's
-administrative half is already derivable (title, provider, dates, duration, mode,
-location, fee, focal point, target audience) and the participation half comes from the
-same figures as the report.
-
-**It is blocked on content the app does not hold.** "Event objectives", "Learning
-objectives", "Content and structure" and "Methodology" need each course's summary and
-learning objectives, and SURGdash stores none of it: a course row has Course, Provider,
-URL, Learners, Certificates, timings, ratings and `Access`, and no description field.
-The next step is a course-detail fetch (LearnWorlds `/courses/{id}` or the public
-surghub.org page) into a new store, after which the form itself is a small job. Until
-then the app can only produce a partly-filled form, which is worse than none.
+- **`js/courseDetails.js`** fetches each course's summary from LearnWorlds
+  (`/courses/{id}`) into `surghub_course_details`, mapped both ways so the prose travels
+  with the numbers. Paced at 1.2 s a course, because this API has bitten us before. The
+  public link is built from the course id (`surghub.org/course/<id>`, verified 200): the
+  URL already on the course record is a *survey* link, not a page anyone can open.
+- **`js/qaForm.js`** fills UNITAR's own Word form, all 20 rows, for a year you pick.
+  Their .docx is a zip, so it is the same surgery as the spreadsheet with one addition:
+  Word deflates its parts, so the one part we edit is inflated first
+  (`DecompressionStream`), and everything is written back STORED — a legal zip, and no
+  deflate implementation to own. Every other part, including the customXml Word cares
+  about, goes back byte-for-byte.
+  - **Word splits labels across runs** wherever the author paused typing, so the document
+    really says "Mode of d elivery" and "Learning o bjectives". Matching on letters and
+    digits alone is the only reliable way to find a row; matching on words filled 10 of 20.
+  - **Left blank on purpose:** language and focal point (the app holds neither), and
+    learning objectives unless the course's own description states them — UNITAR's own
+    filled example leaves that row blank too. The toast names what it left for a person.
+- **The EMS sheet stays anonymous.** Surname, first name and email are left empty; the
+  data is in the completion store if UNITAR ever refuses the upload without them. Only
+  the completion certificate is reported: a learner either earned it or did not, and
+  there is no lesser certificate to report in the participation column.
 
 ## Done — enrolments & progress from the API (2 September 2026, commit 2496d86)
 

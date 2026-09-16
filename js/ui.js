@@ -3017,6 +3017,9 @@ Object.assign(window.App, {
                                 <button onclick="App.generateAllProviderReports()" class="flex items-center justify-center gap-2 py-3 px-4 bg-white border border-slate-200 text-gsf-prussian font-bold rounded-lg hover:border-gsf-boston hover:text-gsf-boston hover:shadow-md transition-all shadow-sm">
                                     <i data-lucide="folder-down" width="18" class="text-gsf-boston"></i> All PDF Reports
                                 </button>
+                                <button onclick="App.exportAllQaForms()" title="UNITAR's annual quality-assessment form, one .docx per course" class="flex items-center justify-center gap-2 py-3 px-4 bg-white border border-slate-200 text-gsf-prussian font-bold rounded-xl hover:border-gsf-boston transition-colors text-sm">
+                                    <i data-lucide="clipboard-check" width="18" class="text-gsf-boston"></i> All QA Forms
+                                </button>
                                 <button onclick="App.exportAllUnitarCourseReports()" title="One Excel file per course: totals, anonymised participants, and the assumptions behind the gaps" class="flex items-center justify-center gap-2 py-3 px-4 bg-white border border-slate-200 text-gsf-prussian font-bold rounded-xl hover:border-gsf-boston transition-colors text-sm">
                                     <i data-lucide="file-spreadsheet" width="18" class="text-gsf-boston"></i> All UNITAR Reports
                                 </button>
@@ -3506,6 +3509,7 @@ Object.assign(window.App, {
                             <span class="text-xs text-slate-400 italic">Recommended &amp; fast — export the User Segment ZIP and drop the files here.</span>
                         </div>
                         <div class="mt-3 pt-3 border-t border-violet-100 flex flex-wrap items-center gap-2">
+                            <button data-edit-only onclick="App.syncCourseDetailsWithProgress()" title="Reads each course's summary from LearnWorlds. Prose, not numbers — needed for UNITAR's quality-assessment forms." class="px-4 py-2 bg-slate-100 text-slate-700 text-xs font-bold rounded-lg hover:bg-slate-200">Fetch course summaries</button>
                             <button onclick="App.syncGrowthTimelinesFromApi()" class="px-4 py-2 bg-violet-100 text-violet-800 text-xs font-bold rounded-lg hover:bg-violet-200">Or fetch via API</button>
                             <span class="text-xs text-slate-400 italic">Slow (30–60+ min at current scale) but hands-off — and the only path that refreshes the learner→course maps behind the anonymized User Data exports.</span>
                         </div>
@@ -4244,6 +4248,7 @@ Object.assign(window.App, {
                                 <input type="checkbox" ${App.isCoursePrivate && App.isCoursePrivate(this.selectedCourse) ? 'checked' : ''} onchange="App.toggleCoursePrivate('${this.escapeJsArg(this.selectedCourse)}', this.checked)" class="rounded border-slate-300 text-purple-600 focus:ring-purple-500/30" />
                                 Private course
                             </label>
+                            <button data-edit-only data-report-ok onclick="App.exportQaForm()" title="UNITAR's annual quality-assessment form for this course, filled from the course summary and this year's figures" class="flex items-center gap-1.5 px-3.5 py-2 bg-white border border-slate-200 text-gsf-prussian font-bold rounded-lg text-xs hover:border-gsf-boston transition-colors"><i data-lucide="clipboard-check" width="13"></i> QA form</button>
                             <button data-edit-only data-report-ok onclick="App.exportUnitarCourseReport()" title="One Excel file for this course: totals, anonymised participants, and the assumptions behind the gaps" class="flex items-center gap-1.5 px-3.5 py-2 bg-white border border-slate-200 text-gsf-prussian font-bold rounded-lg text-xs hover:border-gsf-boston transition-colors"><i data-lucide="file-spreadsheet" width="13"></i> UNITAR report</button>
                             <button data-edit-only data-report-ok onclick="App.exportCurrentCoursePackage()" class="flex items-center gap-1.5 px-3.5 py-2 bg-amber-500 text-white font-bold rounded-lg text-xs shadow-sm hover:bg-amber-600 transition-colors" title="One folder ({provider}/{course}) with the course PDF + web report + anonymized users + anonymized feedback (Excel)"><i data-lucide="package" width="14"></i> Report Package</button>
                         </div>

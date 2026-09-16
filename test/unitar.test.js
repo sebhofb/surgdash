@@ -190,17 +190,12 @@ check('one note says the gap is filled by spreading, and where to read more',
 check('each block totals to the participant count', (sum.match(/^Total\t10\t100$/gm) || []).length === r.dimensions.length);
 check('the title is bold, not just another line of text', sheets[0].headerRows.indexOf(sheets[0].logoRows) === 0, JSON.stringify(sheets[0].headerRows.slice(0, 3)));
 check('the summary is signed off', /Prepared with SURGdash \u00a9 the Global Surgery Foundation/.test(sum));
-check('the summary says on its face that the file carries personal data',
-  /Treat this file as personal data/.test(sum) && /UNITAR requires them/.test(sum));
+check('the summary says on its face that the name columns are deliberately empty',
+  /Name and email columns are left blank/.test(sum) && /would identify every learner/.test(sum));
 check('the summary leaves blank rows at the top for the logo, header indices moved with them',
   sheets[0].logoRows === A.UNITAR_LOGO_ROWS && sheets[0].aoa.slice(0, sheets[0].logoRows).every(rw => rw.length === 0));
 
 // ── UNITAR's own template ──
-check('a full name splits into first name and surname', JSON.stringify(A._unitarSplitName('Mary Jane Watson')) === JSON.stringify({ firstname: 'Mary Jane', surname: 'Watson' }));
-check('"Surname, Firstname" is understood', JSON.stringify(A._unitarSplitName('Watson, Mary')) === JSON.stringify({ surname: 'Watson', firstname: 'Mary' }));
-check('a single-word name fills both required columns rather than leaving one blank',
-  JSON.stringify(A._unitarSplitName('Amara')) === JSON.stringify({ firstname: 'Amara', surname: 'Amara' }));
-check('an empty name stays empty rather than becoming a guess', JSON.stringify(A._unitarSplitName('')) === JSON.stringify({ firstname: '', surname: '' }));
 {
   const maps = { gender: { female: '1', male: '2', unreported: '5' },
                  nationality: { ke: 'KE', ng: 'NG', unreported: 'UN' },
@@ -209,30 +204,26 @@ check('an empty name stays empty rather than becoming a guess', JSON.stringify(A
   check('one EMS row per participant, in the template\'s column order', rows.length === 10 && rows[0].length === A.UNITAR_EMS_COLS);
   check('the coded required columns are filled for EVERY participant — that is what makes them fillable',
     rows.every(rw => rw[5] && rw[7] && rw[9]), JSON.stringify(rows.map(rw => rw[5] + rw[7] + rw[9]).slice(0, 4)));
-  check('surname, first name and email are filled wherever the platform gave us an enrolment record',
-    rows.filter(rw => rw[0] && rw[1] && rw[6]).length === 3
-      && rows[0][0] === 'Watson' && rows[0][1] === 'Mary Jane' && rows[0][6] === 'mjw@example.invalid',
-    JSON.stringify([rows[0][0], rows[0][1], rows[0][6]]));
-  check('a one-word name still fills both name columns', rows[1][0] === 'Amara' && rows[1][1] === 'Amara');
-  check('a "Surname, Firstname" record is not written back to front', rows[3][0] === 'Okafor' && rows[3][1] === 'Chidi');
-  check('a participant with no enrolment record leaves the name columns empty rather than inventing one',
-    rows[8][0] === '' && rows[8][1] === '' && rows[8][6] === '');
   check('gender, nationality and affiliation map to codes, not to our own wording',
     rows[0][5] === '1' && rows[0][7] === 'KE' && rows[0][9] === 'ACM', [rows[0][5], rows[0][7], rows[0][9]].join('/'));
-  check('a field nobody stated becomes UNITAR\'s "unreported" code, which is what makes a required column fillable',
+  check('a field nobody stated becomes UNITAR\'s "unreported" code, so a required column is never empty',
     rows[8][5] === '5' && rows[8][7] === 'UN' && rows[8][9] === 'UNR', [rows[8][5], rows[8][7], rows[8][9]].join('/'));
-  check('participation and completion are the 0/1 flags the template expects',
-    rows[0][15] === '1' && rows[0][16] === '1' && rows[8][15] === '0' && rows[8][16] === '0');
-  check('email goes in the email column and nowhere else',
-    rows.every(rw => rw.filter(v => /@/.test(String(v))).length <= 1));
+  check('surname, first name and email are left BLANK, so the file identifies nobody',
+    rows.every(rw => rw[0] === '' && rw[1] === '' && rw[6] === ''),
+    JSON.stringify(rows.slice(0, 3).map(rw => [rw[0], rw[1], rw[6]])));
+  check('no cell anywhere in the sheet looks like an email address',
+    rows.every(rw => rw.every(v => !/@/.test(String(v)))));
+  check('the report object itself no longer carries a name or an address to leak',
+    r.participants.every(p => !('name' in p) && !('email' in p)), JSON.stringify(Object.keys(r.participants[0])));
+  check('only the completion certificate is reported; the participation column stays blank',
+    rows[0][15] === '' && rows[0][16] === '1' && rows[8][15] === '' && rows[8][16] === '0',
+    JSON.stringify([rows[0][15], rows[0][16], rows[8][15], rows[8][16]]));
   check('the code lists are read from the template at export time, not copied into the code',
     /_unitarCodeMap\(X, dv, 3\)/.test(fs.readFileSync(ROOT + '/js/unitarExport.js', 'utf8')));
 }
 check('the template ships with the app', fs.existsSync(ROOT + '/templates/unitar_ems_template.xls'));
 check('the template is exempt from the .xls gitignore rule, or it would never reach a colleague',
   /!templates\/unitar_ems_template\.xls/.test(fs.readFileSync(ROOT + '/.gitignore', 'utf8')));
-check('both entry points warn that the file carries personal data before writing anything',
-  (fs.readFileSync(ROOT + '/js/unitarExport.js', 'utf8').match(/contain PERSONAL DATA/g) || []).length === 2);
 
 // ── private courses ──
 check('LearnWorlds decides by default: a course it marks private is private',

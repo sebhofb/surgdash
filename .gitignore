@@ -31,3 +31,4 @@ npm-debug.log*
 
 # The UNITAR EMS upload template ships with the app (the *.xls rule above would hide it)
 !templates/unitar_ems_template.xls
+!templates/unitar_qa_form.docx
