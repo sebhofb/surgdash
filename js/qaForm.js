@@ -53,7 +53,7 @@ Object.assign(window.App, {
                 'Is this a Learning or Non-Learning event': 'Yes',
                 'Date of event': year + '/1/1 – ' + year + '/12/31',
                 'Duration of event': days + ' days (self-paced, open throughout the year)',
-                'Partners': 'Global Surgery Foundation',
+                'Partners': 'The Global Surgery Foundation',
                 'Mode of delivery': 'Online',
                 'Location': detail.url || this.coursePublicUrl(detail.courseId) || 'https://www.surghub.org',
                 'Main language(s) of event': detail.language || '',
@@ -127,8 +127,10 @@ Object.assign(window.App, {
             return '<w:p>' + this._qaRun(line) + '</w:p>';
         }).join('');
 
+        // The logo, then an empty paragraph, so the name sits clear of the picture
+        // rather than tight under it.
         const logo = (fmt.logo && ctx.logoRelId)
-            ? '<w:p>' + this._qaImageRun(ctx.logoRelId, ctx.logoW, ctx.logoH) + '</w:p>'
+            ? '<w:p>' + this._qaImageRun(ctx.logoRelId, ctx.logoW, ctx.logoH) + '</w:p><w:p/>'
             : '';
         return '<w:tc>' + (tcPr || '') + logo + (body || '<w:p/>') + '</w:tc>';
     },

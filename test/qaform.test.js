@@ -136,10 +136,10 @@ check('the form covers the year asked for, both ends', a.rows['Date of event'] =
 check('a leap year is 366 days, not 365', A.buildQaAnswers('Burns 101', { year: 2024, report, detail }).rows['Duration of event'].indexOf('366 days') === 0);
 check('the title comes from the course record, the location from its public link',
   a.rows['Title of event'] === 'Burns 101' && a.rows['Location'] === 'https://www.surghub.org/course/burns-101');
-check('partners is the SURGhub partnership itself, the same on every form',
-  a.rows['Partners'] === 'Global Surgery Foundation'
+check('partners is the SURGhub partnership itself, named in full, the same on every form',
+  a.rows['Partners'] === 'The Global Surgery Foundation'
     && ['Interburns', 'Unknown Provider', 'GSF'].every(p =>
-      A.buildQaAnswers('Burns 101', { year: 2025, report: Object.assign({}, report, { provider: p }), detail }).rows['Partners'] === 'Global Surgery Foundation'),
+      A.buildQaAnswers('Burns 101', { year: 2025, report: Object.assign({}, report, { provider: p }), detail }).rows['Partners'] === 'The Global Surgery Foundation'),
   a.rows['Partners']);
 check('the body that wrote the course is named under additional information instead',
   a.rows['Additional Information'] === 'Course provider: Interburns', a.rows['Additional Information']);
@@ -189,11 +189,13 @@ check('a course with no fetched summary says so, rather than filling the row wit
     (() => { const x = row('Event objectives', 'A summary.\n\nLearning objectives:\nOne\nTwo');
       return (x.match(/<w:numPr>/g) || []).length === 2 && /A summary\.<\/w:t>/.test(x) && !/<w:numPr>[\s\S]{0,120}A summary/.test(x); })(),
     (row('Event objectives', 'A summary.\n\nLearning objectives:\nOne\nTwo').match(/<w:numPr>/g) || []).length + ' bulleted');
-  check('the logo goes in the partners cell, ahead of the words',
-    (() => { const x = row('Partners', 'Global Surgery Foundation');
-      return x.indexOf('<w:drawing>') > 0 && x.indexOf('<w:drawing>') < x.indexOf('Global Surgery Foundation')
-        && /r:embed="rId14"/.test(x); })());
-  check('no logo relationship means no picture, not a broken one', !/<w:drawing>/.test(row('Partners', 'Global Surgery Foundation', {})));
+  check('the logo goes in the partners cell, ahead of the words, with a blank line between',
+    (() => { const x = row('Partners', 'The Global Surgery Foundation');
+      return x.indexOf('<w:drawing>') > 0 && x.indexOf('<w:drawing>') < x.indexOf('The Global Surgery Foundation')
+        && /<\/w:drawing><\/w:r><\/w:p><w:p\/>/.test(x) && /r:embed="rId14"/.test(x); })(),
+    (row('Partners', 'The Global Surgery Foundation').match(/<\/w:p>[\s\S]{0,12}/) || [''])[0]);
+  check('no logo relationship means no picture and no stray blank line',
+    (() => { const x = row('Partners', 'The Global Surgery Foundation', {}); return !/<w:drawing>/.test(x) && !/<w:p\/>/.test(x); })());
   check('the picture declares the namespaces the document does not',
     /xmlns:pic="http:\/\/schemas\.openxmlformats\.org\/drawingml\/2006\/picture"/.test(row('Partners', 'x'))
       && /xmlns:a="http:\/\/schemas\.openxmlformats\.org\/drawingml\/2006\/main"/.test(row('Partners', 'x')));
@@ -258,7 +260,7 @@ check('angle brackets and ampersands in an answer cannot break the document',
       const r2 = await C.buildQaDocument('Burns 101', { year: 2025, report, detail: withObj, logo: null });
       const p2 = await C._qaUnzip(r2.bytes); return p2.length === original.length; })()));
   const doc = new TextDecoder().decode(back.find(e => e.name === 'word/document.xml').data);
-  check('the answers are in the document', /Burns 101/.test(doc) && /Global Surgery Foundation/.test(doc) && /surghub\.org\/course\/burns-101/.test(doc));
+  check('the answers are in the document', /Burns 101/.test(doc) && /The Global Surgery Foundation/.test(doc) && /surghub\.org\/course\/burns-101/.test(doc));
   check('the real template yields a bullet list, a hyperlink and a picture',
     /<w:numPr>/.test(doc) && /<w:hyperlink r:id="rId\d+">/.test(doc) && /<w:drawing>/.test(doc));
   check('the picture, its relationship and its content type all travel together',
