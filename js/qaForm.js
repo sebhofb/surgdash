@@ -33,7 +33,13 @@ Object.assign(window.App, {
         const detail = (opts.detail !== undefined) ? opts.detail : this.courseDetail(courseName);
         const n = (v) => this.formatNumber(Math.round(Number(v) || 0));
 
-        const days = (year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)) ? 366 : 365;
+        // A course that went live in June was not running from January, whatever the
+        // reporting year says. Start the event dates at the launch when it falls inside
+        // the year; a course already running keeps the full year.
+        const launchMonth = (report.launch && report.launch.basis !== 'none') ? report.launch.month : '';
+        const startsMidYear = launchMonth && Number(launchMonth.slice(0, 4)) === year;
+        const startMonth = startsMidYear ? Number(launchMonth.slice(5, 7)) : 1;
+        const days = Math.round((Date.UTC(year, 11, 31) - Date.UTC(year, startMonth - 1, 1)) / 86400000) + 1;
         // Partners is the SURGhub partnership itself, the same on every form. The body that
         // actually wrote the course is named under Additional Information — including when
         // that body is GSF, which authors courses as well as running the platform.
@@ -50,8 +56,9 @@ Object.assign(window.App, {
                 'Title of event': detail.title || courseName,
                 'Event type': 'E-Learning Course',
                 'Is this a Learning or Non-Learning event': 'Yes',
-                'Date of event': year + '/1/1 – ' + year + '/12/31',
-                'Duration of event': days + ' days (self-paced, open throughout the year)',
+                'Date of event': year + '/' + startMonth + '/1 – ' + year + '/12/31',
+                'Duration of event': days + ' days (self-paced, open '
+                    + (startsMidYear ? 'from its launch to the end of the year' : 'throughout the year') + ')',
                 'Partners': 'The Global Surgery Foundation',
                 'Mode of delivery': 'Online',
                 'Location': detail.url || this.coursePublicUrl(detail.courseId) || 'https://www.surghub.org',
@@ -70,7 +77,11 @@ Object.assign(window.App, {
                 'Target audience': detail.targetAudience
                     || 'Surgical, obstetric, anaesthesia and nursing care providers, particularly in low- and middle-income settings.',
                 'Activity’s focal point': 'Michaela DORCIKOVA <Michaela.DORCIKOVA@unitar.org>',
-                'Additional Information': provider ? 'Course provider: ' + provider : '',
+                'Additional Information': [
+                    provider ? 'Course provider: ' + provider : '',
+                    launchMonth ? 'Course launched: ' + this._unitarMonthName(launchMonth)
+                        + (report.launch.basis === 'first' ? ' (first recorded enrolment)' : '') : '',
+                ].filter(Boolean).join('\n'),
             },
             // Rows the app cannot answer from what it holds, so the caller can say so.
             // "Additional Information" is empty by choice and is not a gap.

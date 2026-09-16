@@ -3,6 +3,17 @@
 Working list of what to build next. Keep entries short; link to code when a
 decision is made. Items move to `js/whatsnew.js` when they ship.
 
+## Done — QA forms date the event from the launch, not from 1 January (16 September 2026)
+
+A course that went live in June was not running from January, whatever the reporting
+year says. "Date of event" now starts at the launch month when the launch falls inside
+the year, the duration counts from there ("214 days, open from its launch to the end of
+the year"), and the launch month is stated under Additional Information. A course already
+running keeps the full year. 46 courses launched mid-2025, so this was not a rare case.
+
+Where the launch is inferred from the first recorded enrolment rather than a clear ramp,
+the form says so rather than presenting it as fact.
+
 ## Done — event objectives stop repeating themselves; a wrong slug stops passing (16 September 2026)
 
 - **"Event objectives" is the course summary and nothing else.** It had been carrying the

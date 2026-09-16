@@ -164,8 +164,30 @@ check('the fetch is paced, because this API has bitten us before',
 const detail = { courseId: 'burns-101', title: 'Burns 101', description: 'A course about burns.', objectives: '', language: 'English', targetAudience: 'Nurses and surgeons.', url: 'https://www.surghub.org/course/burns-101' };
 const withObj = Object.assign({}, detail, { objectives: 'Assess a burn\nResuscitate' });
 const a = A.buildQaAnswers('Burns 101', { year: 2025, report, detail });
-check('the form covers the year asked for, both ends', a.rows['Date of event'] === '2025/1/1 – 2025/12/31' && a.year === 2025);
-check('a leap year is 366 days, not 365', A.buildQaAnswers('Burns 101', { year: 2024, report, detail }).rows['Duration of event'].indexOf('366 days') === 0);
+const withLaunch = (m, basis) => Object.assign({}, report, { launch: { month: m, basis: basis || 'ramp', before: 0 } });
+const ans = (o) => A.buildQaAnswers('Burns 101', Object.assign({ year: 2025, report, detail }, o || {}));
+check('a course already running covers the whole year',
+  ans({ report: withLaunch('2023-04') }).rows['Date of event'] === '2025/1/1 – 2025/12/31'
+    && /^365 days \(self-paced, open throughout the year\)/.test(ans({ report: withLaunch('2023-04') }).rows['Duration of event']),
+  ans({ report: withLaunch('2023-04') }).rows['Duration of event']);
+check('a leap year is 366 days, not 365',
+  ans({ year: 2024, report: withLaunch('2020-01') }).rows['Duration of event'].indexOf('366 days') === 0);
+check('a course launched mid-year starts on its launch, not on 1 January',
+  ans({ report: withLaunch('2025-06') }).rows['Date of event'] === '2025/6/1 – 2025/12/31',
+  ans({ report: withLaunch('2025-06') }).rows['Date of event']);
+check('and its duration is counted from the launch, and says so',
+  (() => { const d = ans({ report: withLaunch('2025-06') }).rows['Duration of event'];
+    return d.indexOf('214 days') === 0 && /from its launch to the end of the year/.test(d); })(),
+  ans({ report: withLaunch('2025-06') }).rows['Duration of event']);
+check('a launch in a later year does not shorten an earlier year\'s form',
+  ans({ report: withLaunch('2026-03') }).rows['Date of event'] === '2025/1/1 – 2025/12/31');
+check('the launch month is stated in the additional information',
+  /Course launched: June 2025/.test(ans({ report: withLaunch('2025-06') }).rows['Additional Information']),
+  ans({ report: withLaunch('2025-06') }).rows['Additional Information'].replace(/\n/g, ' | '));
+check('a launch inferred from the first enrolment is labelled as such, not stated as fact',
+  /Course launched: June 2025 \(first recorded enrolment\)/.test(ans({ report: withLaunch('2025-06', 'first') }).rows['Additional Information']));
+check('a course with no enrolment dates at all claims no launch',
+  !/Course launched/.test(ans({ report: Object.assign({}, report, { launch: { month: '', basis: 'none', before: 0 } }) }).rows['Additional Information']));
 check('the title comes from the course record, the location from its public link',
   a.rows['Title of event'] === 'Burns 101' && a.rows['Location'] === 'https://www.surghub.org/course/burns-101');
 check('partners is the SURGhub partnership itself, named in full, the same on every form',
@@ -173,15 +195,15 @@ check('partners is the SURGhub partnership itself, named in full, the same on ev
     && ['Interburns', 'Unknown Provider', 'GSF'].every(p =>
       A.buildQaAnswers('Burns 101', { year: 2025, report: Object.assign({}, report, { provider: p }), detail }).rows['Partners'] === 'The Global Surgery Foundation'),
   a.rows['Partners']);
-check('the body that wrote the course is named under additional information instead',
-  a.rows['Additional Information'] === 'Course provider: Interburns', a.rows['Additional Information']);
+check('the body that wrote the course is named under additional information',
+  a.rows['Additional Information'].split('\n')[0] === 'Course provider: Interburns', a.rows['Additional Information']);
 check('a GSF-authored course names GSF as its provider too — it writes courses as well as running the platform',
   ['GSF - Global Surgery Foundation', 'GSF'].every(p =>
-    A.buildQaAnswers('Burns 101', { year: 2025, report: Object.assign({}, report, { provider: p }), detail }).rows['Additional Information'] === 'Course provider: ' + p),
+    A.buildQaAnswers('Burns 101', { year: 2025, report: Object.assign({}, report, { provider: p }), detail }).rows['Additional Information'].split('\n')[0] === 'Course provider: ' + p),
   A.buildQaAnswers('Burns 101', { year: 2025, report: Object.assign({}, report, { provider: 'GSF - Global Surgery Foundation' }), detail }).rows['Additional Information']);
 check('a course with no known provider says nothing rather than "Course provider: Unknown"',
-  A.buildQaAnswers('Burns 101', { year: 2025, report: Object.assign({}, report, { provider: 'Unknown Provider' }), detail }).rows['Additional Information'] === ''
-    && A.buildQaAnswers('Burns 101', { year: 2025, report: Object.assign({}, report, { provider: '' }), detail }).rows['Additional Information'] === '');
+  ['Unknown Provider', ''].every(p => !/Course provider/.test(
+    A.buildQaAnswers('Burns 101', { year: 2025, report: Object.assign({}, report, { provider: p }), detail }).rows['Additional Information'])));
 check('the course summary answers "event objectives"', a.rows['Event objectives'] === 'A course about burns.');
 check('event objectives is the summary and nothing else — the objectives are not printed twice',
   (() => { const x = A.buildQaAnswers('Burns 101', { year: 2025, report, detail: withObj });
