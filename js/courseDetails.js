@@ -64,21 +64,40 @@ Object.assign(window.App, {
     },
 
     // ── what the public course page carries that the API does not ─────────
-    // The page publishes the objectives as an <h2>Learning Objectives</h2> followed by a
-    // list, and the language as a "Language:" label followed by its value. Both are read
-    // from the rendered markup because LearnWorlds exposes neither through the API.
+    // Objectives, language and target audience. SURGhub publishes course pages in the
+    // course's own language, so the labels are localised too: "Language:" on an English
+    // page, "Idioma:" on a Spanish one, "Langue :" on a French one — with the space before
+    // the colon that French typography wants. Matching only the English wording left every
+    // Spanish and French course with an empty language cell (found 16 Sep 2026).
+    QA_PAGE_LABELS: {
+        language: ['Language', 'Idioma', 'Langue', 'Lingua', 'Língua', 'Sprache'],
+        targetAudience: ['Target audience', 'Designed for', 'Intended for',
+            'Diseñado para', 'Dirigido a', 'Audiencia', 'Público objetivo',
+            'Public cible', 'Destiné à', 'Conçu pour', 'Public visé'],
+    },
+    // Headings that introduce the objectives list, in the languages SURGhub publishes.
+    QA_OBJECTIVE_HEADINGS: ['Learning Objectives', 'Objetivos de aprendizaje',
+        'Objectifs pédagogiques', 'Objectifs d\'apprentissage', 'Objetivos de aprendizagem'],
+
     _coursePageFacts(html) {
         const out = { objectives: [], language: '', targetAudience: '' };
         const page = String(html || '');
-        const strip = (h) => h.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&')
-            .replace(/&#39;|&rsquo;/gi, "'").replace(/&quot;/gi, '"').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>')
-            .replace(/\s+/g, ' ').trim();
+        const decode = (h) => h.replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&')
+            .replace(/&#39;|&rsquo;|&apos;/gi, "'").replace(/&quot;/gi, '"')
+            .replace(/&lt;/gi, '<').replace(/&gt;/gi, '>');
+        const strip = (h) => decode(h.replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim();
+        // Fold accents rather than dropping them, so "Objectifs pédagogiques" and a page
+        // that writes it without the accent both come out as "objectifspedagogiques".
+        // Dropping them would make those two different strings.
+        const norm = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+            .toLowerCase().replace(/[^a-z0-9]+/g, '');
 
         // Objectives: the list that follows the heading. The heading's words are split
-        // across spans on the real page ("Learning " + " Objectives"), so compare on letters.
+        // across spans on the real page ("Learning " + " Objectives").
+        const wanted = this.QA_OBJECTIVE_HEADINGS.map(norm);
         const headings = page.match(/<h[12][^>]*>[\s\S]*?<\/h[12]>/gi) || [];
         for (const h of headings) {
-            if (strip(h).toLowerCase().replace(/[^a-z]/g, '') !== 'learningobjectives') continue;
+            if (wanted.indexOf(norm(strip(h))) < 0) continue;
             const after = page.slice(page.indexOf(h) + h.length);
             const ul = after.match(/<ul[^>]*>[\s\S]*?<\/ul>/i);
             if (!ul) break;
@@ -87,34 +106,40 @@ Object.assign(window.App, {
             break;
         }
 
-        // The meta pills — "Language: <strong>English</strong>", "Target audience: …" —
-        // put the label and its value in one element, so the value may sit on the label's
-        // own line or on the next. Splitting on tags rather than collapsing whitespace
-        // keeps that boundary readable.
-        // `wrap` says whether the value may run over several elements: a target audience is
-        // a sentence or two, a language is one word.
-        const pill = (label, max, wrap) => {
-            const at = page.search(new RegExp(label + '\\s*:', 'i'));
-            if (at < 0) return '';
-            // Cutting a fixed window can end mid-tag, and a tag with no '>' survives the
-            // strip and lands in the value. Drop the dangling fragment first.
-            const window = page.slice(at, at + 1600).replace(/<[^>]*$/, '');
-            const lines = window.replace(/<[^>]+>/g, '\n').split('\n')
-                .map(t => strip(t)).filter(t => t && t.indexOf('<') < 0 && t.indexOf('>') < 0);
-            if (!lines.length) return '';
-            const first = lines[0].replace(new RegExp('^' + label + '\\s*:\\s*', 'i'), '').trim();
-            const parts = first ? [first] : (lines[1] ? [lines[1]] : []);
-            if (wrap) {
-                for (let i = (first ? 1 : 2); i < lines.length && parts.join(' ').length < max; i++) {
-                    if (/^[A-Z][A-Za-z ]{2,24}:$/.test(lines[i])) break;   // the next label
-                    parts.push(lines[i]);
+        // The meta pills. Read from the page's visible text rather than its markup: the
+        // value may share the label's element or sit in the next one, and working on text
+        // sidesteps both that and however the page happens to encode its accents.
+        const visible = decode(page.replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, ' ').replace(/<[^>]+>/g, '\n'))
+            .split('\n').map(t => t.replace(/\s+/g, ' ').trim()).filter(Boolean);
+        const looksLikeLabel = (t) => /:$/.test(t) && t.length < 40;
+        const pill = (aliases, max, wrap) => {
+            const keys = aliases.map(norm);
+            for (let i = 0; i < visible.length; i++) {
+                const line = visible[i];
+                const colon = line.indexOf(':');
+                if (colon < 0) continue;
+                if (keys.indexOf(norm(line.slice(0, colon))) < 0) continue;
+                const rest = line.slice(colon + 1).trim();
+                const parts = [];
+                if (rest) parts.push(rest);
+                for (let k = i + 1; k < visible.length && !parts.length; k++) {
+                    if (looksLikeLabel(visible[k])) break;
+                    parts.push(visible[k]);
+                    break;
                 }
+                if (wrap) {
+                    for (let k = i + (rest ? 1 : 2); k < visible.length && parts.join(' ').length < max; k++) {
+                        if (looksLikeLabel(visible[k])) break;
+                        parts.push(visible[k]);
+                    }
+                }
+                const v = parts.join(' ').replace(/\s+/g, ' ').trim();
+                if (v && v.length <= max && /[A-Za-zÀ-ÿ]/.test(v)) return v;
             }
-            const v = parts.join(' ').replace(/\s+/g, ' ').trim();
-            return (v && v.length <= max && /[A-Za-z]/.test(v)) ? v : '';
+            return '';
         };
-        out.language = pill('Language', 80, false);
-        out.targetAudience = pill('Target audience', 400, true);
+        out.language = pill(this.QA_PAGE_LABELS.language, 80, false);
+        out.targetAudience = pill(this.QA_PAGE_LABELS.targetAudience, 400, true);
         return out;
     },
 

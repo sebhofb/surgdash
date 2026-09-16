@@ -3,6 +3,20 @@
 Working list of what to build next. Keep entries short; link to code when a
 decision is made. Items move to `js/whatsnew.js` when they ship.
 
+## Done — the course page reader speaks the course's language (16 September 2026)
+
+"Manejo Básico de Heridas" came out with an empty language cell. SURGhub publishes each
+course page **in that course's own language, labels and all**: "Idioma: Español",
+"Diseñado para:", "OBJETIVOS DE APRENDIZAJE" on a Spanish page; "Langue :" — with the
+space French typography puts before a colon — "Public cible:", "Objectifs Pédagogiques" on
+a French one. Matching only the English wording left every non-English course with no
+language, no objectives and no target audience. 13 courses look Spanish, 2 French.
+
+The reader now works from the page's **visible text** rather than its markup (the value may
+share the label's element or sit in the next one), matches a list of aliases per field, and
+**folds accents** instead of dropping them, so "Objectifs pédagogiques" and a page that
+omits the accent normalise alike. Objective headings are matched the same way.
+
 ## Done — QA forms: branded, linked, bulleted, and the course's own audience (16 September 2026)
 
 - **Partners is the SURGhub partnership itself** — "Global Surgery Foundation" on every

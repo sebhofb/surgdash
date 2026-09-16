@@ -100,6 +100,26 @@ check('the fetch is paced, because this API has bitten us before',
   check('a page with no language leaves it empty', A._coursePageFacts('<h2>Learning Objectives</h2><ul><li><div>x y z</div></li></ul>').language === '');
   check('the value is taken even when it sits on the next line rather than beside the label',
     A._coursePageFacts('<div>Language:</div><div>French</div>').language === 'French');
+  // SURGhub publishes each course page in the course's own language, labels and all.
+  const esPage = '<h2>OBJETIVOS DE APRENDIZAJE</h2>'
+    + '<ul><li><div>Explica los principios básicos.</div></li><li><div>Identifica las fases.</div></li></ul>'
+    + '<div>Diseñado para:</div><div>Profesionales sanitarios, enfermeros y estudiantes.</div>'
+    + '<div>Idioma:</div><div>Español</div>';
+  const es = A._coursePageFacts(esPage);
+  check('a Spanish course page is read as readily as an English one',
+    es.language === 'Español' && es.objectives.length === 2 && /Profesionales sanitarios/.test(es.targetAudience),
+    JSON.stringify([es.language, es.objectives.length, es.targetAudience.slice(0, 40)]));
+  const frPage = '<h2>Objectifs Pédagogiques</h2><ul><li><div>Développer des activités.</div></li></ul>'
+    + '<div>Public cible:</div><div>Chirurgiens et infirmiers.</div><div>Langue :</div><div>Français</div>';
+  const fr = A._coursePageFacts(frPage);
+  check('a French page too, including the space French puts before its colon',
+    fr.language === 'Français' && fr.objectives.length === 1 && /Chirurgiens/.test(fr.targetAudience),
+    JSON.stringify([fr.language, fr.objectives.length, fr.targetAudience]));
+  check('accents are not required to match: the comparison survives them',
+    A._coursePageFacts('<h2>Objectifs pedagogiques</h2><ul><li><div>Une chose utile.</div></li></ul>').objectives.length === 1);
+  check('the label must be the whole label, not a word inside a sentence',
+    A._coursePageFacts('<div>We changed the language: it is now clearer</div>').language === '', 
+    JSON.stringify(A._coursePageFacts('<div>We changed the language: it is now clearer</div>').language));
   check('a page that is not a course page cannot poison the fields',
     (() => { const g = A._coursePageFacts('<html><body>nothing here</body></html>'); return g.objectives.length === 0 && g.language === ''; })());
   check('the page fetch never takes the whole run down with it',
