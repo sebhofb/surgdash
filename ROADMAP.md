@@ -3,6 +3,22 @@
 Working list of what to build next. Keep entries short; link to code when a
 decision is made. Items move to `js/whatsnew.js` when they ship.
 
+## Done — event objectives stop repeating themselves; a wrong slug stops passing (16 September 2026)
+
+- **"Event objectives" is the course summary and nothing else.** It had been carrying the
+  learning objectives too, which printed them twice on one page: the row directly below is
+  their home.
+- **Cataloguing metadata is stripped from the summary.** Editors append "Level: Basic" —
+  116 of 158 summaries carry it, plus "Niveau"/"Nivel" — and "Key words:" alongside the
+  "Keywords:" already handled. Left in, it printed as a dangling label in the report, and
+  the old bullet rule then bulleted everything after it.
+- **A slug SURGhub does not know answers 200 with the home page.** "pen-programme-en" is
+  the LearnWorlds id; "/course/pen-programme" is the page. The wrong address therefore
+  loaded fine and read as a course with no objectives, no language and no audience. The
+  page's **canonical link** now decides: if it does not point at a course, the page is not
+  the course. It also gives the authoritative public link, which the form's Location row
+  uses, and the fetch retries without a trailing language suffix.
+
 ## Done — the course page reader speaks the course's language (16 September 2026)
 
 "Manejo Básico de Heridas" came out with an empty language cell. SURGhub publishes each

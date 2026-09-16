@@ -39,11 +39,10 @@ Object.assign(window.App, {
         const provider = report.provider && report.provider !== 'Unknown Provider' ? report.provider : '';
         const isGsf = /global surgery foundation|^gsf\b/i.test(provider);
 
-        // "Event objectives" carries the course's own summary AND the learning objectives
-        // its page publishes: UNITAR asked for both in that one row.
+        // "Event objectives" is the course's own summary and nothing else. It briefly
+        // carried the learning objectives too, which only printed them twice on the same
+        // page — they have their own row directly below.
         const objectives = String(detail.objectives || '').trim();
-        const eventObjectives = [String(detail.description || '').trim(),
-            objectives ? 'Learning objectives:\n' + objectives : ''].filter(Boolean).join('\n\n');
 
         return {
             course: courseName, year, report, detail,
@@ -63,7 +62,7 @@ Object.assign(window.App, {
                 'Background': 'Almost a third of the global disease burden is surgical, yet over five billion people lack access to safe and affordable surgical care. '
                     + 'SURGhub, the United Nations global surgery learning hub, is a free platform of curated courses for the surgical, obstetric and anaesthesia workforce, '
                     + 'operated by the Global Surgery Foundation. This course is one of those offerings.',
-                'Event objectives': eventObjectives,
+                'Event objectives': String(detail.description || '').trim(),
                 'Learning objectives': objectives,
                 'Content and structure': 'Self-paced online course hosted on SURGhub.',
                 'Methodology': 'Asynchronous self-paced e-learning: participants work through the course at their own pace and a certificate is issued on completion.',
@@ -92,7 +91,6 @@ Object.assign(window.App, {
     QA_ROW_FORMAT: {
         'Location': { hyperlink: true },
         'Learning objectives': { bulletAll: true },
-        'Event objectives': { bulletAfterColon: true },   // the summary stays prose, the objectives become a list
         'Partners': { logo: true },
     },
 

@@ -69,6 +69,18 @@ check('the public course link is built from the course id, not from the survey U
   A.coursePublicUrl('burns-101') === 'https://www.surghub.org/course/burns-101' && A.coursePublicUrl('') === '',
   A.coursePublicUrl('burns-101'));
 check('a course id with awkward characters is escaped into the link', A.coursePublicUrl('a b/c') === 'https://www.surghub.org/course/a%20b%2Fc');
+check('cataloguing metadata at the end of a summary is dropped, in every language it appears in',
+  (() => { const c = (t) => A._courseCleanDescription(t);
+    return c('Body text here.\n\nLevel: Basic\n\nKeywords: a ; b') === 'Body text here.'
+      && c('Body text.\n\nKey words: a ; b') === 'Body text.'
+      && c('Texte.\n\nNiveau : Basique') === 'Texte.'
+      && c('Texto.\n\nNivel: B\u00e1sico') === 'Texto.'
+      && c('Body text.\n\nLevel:') === 'Body text.'; })(),
+  JSON.stringify(A._courseCleanDescription('Body text here.\n\nLevel: Basic\n\nKeywords: a ; b')));
+check('prose that merely mentions a level is left alone',
+  A._courseCleanDescription('We discuss Level: of evidence in module 2.') === 'We discuss Level: of evidence in module 2.');
+check('a note is content, not metadata, and survives',
+  /Note: read this/.test(A._courseCleanDescription('Body text.\n\nNote: read this first.')));
 check('the description is stripped of markup and of the editors\' keyword tail',
   A._courseCleanDescription('<p>Burn care <b>basics</b>.</p><p>Second line.</p>Keywords: burns ; lifebox') === 'Burn care basics.\nSecond line.',
   JSON.stringify(A._courseCleanDescription('<p>Burn care <b>basics</b>.</p><p>Second line.</p>Keywords: burns ; lifebox')));
@@ -120,6 +132,26 @@ check('the fetch is paced, because this API has bitten us before',
   check('the label must be the whole label, not a word inside a sentence',
     A._coursePageFacts('<div>We changed the language: it is now clearer</div>').language === '', 
     JSON.stringify(A._coursePageFacts('<div>We changed the language: it is now clearer</div>').language));
+  // A slug SURGhub does not know answers 200 with the home page, so "did it load?" is
+  // not the question — "is this the right course?" is.
+  const canon = (href) => '<link rel="canonical" href="' + href + '"/>';
+  check('the page\'s canonical link is taken as the authoritative public address',
+    A._coursePageFacts(canon('https://www.surghub.org/course/pen-programme') + '<div>Language: <strong>English</strong></div>').url
+      === 'https://www.surghub.org/course/pen-programme');
+  check('a home page wearing a 200 is recognised as the wrong page, not read as an empty course',
+    A._coursePageFacts(canon('https://www.surghub.org/') + '<div>Language: <strong>English</strong></div>').url === '');
+  check('og:url stands in when there is no canonical link',
+    A._coursePageFacts('<meta property="og:url" content="https://www.surghub.org/course/x"/>').url === 'https://www.surghub.org/course/x');
+  check('a course id that is not the public slug falls back to the id without its language suffix',
+    JSON.stringify(A._coursePageSlugs('pen-programme-en')) === '["pen-programme-en","pen-programme"]',
+    JSON.stringify(A._coursePageSlugs('pen-programme-en')));
+  check('an ordinary id is tried once and only once', JSON.stringify(A._coursePageSlugs('ppe')) === '["ppe"]');
+  check('a short id is not mistaken for a language suffix', JSON.stringify(A._coursePageSlugs('cs-fr')) === '["cs-fr"]');
+  check('no id, nothing to try', JSON.stringify(A._coursePageSlugs('')) === '[]');
+  check('the fetch keeps trying until a page proves it is the right course',
+    /if \(facts\.url\) return facts;/.test(fs.readFileSync(ROOT + '/js/courseDetails.js', 'utf8')));
+  check('the stored link is the page\'s own, not the one we guessed',
+    /url: page\.url \|\| this\.coursePublicUrl/.test(fs.readFileSync(ROOT + '/js/courseDetails.js', 'utf8')));
   check('a page that is not a course page cannot poison the fields',
     (() => { const g = A._coursePageFacts('<html><body>nothing here</body></html>'); return g.objectives.length === 0 && g.language === ''; })());
   check('the page fetch never takes the whole run down with it',
@@ -147,9 +179,9 @@ check('a GSF-run course does not name GSF as its own provider as well',
   ['GSF - Global Surgery Foundation', 'Global Surgery Foundation', 'GSF', 'Unknown Provider'].every(p =>
     A.buildQaAnswers('Burns 101', { year: 2025, report: Object.assign({}, report, { provider: p }), detail }).rows['Additional Information'] === ''));
 check('the course summary answers "event objectives"', a.rows['Event objectives'] === 'A course about burns.');
-check('event objectives carry the summary AND the learning objectives, which is what UNITAR asked for',
+check('event objectives is the summary and nothing else — the objectives are not printed twice',
   (() => { const x = A.buildQaAnswers('Burns 101', { year: 2025, report, detail: withObj });
-    return x.rows['Event objectives'] === 'A course about burns.\n\nLearning objectives:\nAssess a burn\nResuscitate'; })(),
+    return x.rows['Event objectives'] === 'A course about burns.' && !/Assess a burn/.test(x.rows['Event objectives']); })(),
   JSON.stringify(A.buildQaAnswers('Burns 101', { year: 2025, report, detail: withObj }).rows['Event objectives']));
 check('the objectives still stand alone in their own row',
   A.buildQaAnswers('Burns 101', { year: 2025, report, detail: withObj }).rows['Learning objectives'] === 'Assess a burn\nResuscitate');
@@ -185,10 +217,9 @@ check('a course with no fetched summary says so, rather than filling the row wit
     (A._qaCellXml('', 'One\nTwo', A.QA_ROW_FORMAT['Learning objectives'], ctx).match(/<w:numId w:val="2"\/>/g) || []).length === 2);
   check('with no bullet definition to point at, a literal bullet still reads as a list',
     /\u2022 One/.test(A._qaCellXml('', 'One\nTwo', A.QA_ROW_FORMAT['Learning objectives'], {})));
-  check('in event objectives the summary stays prose and only the objectives are bulleted',
-    (() => { const x = row('Event objectives', 'A summary.\n\nLearning objectives:\nOne\nTwo');
-      return (x.match(/<w:numPr>/g) || []).length === 2 && /A summary\.<\/w:t>/.test(x) && !/<w:numPr>[\s\S]{0,120}A summary/.test(x); })(),
-    (row('Event objectives', 'A summary.\n\nLearning objectives:\nOne\nTwo').match(/<w:numPr>/g) || []).length + ' bulleted');
+  check('event objectives is plain prose, with nothing bulleted inside it',
+    (() => { const x = row('Event objectives', 'A summary. Level: is discussed in module 2.\nMore prose.');
+      return !/<w:numPr>/.test(x) && !/\u2022/.test(x); })());
   check('the logo goes in the partners cell, ahead of the words, with a blank line between',
     (() => { const x = row('Partners', 'The Global Surgery Foundation');
       return x.indexOf('<w:drawing>') > 0 && x.indexOf('<w:drawing>') < x.indexOf('The Global Surgery Foundation')

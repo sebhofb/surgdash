@@ -59,7 +59,11 @@ Object.assign(window.App, {
         s = s.split('\n').map(l => l.trim()).join('\n');          // markup leaves ragged edges
         s = s.replace(/ +([.,;:!?])/g, '$1');                      // "basics ." from a closing tag
         s = s.replace(/\n{3,}/g, '\n\n').trim();
-        s = s.replace(/\bKeywords?\s*:[\s\S]*$/i, '').trim();
+        // Editors append cataloguing metadata to the end of the description. It is not
+        // prose and it reads as a dangling label in a report: "Keywords:" (sometimes
+        // "Key words:") and a level, which 116 of 158 summaries carry, in three languages.
+        s = s.replace(/\bKey\s?words?\s*:[\s\S]*$/i, '').trim();
+        for (let i = 0; i < 3; i++) s = s.replace(/\n*^(?:Level|Niveau|Nivel)\s*:.*$/im, '').trim();
         return s;
     },
 
@@ -80,7 +84,7 @@ Object.assign(window.App, {
         'Objectifs pédagogiques', 'Objectifs d\'apprentissage', 'Objetivos de aprendizagem'],
 
     _coursePageFacts(html) {
-        const out = { objectives: [], language: '', targetAudience: '' };
+        const out = { objectives: [], language: '', targetAudience: '', url: '' };
         const page = String(html || '');
         const decode = (h) => h.replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&')
             .replace(/&#39;|&rsquo;|&apos;/gi, "'").replace(/&quot;/gi, '"')
@@ -140,6 +144,14 @@ Object.assign(window.App, {
         };
         out.language = pill(this.QA_PAGE_LABELS.language, 80, false);
         out.targetAudience = pill(this.QA_PAGE_LABELS.targetAudience, 400, true);
+
+        // The canonical link is the page's own answer to "which course is this?". A slug
+        // SURGhub does not know does NOT 404: it answers 200 with the home page, whose
+        // canonical is the site root. That is the only reliable way to tell the two apart,
+        // and it doubles as the authoritative public link for the report.
+        const canon = page.match(/<link[^>]+rel=["']canonical["'][^>]*href=["']([^"']+)/i)
+            || page.match(/<meta[^>]+property=["']og:url["'][^>]*content=["']([^"']+)/i);
+        if (canon && /\/course\//.test(canon[1])) out.url = canon[1].trim();
         return out;
     },
 
@@ -155,18 +167,32 @@ Object.assign(window.App, {
         return lines.slice(0, 12).join('\n');
     },
 
+    // The LearnWorlds course id is usually the public slug, but not always: "pen-programme-en"
+    // is the course, "/course/pen-programme" is the page. Try the id, then the id without a
+    // trailing language suffix.
+    _coursePageSlugs(courseId) {
+        const id = String(courseId || '').trim();
+        if (!id) return [];
+        const out = [id];
+        const m = id.match(/^(.+)-(en|es|fr|pt|ar|de)$/i);
+        if (m && m[1].length > 2) out.push(m[1]);
+        return out;
+    },
+
     // The rendered course page, through the main process (the renderer cannot reach
     // arbitrary hosts). A page that will not load costs that course its objectives and
     // its language, never the whole run.
     async _fetchCoursePage(courseId) {
-        const empty = { objectives: [], language: '', targetAudience: '' };
-        const url = this.coursePublicUrl(courseId);
-        if (!url) return empty;
-        try {
-            const res = await electronAPI.invoke('http-request', { url, method: 'GET', timeoutMs: 30000 });
-            if (!res || res.statusCode !== 200 || !res.body) return empty;
-            return this._coursePageFacts(res.body);
-        } catch (e) { __swallowed(e, 'courseDetails.page.' + courseId); return empty; }
+        const empty = { objectives: [], language: '', targetAudience: '', url: '' };
+        for (const slug of this._coursePageSlugs(courseId)) {
+            try {
+                const res = await electronAPI.invoke('http-request', { url: this.coursePublicUrl(slug), method: 'GET', timeoutMs: 30000 });
+                if (!res || res.statusCode !== 200 || !res.body) continue;
+                const facts = this._coursePageFacts(res.body);
+                if (facts.url) return facts;          // a real course page, not the home page
+            } catch (e) { __swallowed(e, 'courseDetails.page.' + slug); }
+        }
+        return empty;
     },
 
     async syncCourseDetails(opts) {
@@ -204,7 +230,9 @@ Object.assign(window.App, {
                     author: (d && d.author) ? String((d.author.username) || d.author) : '',
                     access: (d && d.access) ? String(d.access) : (c.Access || ''),
                     created: (d && d.created) ? String(d.created) : '',
-                    url: this.coursePublicUrl(c.CourseId),
+                    // The page's own canonical link, which is authoritative where the id
+                    // and the slug differ; the built link only as a last resort.
+                    url: page.url || this.coursePublicUrl(c.CourseId),
                     fetchedAt: new Date().toISOString(),
                 };
                 stats.fetched++;
