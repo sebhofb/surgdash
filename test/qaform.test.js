@@ -111,6 +111,16 @@ check('angle brackets and ampersands in an answer cannot break the document',
 // ── the real template, end to end ──
 (async () => {
   check('the QA template ships with the app', fs.existsSync(ROOT + '/templates/unitar_qa_form.docx'));
+  const uiSrc = fs.readFileSync(ROOT + '/js/ui.js', 'utf8');
+  check('the course-summary fetch has its own card on Data Sync, not a corner of the optional one',
+    /6 · Course summaries/.test(uiSrc) && uiSrc.indexOf('syncCourseDetailsWithProgress') > uiSrc.indexOf('6 · Course summaries'),
+    (uiSrc.match(/\d · Course summaries/) || ['not found'])[0]);
+  check('it is reachable on the same terms as every other sync button, not hidden behind edit mode',
+    !/data-edit-only[^>]*syncCourseDetailsWithProgress/.test(uiSrc));
+  check('the card says whether any summaries are held yet',
+    /course-details-status/.test(uiSrc) && /No summaries yet/.test(uiSrc));
+  check('the QA form buttons are offered on the course page and for every course',
+    /exportQaForm\(\)/.test(uiSrc) && /exportAllQaForms\(\)/.test(uiSrc));
   const B = mk();
   B._qaTemplate = new Uint8Array(fs.readFileSync(ROOT + '/templates/unitar_qa_form.docx'));
   const { bytes, filled, answers } = await B.buildQaDocument('Burns 101', { year: 2025, report, detail });

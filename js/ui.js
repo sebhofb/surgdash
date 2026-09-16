@@ -3509,12 +3509,38 @@ Object.assign(window.App, {
                             <span class="text-xs text-slate-400 italic">Recommended &amp; fast — export the User Segment ZIP and drop the files here.</span>
                         </div>
                         <div class="mt-3 pt-3 border-t border-violet-100 flex flex-wrap items-center gap-2">
-                            <button data-edit-only onclick="App.syncCourseDetailsWithProgress()" title="Reads each course's summary from LearnWorlds. Prose, not numbers — needed for UNITAR's quality-assessment forms." class="px-4 py-2 bg-slate-100 text-slate-700 text-xs font-bold rounded-lg hover:bg-slate-200">Fetch course summaries</button>
                             <button onclick="App.syncGrowthTimelinesFromApi()" class="px-4 py-2 bg-violet-100 text-violet-800 text-xs font-bold rounded-lg hover:bg-violet-200">Or fetch via API</button>
                             <span class="text-xs text-slate-400 italic">Slow (30–60+ min at current scale) but hands-off — and the only path that refreshes the learner→course maps behind the anonymized User Data exports.</span>
                         </div>
                     </div>
 
+
+                    <!-- ── 6. Course summaries — the only card that fetches prose rather than numbers ── -->
+                    <div class="bg-gradient-to-br from-slate-50 to-white border border-slate-200 rounded-2xl p-6 mb-4 shadow-sm">
+                        <div class="flex flex-wrap items-center gap-2 mb-1">
+                            <i data-lucide="file-text" width="18" class="text-slate-500"></i>
+                            <h2 class="text-lg font-bold text-gsf-prussian">6 · Course summaries</h2>
+                            <span class="text-[10px] font-bold uppercase text-slate-600 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5">For UNITAR QA forms</span>
+                        </div>
+                        <p class="text-sm text-slate-600 max-w-3xl mb-3">Every other card here fetches numbers. This one fetches <strong>words</strong>: the summary text LearnWorlds holds for each course, which UNITAR's annual quality-assessment form asks for. Run it once, then again whenever course descriptions change. Nothing else in the app depends on it.</p>
+                        <div class="flex flex-wrap items-center gap-3">
+                            <button onclick="App.syncCourseDetailsWithProgress()" class="px-8 py-3 bg-slate-700 hover:bg-slate-800 text-white font-bold rounded-xl transition-colors">Fetch course summaries</button>
+                            <span id="course-details-status" class="text-xs text-slate-500">${(() => {
+                                try {
+                                    // Read once, then redraw — the store is on disk, not in memory at first paint.
+                                    if (this._courseDetails === undefined && this._courseDetailsLoad) {
+                                        this._courseDetails = null;
+                                        this._courseDetailsLoad().then(() => { if (this.view === 'upload' && this.renderView) this.renderView(); });
+                                        return 'Checking…';
+                                    }
+                                    const held = Object.keys(this._courseDetails || {}).length;
+                                    const total = (this.getAnalyticsSnap ? this.getAnalyticsSnap() : []).filter(d => d && d.CourseId).length;
+                                    if (!held) return 'No summaries yet — the QA forms\'s objectives rows will be blank until this runs.';
+                                    return 'Held for ' + this.formatNumber(held) + ' of ' + this.formatNumber(total) + ' courses.';
+                                } catch (e) { return ''; }
+                            })()}</span>
+                        </div>
+                    </div>
 
                     <!-- ── LearnWorlds API credentials (collapsible) ── -->
                     <details class="bg-white rounded-xl shadow-sm border border-slate-200 mb-6" id="lw-api-creds-panel">
