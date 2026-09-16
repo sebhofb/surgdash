@@ -34,12 +34,10 @@ Object.assign(window.App, {
         const n = (v) => this.formatNumber(Math.round(Number(v) || 0));
 
         const days = (year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)) ? 366 : 365;
+        // Partners is the SURGhub partnership itself, the same on every form. The body that
+        // actually wrote the course is named under Additional Information instead.
         const provider = report.provider && report.provider !== 'Unknown Provider' ? report.provider : '';
-        // Some courses are GSF's own, and "GSF, in partnership with the Global Surgery
-        // Foundation" reads as a joke at our own expense.
         const isGsf = /global surgery foundation|^gsf\b/i.test(provider);
-        const partners = (!provider || isGsf) ? (provider || 'Global Surgery Foundation')
-            : provider + ', in partnership with the Global Surgery Foundation';
 
         // "Event objectives" carries the course's own summary AND the learning objectives
         // its page publishes: UNITAR asked for both in that one row.
@@ -55,7 +53,7 @@ Object.assign(window.App, {
                 'Is this a Learning or Non-Learning event': 'Yes',
                 'Date of event': year + '/1/1 – ' + year + '/12/31',
                 'Duration of event': days + ' days (self-paced, open throughout the year)',
-                'Partners': partners,
+                'Partners': 'Global Surgery Foundation',
                 'Mode of delivery': 'Online',
                 'Location': detail.url || this.coursePublicUrl(detail.courseId) || 'https://www.surghub.org',
                 'Main language(s) of event': detail.language || '',
@@ -69,9 +67,11 @@ Object.assign(window.App, {
                 'Learning objectives': objectives,
                 'Content and structure': 'Self-paced online course hosted on SURGhub.',
                 'Methodology': 'Asynchronous self-paced e-learning: participants work through the course at their own pace and a certificate is issued on completion.',
-                'Target audience': 'Surgical, obstetric, anaesthesia and nursing care providers, particularly in low- and middle-income settings.',
+                // The course page states its own audience; ours is the fallback.
+                'Target audience': detail.targetAudience
+                    || 'Surgical, obstetric, anaesthesia and nursing care providers, particularly in low- and middle-income settings.',
                 'Activity’s focal point': 'Michaela DORCIKOVA <Michaela.DORCIKOVA@unitar.org>',
-                'Additional Information': '',
+                'Additional Information': (provider && !isGsf) ? 'Course provider: ' + provider : '',
             },
             // Rows the app cannot answer from what it holds, so the caller can say so.
             // "Additional Information" is empty by choice and is not a gap.
@@ -87,12 +87,90 @@ Object.assign(window.App, {
         return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     },
 
+    // How each row is rendered beyond plain text. Declared here rather than buried in the
+    // builder so the shape of the form is readable in one place.
+    QA_ROW_FORMAT: {
+        'Location': { hyperlink: true },
+        'Learning objectives': { bulletAll: true },
+        'Event objectives': { bulletAfterColon: true },   // the summary stays prose, the objectives become a list
+        'Partners': { logo: true },
+    },
+
+    _qaRun(text, rPr) {
+        return '<w:r>' + (rPr || '') + '<w:t xml:space="preserve">' + this._qaEsc(text) + '</w:t></w:r>';
+    },
+
     // A run of paragraphs for one cell, keeping the cell's own properties.
-    _qaCellXml(tcPr, value) {
+    // `ctx` carries what the document can offer: a bullet numId, and relationship ids for
+    // a hyperlink and the logo. Anything missing degrades to plain text.
+    _qaCellXml(tcPr, value, fmt, ctx) {
+        fmt = fmt || {}; ctx = ctx || {};
         const lines = String(value == null ? '' : value).split('\n');
-        const body = lines.map(line =>
-            '<w:p><w:r><w:t xml:space="preserve">' + this._qaEsc(line) + '</w:t></w:r></w:p>').join('');
-        return '<w:tc>' + (tcPr || '') + (body || '<w:p/>') + '</w:tc>';
+        const bulletPr = ctx.bulletNumId
+            ? '<w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="' + ctx.bulletNumId + '"/></w:numPr></w:pPr>'
+            : '';
+        // Without a bullet definition to point at, a literal bullet still reads as a list.
+        const bulletText = (t) => ctx.bulletNumId ? t : '\u2022 ' + t;
+
+        let seenColon = false;
+        const body = lines.map(line => {
+            const bullet = fmt.bulletAll
+                ? !!line.trim()
+                : (fmt.bulletAfterColon && seenColon && !!line.trim());
+            if (fmt.bulletAfterColon && /:\s*$/.test(line)) seenColon = true;
+            if (fmt.hyperlink && ctx.linkRelId && /^https?:\/\//i.test(line.trim())) {
+                return '<w:p><w:hyperlink r:id="' + ctx.linkRelId + '">'
+                    + this._qaRun(line.trim(), '<w:rPr><w:color w:val="0563C1"/><w:u w:val="single"/></w:rPr>')
+                    + '</w:hyperlink></w:p>';
+            }
+            if (bullet) return '<w:p>' + bulletPr + this._qaRun(bulletText(line.trim())) + '</w:p>';
+            return '<w:p>' + this._qaRun(line) + '</w:p>';
+        }).join('');
+
+        const logo = (fmt.logo && ctx.logoRelId)
+            ? '<w:p>' + this._qaImageRun(ctx.logoRelId, ctx.logoW, ctx.logoH) + '</w:p>'
+            : '';
+        return '<w:tc>' + (tcPr || '') + logo + (body || '<w:p/>') + '</w:tc>';
+    },
+
+    // An inline picture. `a` and `pic` are declared on the elements that use them: the
+    // document root declares w, r and wp but not those two.
+    _qaImageRun(relId, wPx, hPx) {
+        const cx = Math.round((wPx || 120) * 9525), cy = Math.round((hPx || 56) * 9525);
+        return '<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0">'
+            + '<wp:extent cx="' + cx + '" cy="' + cy + '"/><wp:effectExtent l="0" t="0" r="0" b="0"/>'
+            + '<wp:docPr id="1001" name="Global Surgery Foundation" descr="Global Surgery Foundation"/>'
+            + '<wp:cNvGraphicFramePr><a:graphicFrameLocks xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" noChangeAspect="1"/></wp:cNvGraphicFramePr>'
+            + '<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
+            + '<a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+            + '<pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">'
+            + '<pic:nvPicPr><pic:cNvPr id="0" name="gsf-logo.png"/><pic:cNvPicPr/></pic:nvPicPr>'
+            + '<pic:blipFill><a:blip r:embed="' + relId + '"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>'
+            + '<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="' + cx + '" cy="' + cy + '"/></a:xfrm>'
+            + '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>'
+            + '</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>';
+    },
+
+    // The bullet list the template already defines: use its own numbering rather than
+    // inventing one, so the bullets look like the rest of the document.
+    _qaBulletNumId(numberingXml) {
+        const xml = String(numberingXml || '');
+        const bulletAbstracts = {};
+        (xml.match(/<w:abstractNum w:abstractNumId="\d+"[\s\S]*?<\/w:abstractNum>/g) || []).forEach(block => {
+            const id = (block.match(/w:abstractNumId="(\d+)"/) || [])[1];
+            const lvl0 = (block.match(/<w:lvl w:ilvl="0"[\s\S]*?<\/w:lvl>/) || [''])[0];
+            if (id && /<w:numFmt w:val="bullet"/.test(lvl0)) bulletAbstracts[id] = (lvl0.match(/<w:lvlText w:val="([^"]*)"/) || [])[1] || '';
+        });
+        let fallback = '';
+        const maps = xml.match(/<w:num w:numId="\d+"[^>]*>[\s\S]*?<\/w:num>/g) || [];
+        for (const m of maps) {
+            const numId = (m.match(/w:numId="(\d+)"/) || [])[1];
+            const abs = (m.match(/<w:abstractNumId w:val="(\d+)"/) || [])[1];
+            if (!numId || !(abs in bulletAbstracts)) continue;
+            if (bulletAbstracts[abs] === '\uF0B7') return numId;      // the standard Word bullet
+            if (!fallback) fallback = numId;
+        }
+        return fallback;
     },
 
     // Word splits a label across several runs wherever the author paused typing, so the
@@ -102,7 +180,7 @@ Object.assign(window.App, {
     _qaKey(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, ''); },
 
     // Replace the second cell of every row whose first cell names a known label.
-    fillQaDocumentXml(xml, answers) {
+    fillQaDocumentXml(xml, answers, ctx) {
         const filled = [];
         const rows = Object.keys(answers);
         const out = String(xml).replace(/<w:tr[ >][\s\S]*?<\/w:tr>/g, (tr) => {
@@ -113,7 +191,7 @@ Object.assign(window.App, {
             if (!key) return tr;
             const tcPr = (cells[1].match(/<w:tcPr>[\s\S]*?<\/w:tcPr>/) || [''])[0];
             filled.push(key);
-            return tr.replace(cells[1], this._qaCellXml(tcPr, answers[key]));
+            return tr.replace(cells[1], this._qaCellXml(tcPr, answers[key], this.QA_ROW_FORMAT[key], ctx));
         });
         return { xml: out, filled };
     },
@@ -159,17 +237,81 @@ Object.assign(window.App, {
         return this._qaTemplate;
     },
 
+    QA_RELS_PART: 'word/_rels/document.xml.rels',
+    QA_LOGO_PART: 'word/media/gsf-logo.png',
+    QA_LOGO_W: 120,
+    QA_LOGO_H: 56,
+
+    // Add a relationship and hand back its id, continuing the document's own numbering.
+    _qaAddRel(rels, type, target, external) {
+        let max = 0;
+        (rels.match(/Id="rId(\d+)"/g) || []).forEach(m => { const n = Number(m.match(/\d+/)[0]); if (n > max) max = n; });
+        const id = 'rId' + (max + 1);
+        const rel = '<Relationship Id="' + id + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/' + type + '"'
+            + ' Target="' + String(target).replace(/&/g, '&amp;').replace(/"/g, '&quot;') + '"'
+            + (external ? ' TargetMode="External"' : '') + '/>';
+        return { id, rels: rels.replace('</Relationships>', rel + '</Relationships>') };
+    },
+
     async buildQaDocument(courseName, opts) {
+        opts = opts || {};
         const template = await this._qaTemplateBytes();
         if (!template) throw new Error('The UNITAR QA form template is missing from this installation (' + this.QA_TEMPLATE + ').');
         const answers = this.buildQaAnswers(courseName, opts);
         const entries = await this._qaUnzip(template);
         if (!entries) throw new Error('The QA form template could not be read.');
-        const doc = entries.find(e => e.name === this.QA_DOC_PART);
+        const enc = new TextEncoder(), dec = new TextDecoder();
+        const part = (name) => entries.find(e => e.name === name);
+        const doc = part(this.QA_DOC_PART);
         if (!doc) throw new Error('The QA form template has no ' + this.QA_DOC_PART + '.');
-        const res = this.fillQaDocumentXml(new TextDecoder().decode(doc.data), answers.rows);
-        doc.data = new TextEncoder().encode(res.xml);
-        return { bytes: this._unitarZip(entries), answers, filled: res.filled };
+
+        const ctx = { logoW: this.QA_LOGO_W, logoH: this.QA_LOGO_H };
+
+        // The bullet list the template already defines.
+        const numbering = part('word/numbering.xml');
+        if (numbering) ctx.bulletNumId = this._qaBulletNumId(dec.decode(numbering.data));
+
+        // Relationships: the location link, and the logo — each optional, so a template
+        // without a rels part still produces a form, just a plainer one.
+        const relsPart = part(this.QA_RELS_PART);
+        const logo = (opts.logo !== undefined) ? opts.logo : await this._qaLogoBytes();
+        if (relsPart) {
+            let rels = dec.decode(relsPart.data);
+            const url = answers.rows['Location'];
+            if (url && /^https?:\/\//i.test(url)) {
+                const added = this._qaAddRel(rels, 'hyperlink', url, true);
+                ctx.linkRelId = added.id; rels = added.rels;
+            }
+            if (logo && logo.length) {
+                const added = this._qaAddRel(rels, 'image', 'media/gsf-logo.png', false);
+                ctx.logoRelId = added.id; rels = added.rels;
+                entries.push({ name: this.QA_LOGO_PART, data: logo });
+                const ct = part('[Content_Types].xml');
+                if (ct) {
+                    let ctXml = dec.decode(ct.data);
+                    if (!/Extension="png"/.test(ctXml)) {
+                        ctXml = ctXml.replace(/(<Types[^>]*>)/, '$1<Default Extension="png" ContentType="image/png"/>');
+                        ct.data = enc.encode(ctXml);
+                    }
+                }
+            }
+            relsPart.data = enc.encode(rels);
+        }
+
+        const res = this.fillQaDocumentXml(dec.decode(doc.data), answers.rows, ctx);
+        doc.data = enc.encode(res.xml);
+        return { bytes: this._unitarZip(entries), answers, filled: res.filled, ctx };
+    },
+
+    async _qaLogoBytes() {
+        if (this._qaLogo !== undefined) return this._qaLogo;
+        this._qaLogo = null;
+        try {
+            const fs = electronAPI.fs, path = electronAPI.path;
+            const p = path.join(electronAPI.appPath || '.', 'build', 'gsf_logo_full.png');
+            if (fs.existsSync(p)) this._qaLogo = new Uint8Array(fs.readFileSync(p));
+        } catch (e) { __swallowed(e, 'qa.logo'); }
+        return this._qaLogo;
     },
 
     _qaFileName(courseName, year) {

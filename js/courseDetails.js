@@ -7,9 +7,9 @@
 //
 // Two sources, because neither has everything. The API (`/courses/{id}`) gives the
 // description as a field rather than as markup to unpick. The public course page gives
-// the two things the API does not carry at all: the **learning objectives**, which every
-// SURGhub course publishes as a list, and the **language**, printed on the page as a
-// plain "Language: English" pill. The public link is built from the course id —
+// the things the API does not carry at all: the **learning objectives**, which every
+// SURGhub course publishes as a list, and the **language** and **target audience**,
+// printed on the page as plain "Language: English" pills. The public link is built from the course id —
 // `https://www.surghub.org/course/<id>` — because the URL already on the course record
 // is a survey link, not a page a reader can open.
 //
@@ -68,7 +68,7 @@ Object.assign(window.App, {
     // list, and the language as a "Language:" label followed by its value. Both are read
     // from the rendered markup because LearnWorlds exposes neither through the API.
     _coursePageFacts(html) {
-        const out = { objectives: [], language: '' };
+        const out = { objectives: [], language: '', targetAudience: '' };
         const page = String(html || '');
         const strip = (h) => h.replace(/<[^>]+>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&')
             .replace(/&#39;|&rsquo;/gi, "'").replace(/&quot;/gi, '"').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>')
@@ -87,19 +87,34 @@ Object.assign(window.App, {
             break;
         }
 
-        // Language: the page prints "Language: <strong>English</strong>" in one element, so
-        // the value may sit on the label's own line or on the next one. Splitting on tags
-        // rather than collapsing whitespace keeps that boundary readable.
-        const li = page.search(/Language\s*:/i);
-        if (li >= 0) {
-            const lines = page.slice(li, li + 600).replace(/<[^>]+>/g, '\n').split('\n')
-                .map(t => strip(t)).filter(Boolean);
-            if (lines.length) {
-                const first = lines[0].replace(/^Language\s*:\s*/i, '').trim();
-                const value = first || (lines[1] || '');
-                if (value && value.length <= 80 && /[A-Za-z]/.test(value)) out.language = value;
+        // The meta pills — "Language: <strong>English</strong>", "Target audience: …" —
+        // put the label and its value in one element, so the value may sit on the label's
+        // own line or on the next. Splitting on tags rather than collapsing whitespace
+        // keeps that boundary readable.
+        // `wrap` says whether the value may run over several elements: a target audience is
+        // a sentence or two, a language is one word.
+        const pill = (label, max, wrap) => {
+            const at = page.search(new RegExp(label + '\\s*:', 'i'));
+            if (at < 0) return '';
+            // Cutting a fixed window can end mid-tag, and a tag with no '>' survives the
+            // strip and lands in the value. Drop the dangling fragment first.
+            const window = page.slice(at, at + 1600).replace(/<[^>]*$/, '');
+            const lines = window.replace(/<[^>]+>/g, '\n').split('\n')
+                .map(t => strip(t)).filter(t => t && t.indexOf('<') < 0 && t.indexOf('>') < 0);
+            if (!lines.length) return '';
+            const first = lines[0].replace(new RegExp('^' + label + '\\s*:\\s*', 'i'), '').trim();
+            const parts = first ? [first] : (lines[1] ? [lines[1]] : []);
+            if (wrap) {
+                for (let i = (first ? 1 : 2); i < lines.length && parts.join(' ').length < max; i++) {
+                    if (/^[A-Z][A-Za-z ]{2,24}:$/.test(lines[i])) break;   // the next label
+                    parts.push(lines[i]);
+                }
             }
-        }
+            const v = parts.join(' ').replace(/\s+/g, ' ').trim();
+            return (v && v.length <= max && /[A-Za-z]/.test(v)) ? v : '';
+        };
+        out.language = pill('Language', 80, false);
+        out.targetAudience = pill('Target audience', 400, true);
         return out;
     },
 
@@ -119,7 +134,7 @@ Object.assign(window.App, {
     // arbitrary hosts). A page that will not load costs that course its objectives and
     // its language, never the whole run.
     async _fetchCoursePage(courseId) {
-        const empty = { objectives: [], language: '' };
+        const empty = { objectives: [], language: '', targetAudience: '' };
         const url = this.coursePublicUrl(courseId);
         if (!url) return empty;
         try {
@@ -159,6 +174,7 @@ Object.assign(window.App, {
                     // spell out objectives is the fallback.
                     objectives: page.objectives.length ? page.objectives.join('\n') : this._courseObjectives(description),
                     language: page.language,
+                    targetAudience: page.targetAudience,
                     categories: (d && Array.isArray(d.categories)) ? d.categories.map(x => String((x && x.name) || x)).filter(Boolean) : [],
                     author: (d && d.author) ? String((d.author.username) || d.author) : '',
                     access: (d && d.access) ? String(d.access) : (c.Access || ''),

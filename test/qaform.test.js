@@ -109,20 +109,23 @@ check('the fetch is paced, because this API has bitten us before',
 }
 
 // ── the answers ──
-const detail = { courseId: 'burns-101', title: 'Burns 101', description: 'A course about burns.', objectives: '', language: 'English', url: 'https://www.surghub.org/course/burns-101' };
+const detail = { courseId: 'burns-101', title: 'Burns 101', description: 'A course about burns.', objectives: '', language: 'English', targetAudience: 'Nurses and surgeons.', url: 'https://www.surghub.org/course/burns-101' };
 const withObj = Object.assign({}, detail, { objectives: 'Assess a burn\nResuscitate' });
 const a = A.buildQaAnswers('Burns 101', { year: 2025, report, detail });
 check('the form covers the year asked for, both ends', a.rows['Date of event'] === '2025/1/1 – 2025/12/31' && a.year === 2025);
 check('a leap year is 366 days, not 365', A.buildQaAnswers('Burns 101', { year: 2024, report, detail }).rows['Duration of event'].indexOf('366 days') === 0);
 check('the title comes from the course record, the location from its public link',
   a.rows['Title of event'] === 'Burns 101' && a.rows['Location'] === 'https://www.surghub.org/course/burns-101');
-check('the provider is named as the partner, alongside GSF', a.rows['Partners'] === 'Interburns, in partnership with the Global Surgery Foundation', a.rows['Partners']);
-check('a course with no known provider still names GSF',
-  A.buildQaAnswers('Burns 101', { year: 2025, report: Object.assign({}, report, { provider: 'Unknown Provider' }), detail }).rows['Partners'] === 'Global Surgery Foundation');
-check('a GSF course is not put "in partnership with" itself',
-  ['GSF - Global Surgery Foundation', 'Global Surgery Foundation', 'GSF'].every(p =>
-    !/in partnership/.test(A.buildQaAnswers('Burns 101', { year: 2025, report: Object.assign({}, report, { provider: p }), detail }).rows['Partners'])),
-  A.buildQaAnswers('Burns 101', { year: 2025, report: Object.assign({}, report, { provider: 'GSF - Global Surgery Foundation' }), detail }).rows['Partners']);
+check('partners is the SURGhub partnership itself, the same on every form',
+  a.rows['Partners'] === 'Global Surgery Foundation'
+    && ['Interburns', 'Unknown Provider', 'GSF'].every(p =>
+      A.buildQaAnswers('Burns 101', { year: 2025, report: Object.assign({}, report, { provider: p }), detail }).rows['Partners'] === 'Global Surgery Foundation'),
+  a.rows['Partners']);
+check('the body that wrote the course is named under additional information instead',
+  a.rows['Additional Information'] === 'Course provider: Interburns', a.rows['Additional Information']);
+check('a GSF-run course does not name GSF as its own provider as well',
+  ['GSF - Global Surgery Foundation', 'Global Surgery Foundation', 'GSF', 'Unknown Provider'].every(p =>
+    A.buildQaAnswers('Burns 101', { year: 2025, report: Object.assign({}, report, { provider: p }), detail }).rows['Additional Information'] === ''));
 check('the course summary answers "event objectives"', a.rows['Event objectives'] === 'A course about burns.');
 check('event objectives carry the summary AND the learning objectives, which is what UNITAR asked for',
   (() => { const x = A.buildQaAnswers('Burns 101', { year: 2025, report, detail: withObj });
@@ -138,13 +141,55 @@ check('a course page with no language stated leaves the row empty and says so',
   (() => { const x = A.buildQaAnswers('Burns 101', { year: 2025, report, detail: Object.assign({}, detail, { language: '' }) });
     return x.rows['Main language(s) of event'] === '' && x.blanks.indexOf('Main language(s) of event') >= 0; })());
 check('the focal point is UNITAR\'s own', a.rows['Activity’s focal point'] === 'Michaela DORCIKOVA <Michaela.DORCIKOVA@unitar.org>');
-check('additional information is left empty on purpose, and is not reported as a gap',
-  a.rows['Additional Information'] === '' && a.blanks.indexOf('Additional Information') < 0);
+check('the target audience is the course\'s own wording when its page states one',
+  a.rows['Target audience'] === 'Nurses and surgeons.');
+check('a course page with no audience falls back to ours rather than leaving it blank',
+  /Surgical, obstetric, anaesthesia and nursing care providers/.test(
+    A.buildQaAnswers('Burns 101', { year: 2025, report, detail: Object.assign({}, detail, { targetAudience: '' }) }).rows['Target audience']));
 check('content and structure says what the course is, without the learning-time aside',
   a.rows['Content and structure'] === 'Self-paced online course hosted on SURGhub.', a.rows['Content and structure']);
 check('a course with no fetched summary says so, rather than filling the row with filler',
   (() => { const x = A.buildQaAnswers('Burns 101', { year: 2025, report, detail: {} });
     return x.rows['Event objectives'] === '' && x.blanks.indexOf('Event objectives') >= 0; })());
+
+// ── how the rows are rendered ──
+{
+  const ctx = { bulletNumId: '2', linkRelId: 'rId13', logoRelId: 'rId14', logoW: 120, logoH: 56 };
+  const row = (label, value, c) => A._qaCellXml('<w:tcPr/>', value, A.QA_ROW_FORMAT[label], c === undefined ? ctx : c);
+  check('the location is a real hyperlink, using the relationship the document was given',
+    /<w:hyperlink r:id="rId13">/.test(row('Location', 'https://www.surghub.org/course/x'))
+      && /<w:u w:val="single"\/>/.test(row('Location', 'https://www.surghub.org/course/x')));
+  check('a location that is not a link is left as plain text rather than linked to nothing',
+    !/<w:hyperlink/.test(row('Location', 'https://www.surghub.org/course/x', {})));
+  check('learning objectives become a real Word list, using the template\'s own bullet',
+    (A._qaCellXml('', 'One\nTwo', A.QA_ROW_FORMAT['Learning objectives'], ctx).match(/<w:numId w:val="2"\/>/g) || []).length === 2);
+  check('with no bullet definition to point at, a literal bullet still reads as a list',
+    /\u2022 One/.test(A._qaCellXml('', 'One\nTwo', A.QA_ROW_FORMAT['Learning objectives'], {})));
+  check('in event objectives the summary stays prose and only the objectives are bulleted',
+    (() => { const x = row('Event objectives', 'A summary.\n\nLearning objectives:\nOne\nTwo');
+      return (x.match(/<w:numPr>/g) || []).length === 2 && /A summary\.<\/w:t>/.test(x) && !/<w:numPr>[\s\S]{0,120}A summary/.test(x); })(),
+    (row('Event objectives', 'A summary.\n\nLearning objectives:\nOne\nTwo').match(/<w:numPr>/g) || []).length + ' bulleted');
+  check('the logo goes in the partners cell, ahead of the words',
+    (() => { const x = row('Partners', 'Global Surgery Foundation');
+      return x.indexOf('<w:drawing>') > 0 && x.indexOf('<w:drawing>') < x.indexOf('Global Surgery Foundation')
+        && /r:embed="rId14"/.test(x); })());
+  check('no logo relationship means no picture, not a broken one', !/<w:drawing>/.test(row('Partners', 'Global Surgery Foundation', {})));
+  check('the picture declares the namespaces the document does not',
+    /xmlns:pic="http:\/\/schemas\.openxmlformats\.org\/drawingml\/2006\/picture"/.test(row('Partners', 'x'))
+      && /xmlns:a="http:\/\/schemas\.openxmlformats\.org\/drawingml\/2006\/main"/.test(row('Partners', 'x')));
+  check('the bullet list is found in the template\'s own numbering, preferring the standard bullet',
+    A._qaBulletNumId('<w:abstractNum w:abstractNumId="2"><w:lvl w:ilvl="0"><w:numFmt w:val="bullet"/><w:lvlText w:val="\uF0B7"/></w:lvl></w:abstractNum>'
+      + '<w:abstractNum w:abstractNumId="3"><w:lvl w:ilvl="0"><w:numFmt w:val="bullet"/><w:lvlText w:val="-"/></w:lvl></w:abstractNum>'
+      + '<w:num w:numId="1"><w:abstractNumId w:val="3"/></w:num><w:num w:numId="2"><w:abstractNumId w:val="2"/></w:num>') === '2');
+  check('numbering with no bullet at all yields nothing rather than a wrong list',
+    A._qaBulletNumId('<w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:numFmt w:val="decimal"/></w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>') === '');
+  check('a new relationship continues the document\'s own numbering and never reuses an id',
+    (() => { const r0 = '<Relationships><Relationship Id="rId1"/><Relationship Id="rId12"/></Relationships>';
+      const a1 = A._qaAddRel(r0, 'hyperlink', 'https://x.test/a?b=1&c=2', true);
+      const a2 = A._qaAddRel(a1.rels, 'image', 'media/gsf-logo.png', false);
+      return a1.id === 'rId13' && a2.id === 'rId14' && /TargetMode="External"/.test(a1.rels)
+        && /b=1&amp;c=2/.test(a1.rels) && !/TargetMode/.test(a2.rels.slice(a2.rels.indexOf('gsf-logo'))); })());
+}
 
 // ── filling their document ──
 check('a label split across runs by Word is still recognised',
@@ -179,16 +224,29 @@ check('angle brackets and ampersands in an answer cannot break the document',
     /exportQaForm\(\)/.test(uiSrc) && /exportAllQaForms\(\)/.test(uiSrc));
   const B = mk();
   B._qaTemplate = new Uint8Array(fs.readFileSync(ROOT + '/templates/unitar_qa_form.docx'));
-  const { bytes, filled, answers } = await B.buildQaDocument('Burns 101', { year: 2025, report, detail });
+  const { bytes, filled, answers } = await B.buildQaDocument('Burns 101', { year: 2025, report, detail: withObj, logo: new Uint8Array(fs.readFileSync(ROOT + '/build/gsf_logo_full.png')) });
   check('every row of UNITAR\'s form is answered, so none is left looking overlooked',
     filled.length === 20, filled.length + ' rows: ' + filled.slice(0, 6).join(', '));
   const back = await B._qaUnzip(bytes);
-  check('the document is still a Word document: every part that came in goes back out',
-    back.length === (await B._qaUnzip(B._qaTemplate)).length && back.some(e => e.name === 'word/document.xml')
-      && back.some(e => e.name === '[Content_Types].xml') && back.some(e => /customXml/.test(e.name)),
-    back.length + ' parts');
+  const original = await B._qaUnzip(B._qaTemplate);
+  check('the document is still a Word document: every part that came in goes back out, plus the picture',
+    original.every(o => back.some(e => e.name === o.name)) && back.length === original.length + 1
+      && back.some(e => e.name === 'word/media/gsf-logo.png') && back.some(e => /customXml/.test(e.name)),
+    back.length + ' parts from ' + original.length);
+  check('a build with no logo adds no parts at all',
+    (async () => true) && (await (async () => { const C = mk(); C._qaTemplate = B._qaTemplate;
+      const r2 = await C.buildQaDocument('Burns 101', { year: 2025, report, detail: withObj, logo: null });
+      const p2 = await C._qaUnzip(r2.bytes); return p2.length === original.length; })()));
   const doc = new TextDecoder().decode(back.find(e => e.name === 'word/document.xml').data);
-  check('the answers are in the document', /Essential|Burns 101/.test(doc) && /Interburns, in partnership/.test(doc) && /surghub\.org\/course\/burns-101/.test(doc));
+  check('the answers are in the document', /Burns 101/.test(doc) && /Global Surgery Foundation/.test(doc) && /surghub\.org\/course\/burns-101/.test(doc));
+  check('the real template yields a bullet list, a hyperlink and a picture',
+    /<w:numPr>/.test(doc) && /<w:hyperlink r:id="rId\d+">/.test(doc) && /<w:drawing>/.test(doc));
+  check('the picture, its relationship and its content type all travel together',
+    back.some(e => e.name === 'word/media/gsf-logo.png')
+      && /relationships\/image/.test(new TextDecoder().decode(back.find(e => e.name === 'word/_rels/document.xml.rels').data))
+      && /Extension="png"/.test(new TextDecoder().decode(back.find(e => e.name === '[Content_Types].xml').data)));
+  check('the location relationship is external, or Word would look for a file',
+    /TargetMode="External"/.test(new TextDecoder().decode(back.find(e => e.name === 'word/_rels/document.xml.rels').data)));
   check('UNITAR\'s own labels and styling survive untouched',
     /QUALITY ASSESMENT/i.test(doc.replace(/<[^>]+>/g, '')) && /w:tblPr/.test(doc));
   check('the example answers UNITAR shipped are replaced, not left beside ours',

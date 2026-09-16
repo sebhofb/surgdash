@@ -3,6 +3,31 @@
 Working list of what to build next. Keep entries short; link to code when a
 decision is made. Items move to `js/whatsnew.js` when they ship.
 
+## Done — QA forms: branded, linked, bulleted, and the course's own audience (16 September 2026)
+
+- **Partners is the SURGhub partnership itself** — "Global Surgery Foundation" on every
+  form — with the **GSF logo in the cell** above it. The body that wrote the course moves
+  to Additional Information ("Course provider: Interburns"), and a GSF-run course does not
+  name GSF twice.
+- **Location is a real hyperlink** (an external relationship added to
+  `word/_rels/document.xml.rels`, blue and underlined), not a line of text.
+- **Learning objectives are a real Word list**, using the bullet the template already
+  defines: `_qaBulletNumId` reads `word/numbering.xml` and picks the numId whose level-0
+  format is a bullet, preferring the standard one. With no definition to point at it falls
+  back to a literal bullet, so the list never silently disappears. In "Event objectives"
+  the summary stays prose and only the objectives are bulleted.
+- **Target audience is the course's own wording**, read from its page ("Target audience:"),
+  with our generic sentence as the fallback.
+
+The picture is a genuine inline image: `word/media/gsf-logo.png`, an image relationship, a
+png content type, and a `<w:drawing>` declaring the `a` and `pic` namespaces the document
+root does not. All of it degrades quietly: no logo file, no picture; no rels part, plain
+text; and a form is still produced.
+
+**The meta pills on a course page** (`Language:`, `Target audience:`) are read by one
+helper. Two traps it now handles: a fixed-size window can cut mid-tag and the dangling
+fragment survives the tag-strip, and a value may sit on the label's line or the next one.
+
 ## Done — QA forms carry the real objectives, and the language (16 September 2026)
 
 Seb's pass over the first forms:
