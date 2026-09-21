@@ -1176,7 +1176,7 @@ Object.assign(window.App, {
                                 lk.includes('échelle de 1') || lk.includes('echelle de 1') ||
                                 lk.includes('how strongly do you agree') || lk.includes('how important') ||
                                 lk.includes('qué tan de acuerdo') || lk.includes('que tan de acuerdo') ||
-                                lk.includes('dans quelle mesure') || (rCol && k === rCol);
+                                lk.includes('dans quelle mesure') || (rCol && k === rCol) || (rColFinal && k === rColFinal);
                         });
                         const userCol = cols.find(k => k.toLowerCase() === 'user' || k.toLowerCase() === 'usuario' || k.toLowerCase() === 'utilisateur');
 
@@ -1255,7 +1255,13 @@ Object.assign(window.App, {
                                 if (num === 0) { na++; return; }
                                 sum += num; n++; dist[num] = (dist[num] || 0) + 1;
                             });
-                            if (n > 0) qStats.push({ q: qc, avg: +(sum / n).toFixed(2), n, na, dist });
+                            if (n > 0) {
+                                const st = { q: qc, avg: +(sum / n).toFixed(2), n, na, dist };
+                                // Mark the question behind Rating, so pages can read its 1–5 spread
+                                // (how many gave 5 stars) without guessing from the wording.
+                                if (rColFinal && qc === rColFinal) st.overall = true;
+                                qStats.push(st);
+                            }
                         });
                         if (qStats.length > 0) course.QuestionStats = JSON.stringify(qStats);
 

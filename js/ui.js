@@ -325,6 +325,75 @@ Object.assign(window.App, {
             </div>`;
     },
 
+    // ── Star ratings: how many respondents gave the course 5 out of 5 ──────────
+    // Sync Surveys stores, per course, a 1–5 distribution for every scale question
+    // (QuestionStats). The overall-satisfaction question is the one behind "Avg
+    // Rating"; these helpers read its distribution so a page can say how many
+    // respondents gave 5 stars, and what share of those who rated that is.
+    //
+    // The denominator is RATED responses — respondents who answered the 1–5
+    // question — not every survey response: a learner who wrote a comment but left
+    // the rating blank is neither a 5-star nor a non-5-star rating.
+    _overallRatingQuestion(qs) {
+        if (!Array.isArray(qs)) return null;
+        const flagged = qs.find(s => s && s.overall === true && s.n);   // marked by the survey sync
+        if (flagged) return flagged;
+        return qs.find(s => {                                             // older data: by wording (EN/ES/FR)
+            if (!s || !s.q || !s.n) return false;
+            const lq = String(s.q).toLowerCase();
+            return lq.includes('satisf') || lq.includes('overall quality') || lq.includes('rate the overall');
+        }) || null;
+    },
+    // Aggregate the overall-satisfaction distribution across course records.
+    // Returns { n, dist, five, fivePct, courses, responses, unrated } or null when
+    // no record carries a rated response.
+    ratingDistribution(records) {
+        const dist = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+        let n = 0, courses = 0, responses = 0;
+        (records || []).forEach(d => {
+            if (!d || !d.QuestionStats) return;
+            let qs; try { qs = typeof d.QuestionStats === 'string' ? JSON.parse(d.QuestionStats) : d.QuestionStats; } catch (e) { return; }
+            const s = this._overallRatingQuestion(qs);
+            if (!s || !s.dist) return;
+            let any = false;
+            [1, 2, 3, 4, 5].forEach(k => { const v = Number(s.dist[k]) || 0; if (v > 0) { dist[k] += v; n += v; any = true; } });
+            if (!any) return;
+            courses++;
+            responses += Number(d.Responses) || 0;
+        });
+        if (!n) return null;
+        return { n, dist, five: dist[5], fivePct: Math.round(dist[5] / n * 100), courses, responses, unrated: Math.max(0, responses - n) };
+    },
+    // The strip at the top of a Feedback Trends panel: the 5-star share, the counts
+    // behind it, and the whole 1–5 distribution as one bar. '' until surveys are synced.
+    // opts.scope: 'course' (one course) or anything else (a set of courses, named as such).
+    _fiveStarHtml(records, opts) {
+        opts = opts || {};
+        const r = this.ratingDistribution(records);
+        if (!r) return '';
+        const STAR = { 5: '#1a5276', 4: '#4389C8', 3: '#85c1e9', 2: '#E28743', 1: '#D03734' };
+        // A level with a few votes reads as "<1%", never as 0%.
+        const pct = (k) => { const v = r.dist[k] / r.n * 100; return (v > 0 && v < 0.5) ? '<1' : Math.round(v); };
+        const bar = [5, 4, 3, 2, 1].filter(k => r.dist[k] > 0).map(k =>
+            '<div style="width:' + (r.dist[k] / r.n * 100).toFixed(1) + '%;background:' + STAR[k] + '" title="' + k + ' star' + (k === 1 ? '' : 's') + ': ' + this.formatNumber(r.dist[k]) + ' (' + pct(k) + '%)"></div>').join('');
+        const legend = [5, 4, 3, 2, 1].map(k =>
+            '<span class="inline-flex items-center gap-1"><span class="w-2 h-2 rounded-sm inline-block" style="background:' + STAR[k] + '"></span>' + k + '★ ' + pct(k) + '%</span>').join('');
+        const scope = (opts.scope !== 'course' && r.courses > 1) ? ' across ' + r.courses + ' courses' : '';
+        const skipped = r.unrated > 0 ? ' · ' + this.formatNumber(r.unrated) + ' left the rating blank' : '';
+        return `<div class="flex flex-wrap items-center gap-x-6 gap-y-3 mb-4 bg-slate-50 border border-slate-200 rounded-lg px-4 py-3" data-five-star
+                title="Respondents who answered 5 on the 1–5 overall-satisfaction question, as a share of everyone who answered it${scope}. Responses that skipped the question are not counted.">
+            <div class="flex items-baseline gap-2">
+                <span class="text-3xl font-black leading-none" style="color:#D03734;font-family:var(--num)">${r.fivePct}%</span>
+                <span class="text-sm text-slate-600">gave <strong>5 stars</strong></span>
+            </div>
+            <p class="text-xs text-slate-500">${this.formatNumber(r.five)} of ${this.formatNumber(r.n)} rated responses${scope}${skipped}</p>
+            <div class="flex-1 min-w-[200px]">
+                <div class="flex h-2.5 rounded-full overflow-hidden bg-slate-200">${bar}</div>
+                <div class="flex flex-wrap gap-x-3 text-[10px] text-slate-400 mt-1">${legend}</div>
+            </div>
+        </div>`;
+    },
+
     // Distinct-country count across a set of course records' CountryStats
     // (collected by Growth Timelines / CSV timeline upload). Returns {counts, countryCount}.
     aggregateCourseCountries(records) {
@@ -4212,6 +4281,7 @@ Object.assign(window.App, {
 
                     <div class="bg-white p-6 rounded-xl shadow-sm border mb-8">
                         <h3 class="text-lg font-bold mb-4 flex items-center gap-2 text-gsf-prussian"><i data-lucide="message-square" class="text-gsf-boston"></i> Feedback Trends ${this._chartBtns('chart_feedback_growth', 'Feedback_Trends')}</h3>
+                        ${this._fiveStarHtml(pSnap, { scope: 'provider' })}
                         <div class="mb-3 flex flex-wrap gap-4">
                             <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed checked onchange="if(window.Charts) window.Charts.redrawProviderFeedback(App.getAnalyticsHistory(), App.selectedProvider, document.getElementById('toggle-prov-fb-bars').checked)" data-series="prov-rating"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#D03734"></span> Avg Rating</label>
                             <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed id="toggle-prov-fb-bars" onchange="if(window.Charts) window.Charts.redrawProviderFeedback(App.getAnalyticsHistory(), App.selectedProvider, this.checked)"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#85c1e9"></span> Survey Volume</label>
@@ -4350,6 +4420,7 @@ Object.assign(window.App, {
 
                     <div class="bg-white p-6 rounded-xl shadow-sm border mb-8">
                         <h3 class="text-lg font-bold mb-4 flex items-center gap-2 text-gsf-prussian"><i data-lucide="message-square" class="text-gsf-boston"></i> Feedback Trends ${this._chartBtns('chart_feedback_growth', 'Course_Feedback')}</h3>
+                        ${this._fiveStarHtml([cSnap], { scope: 'course' })}
                         <div class="mb-3 flex flex-wrap gap-4">
                             <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed checked data-series="crs-rating"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#D03734"></span> Avg Rating</label>
                             <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed id="toggle-crs-fb-bars" onchange="if(window.Charts) window.Charts.drawCourse(App.getAnalyticsHistory(), App.selectedCourse)"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#85c1e9"></span> Survey Volume</label>
@@ -5372,6 +5443,7 @@ Object.assign(window.App, {
 
                     <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-100 mb-8">
                         <h3 class="text-lg font-bold mb-4 flex items-center gap-2 text-gsf-prussian"><i data-lucide="message-square" class="text-gsf-boston"></i> Feedback Trends ${this._chartBtns('chart_feedback_growth', 'Feedback_Trends')}</h3>
+                        ${this._fiveStarHtml(snapData, { scope: 'platform' })}
                         <div class="mb-3 flex flex-wrap gap-4">
                             <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" checked onchange="if(window.Charts) window.Charts.drawFeedbackTimeline('chart_feedback_growth', App.getAnalyticsSnap(), document.getElementById('toggle-plat-fb-bars').checked)" data-series="plat-rating"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#D03734"></span> Avg Rating</label>
                             <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" id="toggle-plat-fb-bars" onchange="if(window.Charts) window.Charts.drawFeedbackTimeline('chart_feedback_growth', App.getAnalyticsSnap(), this.checked)"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#85c1e9"></span> Survey Volume</label>
