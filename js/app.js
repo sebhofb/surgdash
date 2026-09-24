@@ -58,9 +58,21 @@ window.App = {
 
     demoMode: false,
     editUnlocked: false,        // true = full edit mode; false = read-only
-    _editPasswordHash: null,    // SHA-256 hex string stored on disk (null = no password set)
-    _defaultPasswordHash: '6b4a1673b225e8bf5f093b91be8c864427df32ca41b17cc0b82112b8f0185e41',       // bundled EDIT password (SHA-256) — ships with the app so every install starts locked
-    _defaultReportPasswordHash: '895a6072c8d3559373b6f55e64569145e22cd56e6c0cb49d284dbab9578a72d1',  // bundled PROVIDER-REPORTING password (SHA-256)
+    // ── Built-in role passwords ──────────────────────────────────────────────
+    // Both ship with the app, so every install starts locked and a colleague's fresh
+    // download accepts the same passwords with no setup. Password records never travel
+    // through Google Sheets (the push leaves them out, see SECRET_KEYS), so the only way
+    // to change a password for everyone is to change the built-in hash here and release.
+    // When one is replaced, its old hash moves to _retiredPasswordHashes: an install still
+    // holding a local copy of the old password drops that copy the next time someone
+    // types it, and follows the new built-in one from then on. A password set in Settings
+    // is local to that machine and always wins over the built-in one.
+    _editPasswordHash: null,    // record on disk (null = none set here; the built-in one applies)
+    _defaultPasswordHash: '6b4a1673b225e8bf5f093b91be8c864427df32ca41b17cc0b82112b8f0185e41',       // built-in EDIT password (SHA-256)
+    _defaultReportPasswordHash: 'cfd13fc46087f743a745a7028ada377981287741ffae338cfa77a95702061014',  // built-in PROVIDER-REPORTING password (SHA-256), since 2.1.2
+    _retiredPasswordHashes: [
+        '895a6072c8d3559373b6f55e64569145e22cd56e6c0cb49d284dbab9578a72d1',   // the reporting password built in up to 2.1.1
+    ],
     reportAccess: false,        // true = provider-reporting role (SURGhub report workflow only; SURGfund + data writes stay locked)
     _reportPasswordHash: null,  // SHA-256 hex for the reporting-role password (separate from edit)
     _autoPullInterval: null,
@@ -82,8 +94,7 @@ window.App = {
             // password file — is locked by default. The app ALWAYS opens read-only;
             // editing or provider-reporting requires the matching password. A
             // locally-set password (Settings) takes precedence over the bundled one.
-            this._editPasswordHash   = (await Storage.getItem('surgdash_edit_password'))   || this._defaultPasswordHash       || null;
-            this._reportPasswordHash = (await Storage.getItem('surgdash_report_password')) || this._defaultReportPasswordHash || null;
+            await this._loadPasswordRecords();
             this.editUnlocked = false;
             this.reportAccess = false;
             document.body.classList.add('viewer-mode');
@@ -565,15 +576,60 @@ window.App = {
     async _upgradePasswordRecord(pw, stored, storageKey) {
         try {
             if (!stored || String(stored).startsWith('pbkdf2$')) return stored;
+            // The built-in password is not copied onto this machine: it already ships in the
+            // app, and a local copy would outlive a release that replaces it.
+            if (stored === this._defaultPasswordHash || stored === this._defaultReportPasswordHash) return stored;
             const rec = await this._makePasswordRecord(pw);
             await Storage.setItem(storageKey, rec);
             return rec;
         } catch (e) { console.warn('[password] upgrade skipped:', e && e.message); return stored; }
     },
 
+    // Which record each role checks against: the one set on this machine if there is
+    // one, else the built-in one. A plain (unsalted) local copy of a retired built-in
+    // password is dropped here; a salted copy cannot be recognised without the password,
+    // so that case is handled when someone types it (_retirePassword).
+    async _loadPasswordRecords() {
+        const load = async (key, builtIn) => {
+            let rec = null;
+            try { rec = await Storage.getItem(key); } catch (e) { __swallowed(e, 'password.load'); }
+            if (rec && this._isRetiredHash(String(rec))) {
+                try { await Storage.setItem(key, null, { internal: true }); } catch (e) { __swallowed(e, 'password.retire'); }
+                rec = null;
+            }
+            return rec || builtIn || null;
+        };
+        this._editPasswordHash   = await load('surgdash_edit_password',   this._defaultPasswordHash);
+        this._reportPasswordHash = await load('surgdash_report_password', this._defaultReportPasswordHash);
+    },
+    _isRetiredHash(hex) {
+        return (this._retiredPasswordHashes || []).includes(hex) && hex !== this._defaultPasswordHash && hex !== this._defaultReportPasswordHash;
+    },
+    // True when pw is a built-in password that a release has since replaced. No side effects.
+    async isRetiredPassword(pw) {
+        if (!pw) return false;
+        return this._isRetiredHash(await this._hashPassword(pw));
+    },
+    // Runs first in both unlocks. A retired built-in password is refused, and if this
+    // machine still holds a copy of it for that role, the copy goes, so the new built-in
+    // password applies from now on. A password someone set here deliberately is left alone.
+    async _retirePassword(pw, role) {
+        if (!(await this.isRetiredPassword(pw))) return false;
+        const key = role === 'edit' ? 'surgdash_edit_password' : 'surgdash_report_password';
+        const stored = role === 'edit' ? this._editPasswordHash : this._reportPasswordHash;
+        const builtIn = role === 'edit' ? this._defaultPasswordHash : this._defaultReportPasswordHash;
+        if (stored && stored !== builtIn && await this._verifyPassword(pw, stored)) {
+            try { await Storage.setItem(key, null, { internal: true }); } catch (e) { __swallowed(e, 'password.retire'); }
+            if (role === 'edit') this._editPasswordHash = builtIn || null; else this._reportPasswordHash = builtIn || null;
+        }
+        return true;
+    },
+
+    // Setting null removes the password set on this machine: the built-in one applies
+    // again at once, exactly as it will after the next restart.
     async setEditPassword(pw) {
         if (!pw) {
-            this._editPasswordHash = null;
+            this._editPasswordHash = this._defaultPasswordHash || null;
             await Storage.setItem('surgdash_edit_password', null);
         } else {
             this._editPasswordHash = await this._makePasswordRecord(pw);
@@ -582,6 +638,7 @@ window.App = {
     },
 
     async unlockEdit(pw) {
+        if (await this._retirePassword(pw, 'edit')) return false;
         if (!(await this._verifyPassword(pw, this._editPasswordHash))) return false;
         this._editPasswordHash = await this._upgradePasswordRecord(pw, this._editPasswordHash, 'surgdash_edit_password');
         this.editUnlocked = true;
@@ -609,7 +666,7 @@ window.App = {
     // Settings, the API key, and all data writes stay locked.
     async setReportPassword(pw) {
         if (!pw) {
-            this._reportPasswordHash = null;
+            this._reportPasswordHash = this._defaultReportPasswordHash || null;
             await Storage.setItem('surgdash_report_password', null);
         } else {
             this._reportPasswordHash = await this._makePasswordRecord(pw);
@@ -618,6 +675,7 @@ window.App = {
     },
 
     async unlockReport(pw) {
+        if (await this._retirePassword(pw, 'report')) return false;
         if (!this._reportPasswordHash || !(await this._verifyPassword(pw, this._reportPasswordHash))) return false;
         this._reportPasswordHash = await this._upgradePasswordRecord(pw, this._reportPasswordHash, 'surgdash_report_password');
         this.reportAccess = true;
@@ -705,7 +763,9 @@ window.App = {
                 overlay.remove();
                 App.showMsg('Provider-reporting mode unlocked.');
             } else {
-                errEl.textContent = 'Incorrect password.';
+                errEl.textContent = (await App.isRetiredPassword(pw))
+                    ? 'That password was replaced in an app update. Ask your SURGdash administrator for the current one.'
+                    : 'Incorrect password.';
                 input.value = '';
                 input.focus();
             }

@@ -11167,7 +11167,7 @@ function initProjectMap(pid){
                 <!-- Edit Password -->
                 <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-6 mb-6" data-edit-only>
                     <h2 class="text-sm font-bold text-gsf-prussian uppercase tracking-wide mb-1">Edit Password</h2>
-                    <p class="text-xs text-slate-400 mb-4 max-w-lg">Set a password to protect edit mode. When a password is set, the app starts in read-only mode and requires the password to unlock editing. Share the app with colleagues — they see data but cannot modify it.</p>
+                    <p class="text-xs text-slate-400 mb-4 max-w-lg">Set a password to protect edit mode. When a password is set, the app starts in read-only mode and requires the password to unlock editing. Share the app with colleagues — they see data but cannot modify it. <strong>Stored on this computer only</strong> — passwords never travel through Google Sheets. The app ships with a built-in password that every install accepts; one set here replaces it on this computer alone. To change it for everyone, change the built-in one in a release.</p>
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                         <div>
                             <label class="block text-[10px] font-bold text-slate-400 mb-1 uppercase tracking-wide">New Password</label>
@@ -11182,7 +11182,7 @@ function initProjectMap(pid){
                     </div>
                     <div class="flex items-center gap-3">
                         <button onclick="GenericViews._saveEditPassword()" class="px-4 py-2 bg-gsf-boston text-white rounded-lg text-sm font-bold hover:bg-gsf-prussian transition-colors">${App._editPasswordHash ? 'Update Password' : 'Set Password'}</button>
-                        ${App._editPasswordHash ? `<button onclick="GenericViews._removeEditPassword()" class="px-4 py-2 border border-red-200 text-red-600 rounded-lg text-sm font-bold hover:bg-red-50 transition-colors">Remove Password</button>` : ''}
+                        ${App._editPasswordHash ? `<button onclick="GenericViews._removeEditPassword()" class="px-4 py-2 border border-red-200 text-red-600 rounded-lg text-sm font-bold hover:bg-red-50 transition-colors" title="Drop the password set on this computer and accept the one built into the app again">Use built-in password</button>` : ''}
                     </div>
                     ${App._editPasswordHash ? `<div class="mt-3 flex items-center gap-2 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2"><i data-lucide="shield-check" width="13"></i> Password is set — the app will start in read-only mode. Only you can unlock editing.</div>` : `<div class="mt-3 flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2"><i data-lucide="alert-triangle" width="13"></i> No password set — the app is fully editable by anyone. Set a password before sharing with colleagues.</div>`}
                 </div>
@@ -11190,7 +11190,7 @@ function initProjectMap(pid){
                 <!-- Provider-Reporting Password -->
                 <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-6 mb-6" data-edit-only>
                     <h2 class="text-sm font-bold text-gsf-prussian uppercase tracking-wide mb-1">Provider-Reporting Password <span class="ml-1 text-[9px] font-bold uppercase tracking-wider text-amber-700 border border-amber-300 bg-amber-50 rounded-full px-1.5 py-0.5 align-middle">Limited access</span></h2>
-                    <p class="text-xs text-slate-400 mb-4 max-w-lg">A second password for a teammate who only needs to build SURGhub provider reports — export reports, select / auto-select testimonials, and set the feedback date filter. They <strong>cannot</strong> edit SURGfund, run Data Sync, change Settings, or set the API key. Requires an edit password to be set above (so the app starts locked).</p>
+                    <p class="text-xs text-slate-400 mb-4 max-w-lg">A second password for a teammate who only needs to build SURGhub provider reports — export reports, select / auto-select testimonials, and set the feedback date filter. They <strong>cannot</strong> edit SURGfund, run Data Sync, change Settings, or set the API key. Requires an edit password to be set above (so the app starts locked). Like the edit password it is <strong>stored on this computer only</strong>: to change it for everyone, change the built-in one in a release.</p>
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
                         <div>
                             <label class="block text-[10px] font-bold text-slate-400 mb-1 uppercase tracking-wide">New Reporting Password</label>
@@ -11205,7 +11205,7 @@ function initProjectMap(pid){
                     </div>
                     <div class="flex items-center gap-3">
                         <button onclick="GenericViews._saveReportPassword()" class="px-4 py-2 bg-gsf-boston text-white rounded-lg text-sm font-bold hover:bg-gsf-prussian transition-colors">${App._reportPasswordHash ? 'Update Password' : 'Set Password'}</button>
-                        ${App._reportPasswordHash ? `<button onclick="GenericViews._removeReportPassword()" class="px-4 py-2 border border-red-200 text-red-600 rounded-lg text-sm font-bold hover:bg-red-50 transition-colors">Remove Password</button>` : ''}
+                        ${App._reportPasswordHash ? `<button onclick="GenericViews._removeReportPassword()" class="px-4 py-2 border border-red-200 text-red-600 rounded-lg text-sm font-bold hover:bg-red-50 transition-colors" title="Drop the password set on this computer and accept the one built into the app again">Use built-in password</button>` : ''}
                     </div>
                     ${App._reportPasswordHash ? `<div class="mt-3 flex items-center gap-2 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2"><i data-lucide="shield-check" width="13"></i> Reporting password is set — share it with the teammate who builds provider reports.</div>` : ''}
                 </div>
@@ -14065,9 +14065,9 @@ function _writeProject(ss, d) {
     },
 
     async _removeEditPassword() {
-        if (!confirm('Remove the edit password? The app will be fully editable by anyone.')) return;
+        if (!confirm('Go back to the built-in edit password?\n\nThe password set on this computer is removed; from now on this computer accepts the edit password built into the app.')) return;
         await App.setEditPassword(null);
-        App.showMsg('Edit password removed.');
+        App.showMsg('Back to the built-in edit password.');
         App.renderView();
     },
 
@@ -14084,9 +14084,9 @@ function _writeProject(ss, d) {
     },
 
     async _removeReportPassword() {
-        if (!confirm('Remove the provider-reporting password? That teammate will no longer be able to unlock reporting access.')) return;
+        if (!confirm('Go back to the built-in reporting password?\n\nThe password set on this computer is removed; from now on this computer accepts the reporting password built into the app.')) return;
         await App.setReportPassword(null);
-        App.showMsg('Provider-reporting password removed.');
+        App.showMsg('Back to the built-in reporting password.');
         App.renderView();
     },
 
