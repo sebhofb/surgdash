@@ -63,9 +63,9 @@ next to a commit means a check failed — do not release from a red commit.
    ```sh
    npm run release
    ```
-   This produces signed `arm64` + `x64` builds (`.dmg` for first install, `.zip` for auto-update, plus a `latest-mac.yml` manifest) and uploads them to a **draft** GitHub release. Takes a few minutes (notarization is the slow part).
+   This produces signed `arm64` + `x64` builds (`.dmg` for first install, `.zip` for auto-update, plus a `latest-mac.yml` manifest) and publishes them as a GitHub release. Takes a few minutes (notarization is the slow part).
 
-3. **Publish the draft.** Go to the repo on GitHub → **Releases** → find the draft for this version → **Publish release**. Until you publish it, nobody updates — so this is your "go live" switch.
+3. **Nothing to publish.** The release goes live as soon as the upload finishes (`releaseType: "release"`, see the top of this file). Check it under **Releases** on GitHub: it should be marked **Latest**, not Draft.
 
 That's it. Open apps pick up the update within ~6 hours; newly opened apps within ~8 seconds of launch. Each user sees a small **"Update ready — Restart now / Later"** prompt; "Later" installs it silently on their next quit.
 
@@ -84,7 +84,7 @@ That's it. Open apps pick up the update within ~6 hours; newly opened apps withi
 ## D. Verify it works (first release)
 
 1. Install version **N** on a test Mac from the DMG.
-2. Ship version **N+1** (bump → `npm run release` → publish the draft).
+2. Ship version **N+1** (bump → `npm run release`).
 3. Reopen the test app → within a few seconds you should get the **"Update ready"** prompt → Restart → it relaunches on N+1 (check the version in the app/About).
 
 ---
@@ -98,7 +98,7 @@ That's it. Open apps pick up the update within ~6 hours; newly opened apps withi
 | Team never gets the update | The GitHub release is still a **draft** (publish it), or the version wasn't bumped higher, or the release is marked **pre-release** (don't). |
 | "App is damaged / can't be opened" | The build wasn't signed/notarized (missing Developer ID cert or Apple creds). Auto-update also requires a signed build. |
 | Update prompt never shows in dev | Expected — auto-update is disabled under `npm start`; it only runs in the packaged app. |
-| Need to pause updates | Just don't publish the draft release; or delete a published release to stop it rolling out. |
+| Need to pause updates | Delete the published release to stop it rolling out, or release as a draft first: `EP_DRAFT=true npm run release`, then publish it on GitHub when ready. |
 
 ---
 
