@@ -9,6 +9,13 @@
     // this is shown to the team, not to developers. Update this list per release.
     const RELEASES = [
         {
+            v: '2.1.3',
+            date: 'October 2026',
+            items: [
+                { t: 'Report folders and files with short names', d: 'Bulk report exports put each provider\u2019s files in a folder named the way the team files them (WFSA, ICRC, Resurge International and so on). Every file leads with what it is, then whose it is, then the period: Feedback_WFSA_Jul-Sept 2026.xlsx. Saving a single report suggests the same kind of name.' },
+            ]
+        },
+        {
             v: '2.1.2',
             date: 'September 2026',
             items: [

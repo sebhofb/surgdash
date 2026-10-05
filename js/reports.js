@@ -2379,8 +2379,7 @@ ${platform && globeCountryCount > 0 ? ('\nvar LAND=' + _globeGeo.LAND + ';var CE
             const html = await this._buildReportHtml(providerName);
             if (!html) return alert('No data for ' + providerName);
 
-            const safeName = providerName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-            const savePath = await electronAPI.invoke('pick-save-path', safeName + '_report' + this._periodFileSuffix() + '.pdf');
+            const savePath = await electronAPI.invoke('pick-save-path', this.reportFileName('Report', this.providerFolderName(providerName), 'pdf'));
             if (!savePath) return;
 
             this._showReportProgress('Generating report for ' + providerName + '...');
@@ -2417,8 +2416,7 @@ ${platform && globeCountryCount > 0 ? ('\nvar LAND=' + _globeGeo.LAND + ';var CE
             if (!providerName) return alert('No provider selected.');
             const html = await this._buildDarkReportHtml(providerName);
             if (!html) return alert('No data for ' + providerName);
-            const safeName = providerName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-            const savePath = await electronAPI.invoke('pick-save-path', safeName + '_report' + this._periodFileSuffix() + '.html');
+            const savePath = await electronAPI.invoke('pick-save-path', this.reportFileName('Web report', this.providerFolderName(providerName), 'html'));
             if (!savePath) return;
             electronAPI.fs.writeFileSync(savePath, html);
             alert('Web report saved: ' + savePath + '\n\nSelf-contained file — open in any browser (charts need an internet connection).');
@@ -2457,9 +2455,8 @@ ${platform && globeCountryCount > 0 ? ('\nvar LAND=' + _globeGeo.LAND + ';var CE
                 const html = await this._buildReportHtml(prov);
                 if (!html) { failed++; continue; }
 
-                const safeName = prov.replace(/[^a-z0-9]/gi, '_').toLowerCase();
                 const tempPath = path.join(os.tmpdir(), 'surghub_report_' + Date.now() + '.pdf');
-                const finalPath = path.join(folder, safeName + '_report' + this._periodFileSuffix() + '.pdf');
+                const finalPath = path.join(folder, this.reportFileName('Report', this.providerFolderName(prov), 'pdf'));
 
                 const result = await electronAPI.invoke('generate-pdf', { html, outputPath: tempPath });
                 if (this._reportCancelled) break;
@@ -2655,17 +2652,18 @@ ${platform && globeCountryCount > 0 ? ('\nvar LAND=' + _globeGeo.LAND + ';var CE
 
         // Writes one provider's full package into {baseFolder}/{provider}/.
         // No dialogs — callers handle folder picking + progress + summaries.
+        // Folder: the provider's folder name (reportNames.js). Files: kind_name_period.
         async _writeProviderPackage(providerName, baseFolder, dateStr, anonUsers) {
-            const safeName = providerName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-            const suffix = '_' + dateStr + this._periodFileSuffix();
-            const provDir = path.join(baseFolder, safeName);
+            const folderName = this.providerFolderName(providerName);
+            const fileName = (kind, ext) => this.reportFileName(kind, folderName, ext, dateStr);
+            const provDir = path.join(baseFolder, folderName);
             try { electronAPI.fs.mkdirSync(provDir, { recursive: true }); } catch (e) { __swallowed(e); }
             const status = { pdf: false, html: false, users: false, feedback: false };
 
             try {
                 const darkHtml = await this._buildDarkReportHtml(providerName);
                 if (darkHtml) {
-                    electronAPI.fs.writeFileSync(path.join(provDir, safeName + '_report' + suffix + '.html'), darkHtml);
+                    electronAPI.fs.writeFileSync(path.join(provDir, fileName('Web report', 'html')), darkHtml);
                     status.html = true;
                 }
             } catch (e) { console.error('[Package] HTML report failed for', providerName, e); }
@@ -2673,7 +2671,7 @@ ${platform && globeCountryCount > 0 ? ('\nvar LAND=' + _globeGeo.LAND + ';var CE
             const html = await this._buildReportHtml(providerName);
             if (html) {
                 const tempPath = path.join(os.tmpdir(), 'surghub_report_' + Date.now() + '.pdf');
-                const finalPath = path.join(provDir, safeName + '_report' + suffix + '.pdf');
+                const finalPath = path.join(provDir, fileName('Report', 'pdf'));
                 const result = await electronAPI.invoke('generate-pdf', { html, outputPath: tempPath });
                 if (result.success) {
                     if (this.reportCoverPath || this.reportBackPath) {
@@ -2693,12 +2691,12 @@ ${platform && globeCountryCount > 0 ? ('\nvar LAND=' + _globeGeo.LAND + ';var CE
 
             try {
                 const uwb = this._buildUsersWorkbook(providerName, anonUsers);
-                if (uwb) { this._writeWorkbook(uwb, path.join(provDir, safeName + '_users' + suffix + '.xlsx')); status.users = true; }
+                if (uwb) { this._writeWorkbook(uwb, path.join(provDir, fileName('Users', 'xlsx'))); status.users = true; }
             } catch (e) { console.error('[Package] users workbook failed for', providerName, e); }
 
             try {
                 const fwb = await this._buildFeedbackWorkbook(providerName);
-                if (fwb) { this._writeWorkbook(fwb, path.join(provDir, safeName + '_feedback' + suffix + '.xlsx')); status.feedback = true; }
+                if (fwb) { this._writeWorkbook(fwb, path.join(provDir, fileName('Feedback', 'xlsx'))); status.feedback = true; }
             } catch (e) { console.error('[Package] feedback workbook failed for', providerName, e); }
 
             return status;
@@ -2719,7 +2717,7 @@ ${platform && globeCountryCount > 0 ? ('\nvar LAND=' + _globeGeo.LAND + ';var CE
                     (s.html ? '✓' : '✗') + ' Web report (.html)\n' +
                     (s.users ? '✓' : '✗') + ' Anonymized users (.xlsx)' + (s.users ? '' : ' — no user data; run Sync Growth Timelines then Sync Learners') + '\n' +
                     (s.feedback ? '✓' : '✗') + ' Anonymized feedback (.xlsx)' + (s.feedback ? '' : ' — no survey feedback synced') + '\n\n' +
-                    'Saved to: ' + path.join(folder, providerName.replace(/[^a-z0-9]/gi, '_').toLowerCase()));
+                    'Saved to: ' + path.join(folder, this.providerFolderName(providerName)));
             } catch (e) {
                 this._hideReportProgress();
                 alert('Package export failed: ' + e.message);
@@ -2758,17 +2756,16 @@ ${platform && globeCountryCount > 0 ? ('\nvar LAND=' + _globeGeo.LAND + ';var CE
         // Same four files as a provider package, scoped to ONE course, written into
         // {baseFolder}/{provider}/{course}/ — so bulk runs build a provider→course tree.
         async _writeCoursePackage(providerName, courseName, baseFolder, dateStr, anonUsers) {
-            const safeProv = providerName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-            const safeCourse = courseName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-            const suffix = '_' + dateStr + this._periodFileSuffix();
-            const courseDir = path.join(baseFolder, safeProv, safeCourse);
+            const courseFolder = this.fsSafeName(courseName);
+            const fileName = (kind, ext) => this.reportFileName(kind, courseFolder, ext, dateStr);
+            const courseDir = path.join(baseFolder, this.providerFolderName(providerName), courseFolder);
             try { electronAPI.fs.mkdirSync(courseDir, { recursive: true }); } catch (e) { __swallowed(e); }
             const status = { pdf: false, html: false, users: false, feedback: false };
 
             try {
                 const darkHtml = await this._buildDarkReportHtml(providerName, false, { course: courseName });
                 if (darkHtml) {
-                    electronAPI.fs.writeFileSync(path.join(courseDir, safeCourse + '_report' + suffix + '.html'), darkHtml);
+                    electronAPI.fs.writeFileSync(path.join(courseDir, fileName('Web report', 'html')), darkHtml);
                     status.html = true;
                 }
             } catch (e) { console.error('[CoursePackage] HTML report failed for', courseName, e); }
@@ -2776,7 +2773,7 @@ ${platform && globeCountryCount > 0 ? ('\nvar LAND=' + _globeGeo.LAND + ';var CE
             const html = await this._buildReportHtml(providerName, { course: courseName });
             if (html) {
                 const tempPath = path.join(os.tmpdir(), 'surghub_course_report_' + Date.now() + '.pdf');
-                const finalPath = path.join(courseDir, safeCourse + '_report' + suffix + '.pdf');
+                const finalPath = path.join(courseDir, fileName('Report', 'pdf'));
                 const result = await electronAPI.invoke('generate-pdf', { html, outputPath: tempPath });
                 if (result.success) {
                     if (this.reportCoverPath || this.reportBackPath) {
@@ -2796,12 +2793,12 @@ ${platform && globeCountryCount > 0 ? ('\nvar LAND=' + _globeGeo.LAND + ';var CE
 
             try {
                 const uwb = this._buildUsersWorkbook(providerName, anonUsers, courseName);
-                if (uwb) { this._writeWorkbook(uwb, path.join(courseDir, safeCourse + '_users' + suffix + '.xlsx')); status.users = true; }
+                if (uwb) { this._writeWorkbook(uwb, path.join(courseDir, fileName('Users', 'xlsx'))); status.users = true; }
             } catch (e) { console.error('[CoursePackage] users workbook failed for', courseName, e); }
 
             try {
                 const fwb = await this._buildFeedbackWorkbook(providerName, courseName);
-                if (fwb) { this._writeWorkbook(fwb, path.join(courseDir, safeCourse + '_feedback' + suffix + '.xlsx')); status.feedback = true; }
+                if (fwb) { this._writeWorkbook(fwb, path.join(courseDir, fileName('Feedback', 'xlsx'))); status.feedback = true; }
             } catch (e) { console.error('[CoursePackage] feedback workbook failed for', courseName, e); }
 
             return status;
@@ -2834,9 +2831,7 @@ ${platform && globeCountryCount > 0 ? ('\nvar LAND=' + _globeGeo.LAND + ';var CE
                     (s.html ? '✓' : '✗') + ' Web report (.html)\n' +
                     (s.users ? '✓' : '✗') + ' Anonymized users (.xlsx)' + (s.users ? '' : ' — no user data; upload User Progress then run Sync Learners') + '\n' +
                     (s.feedback ? '✓' : '✗') + ' Anonymized feedback (.xlsx)' + (s.feedback ? '' : ' — no survey feedback synced') + '\n\n' +
-                    'Saved to: ' + path.join(folder,
-                        providerName.replace(/[^a-z0-9]/gi, '_').toLowerCase(),
-                        courseName.replace(/[^a-z0-9]/gi, '_').toLowerCase()));
+                    'Saved to: ' + path.join(folder, this.providerFolderName(providerName), this.fsSafeName(courseName)));
             } catch (e) {
                 this._hideReportProgress();
                 alert('Course package export failed: ' + e.message);
@@ -2846,7 +2841,7 @@ ${platform && globeCountryCount > 0 ? ('\nvar LAND=' + _globeGeo.LAND + ';var CE
         // Provider page: the consolidated provider package PLUS one package per course.
         // Both land in {folder}/{provider}/ — provider files at the top, courses in
         // subfolders — since _writeProviderPackage and _writeCoursePackage share the
-        // same safe-name folder computation.
+        // same folder name (providerFolderName).
         async exportProviderCoursePackages(providerName) {
             if (!providerName) return alert('No provider selected.');
             const courses = this.getAnalyticsSnap().filter(d => d.Provider === providerName).map(d => d.Course).filter(Boolean).sort();
@@ -2879,7 +2874,7 @@ ${platform && globeCountryCount > 0 ? ('\nvar LAND=' + _globeGeo.LAND + ';var CE
                 ok + ' complete course package' + (ok !== 1 ? 's' : '') +
                 (partial > 0 ? ', ' + partial + ' partial (some files missing — check that user data + feedback are synced)' : '') +
                 (failed > 0 ? ', ' + failed + ' failed' : '') +
-                '\n\nProvider files sit at the top of the folder; each course has its own subfolder inside:\n' + path.join(folder, providerName.replace(/[^a-z0-9]/gi, '_').toLowerCase()));
+                '\n\nProvider files sit at the top of the folder; each course has its own subfolder inside:\n' + path.join(folder, this.providerFolderName(providerName)));
         },
 
         // Reports tab: for EVERY provider, the consolidated provider package (top of the

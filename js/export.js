@@ -218,8 +218,8 @@ Object.assign(window.App, {
             if (provCourses.length === 0) return alert('No courses found for ' + providerName);
 
             const ipcRenderer = electronAPI;
-            const safeName = providerName.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-            const defaultName = safeName + '_anonymized_users.xlsx';
+            const defaultName = this.reportFileName ? this.reportFileName('Users', this.providerFolderName(providerName), 'xlsx')
+                : providerName.replace(/[^a-z0-9]/gi, '_').toLowerCase() + '_anonymized_users.xlsx';
             const savePath = await ipcRenderer.invoke('pick-save-path', defaultName);
             if (!savePath) return;
 
