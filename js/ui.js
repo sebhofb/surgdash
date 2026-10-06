@@ -335,8 +335,8 @@ Object.assign(window.App, {
         let low = 0, priv = 0;
         try {
             const all = this._withAllCourses(() => this.getAnalyticsSnap());
-            const ps = this.privateCourseNames ? this.privateCourseNames() : new Set();
-            all.forEach(d => { if ((Number(d.Learners) || 0) < 50) low++; if (ps.has(d.Course)) priv++; });
+            const pk = this.privateCourseKeys ? this.privateCourseKeys() : new Set();
+            all.forEach(d => { if ((Number(d.Learners) || 0) < 50) low++; if (pk.has(courseKey(d))) priv++; });
         } catch (e) { __swallowed(e, 'courseToggles.count'); }
         const box = (key, label, n, title) => '<label class="inline-flex items-center gap-2 ' + (opts.small ? 'text-xs' : 'text-sm') + ' text-slate-600 cursor-pointer whitespace-nowrap" title="' + this.escapeHtml(title) + '">'
             + '<input type="checkbox" data-viewer-allowed data-report-ok data-course-toggle="' + key + '" ' + (this[key] ? 'checked' : '') + ' onchange="App.setCourseToggle(\'' + key + '\', this.checked)"> '
@@ -3319,7 +3319,7 @@ Object.assign(window.App, {
                                             <td class="py-2 px-3 text-right text-gsf-boston text-xs font-medium">${this.formatNumber(s.Responses)}</td>
                                             <td class="py-2 px-3 text-right text-xs font-medium ${s.Rating >= 4 ? 'text-green-600' : s.Rating > 0 ? 'text-gsf-crimson' : 'text-slate-300'}">${s.Rating > 0 ? s.Rating.toFixed(2) : '-'}</td>
                                             <td class="py-2 px-3 text-center text-xs">${s.URL ? '<span class="text-green-600">Y</span>' : '<span class="text-red-400">N</span>'}</td>
-                                            <td class="py-2 px-3 text-center"><input type="checkbox" data-edit-only ${App.isCoursePrivate && App.isCoursePrivate(s.Course) ? 'checked' : ''} onchange="App.toggleCoursePrivate('${courseEsc}', this.checked)" class="rounded border-slate-300 text-purple-600 focus:ring-purple-500/30" title="Private: an in-country workshop or other closed cohort. Left out of UNITAR batch reports unless you tick to include them. Defaults to what LearnWorlds says." /></td>
+                                            <td class="py-2 px-3 text-center"><input type="checkbox" data-edit-only ${(App.isCourseRecordPrivate ? App.isCourseRecordPrivate(s) : (App.isCoursePrivate && App.isCoursePrivate(s.Course))) ? 'checked' : ''} onchange="App.toggleCoursePrivate('${courseEsc}', this.checked)" class="rounded border-slate-300 text-purple-600 focus:ring-purple-500/30" title="Private: an in-country workshop or other closed cohort. Left out of UNITAR batch reports unless you tick to include them. Defaults to what LearnWorlds says." /></td>
                                             <td class="py-2 px-3 text-center"><input type="checkbox" ${s.isExcluded ? '' : 'checked'} onchange="App.toggleExcludeCourse(${s.idx})" title="${s.isExcluded ? 'Click to include in analytics' : 'Click to exclude from analytics'}"></td>
                                             <td class="py-2 px-3 text-center"><button data-edit-only onclick="App.editCourseByIndex(${s.idx})" class="text-gsf-boston hover:text-gsf-prussian text-xs underline">edit</button></td>
                                         </tr>`;
@@ -4220,11 +4220,7 @@ Object.assign(window.App, {
             const provCourseNames = [...new Set(provFeedbackBank.map(f => f._course).filter(Boolean))].sort();
             // All of this provider's courses INCLUDING course-level-excluded ones,
             // so the table below can offer an include toggle for unpublished courses.
-            const provAllCourses = (() => {
-                const latest = {};
-                this.data.forEach(d => { if (d.IsShell || !d.Course || d.Provider !== this.selectedProvider) return; const k = courseKey(d); if (!latest[k] || (d.Timestamp || '') > (latest[k].Timestamp || '')) latest[k] = d; });
-                return Object.values(latest).sort((a, b) => (Number(b.Learners) || 0) - (Number(a.Learners) || 0));
-            })();
+            const provAllCourses = this._provCourseRows(this.selectedProvider);
 
             body.innerHTML = `
                 <div class="p-6 md:p-10 fade-in w-full max-w-7xl mx-auto">
@@ -4284,11 +4280,11 @@ Object.assign(window.App, {
                     ${this._surveyImpactBand(pSnap)}
 
                     <div class="bg-white rounded-xl shadow-sm border overflow-hidden mb-8">
-                        <div class="bg-slate-50 border-b p-5 flex items-center justify-between gap-3"><h2 class="font-bold text-lg text-gsf-prussian">Courses by ${this.escapeHtml(this.selectedProvider)}</h2><span class="text-xs text-slate-500">${pSnap.length} of ${provAllCourses.length} included &middot; untick to exclude unpublished courses</span></div>
+                        <div class="bg-slate-50 border-b p-5 flex items-center justify-between gap-3"><h2 class="font-bold text-lg text-gsf-prussian">Courses by ${this.escapeHtml(this.selectedProvider)}</h2><span id="prov-inc-summary" class="text-xs text-slate-500">${this.escapeHtml(this._provIncludedSummary(this.selectedProvider))}</span></div>
                         <div class="overflow-x-auto max-h-[400px] overflow-y-auto custom-scrollbar">
                             <table class="w-full text-left border-collapse text-sm">
                                 <thead class="sticky top-0 bg-white shadow-sm z-10"><tr class="border-b text-slate-500"><th class="py-3 px-4 font-medium">Course Title</th><th class="py-3 px-4 font-medium text-right">Learners</th><th class="py-3 px-4 font-medium text-right">Certificates</th><th class="py-3 px-4 font-medium text-right">Learning Time</th><th class="py-3 px-4 font-medium text-right">Rating</th><th class="py-3 px-4 font-medium text-right">Responses</th><th class="py-3 px-4 font-medium" title="Courses started per month over the last 12 complete months. Colour and % compare the last 3 months with the 3 before.">Trend <span class="text-[10px] font-normal text-slate-400">12 mo</span></th><th class="py-3 px-4 font-medium text-center">Include</th></tr></thead>
-                                <tbody>${provAllCourses.map(d => { const inc = !d.Excluded; const courseEsc = this.escapeJsArg(d.Course); return '<tr class="border-b hover:bg-slate-50 ' + (inc ? '' : 'opacity-40') + '"><td class="py-3 px-4 font-bold text-gsf-prussian cursor-pointer" onclick="App.selectedCourse=\'' + courseEsc + '\'; App.navigate(\'course\')">' + this.escapeHtml(d.Course) + this._courseStatusBadge(d.Access) + '</td><td class="py-3 px-4 text-right">' + this.formatNumber(d.Learners) + '</td><td class="py-3 px-4 text-right">' + this.formatNumber(d.Certificates) + '</td><td class="py-3 px-4 text-right text-slate-500">' + this.formatLearningTime(this.courseLearningMinutes(d, courseMins)) + '</td><td class="py-3 px-4 text-right text-gsf-crimson font-bold">' + (Number(d.Rating) > 0 ? Number(d.Rating).toFixed(2) : '-') + '</td><td class="py-3 px-4 text-right text-gsf-boston">' + this.formatNumber(d.Responses) + '</td><td class="py-3 px-4">' + this.courseTrendSpark(d.Course) + '</td><td class="py-3 px-4 text-center"><input type="checkbox" ' + (inc ? 'checked' : '') + ' onchange="App.toggleCourseIncludedByName(\'' + courseEsc + '\', this.checked, this)" title="' + (inc ? 'Included in analytics — untick to exclude' : 'Excluded — tick to include') + '"></td></tr>'; }).join('')}</tbody>
+                                <tbody>${provAllCourses.map(d => { const inc = !d.Excluded; const courseEsc = this.escapeJsArg(d.Course); const keyEsc = this.escapeJsArg(courseKey(d)); const why = this._courseToggleReason(d); return '<tr class="border-b hover:bg-slate-50 ' + (inc ? '' : 'opacity-40') + '"><td class="py-3 px-4 font-bold text-gsf-prussian cursor-pointer" onclick="App.selectedCourse=\'' + courseEsc + '\'; App.navigate(\'course\')">' + this.escapeHtml(d.Course) + this._courseStatusBadge(d.Access) + (why ? ' <span class="ml-1 text-[10px] font-normal text-slate-400" title="Ticked, but left out by the course toggles above">left out: ' + why + '</span>' : '') + '</td><td class="py-3 px-4 text-right">' + this.formatNumber(d.Learners) + '</td><td class="py-3 px-4 text-right">' + this.formatNumber(d.Certificates) + '</td><td class="py-3 px-4 text-right text-slate-500">' + this.formatLearningTime(this.courseLearningMinutes(d, courseMins)) + '</td><td class="py-3 px-4 text-right text-gsf-crimson font-bold">' + (Number(d.Rating) > 0 ? Number(d.Rating).toFixed(2) : '-') + '</td><td class="py-3 px-4 text-right text-gsf-boston">' + this.formatNumber(d.Responses) + '</td><td class="py-3 px-4">' + this.courseTrendSpark(d.Course) + '</td><td class="py-3 px-4 text-center"><input type="checkbox" ' + (inc ? 'checked' : '') + ' onchange="App.toggleCourseIncluded(\'' + keyEsc + '\', this.checked, this)" title="' + (inc ? 'Included in analytics — untick to exclude' : 'Excluded — tick to include') + '"></td></tr>'; }).join('')}</tbody>
                             </table>
                         </div>
                     </div>
@@ -4369,6 +4365,11 @@ Object.assign(window.App, {
             let courseFeedbackBank = [];
             if(cSnap.FeedbackBank) { try { let fb = JSON.parse(cSnap.FeedbackBank); if(Array.isArray(fb)) courseFeedbackBank = fb.map(f => ({ ...f, _course: this.selectedCourse })); } catch (e) { __swallowed(e); } }
             courseFeedbackBank.sort((a,b) => (b.d||'').localeCompare(a.d||''));
+            // The checkboxes act on the course this page shows (by key), not on its title,
+            // which a published course can share with a private copy.
+            const crsKey = (cSnap && cSnap.Course) ? courseKey(cSnap) : this.selectedCourse;
+            const crsIncluded = this.isCourseIncludedKey(crsKey);
+            const crsPrivate = (cSnap && cSnap.Course && App.isCourseRecordPrivate) ? App.isCourseRecordPrivate(cSnap) : !!(App.isCoursePrivate && App.isCoursePrivate(this.selectedCourse));
 
             body.innerHTML = `
                 <div class="p-6 md:p-10 fade-in w-full max-w-7xl mx-auto">
@@ -4389,12 +4390,12 @@ Object.assign(window.App, {
                     <div class="flex items-center justify-between gap-3 flex-wrap bg-white border border-slate-200 rounded-xl shadow-sm px-4 py-3 mb-6">
                         <p class="text-sm text-slate-500">Provider: ${(cSnap.Provider && cSnap.Provider !== 'Unknown' && cSnap.Provider !== 'Unknown Provider') ? '<button onclick="App.openProvider(\'' + this.escapeJsArg(cSnap.Provider) + '\')" class="font-bold text-gsf-boston hover:underline cursor-pointer">' + this.escapeHtml(cSnap.Provider) + ' &rsaquo;</button>' : '<span class="font-bold text-gsf-boston">' + this.escapeHtml(cSnap.Provider || 'Unknown') + '</span>'}${this._courseStatusBadge(cSnap.Access)}</p>
                         <div class="flex items-center gap-2 flex-wrap">
-                            <label class="inline-flex items-center gap-2 text-sm font-medium ${this.isCourseIncluded(this.selectedCourse) ? 'text-slate-600' : 'text-amber-700'} cursor-pointer" title="Untick to exclude this course from all analytics, reports and totals (use for unpublished/test courses)">
-                                <input type="checkbox" ${this.isCourseIncluded(this.selectedCourse) ? 'checked' : ''} onchange="App.toggleCourseIncludedByName('${this.escapeJsArg(this.selectedCourse)}', this.checked)">
-                                ${this.isCourseIncluded(this.selectedCourse) ? 'Included in analytics' : 'Excluded from analytics'}
+                            <label class="inline-flex items-center gap-2 text-sm font-medium ${crsIncluded ? 'text-slate-600' : 'text-amber-700'} cursor-pointer" title="Untick to exclude this course from all analytics, reports and totals (use for unpublished/test courses)">
+                                <input type="checkbox" ${crsIncluded ? 'checked' : ''} onchange="App.toggleCourseIncluded('${this.escapeJsArg(crsKey)}', this.checked)">
+                                ${crsIncluded ? 'Included in analytics' : 'Excluded from analytics'}
                             </label>
-                            <label data-edit-only class="inline-flex items-center gap-2 text-sm font-medium ${App.isCoursePrivate && App.isCoursePrivate(this.selectedCourse) ? 'text-purple-700' : 'text-slate-600'} cursor-pointer" title="In-country workshops and other closed cohorts. Private courses are left out of the UNITAR batch unless you tick to include them.">
-                                <input type="checkbox" ${App.isCoursePrivate && App.isCoursePrivate(this.selectedCourse) ? 'checked' : ''} onchange="App.toggleCoursePrivate('${this.escapeJsArg(this.selectedCourse)}', this.checked)" class="rounded border-slate-300 text-purple-600 focus:ring-purple-500/30" />
+                            <label data-edit-only class="inline-flex items-center gap-2 text-sm font-medium ${crsPrivate ? 'text-purple-700' : 'text-slate-600'} cursor-pointer" title="In-country workshops and other closed cohorts. Private courses are left out of the UNITAR batch unless you tick to include them.">
+                                <input type="checkbox" ${crsPrivate ? 'checked' : ''} onchange="App.toggleCoursePrivate('${this.escapeJsArg(this.selectedCourse)}', this.checked)" class="rounded border-slate-300 text-purple-600 focus:ring-purple-500/30" />
                                 Private course
                             </label>
                             <button data-edit-only data-report-ok onclick="App.exportQaForm()" title="UNITAR's annual quality-assessment form for this course, filled from the course summary and this year's figures" class="flex items-center gap-1.5 px-3.5 py-2 bg-white border border-slate-200 text-gsf-prussian font-bold rounded-lg text-xs hover:border-gsf-boston transition-colors"><i data-lucide="clipboard-check" width="13"></i> QA form</button>
@@ -5030,20 +5031,55 @@ Object.assign(window.App, {
     // Course-level: flip Excluded on every row of a course (used from the
     // provider page table and the course page). Unpublished courses get
     // excluded so they drop out of every analytic.
-    toggleCourseIncludedByName(courseName, included, el) {
+    // By course KEY (LearnWorlds slug, or the title of a record that has none). Two courses
+    // can share a title, a published course and its private copy: switching by title switched
+    // both while the table faded only one row. A title still works when no key matches.
+    toggleCourseIncluded(key, included, el) {
         try {
-            const excluded = !included;
+            const excluded = !included, k = String(key);
             let n = 0;
-            for (const d of this.data) { if (courseMatches(d, courseName)) { d.Excluded = excluded; n++; } }
+            for (const d of this.data) { if (d && courseKey(d) === k) { d.Excluded = excluded; n++; } }
+            if (!n) for (const d of this.data) { if (courseMatches(d, k)) { d.Excluded = excluded; n++; } }
             if (n) this.handleDbSave();
             // In-place row fade keeps scroll position (provider table / directory);
             // full re-render only when toggled from a context without an element.
-            if (el) { const tr = el.closest('tr'); if (tr) tr.classList.toggle('opacity-40', excluded); }
+            if (el) { const tr = el.closest('tr'); if (tr) tr.classList.toggle('opacity-40', excluded); this._refreshProvIncluded(); }
             else this.renderView();
-        } catch (e) { console.error('toggleCourseIncludedByName', e); }
+        } catch (e) { console.error('toggleCourseIncluded', e); }
     },
+    toggleCourseIncludedByName(courseName, included, el) { return this.toggleCourseIncluded(courseName, included, el); },
     isCourseIncluded(courseName) {
         return !this.data.some(d => courseMatches(d, courseName) && d.Excluded);
+    },
+    isCourseIncludedKey(key) {
+        const k = String(key), rows = this.data.filter(d => d && courseKey(d) === k);
+        return rows.length ? !rows.some(d => d.Excluded) : this.isCourseIncluded(k);
+    },
+    // A provider's courses as its table lists them: the newest record of each course (by key),
+    // switched-off ones too so they can be ticked back, and leftover title-only duplicates of
+    // a slugged course dropped exactly as the analytics drop them.
+    _provCourseRows(provider) {
+        const latest = {};
+        (this.data || []).forEach(d => { if (!d || d.IsShell || !d.Course || d.Provider !== provider) return; const k = courseKey(d); if (!latest[k] || (d.Timestamp || '') > (latest[k].Timestamp || '')) latest[k] = d; });
+        const rows = this._dropOrphanDupes ? this._dropOrphanDupes(Object.values(latest), this.data) : Object.values(latest);
+        return rows.sort((a, b) => (Number(b.Learners) || 0) - (Number(a.Learners) || 0));
+    },
+    // Why a ticked course is still left out of reports: '' when it is in.
+    _courseToggleReason(d) {
+        if (!d || d.Excluded) return '';
+        if (this.hideLowLearners && (Number(d.Learners) || 0) < 50) return 'fewer than 50 learners';
+        if (this.hidePrivateCourses && this.isCourseRecordPrivate && this.isCourseRecordPrivate(d)) return 'private';
+        return '';
+    },
+    _provIncludedSummary(provider) {
+        const rows = this._provCourseRows(provider);
+        const ticked = rows.filter(d => !d.Excluded);
+        const leftOut = ticked.filter(d => this._courseToggleReason(d)).length;
+        return ticked.length + ' of ' + rows.length + ' included' + (leftOut ? ' \u00b7 ' + leftOut + ' left out by the course toggles' : '') + ' \u00b7 untick to exclude unpublished courses';
+    },
+    _refreshProvIncluded() {
+        const el = typeof document !== 'undefined' && document.getElementById('prov-inc-summary');
+        if (el && this.selectedProvider) el.textContent = this._provIncludedSummary(this.selectedProvider);
     },
     // Provider-level: a persisted set of excluded provider names. Courses by an
     // excluded provider are dropped from all analytics automatically (via the

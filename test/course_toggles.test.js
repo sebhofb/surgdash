@@ -37,11 +37,12 @@ const names = (list) => [...new Set(list.map(d => d.Course))].sort().join(', ');
 const set = (low, priv) => { App.hideLowLearners = low; App.hidePrivateCourses = priv; };
 
 // ── what "private" means ──
-const ps = App.privateCourseNames();
+const pk = App.privateCourseKeys();
+const pkNames = [...new Set(App.data.filter(d => pk.has(ctx.courseKey(d))).map(d => d.Course))].sort().join(', ');
 check('private = marked private or draft on LearnWorlds, unless the course page says otherwise',
-  [...ps].sort().join(', ') === 'Draft, Override Private, Workshop', [...ps].sort().join(', '));
-check('the list agrees with the course-page answer for every course',
-  App.data.every(d => App.isCoursePrivate(d.Course) === ps.has(d.Course)));
+  pkNames === 'Draft, Override Private, Workshop', pkNames);
+check('with no title shared, the per-course answer and the title answer agree',
+  App.data.every(d => App.isCoursePrivate(d.Course) === pk.has(ctx.courseKey(d))));
 
 // ── the filter ──
 set(false, false); check('both off: every included course', names(App.getAnalyticsSnap()) === 'Big Free, Draft, Override Private, Override Public, Small Free, Workshop', names(App.getAnalyticsSnap()));
@@ -84,11 +85,58 @@ check('each switches its own toggle', /onchange="App\.setCourseToggle\('hideLowL
 check('they show the current state', /data-course-toggle="hidePrivateCourses" checked/.test(html) && !/data-course-toggle="hideLowLearners" checked/.test(html));
 check('each says how many courses it would leave out', /&lt; 50 learners <span class="text-slate-400">\(2\)<\/span>/.test(html) && /private courses <span class="text-slate-400">\(3\)<\/span>/.test(html), html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' '));
 
+// ── one title, three records: the ECSACONM PeN programme (Oct 2026) ──
+const PEN = 'Perioperative Nursing E-Learning Foundational Programme (PeN Programme)';
+const pen = (CourseId, Access, Learners, Timestamp) => ({ Course: PEN, Provider: 'ECSACONM', CourseId, Access, Learners, Certificates: 0, Timestamp: Timestamp || '2026-10-06' });
+const resetPen = () => {
+  App.data = [pen('pen-programme', 'free', 2207), Object.assign(rec('Programa Básico', 157, 'free'), { Provider: 'ECSACONM' }),
+              pen(undefined, undefined, 0, '2026-06-03'),                       // the leftover record with no slug
+              pen('pen-programme-en', 'private', 2)];                           // the private copy
+  delete App.data[2].CourseId; delete App.data[2].Access;
+  App._privateCourses = {}; set(false, false);
+};
+resetPen();
+check('the table lists each course once and drops the leftover no-slug record, as the analytics do',
+  App._provCourseRows('ECSACONM').length === 3 && !App._provCourseRows('ECSACONM').some(d => !d.CourseId), App._provCourseRows('ECSACONM').map(d => d.CourseId || '(none)').join(', '));
+check('so all ticked reads "3 of 3 included", not "3 of 4"', /^3 of 3 included · untick/.test(App._provIncludedSummary('ECSACONM')), App._provIncludedSummary('ECSACONM'));
+App.toggleCourseIncluded('pen-programme-en', false);
+check('unticking the private copy switches off that course only, not the published one with the same title',
+  App.data.find(d => d.CourseId === 'pen-programme-en').Excluded === true && !App.data.find(d => d.CourseId === 'pen-programme').Excluded);
+check('the export then holds the published course and not the copy',
+  names(App.getAnalyticsSnap().filter(d => d.Provider === 'ECSACONM')) === PEN + ', Programa Básico'
+  && App.getAnalyticsSnap().filter(d => d.Course === PEN).length === 1 && App.getAnalyticsSnap().find(d => d.Course === PEN).Learners === 2207);
+check('…and the header counts the tick', /^2 of 3 included/.test(App._provIncludedSummary('ECSACONM')));
+check('a course page reads its own course\'s tick', App.isCourseIncludedKey('pen-programme') === true && App.isCourseIncludedKey('pen-programme-en') === false);
+resetPen();
+App.toggleCourseIncluded('pen-programme', false);
+check('switching off the slugged course does not bring the leftover record back into the reports',
+  !App.getAnalyticsSnap().some(d => d.Course === PEN && !d.CourseId));
+resetPen();
+App.data.push(rec('Legacy Course', 60, 'free')); delete App.data[App.data.length - 1].CourseId;
+App.toggleCourseIncluded('Legacy Course', false);
+check('a course with no slug at all is still switched by its title', App.data[App.data.length - 1].Excluded === true);
+
+resetPen();
+check('the private copy is private; the title, shared with a published course, is not',
+  App.isCourseRecordPrivate(App.data[3]) === true && App.isCourseRecordPrivate(App.data[0]) === false && App.isCoursePrivate(PEN) === false);
+set(false, true);
+check('excluding private courses leaves out the copy and keeps the published course and its 2,207 learners',
+  App.getAnalyticsSnap().filter(d => d.Course === PEN).map(d => d.CourseId).join() === 'pen-programme');
+check('the table says why a ticked course is still left out', App._courseToggleReason(App.data[3]) === 'private' && App._courseToggleReason(App.data[0]) === ''
+  && / · 1 left out by the course toggles · /.test(App._provIncludedSummary('ECSACONM')), App._provIncludedSummary('ECSACONM'));
+App._privateCourses = { [PEN]: true };
+check('marking the title private on the course page covers every course with that title',
+  !App.getAnalyticsSnap().some(d => d.Course === PEN) && App.isCoursePrivate(PEN) === true);
+set(false, false);
+
 // ── wiring ──
 const ui = fs.readFileSync(path.join(ROOT, 'js/ui.js'), 'utf8');
 const reports = fs.readFileSync(path.join(ROOT, 'js/reports.js'), 'utf8');
 check('the checkboxes sit on the Dashboard, the provider page and the Reports tab', (ui.match(/\$\{this\._courseTogglesHtml\(/g) || []).length === 3 && /Courses in Reports/.test(ui));
 check('the old Dashboard-only checkbox is gone', !/App\.hideLowLearners=this\.checked/.test(ui));
+check('provider table and course page switch courses by key', /onchange="App\.toggleCourseIncluded\(\\'' \+ keyEsc \+ '\\', this\.checked, this\)"/.test(ui)
+  && /App\.toggleCourseIncluded\('\$\{this\.escapeJsArg\(crsKey\)\}', this\.checked\)/.test(ui) && !/toggleCourseIncludedByName\(\\'' \+ courseEsc/.test(ui));
+check('Directory and course page show each course\'s own privacy', /App\.isCourseRecordPrivate\(s\)/.test(ui) && /App\.isCourseRecordPrivate\(cSnap\)/.test(ui));
 check('both reports state what they left out', (reports.match(/<strong[^>]*>Courses included:<\/strong> ' \+ esc\(window\.App\._courseScopeNote\(\)\)/g) || []).length === 2);
 check('awards wording follows the private toggle', /window\.App\.hidePrivateCourses \? '\(private courses left out\)' : '\(including private ones\)'/.test(reports)
   && /App\.hidePrivateCourses \? '\(private courses left out\)' : '\(incl\. private courses\)'/.test(ui));

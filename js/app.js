@@ -401,8 +401,10 @@ window.App = {
     // stray, e.g. the leftover CourseId-less "PeN Programme" copy). Removes the
     // orphan from every view/total/firewall without touching genuinely-unique legacy
     // (CourseId-less) courses, whose titles have no slugged twin.
-    _dropOrphanDupes(snap) {
-        const slugged = new Set(snap.filter(d => d.CourseId).map(d => String(d.Course || '').trim().toLowerCase()));
+    // `universe` (default: snap) is where slugged twins are looked for: pass all the data so an
+    // orphan stays hidden even when its slugged twin has been switched off.
+    _dropOrphanDupes(snap, universe) {
+        const slugged = new Set((universe || snap).filter(d => d && !d.IsShell && d.CourseId).map(d => String(d.Course || '').trim().toLowerCase()));
         return snap.filter(d => d.CourseId || !slugged.has(String(d.Course || '').trim().toLowerCase()));
     },
 
@@ -412,9 +414,9 @@ window.App = {
     _applyCourseToggles(list, data) {
         let out = list || [];
         if (this.hideLowLearners) out = out.filter(d => (Number(d.Learners) || 0) >= 50);
-        if (this.hidePrivateCourses && this.privateCourseNames) {
-            const priv = this.privateCourseNames(data);
-            if (priv.size) out = out.filter(d => !priv.has(d.Course));
+        if (this.hidePrivateCourses && this.privateCourseKeys) {
+            const priv = this.privateCourseKeys(data);
+            if (priv.size) out = out.filter(d => !priv.has(courseKey(d)));
         }
         return out;
     },
@@ -450,7 +452,7 @@ window.App = {
                 latest[k] = d;
             }
         });
-        let snap = this._dropOrphanDupes(Object.values(latest));
+        let snap = this._dropOrphanDupes(Object.values(latest), this.data);
         return this._applyCourseToggles(snap);
     },
 
@@ -469,7 +471,7 @@ window.App = {
         const all = this.data.filter(d => !d.IsShell && !(exP && exP.has(d.Provider)));
         const latest = {};
         all.forEach(d => { const k = courseKey(d); if (!latest[k] || d.Timestamp > latest[k].Timestamp) latest[k] = d; });
-        let snap = this._dropOrphanDupes(Object.values(latest));
+        let snap = this._dropOrphanDupes(Object.values(latest), this.data);
         return this._applyCourseToggles(snap);
     },
     getPlatformHistory() {

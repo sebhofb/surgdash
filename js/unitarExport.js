@@ -117,13 +117,29 @@ Object.assign(window.App, {
             : (Array.isArray(v) ? v.reduce((m, k) => { m[k] = true; return m; }, {}) : {});   // migrate the old list
         return this._privateCourses;
     },
-    // What the platform says, before any override.
+    // What the platform says about a TITLE, before any override. Two courses can share a
+    // title (a published course and its private copy): the title is private only when every
+    // course carrying it is, judged on each course's newest record. Lists keyed by title
+    // (the UNITAR batch, QA forms) mostly hold the published course's learners.
     _unitarPlatformPrivate(courseName) {
-        const rows = (this.data || []).filter(d => d && d.Course === courseName && d.Access);
-        if (!rows.length) return false;
-        const newest = rows.sort((a, b) => String(a.Timestamp || '').localeCompare(String(b.Timestamp || ''))).pop();
-        const access = String(newest.Access || '').toLowerCase();
-        return access === 'private' || access === 'draft';
+        const newest = {};
+        (this.data || []).forEach(d => {
+            if (!d || d.IsShell || d.Course !== courseName || !d.Access) return;
+            const k = this._unitarKey(d), p = newest[k];
+            if (!p || String(d.Timestamp || '') >= String(p.Timestamp || '')) newest[k] = d;
+        });
+        const courses = Object.values(newest);
+        return courses.length > 0 && courses.every(d => this._accessIsPrivate(d.Access));
+    },
+    // A course's key: its LearnWorlds slug, or its title when it has none (app.js courseKey).
+    _unitarKey(d) { return (typeof courseKey === 'function') ? courseKey(d) : String((d && (d.CourseId || d.Course)) || ''); },
+    _accessIsPrivate(access) { const a = String(access || '').toLowerCase(); return a === 'private' || a === 'draft'; },
+    // One course (one record): the title's override if there is one, else its own Access.
+    isCourseRecordPrivate(d) {
+        if (!d) return false;
+        const over = this._privateCourses, name = String(d.Course);
+        if (over && Object.prototype.hasOwnProperty.call(over, name)) return !!over[name];
+        return this._accessIsPrivate(d.Access);
     },
     isCoursePrivate(courseName) {
         const name = String(courseName);
@@ -131,19 +147,17 @@ Object.assign(window.App, {
         if (over && Object.prototype.hasOwnProperty.call(over, name)) return !!over[name];
         return this._unitarPlatformPrivate(name);
     },
-    // Every private course name at once, for filtering a list: the same answer as
-    // isCoursePrivate, from one pass over the data. `data` defaults to the loaded data.
-    privateCourseNames(data) {
+    // Every private COURSE at once, by course key (slug, or title when a record has none),
+    // for filtering a list: one pass, each course judged on its newest record. Keyed by course,
+    // not title, so a private copy never takes the published course with it.
+    privateCourseKeys(data) {
         const newest = {};
         (data || this.data || []).forEach(d => {
-            if (!d || !d.Course || !d.Access) return;
-            const p = newest[d.Course];
-            if (!p || String(d.Timestamp || '') >= String(p.Timestamp || '')) newest[d.Course] = d;
+            if (!d || d.IsShell || !d.Course) return;
+            const k = this._unitarKey(d), p = newest[k];
+            if (!p || String(d.Timestamp || '') >= String(p.Timestamp || '')) newest[k] = d;
         });
-        const set = new Set(Object.keys(newest).filter(c => { const a = String(newest[c].Access || '').toLowerCase(); return a === 'private' || a === 'draft'; }));
-        const over = this._privateCourses || {};
-        Object.keys(over).forEach(c => { if (over[c]) set.add(c); else set.delete(c); });
-        return set;
+        return new Set(Object.keys(newest).filter(k => this.isCourseRecordPrivate(newest[k])));
     },
     async toggleCoursePrivate(courseName, priv) {
         const over = await this._unitarPrivateSet();

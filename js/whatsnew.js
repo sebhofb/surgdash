@@ -13,6 +13,7 @@
             date: 'October 2026',
             items: [
                 { t: 'Leave out small or private courses', d: 'Two checkboxes on the Dashboard, every provider page and the Reports tab: exclude courses with fewer than 50 learners, and exclude private courses (in-country workshops and unreleased drafts). Reports follow them and say in their notes what was left out. They work in read-only mode too, and every session starts with all courses included.' },
+                { t: 'Include ticks act on one course', d: 'Two courses can share a title, such as a published course and its private copy. Unticking one on a provider page switched off both, while the table showed only one row as off. Each tick now acts on its own course, and the count above the table matches the ticks. A shared title also no longer counts as private when one of its courses is published, which had left the PeN programme out of UNITAR batch reports and QA forms.' },
                 { t: 'CANECSA, spelt correctly', d: 'The provider was listed as CANESCA. Pages, reports, exports and report folders now all say CANECSA, and an older copy of the provider map can no longer bring the old spelling back.' },
             ]
         },
