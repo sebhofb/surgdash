@@ -12,6 +12,7 @@
             v: '2.1.4',
             date: 'October 2026',
             items: [
+                { t: 'Leave out small or private courses', d: 'Two checkboxes on the Dashboard, every provider page and the Reports tab: exclude courses with fewer than 50 learners, and exclude private courses (in-country workshops and unreleased drafts). Reports follow them and say in their notes what was left out. They work in read-only mode too, and every session starts with all courses included.' },
                 { t: 'CANECSA, spelt correctly', d: 'The provider was listed as CANESCA. Pages, reports, exports and report folders now all say CANECSA, and an older copy of the provider map can no longer bring the old spelling back.' },
             ]
         },

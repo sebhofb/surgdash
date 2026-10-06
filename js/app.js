@@ -23,7 +23,8 @@ window.App = {
     feedbackFilterTag: 'all',        // 'all' | tag name (flag or topic)
     feedbackShowSelected: false,     // true = show only checked testimonials
     _provFeedbackCourse: 'all',      // course filter on provider feedback page
-    hideLowLearners: false,
+    hideLowLearners: false,     // toggles: leave out courses with < 50 learners …
+    hidePrivateCourses: false,  // … and private courses. Neither is remembered: each session starts with every course.
     includeSample: false,            // blend the demo/sample SURGfund project into org totals & charts
     selectedCountries: [],
     selectedProfessions: [],
@@ -405,6 +406,38 @@ window.App = {
         return snap.filter(d => d.CourseId || !slugged.has(String(d.Course || '').trim().toLowerCase()));
     },
 
+    // The two course toggles, applied in ONE place so the dashboard, the provider pages and
+    // every report and export count the same courses. Private = isCoursePrivate (marked so on
+    // LearnWorlds or on the course page: in-country workshops, unreleased drafts).
+    _applyCourseToggles(list, data) {
+        let out = list || [];
+        if (this.hideLowLearners) out = out.filter(d => (Number(d.Learners) || 0) >= 50);
+        if (this.hidePrivateCourses && this.privateCourseNames) {
+            const priv = this.privateCourseNames(data);
+            if (priv.size) out = out.filter(d => !priv.has(d.Course));
+        }
+        return out;
+    },
+    // Run fn with both toggles off: exports and milestones that must count every course.
+    _withAllCourses(fn) {
+        const low = this.hideLowLearners, priv = this.hidePrivateCourses;
+        this.hideLowLearners = false; this.hidePrivateCourses = false;
+        try { return fn(); } finally { this.hideLowLearners = low; this.hidePrivateCourses = priv; }
+    },
+    setCourseToggle(which, on) {
+        if (which !== 'hideLowLearners' && which !== 'hidePrivateCourses') return;
+        this[which] = !!on;
+        if (this.renderView) this.renderView();
+    },
+    // One sentence for a report's Methodology & Notes, or '' when every course is in.
+    _courseScopeNote() {
+        const priv = 'private courses (in-country workshops and unreleased courses)';
+        if (this.hideLowLearners && this.hidePrivateCourses) return 'Courses with fewer than 50 learners and ' + priv + ' are left out of this report.';
+        if (this.hideLowLearners) return 'Courses with fewer than 50 learners are left out of this report.';
+        if (this.hidePrivateCourses) return priv.charAt(0).toUpperCase() + priv.slice(1) + ' are left out of this report.';
+        return '';
+    },
+
     getAnalyticsSnap() {
         // Always deduplicate to latest entry per course (ignore date filtering)
         // This prevents uploads with different timestamps from hiding course data
@@ -418,15 +451,13 @@ window.App = {
             }
         });
         let snap = this._dropOrphanDupes(Object.values(latest));
-        if (this.hideLowLearners) snap = snap.filter(d => (Number(d.Learners) || 0) >= 50);
-        return snap;
+        return this._applyCourseToggles(snap);
     },
 
     getAnalyticsHistory() {
         const exP = this._excludedProviders instanceof Set ? this._excludedProviders : null;
         let hist = this.data.filter(d => !d.IsShell && !d.Excluded && !(exP && exP.has(d.Provider)));
-        if (this.hideLowLearners) hist = hist.filter(d => (Number(d.Learners) || 0) >= 50);
-        return hist;
+        return this._applyCourseToggles(hist);
     },
 
     // Platform-total variants: course-level "Excluded" courses are hidden from
@@ -439,14 +470,12 @@ window.App = {
         const latest = {};
         all.forEach(d => { const k = courseKey(d); if (!latest[k] || d.Timestamp > latest[k].Timestamp) latest[k] = d; });
         let snap = this._dropOrphanDupes(Object.values(latest));
-        if (this.hideLowLearners) snap = snap.filter(d => (Number(d.Learners) || 0) >= 50);
-        return snap;
+        return this._applyCourseToggles(snap);
     },
     getPlatformHistory() {
         const exP = this._excludedProviders instanceof Set ? this._excludedProviders : null;
         let hist = this.data.filter(d => !d.IsShell && !(exP && exP.has(d.Provider)));
-        if (this.hideLowLearners) hist = hist.filter(d => (Number(d.Learners) || 0) >= 50);
-        return hist;
+        return this._applyCourseToggles(hist);
     },
 
     // Toasts stack in the bottom-right corner. They used to sit top-right, where they

@@ -157,10 +157,10 @@ Object.assign(window.App, {
             //   platform snap (incl. active-but-private) → certificates + enrolments,
             //   analytics snap (included courses only)    → the course count,
             // so neither suggestion contradicts the dashboard it sits next to.
-            const wasHide = this.hideLowLearners; this.hideLowLearners = false;
-            const snap    = (this.getPlatformSnap  ? this.getPlatformSnap()  : []) || [];
-            const snapInc = (this.getAnalyticsSnap ? this.getAnalyticsSnap() : []) || [];
-            this.hideLowLearners = wasHide;
+            const [snap, snapInc] = this._withAllCourses(() => [
+                (this.getPlatformSnap  ? this.getPlatformSnap()  : []) || [],
+                (this.getAnalyticsSnap ? this.getAnalyticsSnap() : []) || [],
+            ]);
             const parse = (window.Charts && window.Charts.safeParse)
                 ? (s) => window.Charts.safeParse(s)
                 : (s) => { try { return JSON.parse(s) || {}; } catch (e) { return {}; } };

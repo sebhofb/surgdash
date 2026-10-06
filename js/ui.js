@@ -325,6 +325,26 @@ Object.assign(window.App, {
             </div>`;
     },
 
+    // ── Course toggles: < 50 learners, private courses ──────────────────────────
+    // The same two checkboxes on the Dashboard, the provider page and the Reports tab, so
+    // what is on screen and what goes into a report always describe the same courses.
+    // Usable in read-only and reporting mode: they filter, they change no data. The number
+    // beside each is how many courses it would leave out.
+    _courseTogglesHtml(opts) {
+        opts = opts || {};
+        let low = 0, priv = 0;
+        try {
+            const all = this._withAllCourses(() => this.getAnalyticsSnap());
+            const ps = this.privateCourseNames ? this.privateCourseNames() : new Set();
+            all.forEach(d => { if ((Number(d.Learners) || 0) < 50) low++; if (ps.has(d.Course)) priv++; });
+        } catch (e) { __swallowed(e, 'courseToggles.count'); }
+        const box = (key, label, n, title) => '<label class="inline-flex items-center gap-2 ' + (opts.small ? 'text-xs' : 'text-sm') + ' text-slate-600 cursor-pointer whitespace-nowrap" title="' + this.escapeHtml(title) + '">'
+            + '<input type="checkbox" data-viewer-allowed data-report-ok data-course-toggle="' + key + '" ' + (this[key] ? 'checked' : '') + ' onchange="App.setCourseToggle(\'' + key + '\', this.checked)"> '
+            + label + (n ? ' <span class="text-slate-400">(' + n + ')</span>' : '') + '</label>';
+        return box('hideLowLearners', 'Exclude courses with &lt; 50 learners', low, 'Leave out courses with fewer than 50 learners, on screen and in reports')
+             + box('hidePrivateCourses', 'Exclude private courses', priv, 'Leave out private courses (in-country workshops and unreleased drafts, as marked on LearnWorlds or on the course page), on screen and in reports');
+    },
+
     // ── Star ratings: how many respondents gave the course 5 out of 5 ──────────
     // Sync Surveys stores, per course, a 1–5 distribution for every scale question
     // (QuestionStats). The overall-satisfaction question is the one behind "Avg
@@ -915,7 +935,7 @@ Object.assign(window.App, {
             const latest = {};
             all.forEach(d => { if (!latest[d.Course] || d.Timestamp > latest[d.Course].Timestamp) latest[d.Course] = d; });
             snap = Object.values(latest);
-            if (this.hideLowLearners) snap = snap.filter(d => num(d.Learners) >= 50);
+            snap = this._applyCourseToggles ? this._applyCourseToggles(snap, data) : snap;
         }
         if (!snap.length) return null;
         const ckey = d => (window.courseKey ? window.courseKey(d) : (d.CourseId || d.Course));
@@ -1006,7 +1026,7 @@ Object.assign(window.App, {
             const latest = {};
             all.forEach(d => { if (!latest[d.Course] || d.Timestamp > latest[d.Course].Timestamp) latest[d.Course] = d; });
             snap = Object.values(latest);
-            if (this.hideLowLearners) snap = snap.filter(d => num(d.Learners) >= 50);
+            snap = this._applyCourseToggles ? this._applyCourseToggles(snap, data) : snap;
         }
         const included = snap;
         const full = { L: 0, C: 0, M: 0 };
@@ -3037,6 +3057,13 @@ Object.assign(window.App, {
                         <p class="text-sm text-slate-500 mt-1">Configure report settings and generate report packages for providers.</p>
                     </header>
 
+                    <!-- Courses in reports -->
+                    <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-6 mb-6">
+                        <h2 class="text-sm font-bold text-gsf-prussian uppercase tracking-wide mb-1">Courses in Reports</h2>
+                        <p class="text-xs text-slate-400 mb-4 max-w-2xl">Leave out small or private courses, on screen and in provider and course reports, report packages and PDFs. Each report says in its Methodology &amp; Notes what it left out. Private courses are the ones marked private on LearnWorlds or on the course page: in-country workshops and unreleased drafts. Both reset to every course when SURGdash restarts. The UNITAR batch keeps its own private-course choice, and the Master Data Export always includes every course.</p>
+                        <div class="flex items-center gap-x-6 gap-y-2 flex-wrap">${this._courseTogglesHtml()}</div>
+                    </div>
+
                     <!-- Feedback Filter -->
                     <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-6 mb-6">
                         <h2 class="text-sm font-bold text-gsf-prussian uppercase tracking-wide mb-1">Feedback Date Filter</h2>
@@ -3951,7 +3978,7 @@ Object.assign(window.App, {
                         <div>
                             <h1 class="text-3xl font-black text-gsf-prussian mb-2">Dashboard</h1>
                             <div class="flex items-center gap-3 mt-1">
-                                <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" ${this.hideLowLearners ? 'checked' : ''} onchange="App.hideLowLearners=this.checked; App.renderView()"> Exclude courses with &lt; 50 learners</label>
+                                ${this._courseTogglesHtml()}
                                 ${this._lastUpdatedBadge('course')}
                             </div>
                         </div>
@@ -4222,6 +4249,7 @@ Object.assign(window.App, {
                             <input type="month" data-report-ok value="${this.reportPeriodTo || ''}" onchange="App.setReportPeriod('to', this.value)" class="text-xs border rounded px-1.5 py-1 outline-none focus:ring-2 focus:ring-gsf-boston/30" />
                             ${(this.reportPeriodFrom || this.reportPeriodTo) ? '<button onclick="App.clearReportPeriod()" class="text-xs text-red-400 hover:text-red-600 font-bold ml-0.5" title="Clear period (reports go back to all-time only)">✕</button>' : ''}
                         </div>
+                        <div class="flex items-center gap-x-4 gap-y-1 flex-wrap">${this._courseTogglesHtml({ small: true })}</div>
                         <div data-edit-only data-report-ok class="flex items-center gap-1.5 flex-wrap justify-end">
                             <button onclick="App.exportProviderPackage(App.selectedProvider)" class="flex items-center gap-1.5 px-3.5 py-2 bg-amber-500 text-white font-bold rounded-lg text-xs shadow-sm hover:bg-amber-600 transition-colors" title="One folder with the PDF + web report + anonymized users + anonymized feedback (Excel)"><i data-lucide="package" width="14"></i> Report Package</button>
                             <button onclick="App.exportProviderCoursePackages(App.selectedProvider)" class="flex items-center gap-1.5 px-3 py-2 border rounded-lg text-xs font-bold text-slate-600 hover:text-gsf-boston hover:bg-slate-50 transition-colors" title="One provider folder holding the consolidated provider report files plus a subfolder per course (each with its own PDF + web report + users + feedback)"><i data-lucide="folder-tree" width="14"></i> Course Packages</button>
@@ -4588,7 +4616,7 @@ Object.assign(window.App, {
 
                     <div class="bg-white rounded-xl border shadow-sm p-6">
                         <h2 class="text-lg font-bold text-gsf-prussian mb-3 flex items-center gap-2"><i data-lucide="trophy" width="20" class="text-gsf-boston"></i> Awards &amp; Recognition</h2>
-                        <p class="text-sm text-slate-600 mb-3">Provider and course pages — and the web/PDF reports — surface <strong>awards</strong>: top-three superlatives measured against <strong>all active courses on SURGhub</strong> (including private ones). They are a point-in-time standing, refreshed each quarter (currently <strong>${this._currentQuarterLabel()}</strong>).</p>
+                        <p class="text-sm text-slate-600 mb-3">Provider and course pages — and the web/PDF reports — surface <strong>awards</strong>: top-three superlatives measured against <strong>all active courses on SURGhub</strong> ${App.hidePrivateCourses ? '(private courses left out while that toggle is on)' : '(including private ones)'}. They are a point-in-time standing, refreshed each quarter (currently <strong>${this._currentQuarterLabel()}</strong>).</p>
                         <div class="grid grid-cols-2 md:grid-cols-3 gap-1.5 text-sm text-slate-700 mb-3">
                             <div>📚 Most Courses</div><div>🏆 Most Learners</div><div>🎓 Most Certificates</div>
                             <div>✅ Highest Completion Rate</div><div>⏱️ Most Learning Time</div><div>⭐ Highest Rated</div>
@@ -5785,7 +5813,8 @@ Object.assign(window.App, {
         return 'Q' + (Math.floor(d.getMonth() / 3) + 1) + ' ' + d.getFullYear();
     },
     computeAwards() {
-        const key = (this.data ? this.data.length : 0) + ':' + ((this._excludedProviders && this._excludedProviders.size) || 0) + ':' + (this.hideLowLearners ? 1 : 0);
+        const key = (this.data ? this.data.length : 0) + ':' + ((this._excludedProviders && this._excludedProviders.size) || 0) + ':' + (this.hideLowLearners ? 1 : 0)
+            + ':' + (this.hidePrivateCourses ? JSON.stringify(this._privateCourses || {}) : 0);
         if (this._awardsCache && this._awardsCacheKey === key) return this._awardsCache;
         const N = this.AWARD_TOP_N;
         const snap = this.getPlatformSnap ? this.getPlatformSnap() : this.getAnalyticsSnap();
@@ -5966,7 +5995,7 @@ Object.assign(window.App, {
                         const cell = (arr, kind) => !arr.length ? '<span class="text-slate-300">—</span>' : arr.map((e, i) =>
                             '<div class="' + (i ? 'mt-1.5 pt-1.5 border-t border-slate-100' : '') + '">' + medal(i) + ' <button onclick="App.open' + kind + '(\'' + this.escapeJsArg(e.name) + '\')" class="text-gsf-boston hover:underline text-left">' + this.escapeHtml(e.name) + '</button> <span class="text-slate-400 whitespace-nowrap">' + e.valueFmt + '</span></div>').join('');
                         return `<div class="bg-white rounded-xl shadow-sm border overflow-hidden mb-8">
-                            <div class="bg-slate-50 border-b p-5"><h2 class="font-bold text-lg text-gsf-prussian flex items-center gap-2"><i data-lucide="trophy" class="text-amber-500"></i> Awards &amp; Leaders</h2><p class="text-xs text-slate-500 mt-1">Top three courses and providers in each category across the platform (incl. private courses). See methodology for eligibility.</p></div>
+                            <div class="bg-slate-50 border-b p-5"><h2 class="font-bold text-lg text-gsf-prussian flex items-center gap-2"><i data-lucide="trophy" class="text-amber-500"></i> Awards &amp; Leaders</h2><p class="text-xs text-slate-500 mt-1">Top three courses and providers in each category across the platform ${App.hidePrivateCourses ? '(private courses left out)' : '(incl. private courses)'}. See methodology for eligibility.</p></div>
                             <div class="overflow-x-auto"><table class="w-full text-left text-sm">
                                 <thead class="text-slate-500 border-b"><tr><th class="py-3 px-4 font-medium align-top">Award</th><th class="py-3 px-4 font-medium align-top">Top courses</th><th class="py-3 px-4 font-medium align-top">Top providers</th></tr></thead>
                                 <tbody>${aw.categories.map(r => '<tr class="border-b hover:bg-slate-50 align-top"><td class="py-2.5 px-4 font-bold text-gsf-prussian whitespace-nowrap">' + r.icon + ' ' + this.escapeHtml(r.label) + '</td><td class="py-2.5 px-4 text-xs">' + (r.providerOnly ? '<span class="text-slate-300">—</span>' : cell(r.courseTop, 'Course')) + '</td><td class="py-2.5 px-4 text-xs">' + cell(r.providerTop, 'Provider') + '</td></tr>').join('')}</tbody>

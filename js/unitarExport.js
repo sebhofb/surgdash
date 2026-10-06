@@ -131,6 +131,20 @@ Object.assign(window.App, {
         if (over && Object.prototype.hasOwnProperty.call(over, name)) return !!over[name];
         return this._unitarPlatformPrivate(name);
     },
+    // Every private course name at once, for filtering a list: the same answer as
+    // isCoursePrivate, from one pass over the data. `data` defaults to the loaded data.
+    privateCourseNames(data) {
+        const newest = {};
+        (data || this.data || []).forEach(d => {
+            if (!d || !d.Course || !d.Access) return;
+            const p = newest[d.Course];
+            if (!p || String(d.Timestamp || '') >= String(p.Timestamp || '')) newest[d.Course] = d;
+        });
+        const set = new Set(Object.keys(newest).filter(c => { const a = String(newest[c].Access || '').toLowerCase(); return a === 'private' || a === 'draft'; }));
+        const over = this._privateCourses || {};
+        Object.keys(over).forEach(c => { if (over[c]) set.add(c); else set.delete(c); });
+        return set;
+    },
     async toggleCoursePrivate(courseName, priv) {
         const over = await this._unitarPrivateSet();
         const name = String(courseName);

@@ -1382,9 +1382,8 @@ renderPlatform();
         const income = c => (window.IncomeClassification && c) ? IncomeClassification.classify(c) : '';
         const incomeLabel = t => (window.IncomeClassification && t && t !== 'Unknown') ? IncomeClassification.label(t) : '';
 
-        // Comprehensive: bypass the "hide <50-learner courses" UI toggle for the export.
-        const wasHide = this.hideLowLearners; this.hideLowLearners = false;
-        const snap = this.getAnalyticsSnap(); this.hideLowLearners = wasHide;
+        // Comprehensive: bypass both course toggles (< 50 learners, private) for the export.
+        const snap = this._withAllCourses(() => this.getAnalyticsSnap());
         const snapCourses = new Set(snap.map(d => d.Course));
         const anon = (this._rawAnonymizedUsers || []).filter(r => r && r.course && snapCourses.has(r.course));
 
