@@ -9,6 +9,13 @@
     // this is shown to the team, not to developers. Update this list per release.
     const RELEASES = [
         {
+            v: '2.1.4',
+            date: 'October 2026',
+            items: [
+                { t: 'CANECSA, spelt correctly', d: 'The provider was listed as CANESCA. Pages, reports, exports and report folders now all say CANECSA, and an older copy of the provider map can no longer bring the old spelling back.' },
+            ]
+        },
+        {
             v: '2.1.3',
             date: 'October 2026',
             items: [

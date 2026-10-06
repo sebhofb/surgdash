@@ -22,7 +22,7 @@ Object.assign(window.App, {
         [['AO Alliance'], 'AO Alliance'],
         [['Ausmed'], 'Ausmed'],
         [['Behind the Knife'], 'Behind the Knife'],
-        [['CANESCA'], 'CANESCA'],
+        [['CANESCA'], 'CANECSA'],
         [['COSECSA - College of Surgeons of East, Central and Southern Africa'], 'COSECSA'],
         [['CrashSavers Team'], 'CrashSavers'],
         [['ecancer'], 'ecancer'],

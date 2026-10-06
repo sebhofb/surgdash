@@ -5,7 +5,7 @@ const ROOT = path.resolve(__dirname, '..');
 let ok = 0, bad = 0; const check = (n, c, d) => { (c ? ok++ : bad++); console.log((c ? 'PASS' : 'FAIL') + ' - ' + n + (d !== undefined ? '  →  ' + String(d).slice(0, 260) : '')); };
 
 // The provider names as LearnWorlds spells them (Oct 2026), and the folder each one's reports go into
-// (the team's "SURGdash Reports" folder; "Smile TRain" there is a typo, written correctly here).
+// (the team's "SURGdash Reports" folder; its "Smile TRain" and "CANESCA" are misspellings, written correctly here).
 const FOLDERS = {
   'ALL SAFE': 'ALL SAFE',
   'Amosmile': 'Amosmile',
@@ -13,7 +13,7 @@ const FOLDERS = {
   'ASA - American Society of Anaesthesiologists': 'American Society of Anaesthesiologists',
   'Ausmed': 'Ausmed',
   'Behind the Knife': 'Behind the Knife',
-  'CANESCA': 'CANESCA',
+  'CANECSA': 'CANECSA',
   'Center for Global Health & Social Responsibility, University of Minnesota': 'University of Minnesota Center for Global Health and Social Responsibility',
   'COSECSA - College of Surgeons of East, Central and Southern Africa': 'COSECSA',
   'CrashSavers Team': 'CrashSavers',
@@ -64,8 +64,8 @@ const setPeriod = (from, to) => { App.reportPeriodFrom = from; App.reportPeriodT
   const wrong = got.filter(([, g, w]) => g !== w);
   check('every provider with courses gets the folder the team files it under', wrong.length === 0, wrong.map(([p, g, w]) => p + ' → ' + g + ' (want ' + w + ')').join(' | '));
   check('34 providers, 34 different folders', new Set(Object.values(FOLDERS)).size === 34 && new Set(got.map(x => x[1])).size === 34);
-  check('the folder list is the screenshot, apart from the Smile Train typo',
-    JSON.stringify(Object.values(FOLDERS).sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base' }))) === JSON.stringify(['ALL SAFE', 'American Society of Anaesthesiologists', 'Amosmile', 'AO Alliance', 'Ausmed', 'Behind the Knife', 'CANESCA', 'COSECSA', 'CrashSavers', 'ecancer', 'ECSACONM', 'F2AR and Adrale', 'Global Surgery Lab', 'Global Trauma Collaboration - Baylor College of Medicine', 'GSF', 'Harvard Global Orthopaedics Collaborative and SONA Global', 'Health Professional Academy', 'ICRC', 'IFRS', 'Interburns', 'Kings Global Health Partnerships', 'Lifebox', 'McGill', 'NIHR Global Health Research Unit on Global Surgery', 'PerioperativeCPD', 'RCSI', 'Resurge International', 'Safe Surgery Innovation', 'Smile Train', 'Stanford LRC', 'TecSalud - Tecnologico de Monterrey', 'Universities of Western Australia and Oxford', 'University of Minnesota Center for Global Health and Social Responsibility', 'WFSA']));
+  check('the folder list is the screenshot, with Smile Train and CANECSA spelt correctly',
+    JSON.stringify(Object.values(FOLDERS).sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base' }))) === JSON.stringify(['ALL SAFE', 'American Society of Anaesthesiologists', 'Amosmile', 'AO Alliance', 'Ausmed', 'Behind the Knife', 'CANECSA', 'COSECSA', 'CrashSavers', 'ecancer', 'ECSACONM', 'F2AR and Adrale', 'Global Surgery Lab', 'Global Trauma Collaboration - Baylor College of Medicine', 'GSF', 'Harvard Global Orthopaedics Collaborative and SONA Global', 'Health Professional Academy', 'ICRC', 'IFRS', 'Interburns', 'Kings Global Health Partnerships', 'Lifebox', 'McGill', 'NIHR Global Health Research Unit on Global Surgery', 'PerioperativeCPD', 'RCSI', 'Resurge International', 'Safe Surgery Innovation', 'Smile Train', 'Stanford LRC', 'TecSalud - Tecnologico de Monterrey', 'Universities of Western Australia and Oxford', 'University of Minnesota Center for Global Health and Social Responsibility', 'WFSA']));
   check('punctuation, spacing, case and accents in the LearnWorlds name do not matter',
     App.providerFolderName('ICRC - International Committee of the Red Cross') === 'ICRC'
     && App.providerFolderName("King's Global Health Partnerships") === 'Kings Global Health Partnerships'
@@ -74,6 +74,7 @@ const setPeriod = (from, to) => { App.reportPeriodFrom = from; App.reportPeriodT
     && App.providerFolderName('wfsa - world federation of societies of anesthesiologists') === 'WFSA');
   check('a corrected spelling, or the folder name itself, still finds the folder',
     App.providerFolderName('Stanford LRC') === 'Stanford LRC' && App.providerFolderName('GSF') === 'GSF' && App.providerFolderName('Smile TRain') === 'Smile Train');
+  check('the old CANESCA spelling files under CANECSA', App.providerFolderName('CANESCA') === 'CANECSA' && App.providerFolderName('CANECSA') === 'CANECSA');
   check('a provider not on the list keeps its own name', App.providerFolderName('Unknown Provider') === 'Unknown Provider'
     && App.providerFolderName('Harvard Medical School - Program in Global Surgery and Social Change') === 'Harvard Medical School - Program in Global Surgery and Social Change');
 

@@ -606,7 +606,8 @@
                         ['aoalliance', 'ao-alliance-courses'],
                         ['ausmed', 'ausmed-courses'],
                         ['behindtheknife', 'behind-the-knife-courses'],
-                        ['canesca', 'canecsa-courses'],
+                        ['canecsa', 'canecsa-courses'],
+                        ['canesca', 'canecsa-courses'],   // the old misspelling, should it ever reappear
                         ['cosecsa', 'cosecsa-courses'],
                         ['crashsavers', 'crashsavers-courses'],
                         ['ecancer', 'ecancer-courses'],

@@ -194,6 +194,9 @@ window.App = {
                 });
                 if (migrated) await Storage.setItem('surghub_data', this.data);
             }
+            // Provider names corrected after the fact (providerNames.js): rename what is stored.
+            // Runs before the summaries below are read, so they load already renamed.
+            if (this.applyProviderNameFixes) { try { await this.applyProviderNameFixes(); } catch (e) { __swallowed(e, 'providerNames.fix'); } }
             
             const storedHistory = await Storage.getItem('surghub_history');
             if (storedHistory) this.userHistory = storedHistory;

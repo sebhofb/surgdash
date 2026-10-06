@@ -4983,7 +4983,7 @@ Object.assign(window.App, {
         const PAGES = [
             ['allsafe', 'all-safe-courses'], ['americansocietyofanaesthesiologists', 'american-society-anesthesiologists-courses'],
             ['amosmile', 'amosmile-courses'], ['aoalliance', 'ao-alliance-courses'], ['ausmed', 'ausmed-courses'],
-            ['behindtheknife', 'behind-the-knife-courses'], ['canesca', 'canecsa-courses'], ['cosecsa', 'cosecsa-courses'],
+            ['behindtheknife', 'behind-the-knife-courses'], ['canecsa', 'canecsa-courses'], ['canesca', 'canecsa-courses'], ['cosecsa', 'cosecsa-courses'],
             ['crashsavers', 'crashsavers-courses'], ['ecancer', 'ecancer-courses'], ['f2ar', 'federation-francophone-des-societes-danesthesie-f2ar-courses'],
             ['baylor', 'global-trauma-collaboration-baylor-courses'], ['ifrs', 'ifrs-courses'], ['interburns', 'interburns-courses'],
             ['redcross', 'international-committee-red-cross-courses'], ['kingsglobalhealth', 'kings-global-health-partnerships-courses'],

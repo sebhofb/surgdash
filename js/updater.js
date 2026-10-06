@@ -55,6 +55,7 @@ Object.assign(window.App, {
         try {
             const rows = await window.Pipeline.readExcel(file);
             if (!rows || rows.length === 0) throw new Error('File is empty or unreadable.');
+            if (this._fixProviderMapRows) this._fixProviderMapRows(rows);   // known misspellings (providerNames.js)
             await Storage.setItem('surgdash_provider_map', rows);
             const applied = await this.applyProviderLinkMapping({ silent: true });
             this.showMsg(`Provider map saved (${rows.length} rows) ✓ — ${applied.provUpdated} courses updated. Auto-applies on future syncs.`);
@@ -158,7 +159,9 @@ Object.assign(window.App, {
     // Shared matcher: provider name for a normalized course title
     _matchProvider(normTitle, provMap) {
         const m = this._bestNameMatch(normTitle, provMap, r => r["All Courses"] || Object.values(r)[0]);
-        return m ? (m["Providers"] || Object.values(m)[1] || null) : null;
+        const name = m ? (m["Providers"] || Object.values(m)[1] || null) : null;
+        // A misspelt provider in an old copy of the map comes out corrected (providerNames.js).
+        return (name && this.fixProviderName) ? this.fixProviderName(name) : name;
     },
 
     // Shared matcher: survey-link URL for a normalized course title
