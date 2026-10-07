@@ -325,6 +325,26 @@ Object.assign(window.App, {
             </div>`;
     },
 
+    // ── "Data through": the last month charts and period figures include ─────────
+    // One setting (reportDataThrough, remembered), shown on the provider page and the Reports
+    // tab. "Last full month" leaves out the month in progress in one click; ✕ goes back to the
+    // latest data. Headline totals stay all-time either way.
+    _dataThroughHtml() {
+        const v = this.reportDataThrough || '';
+        const now = this._currentMonth(), last = this._lastFullMonth();
+        const short = (ym) => { const M = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; const p = String(ym).split('-'); return (M[+p[1] - 1] || '') + ' ' + p[0]; };
+        // Remembered between sessions, so it can fall behind: say so when a later month is complete.
+        const stale = v && v < last;
+        const state = v ? 'to ' + short(v) + (stale ? ' \u00b7 ' + short(last) + ' is complete too' : '') : 'latest, incl. ' + short(now) + ' so far';
+        return '<div class="flex items-center gap-1.5" title="Monthly charts and period figures stop at this month. Set it to the last full month to leave out the month in progress. Headline totals stay all-time.">'
+            + '<span class="text-[10px] font-bold uppercase tracking-wide text-slate-400">Data through</span>'
+            + '<input type="month" data-report-ok value="' + this.escapeHtml(v) + '" onchange="App.setReportDataThrough(this.value)" class="text-xs border rounded px-1.5 py-1 outline-none focus:ring-2 focus:ring-gsf-boston/30" />'
+            + (v !== last ? '<button data-edit-only data-report-ok onclick="App.setReportDataThrough(\'' + last + '\')" class="text-[11px] font-bold text-gsf-boston hover:underline whitespace-nowrap" title="Leave out ' + short(now) + ', still in progress">Last full month</button>' : '')
+            + (v ? '<button data-edit-only data-report-ok onclick="App.setReportDataThrough(\'\')" class="text-xs text-red-400 hover:text-red-600 font-bold" title="Back to the latest data">✕</button>' : '')
+            + '<span class="text-[11px] ' + (stale ? 'text-amber-700 font-semibold' : v ? 'text-gsf-boston font-semibold' : 'text-slate-400') + ' whitespace-nowrap">' + this.escapeHtml(state) + '</span>'
+            + '</div>';
+    },
+
     // ── Course toggles: < 50 learners, private courses ──────────────────────────
     // The same two checkboxes on the Dashboard, the provider page and the Reports tab, so
     // what is on screen and what goes into a report always describe the same courses.
@@ -3089,13 +3109,7 @@ Object.assign(window.App, {
                                 ? '<span class="text-xs text-gsf-boston font-semibold">' + this.escapeHtml(this._periodLabel()) + '</span><button onclick="App.clearReportPeriod()" class="text-xs text-red-400 hover:text-red-600 font-bold" title="Clear period (back to all-time)">✕</button>'
                                 : '<span class="text-xs text-slate-400">all time</span>'}
                         </div>
-                        <div class="flex items-center gap-2 flex-wrap mb-6 bg-slate-50 border rounded-lg px-3 py-2 w-fit">
-                            <span class="text-[10px] font-bold uppercase tracking-wide text-slate-400" title="Drops months after this from every report's growth/rating charts and period totals — use it to exclude the current incomplete month (e.g. set June to drop a partial July).">Data through</span>
-                            <input type="month" data-report-ok value="${this.reportDataThrough || ''}" onchange="App.setReportDataThrough(this.value)" class="text-xs border rounded px-2 py-1.5 outline-none focus:ring-2 focus:ring-gsf-boston/30" />
-                            ${this.reportDataThrough
-                                ? '<span class="text-xs text-gsf-boston font-semibold">to ' + this.escapeHtml(this.reportDataThrough) + '</span><button onclick="App.setReportDataThrough(\'\')" class="text-xs text-red-400 hover:text-red-600 font-bold" title="Clear (charts run to the latest data)">✕</button>'
-                                : '<span class="text-xs text-slate-400">latest available</span>'}
-                        </div>
+                        <div class="mb-6 bg-slate-50 border rounded-lg px-3 py-2 w-fit">${this._dataThroughHtml()}</div>
                         <div class="border border-gsf-boston/30 rounded-xl p-4 mb-4 bg-gsf-boston/5 max-w-4xl">
                             <p class="text-xs font-bold text-gsf-boston uppercase tracking-wide mb-1">Whole platform</p>
                             <p class="text-xs text-slate-500 mb-3">One combined dark report for all of SURGhub — every provider and course together, with a Top Providers ranking. Single self-contained .html file.</p>
@@ -4245,6 +4259,7 @@ Object.assign(window.App, {
                             <input type="month" data-report-ok value="${this.reportPeriodTo || ''}" onchange="App.setReportPeriod('to', this.value)" class="text-xs border rounded px-1.5 py-1 outline-none focus:ring-2 focus:ring-gsf-boston/30" />
                             ${(this.reportPeriodFrom || this.reportPeriodTo) ? '<button onclick="App.clearReportPeriod()" class="text-xs text-red-400 hover:text-red-600 font-bold ml-0.5" title="Clear period (reports go back to all-time only)">✕</button>' : ''}
                         </div>
+                        ${this._dataThroughHtml()}
                         <div class="flex items-center gap-x-4 gap-y-1 flex-wrap">${this._courseTogglesHtml({ small: true })}</div>
                         <div data-edit-only data-report-ok class="flex items-center gap-1.5 flex-wrap justify-end">
                             <button onclick="App.exportProviderPackage(App.selectedProvider)" class="flex items-center gap-1.5 px-3.5 py-2 bg-amber-500 text-white font-bold rounded-lg text-xs shadow-sm hover:bg-amber-600 transition-colors" title="One folder with the PDF + web report + anonymized users + anonymized feedback (Excel)"><i data-lucide="package" width="14"></i> Report Package</button>

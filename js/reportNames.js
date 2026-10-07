@@ -103,7 +103,11 @@ Object.assign(window.App, {
             const mo = Number(m[2]);
             return (mo >= 1 && mo <= 12) ? { y: m[1], m: mo } : null;
         };
-        const from = parse(this.reportPeriodFrom), to = parse(this.reportPeriodTo), cur = parse(now);
+        const from = parse(this.reportPeriodFrom), cur = parse(now), cut = parse(this.reportDataThrough);
+        let to = parse(this.reportPeriodTo);
+        // "Data through" caps the period, as in the report itself: "Launch-Sept 2026" with no period set.
+        const earlier = (a, b) => Number(a.y) < Number(b.y) || (Number(a.y) === Number(b.y) && a.m < b.m);
+        if (cut && (!to || earlier(cut, to))) to = cut;
         if (!from && !to) return Number(now.slice(8, 10)) + ' ' + M[cur.m - 1] + ' ' + cur.y;
         if (!from) return 'Launch-' + M[to.m - 1] + ' ' + to.y;
         const end = to || cur;
