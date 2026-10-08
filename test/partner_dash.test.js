@@ -112,7 +112,7 @@ async function openPage(html, pw) {
   const gsfP = App._pd.providers['GSF - Global Surgery Foundation'], lbP = App._pd.providers.Lifebox;
   const under = (slug) => tree.filter(t => t.startsWith(slug + '/'));
   check('the site: a page per provider at its link, plus landing, 404, robots.txt, .nojekyll and the custom domain',
-    ['.nojekyll', '404.html', 'CNAME', 'index.html', 'robots.txt', 'gsf/index.html', 'lifebox/index.html'].every(f => tree.includes(f)) && tree.every(t => !t.includes('/') || t.startsWith('gsf/') || t.startsWith('lifebox/')), tree.join(', '));
+    ['.nojekyll', '404.html', 'CNAME', 'index.html', 'robots.txt', 'gsf/index.html', 'lifebox/index.html'].every(f => tree.includes(f)) && tree.every(t => !t.includes('/') || t.startsWith('gsf/') || t.startsWith('lifebox/') || t === 'team/index.html'), tree.join(', '));
   check('downloads sit beside each page under random names: three for GSF, two where there is no feedback',
     under(gsfP.slug).filter(t => /\/[a-z0-9]{16}\.bin$/.test(t)).length === 3 && under(lbP.slug).filter(t => /\.bin$/.test(t)).length === 2, under(gsfP.slug).join(', '));
   const contentOf = (path_) => blobBySha[treeEntries.find(t => t.path === path_).sha];
@@ -143,6 +143,22 @@ async function openPage(html, pw) {
   const ref = calls.find(c => c.method === 'PATCH');
   check('each publish is ONE commit with no history, force-replacing the branch', Array.isArray(commit.parents) && commit.parents.length === 0 && JSON.parse(ref.body).force === true);
   check('the custom domain file names the subdomain', blobs.includes('reports.globalsurgeryfoundation.org\n'));
+
+  // ── the team page ──
+  const teamPw = App._pd.teamPassword;
+  check('the team page gets its own password, kept on this Mac', /^[a-km-zA-HJ-NP-Z2-9]{4}(-[a-km-zA-HJ-NP-Z2-9]{4}){3}$/.test(teamPw || '') && !all.includes(teamPw) && tree.includes('team/index.html'));
+  const teamWrapped = contentOf('team/index.html');
+  check('…uploaded encrypted: no provider name, link or password readable', !/Lifebox|\/gsf\/|Global Surgery Foundation/.test(teamWrapped) && !teamWrapped.includes(lbP.password));
+  const teamOpen = await openPage(teamWrapped, teamPw);
+  check('…a provider password does not open it', (await openPage(teamWrapped, lbP.password)).written === null);
+  check('…the team password opens a list of every published provider with its link', /href="\/gsf\/"/.test(teamOpen.written || '') && /href="\/lifebox\/"/.test(teamOpen.written || '') && /SURGhub partner reports/.test(teamOpen.written || ''));
+  const ls = {};
+  const tctx = { localStorage: { setItem: (k, v) => { ls[k] = v; } }, document: { getElementById: () => ({ addEventListener() {} }), querySelectorAll: () => [] } };
+  vm.createContext(tctx); vm.runInContext(teamOpen.written.match(/<script>([\s\S]*?)<\/script>/)[1], tctx);
+  check('…and remembers each provider password in that browser, under the key the provider pages read', ls['surghub-report:/gsf/'] === gsfP.password && ls['surghub-report:/lifebox/'] === lbP.password);
+  check('"team" is never given to a provider', App._pdNiceSlug('TEAM - Trauma Education') === 'team-2');
+  check('the panel shows the team page, its password and Open', /Your team page/.test(App._partnerDashHtml()) && App._partnerDashHtml().includes(teamPw) && /App\.pdOpenTeam\(\)/.test(App._partnerDashHtml()));
+  check('a live provider gets a Partner dashboard button for its provider and course pages; others none', /App\.pdOpen\('GSF - Global Surgery Foundation'\)/.test(App._pdButtonHtml('GSF - Global Surgery Foundation')) && App._pdButtonHtml('WFSA - World Federation') === '' && App._pdButtonHtml('') === '');
   check('the published state is recorded per provider', App._pd.providers.Lifebox.published && App._pd.providers.Lifebox.published.slug === App._pd.providers.Lifebox.slug && App._pd.lastPublish.ok);
 
   calls.length = 0; ghRefExists = false;
@@ -152,6 +168,8 @@ async function openPage(html, pw) {
   // ── changing a link or password ──
   await App.pdSetSlug('Lifebox', 'gsf');
   check('an address another provider uses is refused', App._pd.providers.Lifebox.slug === 'lifebox' && App._pd.providers.Lifebox.published !== null);
+  await App.pdSetSlug('Lifebox', 'Team');
+  check('the team page address is refused', App._pd.providers.Lifebox.slug === 'lifebox');
   await App.pdSetSlug('Lifebox', '  ');
   check('an empty address is refused', App._pd.providers.Lifebox.slug === 'lifebox');
   await App.pdSetSlug('Lifebox', ' LifeBox Global ');

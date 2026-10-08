@@ -28,6 +28,7 @@ Object.assign(window.App, {
     PD_ITER: 250000,
     PD_PW_ALPHABET: 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789',   // no 0/O, 1/l/I
     PD_SLUG_ALPHABET: 'abcdefghijklmnopqrstuvwxyz0123456789',
+    PD_TEAM_SLUG: 'team',   // GSF's own page: every provider, one password
 
     _pdDefaults() { return { repo: '', branch: 'main', baseUrl: '', providers: {}, lastPublish: null }; },
     async _pdLoad() {
@@ -53,6 +54,7 @@ Object.assign(window.App, {
         let base = this._pdSlugify(acro || (this.providerFolderName ? this.providerFolderName(prov) : prov)) || 'provider';
         if (base.length > 32) base = base.slice(0, 33).replace(/-[^-]*$/, '');   // whole words, ~32 characters
         const taken = new Set(Object.keys((this._pd && this._pd.providers) || {}).filter(k => k !== self).map(k => this._pd.providers[k].slug).filter(Boolean));
+        taken.add(this.PD_TEAM_SLUG);
         let slug = base;
         for (let n = 2; taken.has(slug); n++) slug = base + '-' + n;
         return slug;
@@ -145,15 +147,16 @@ Object.assign(window.App, {
     // The page a provider opens: asks for the password, decrypts in the browser and
     // replaces itself with the report. "Remember on this device" keeps the password in
     // this browser only (localStorage, per page), so the provider types it once.
-    _pdPageHtml(payload) {
+    _pdPageHtml(payload, heading, prompt) {
+        heading = heading || 'SURGhub partner report'; prompt = prompt || 'Enter the password you received with this link.';
         return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
-            + '<meta name="robots" content="noindex,nofollow,noarchive"><title>SURGhub partner report</title>'
+            + '<meta name="robots" content="noindex,nofollow,noarchive"><title>' + heading + '</title>'
             + '<style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#001523;color:#eef4f9;font:16px/1.5 Arial,Helvetica,sans-serif}'
             + '.box{width:min(380px,90vw);padding:32px;border-radius:16px;background:#0b2233;border:1px solid #1d3a4f}h1{margin:0 0 6px;font-size:20px}p{margin:0 0 18px;color:#9fb3c8;font-size:14px}'
             + 'input[type=password]{box-sizing:border-box;width:100%;padding:11px 12px;border-radius:10px;border:1px solid #2c4a60;background:#001523;color:#eef4f9;font-size:15px}'
             + 'button{margin-top:14px;width:100%;padding:11px;border:0;border-radius:10px;background:#FFC145;color:#002F4C;font-weight:700;font-size:15px;cursor:pointer}'
             + 'label{display:flex;gap:8px;align-items:center;margin-top:12px;font-size:13px;color:#9fb3c8}.err{min-height:20px;margin-top:10px;color:#ff8a80;font-size:13px}</style></head>'
-            + '<body><form class="box" id="f"><h1>SURGhub partner report</h1><p>Enter the password you received with this link.</p>'
+            + '<body><form class="box" id="f"><h1>' + heading + '</h1><p>' + prompt + '</p>'
             + '<input type="password" id="pw" autocomplete="current-password" autofocus placeholder="Password">'
             + '<label><input type="checkbox" id="rm" checked> Remember on this device</label>'
             + '<button type="submit" id="go">Open report</button><div class="err" id="err"></div></form>'
@@ -169,6 +172,24 @@ Object.assign(window.App, {
             + '.catch(function(){g.disabled=false;e.textContent="That password does not open this report."})});'
             + 'try{var s=localStorage.getItem(K);if(s){e.textContent="Opening\\u2026";open(s).then(function(h){window.__shPw=s;show(h)}).catch(function(){try{localStorage.removeItem(K)}catch(x){}e.textContent=""})}}catch(x){}'
             + '})();<\/script></body></html>';
+    },
+    // The team page, once decrypted: every published provider with its link. It also
+    // remembers each provider's password in this browser (the same localStorage key the
+    // provider pages use), so from here every report opens without a password prompt.
+    _pdTeamHtml(list) {
+        const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        const at = new Date().toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' }) + ' UTC';
+        const rows = list.map(x => '<a class="row" href="/' + esc(x.slug) + '/" data-k="' + esc((x.name + ' ' + x.slug).toLowerCase()) + '"><span class="n">' + esc(x.name) + '</span><span class="s">/' + esc(x.slug) + '/</span></a>').join('');
+        const pw = {}; list.forEach(x => { pw[x.slug] = x.password; });
+        return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow,noarchive"><title>SURGhub reports · GSF team</title>'
+            + '<style>body{margin:0;background:#001523;color:#eef4f9;font:15px/1.5 Arial,Helvetica,sans-serif}.w{max-width:760px;margin:0 auto;padding:40px 20px}'
+            + 'h1{margin:0 0 4px;font-size:24px}p{margin:0 0 18px;color:#9fb3c8;font-size:13px}input{box-sizing:border-box;width:100%;padding:11px 12px;margin-bottom:14px;border-radius:10px;border:1px solid #2c4a60;background:#0b2233;color:#eef4f9;font-size:15px}'
+            + '.row{display:flex;justify-content:space-between;gap:12px;padding:12px 14px;margin-bottom:6px;border-radius:10px;background:#0b2233;border:1px solid #1d3a4f;color:#eef4f9;text-decoration:none}.row:hover{border-color:#FFC145}'
+            + '.n{font-weight:700}.s{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:#9fb3c8;white-space:nowrap}</style></head>'
+            + '<body><div class="w"><h1>SURGhub partner reports</h1><p>' + list.length + ' provider' + (list.length === 1 ? '' : 's') + ' · published ' + esc(at) + '. Reports open from here without their passwords, in this browser.</p>'
+            + '<input id="q" type="search" placeholder="Find a provider" autofocus>' + rows + '</div>'
+            + '<script>(function(){var P=' + JSON.stringify(pw).replace(/</g, '\\u003c') + ';try{Object.keys(P).forEach(function(s){localStorage.setItem("surghub-report:/"+s+"/",P[s]);localStorage.setItem("surghub-report:/"+s+"/index.html",P[s])})}catch(x){}'
+            + 'var q=document.getElementById("q");q.addEventListener("input",function(){var v=q.value.toLowerCase().trim();[].forEach.call(document.querySelectorAll(".row"),function(r){r.style.display=!v||r.getAttribute("data-k").indexOf(v)>=0?"":"none"})})})();<\/script></body></html>';
     },
     _pdLandingHtml() {
         return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="robots" content="noindex,nofollow,noarchive"><title>SURGhub partner reports</title>'
@@ -221,6 +242,7 @@ Object.assign(window.App, {
         const s = await this._pdLoad(); const p = s.providers[provider]; if (!p) return;
         const slug = this._pdSlugify(value);
         if (!slug) { alert('An address needs at least one letter or digit.'); this._pdRerender(); return; }
+        if (slug === this.PD_TEAM_SLUG) { alert('"' + slug + '" is the address of your own team page.'); this._pdRerender(); return; }
         if (Object.keys(s.providers).some(k => k !== provider && s.providers[k].slug === slug)) { alert('"' + slug + '" is already used by another provider.'); this._pdRerender(); return; }
         if (slug === p.slug) return;
         p.slug = slug; p.published = null; await this._pdSave(); this._pdRerender();
@@ -256,6 +278,27 @@ Object.assign(window.App, {
         const t = this._pdMessage(provider);
         try { await navigator.clipboard.writeText(t); if (btn) { const l = btn.textContent; btn.textContent = 'Copied ✓'; setTimeout(() => { btn.textContent = l; }, 1800); } }
         catch (e) { alert(t); }
+    },
+    _pdOpenUrl(url) { if (!url) return; try { if (window.electronAPI && electronAPI.openExternal) electronAPI.openExternal(url); else window.open(url); } catch (e) { __swallowed(e, 'pd.open'); } },
+    async pdOpen(provider) { const s = await this._pdLoad(); const p = s.providers[provider]; if (p && p.slug) this._pdOpenUrl(this._pdUrl(p.slug)); },
+    async pdOpenTeam() { await this._pdLoad(); this._pdOpenUrl(this._pdUrl(this.PD_TEAM_SLUG)); },
+    async pdCopyTeam(btn) {
+        const s = await this._pdLoad(); if (!s.teamPassword) return;
+        try { await navigator.clipboard.writeText(s.teamPassword); if (btn) { const l = btn.textContent; btn.textContent = 'Copied ✓'; setTimeout(() => { btn.textContent = l; }, 1800); } } catch (e) { alert(s.teamPassword); }
+    },
+    async pdNewTeamPassword() {
+        if (!confirm('Give the team page a new password?\n\nThe old one stops working at the next publish.')) return;
+        const s = await this._pdLoad(); s.teamPassword = this._pdNewPassword(); s.teamPublished = null; await this._pdSave(); this._pdRerender();
+    },
+    // A "Partner dashboard" button for the provider and course pages, once that provider's page is live.
+    _pdButtonHtml(provider) {
+        if (this._pd === undefined) { this._pd = null; this._pdLoad().then(() => this._pdTokenSet()).then(() => { if (this._pdEnabled().length && this.renderView) this.renderView(); }); return ''; }
+        const s = this._pd, p = s && provider && s.providers[provider];
+        if (!p || !p.enabled || !p.slug || !s.baseUrl || !(p.published && p.published.slug === p.slug)) return '';
+        const pe = this.escapeJsArg(provider);
+        return '<span data-edit-only class="inline-flex items-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-800 text-xs font-bold overflow-hidden">'
+            + '<button onclick="App.pdOpen(\'' + pe + '\')" class="flex items-center gap-1.5 px-3 py-2 hover:bg-emerald-100" title="Open ' + this.escapeHtml(this._pdUrl(p.slug)) + ' in your browser"><i data-lucide="globe" width="14"></i> Partner dashboard</button>'
+            + '<button onclick="App.pdCopy(\'' + pe + '\', this)" class="px-2.5 py-2 border-l border-emerald-200 hover:bg-emerald-100 font-medium" title="Copy the link and password, ready to send">Copy</button></span>';
     },
     async pdEmail(provider) {
         await this._pdLoad();
@@ -301,6 +344,12 @@ Object.assign(window.App, {
         } finally {
             this.reportPeriodFrom = keep.from; this.reportPeriodTo = keep.to; this.reportDataThrough = keep.through;
             this.reportFeedbackFromDate = keep.fb; this.hideLowLearners = keep.low; this.hidePrivateCourses = keep.priv;
+        }
+        if (built.length) {
+            if (!s.teamPassword) s.teamPassword = this._pdNewPassword();
+            const list = built.map(prov => ({ name: this.providerFolderName ? this.providerFolderName(prov) : prov, slug: s.providers[prov].slug, password: s.providers[prov].password }))
+                .sort((a, b) => a.name.localeCompare(b.name));
+            files.push({ path: this.PD_TEAM_SLUG + '/index.html', content: this._pdPageHtml(await this._pdEncrypt(this._pdTeamHtml(list), s.teamPassword), 'SURGhub reports · GSF team', 'Enter the team password.') });
         }
         const host = (String(s.baseUrl || '').match(/^https?:\/\/([^/]+)/) || [])[1] || '';
         files.push({ path: 'index.html', content: this._pdLandingHtml() });
@@ -352,6 +401,7 @@ Object.assign(window.App, {
             try { await this._pdGh('PATCH', '/git/refs/heads/' + branch, { sha: c.sha, force: true }, token); }
             catch (e) { if (e.status !== 404 && e.status !== 422) throw e; await this._pdGh('POST', '/git/refs', { ref: 'refs/heads/' + branch, sha: c.sha }, token); }
             built.forEach(p => { s.providers[p].published = { at: now, slug: s.providers[p].slug }; });
+            s.teamPublished = { at: now };
             const note = built.length + ' report' + (built.length === 1 ? '' : 's') + ' published' + (failed.length ? ', ' + failed.length + ' failed: ' + failed.join('; ') : '');
             s.lastPublish = { at: now, ok: !failed.length, note };
             await this._pdSave();
@@ -389,7 +439,7 @@ Object.assign(window.App, {
                 + '<td class="py-2 pr-3 font-mono text-[11px] whitespace-nowrap">' + (on && p.slug ? (s.baseUrl ? esc(String(s.baseUrl).replace(/^https?:\/\//, '') + '/') + '<input type="text" value="' + esc(p.slug) + '" title="Edit to change the address; the old one stops working at the next publish" onchange="App.pdSetSlug(\'' + pe + '\', this.value)" class="w-40 font-mono text-[11px] border rounded px-1.5 py-0.5 outline-none focus:ring-2 focus:ring-gsf-boston/30">' : '<span class="text-amber-700 font-sans">set the web address first</span>') : '') + '</td>'
                 + '<td class="py-2 pr-3 font-mono text-[11px] whitespace-nowrap">' + (on && p.password ? esc(p.password) : '') + '</td>'
                 + '<td class="py-2 pr-3 text-[11px] whitespace-nowrap">' + (on ? (live ? '<span class="text-emerald-700">live · ' + esc(when(p.published.at)) + '</span>' : '<span class="text-amber-700">at the next publish</span>') : '') + '</td>'
-                + '<td class="py-2 text-right whitespace-nowrap">' + (on && p.slug && s.baseUrl ? '<button onclick="App.pdCopy(\'' + pe + '\', this)" class="text-[11px] font-bold text-gsf-boston hover:underline mr-2">Copy</button><button onclick="App.pdEmail(\'' + pe + '\')" class="text-[11px] font-bold text-gsf-boston hover:underline mr-2">Email…</button><button onclick="App.pdNewPassword(\'' + pe + '\')" class="text-[11px] text-slate-500 hover:underline" title="If a link and password have gone further than they should: the old password stops working at the next publish">New password</button>' : '') + '</td></tr>';
+                + '<td class="py-2 text-right whitespace-nowrap">' + (on && p.slug && s.baseUrl ? (live ? '<button onclick="App.pdOpen(\'' + pe + '\')" class="text-[11px] font-bold text-gsf-boston hover:underline mr-2">Open</button>' : '') + '<button onclick="App.pdCopy(\'' + pe + '\', this)" class="text-[11px] font-bold text-gsf-boston hover:underline mr-2">Copy</button><button onclick="App.pdEmail(\'' + pe + '\')" class="text-[11px] font-bold text-gsf-boston hover:underline mr-2">Email…</button><button onclick="App.pdNewPassword(\'' + pe + '\')" class="text-[11px] text-slate-500 hover:underline" title="If a link and password have gone further than they should: the old password stops working at the next publish">New password</button>' : '') + '</td></tr>';
         }).join('');
         const lp = s.lastPublish;
         const enabled = this._pdEnabled().length;
@@ -402,6 +452,13 @@ Object.assign(window.App, {
             + '<span class="font-bold uppercase tracking-wide text-[10px] text-slate-400 ml-2">Web address</span>' + input('baseUrl', s.baseUrl, 'https://reports.globalsurgeryfoundation.org', 'w-72')
             + '<span class="font-bold uppercase tracking-wide text-[10px] text-slate-400 ml-2">Token</span><input type="password" placeholder="' + (this._pdHasToken ? 'saved on this Mac — paste to replace' : 'paste a GitHub token') + '" onchange="App.pdSetToken(this.value).then(() => App._pdTokenSet())" class="w-56 text-xs border rounded px-2 py-1.5 outline-none focus:ring-2 focus:ring-gsf-boston/30">'
             + '</div>'
+            + (s.teamPassword && s.baseUrl ? '<div class="flex items-center gap-3 flex-wrap mb-4 px-3 py-2.5 rounded-lg bg-slate-50 border text-xs">'
+                + '<span class="font-bold text-gsf-prussian">Your team page</span><span class="font-mono text-[11px]">' + esc(this._pdUrl(this.PD_TEAM_SLUG).replace(/^https?:\/\//, '')) + '</span>'
+                + '<span class="text-slate-400">password</span><span class="font-mono text-[11px]">' + esc(s.teamPassword) + '</span>'
+                + (s.teamPublished ? '<button onclick="App.pdOpenTeam()" class="font-bold text-gsf-boston hover:underline">Open</button>' : '<span class="text-amber-700">at the next publish</span>')
+                + '<button onclick="App.pdCopyTeam(this)" class="font-bold text-gsf-boston hover:underline">Copy password</button>'
+                + '<button onclick="App.pdNewTeamPassword()" class="text-slate-500 hover:underline">New password</button>'
+                + '<span class="text-slate-400">Every provider in one list, for GSF only. Unlocking it once lets that browser open every report without its password.</span></div>' : '')
             + '<div class="overflow-x-auto max-h-[420px] overflow-y-auto custom-scrollbar"><table class="w-full text-left text-xs"><thead class="text-slate-400 sticky top-0 bg-white"><tr><th class="py-2 pr-3 font-medium"><label class="inline-flex items-center gap-2 cursor-pointer" title="Switch every provider on or off"><input type="checkbox" ' + (allOn ? 'checked' : '') + ' onchange="App.pdSetAllEnabled(this.checked)"> Provider</label></th><th class="py-2 pr-3 font-medium">Link</th><th class="py-2 pr-3 font-medium">Password</th><th class="py-2 pr-3 font-medium">Status</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>'
             + '<div class="flex items-center gap-3 flex-wrap mt-4">'
             + '<button onclick="App.pdPublishNow()" ' + (enabled ? '' : 'disabled') + ' class="px-4 py-2 rounded-lg text-sm font-bold ' + (enabled ? 'bg-gsf-prussian text-white hover:bg-slate-900' : 'bg-slate-100 text-slate-400 cursor-not-allowed') + '">Publish now</button>'

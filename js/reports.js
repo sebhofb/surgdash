@@ -124,6 +124,7 @@
         },
 
         async _assembleReportData(providerName, opts) {
+            if (this.ensureCompletionLoaded) await this.ensureCompletionLoaded();   // learner names for scrubPersonal (quotes)
             opts = opts || {};
             const platform = !!opts.platform;   // platform mode: aggregate ALL providers (no filter)
             // Course mode: scope everything to ONE course of the provider. The whole
@@ -725,6 +726,7 @@
             } = D;
             const inPeriod = (m) => (!pFrom || m >= pFrom) && (!pTo || m <= pTo);
             const esc = (s) => this.escapeHtml(s);
+            const scrub = (s) => (this.scrubPersonal ? this.scrubPersonal(s) : s);
 
             const feedbackCards = (items, bgColor, badge) => {
                 if (items.length === 0) return '';
@@ -732,7 +734,7 @@
                     const stars = f.r > 0 ? '<span style="color:#f59e0b;font-size:11px;margin-left:6px">' + '★'.repeat(Math.round(f.r)) + '</span>' : '';
                     return '<div style="background:' + bgColor + ';border-radius:8px;padding:10px 12px;font-size:12px;break-inside:avoid;margin-bottom:6px">' +
                     (badge ? '<div style="font-size:9px;font-weight:700;text-transform:uppercase;color:#64748b;margin-bottom:4px">' + badge + '</div>' : '') +
-                    '<div style="font-style:italic;margin-bottom:4px">&ldquo;' + esc(f.t || f.text || '') + '&rdquo;' + stars + '</div>' +
+                    '<div style="font-style:italic;margin-bottom:4px">&ldquo;' + esc(scrub(f.t || f.text || '')) + '&rdquo;' + stars + '</div>' +
                     '<div style="font-size:10px;color:#64748b">' + esc(f._course || f.course || '') + '</div></div>';
                 }
                 ).join('');
@@ -1212,9 +1214,10 @@ function drawCharts() {
                 const stars = f.r > 0 ? '<span style="color:var(--accent);font-size:11px;margin-left:8px;letter-spacing:.1em;flex-shrink:0">' + '★'.repeat(Math.round(f.r)) + '</span>' : '';
                 const who = whoFor(f);
                 const idx = quotes.length;
-                quotes.push({ t: String(f.t || ''), w: who, c: String(f._course || f.course || ''), r: Number(f.r) || 0 });
+                const qt = this.scrubPersonal ? this.scrubPersonal(String(f.t || '')) : String(f.t || '');
+                quotes.push({ t: qt, w: who, c: String(f._course || f.course || ''), r: Number(f.r) || 0 });
                 return '<div class="qcard" onclick="showQuote(' + idx + ')" style="background:var(--surface2);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:5px;padding:12px 14px;font-size:12.5px;cursor:pointer">'
-                    + '<div style="font-style:italic;color:#d4dde7;line-height:1.55;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden">&ldquo;' + esc(f.t || '') + '&rdquo;</div>'
+                    + '<div style="font-style:italic;color:#d4dde7;line-height:1.55;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden">&ldquo;' + esc(qt) + '&rdquo;</div>'
                     + '<div style="margin-top:6px;display:flex;align-items:center;justify-content:space-between;gap:8px"><span style="font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:#9fb3c8">' + esc(who) + '</span>' + stars + '</div>'
                     + '<div style="margin-top:2px;font-family:var(--mono);font-size:9px;letter-spacing:.04em;color:#6d8ba3">' + esc(f._course || f.course || '') + '</div></div>';
             };
@@ -2636,6 +2639,10 @@ ${platform && globeCountryCount > 0 ? ('\nvar LAND=' + _globeGeo.LAND + ';var CE
             // Courses synced before that capture existed fall back to the summarised
             // FeedbackBank sheet below.
             if (this.ensureSurveyRawLoaded) await this.ensureSurveyRawLoaded();
+            if (this.ensureCompletionLoaded) await this.ensureCompletionLoaded();   // learner names for scrubPersonal
+            // Comments can carry what a learner typed about themselves: emails, phone numbers, names.
+            const KEEP = new Set(['Respondent', 'Country', 'Profession', 'Date Time', '#', 'Date', 'Rating', 'Type', 'AI rating']);
+            const scrubRow = (o) => { if (this.scrubPersonal) Object.keys(o).forEach(k => { if (!KEEP.has(k) && typeof o[k] === 'string') o[k] = this.scrubPersonal(o[k]); }); return o; };
             const rawStore = this._rawSurveyResponses || {};
             // AI rating per comment (0–10, blank if not yet scored). The Excel keeps
             // ALL raw comments unedited regardless of testimonial selection.
@@ -2646,7 +2653,7 @@ ${platform && globeCountryCount > 0 ? ('\nvar LAND=' + _globeGeo.LAND + ';var CE
                 if (!c.Course) return;
                 const rr = rawStore[c.Course];
                 if (rr && Array.isArray(rr.cols) && Array.isArray(rr.data) && rr.data.length > 0) {
-                    const rows = rr.data.map(arr => { const o = {}; rr.cols.forEach((k, i) => { o[k] = arr[i] == null ? '' : arr[i]; }); return o; });
+                    const rows = rr.data.map(arr => { const o = {}; rr.cols.forEach((k, i) => { o[k] = arr[i] == null ? '' : arr[i]; }); return scrubRow(o); });
                     this._appendCourseSheet(wb, rows, c.Course);
                     sheetsAdded++;
                     return;
@@ -2667,7 +2674,7 @@ ${platform && globeCountryCount > 0 ? ('\nvar LAND=' + _globeGeo.LAND + ';var CE
                             'Type': f.s || '',
                             'Country': d && d.country ? d.country : '',
                             'Profession': d && d.profession ? d.profession : '',
-                            'Feedback': String(f.t).trim(),
+                            'Feedback': this.scrubPersonal ? this.scrubPersonal(String(f.t).trim()) : String(f.t).trim(),
                             'AI rating': (ai && typeof ai.s === 'number') ? ai.s : ''
                         };
                     });

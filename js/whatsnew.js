@@ -13,6 +13,8 @@
             date: 'October 2026',
             items: [
                 { t: 'Partner dashboards', d: 'Providers you switch on (Reports tab) get their full web report at a short address of their own (e.g. reports.globalsurgeryfoundation.org/wfsa), behind a password, rebuilt every night after the background sync, with the PDF report and the anonymised learner and feedback workbooks to download. Reports are encrypted on this Mac before upload; passwords and the publishing token never leave it.' },
+                { t: 'Team page and quick links', d: 'Your own page at /team/ lists every provider; unlock it once and that browser opens every report without its password. Provider and course pages get a Partner dashboard button, and the Reports tab an Open link per provider.' },
+                { t: 'Personal details kept out of comments', d: 'Emails, phone numbers, personal profile links and learner names that people typed into their feedback are removed from every report and feedback workbook a provider receives, online or in the package.' },
             ]
         },
         {
