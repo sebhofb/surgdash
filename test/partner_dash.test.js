@@ -6,12 +6,12 @@ const ROOT = path.resolve(__dirname, '..');
 let ok = 0, bad = 0; const check = (n, c, d) => { (c ? ok++ : bad++); console.log((c ? 'PASS' : 'FAIL') + ' - ' + n + (d !== undefined ? '  →  ' + String(d).slice(0, 260) : '')); };
 
 const store = new Map(), calls = [];
-let ghRefExists = true, ghEmpty = false, blobN = 0;
+let ghRefExists = true, ghEmpty = false, blobN = 0; const blobBySha = {};
 const gh = async (req) => {
   calls.push(req);
   const p = req.url.replace(/^https:\/\/api\.github\.com\/repos\/gsf\/reports/, ''); const body = req.body ? JSON.parse(req.body) : null;
   const ok = (status, json) => ({ statusCode: status, body: JSON.stringify(json) });
-  if (req.method === 'POST' && p === '/git/blobs') { if (ghEmpty) return ok(409, { message: 'Git Repository is empty.' }); return ok(201, { sha: 'blob' + (++blobN) }); }
+  if (req.method === 'POST' && p === '/git/blobs') { if (ghEmpty) return ok(409, { message: 'Git Repository is empty.' }); const sha = 'blob' + (++blobN); blobBySha[sha] = body.content; return ok(201, { sha }); }
   if (req.method === 'PUT' && p === '/contents/README.md') { ghEmpty = false; return ok(201, {}); }
   if (req.method === 'POST' && p === '/git/trees') return ok(201, { sha: 'tree1' });
   if (req.method === 'POST' && p === '/git/commits') return ok(201, { sha: 'commit1' });
@@ -31,10 +31,22 @@ ctx.App = { reportPeriodFrom: '2026-07', reportPeriodTo: '2026-09', reportDataTh
   getAnalyticsSnap() { return [{ Provider: 'GSF - Global Surgery Foundation' }, { Provider: 'WFSA - World Federation' }, { Provider: 'Lifebox' }, { Provider: 'Unknown Provider' }]; },
   _withAllCourses(fn) { return fn(); } };
 vm.createContext(ctx);
-try { vm.runInContext(fs.readFileSync(path.join(ROOT, 'js/partnerDash.js'), 'utf8'), ctx, { filename: 'partnerDash.js' }); } catch (e) { check('loads partnerDash.js', false, e.message); }
+for (const f of ['js/reportNames.js', 'js/partnerDash.js']) { try { vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, { filename: f }); } catch (e) { check('loads ' + f, false, e.message); } }
 const App = ctx.App;
 const seen = [];
 App._buildDarkReportHtml = async (prov) => { seen.push({ prov, from: App.reportPeriodFrom, through: App.reportDataThrough, fb: App.reportFeedbackFromDate, low: App.hideLowLearners, priv: App.hidePrivateCourses }); return '<html><body>SECRET REPORT FOR ' + prov + '</body></html>'; };
+// The three downloads, as the package export builds them (stubbed: no Electron, no XLSX here).
+const FILEBYTES = { pdf: (prov) => new TextEncoder().encode('%PDF secret for ' + prov), users: (prov) => new TextEncoder().encode('PK users of ' + prov), fb: (prov) => new TextEncoder().encode('PK feedback of ' + prov) };
+App._pdPdfBytes = async (prov) => FILEBYTES.pdf(prov);
+App._buildUsersWorkbook = (prov, anon) => ({ kind: 'users', prov });
+App._buildFeedbackWorkbook = async (prov) => (prov === 'Lifebox' ? null : { kind: 'fb', prov });   // Lifebox has no survey feedback
+App._pdWorkbookBytes = (wb) => (wb.kind === 'users' ? FILEBYTES.users(wb.prov) : FILEBYTES.fb(wb.prov));
+async function decryptJson(json, pw) {
+  const P = JSON.parse(json), b = (x) => Uint8Array.from(Buffer.from(x, 'base64'));
+  const k = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveKey']);
+  const key = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt: b(P.s), iterations: P.n, hash: 'SHA-256' }, k, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+  return new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b(P.i) }, key, b(P.d)));
+}
 
 // Run the page's own script on a payload: the real decrypt path a provider's browser takes.
 async function openPage(html, pw) {
@@ -45,6 +57,7 @@ async function openPage(html, pw) {
   const pctx = { crypto: globalThis.crypto, TextEncoder, TextDecoder, Uint8Array, atob, location: { pathname: '/p/x/' },
     localStorage: { getItem: (k) => saved[k] || null, setItem: (k, v) => { saved[k] = v; }, removeItem: (k) => { delete saved[k]; } },
     document: { getElementById: (id) => els[id], open() {}, write(h) { written = h; }, close() {} } };
+  pctx.window = pctx;   // a browser's global object
   vm.createContext(pctx); vm.runInContext(script, pctx);
   els.f._submit({ preventDefault() {} });
   for (let i = 0; i < 200 && written === null && !/does not open/.test(els.err.textContent); i++) await new Promise(r => setTimeout(r, 10));
@@ -89,11 +102,38 @@ async function openPage(html, pw) {
   check('…and the user\'s report settings are put back', App.reportPeriodFrom === '2026-07' && App.reportDataThrough === '' && App.reportFeedbackFromDate === '2026-01-01' && App.hideLowLearners && App.hidePrivateCourses);
   const blobs = calls.filter(c => c.url.endsWith('/git/blobs')).map(c => JSON.parse(c.body).content);
   const all = blobs.join('\n');
-  check('no readable report, no password, no token in anything uploaded', !/SECRET REPORT/.test(all) && !all.includes(App._pd.providers.Lifebox.password) && !all.includes(App._pd.providers['GSF - Global Surgery Foundation'].password) && !/ghp_TESTTOKEN123/.test(all));
+  check('no readable report, no password, no token in anything uploaded', !/SECRET REPORT|%PDF secret|PK users|PK feedback/.test(all) && !all.includes(App._pd.providers.Lifebox.password) && !all.includes(App._pd.providers['GSF - Global Surgery Foundation'].password) && !/ghp_TESTTOKEN123/.test(all));
   check('the token travels only in the Authorization header', calls.every(c => !String(c.body || '').includes('ghp_TESTTOKEN123')) && calls.every(c => c.headers.Authorization === 'Bearer ghp_TESTTOKEN123'));
-  const tree = JSON.parse(calls.find(c => c.url.endsWith('/git/trees')).body).tree.map(t => t.path).sort();
-  check('the site: one page per provider at its random link, plus landing, 404, robots.txt, .nojekyll and the custom domain',
-    JSON.stringify(tree) === JSON.stringify(['.nojekyll', '404.html', 'CNAME', 'index.html', 'p/' + App._pd.providers['GSF - Global Surgery Foundation'].slug + '/index.html', 'p/' + App._pd.providers.Lifebox.slug + '/index.html', 'robots.txt'].sort()), tree.join(', '));
+  const treeEntries = JSON.parse(calls.find(c => c.url.endsWith('/git/trees')).body).tree;
+  const tree = treeEntries.map(t => t.path).sort();
+  const gsfP = App._pd.providers['GSF - Global Surgery Foundation'], lbP = App._pd.providers.Lifebox;
+  const under = (slug) => tree.filter(t => t.startsWith('p/' + slug + '/'));
+  check('the site: a page per provider at its random link, plus landing, 404, robots.txt, .nojekyll and the custom domain',
+    ['.nojekyll', '404.html', 'CNAME', 'index.html', 'robots.txt', 'p/' + gsfP.slug + '/index.html', 'p/' + lbP.slug + '/index.html'].every(f => tree.includes(f)) && tree.every(t => !t.startsWith('p/') || t.startsWith('p/' + gsfP.slug + '/') || t.startsWith('p/' + lbP.slug + '/')), tree.join(', '));
+  check('downloads sit beside each page under random names: three for GSF, two where there is no feedback',
+    under(gsfP.slug).filter(t => /\/[a-z0-9]{16}\.bin$/.test(t)).length === 3 && under(lbP.slug).filter(t => /\.bin$/.test(t)).length === 2, under(gsfP.slug).join(', '));
+  const contentOf = (path_) => blobBySha[treeEntries.find(t => t.path === path_).sha];
+  const gsfPage = contentOf('p/' + gsfP.slug + '/index.html');
+  const gsfReport = new TextDecoder().decode(await decryptJson(JSON.stringify(JSON.parse(gsfPage.match(/var P=(\{[^;]*\});/)[1])), gsfP.password));
+  check('the decrypted report carries a Downloads bar naming each file as in the package', /id="sh-dl"/.test(gsfReport) && /Report_GSF_Launch-Sept 2026\.pdf/.test(gsfReport) && /Users_GSF_Launch-Sept 2026\.xlsx/.test(gsfReport) && /Feedback_GSF_Launch-Sept 2026\.xlsx/.test(gsfReport), (gsfReport.match(/"name":"[^"]+"/g) || []).join(' '));
+  const bins = under(gsfP.slug).filter(t => t.endsWith('.bin'));
+  const opened = await Promise.all(bins.map(async t => new TextDecoder().decode(await decryptJson(contentOf(t), gsfP.password))));
+  check('each download decrypts, with the provider\'s password, to exactly the file built', opened.sort().join('|') === ['%PDF secret for GSF - Global Surgery Foundation', 'PK feedback of GSF - Global Surgery Foundation', 'PK users of GSF - Global Surgery Foundation'].sort().join('|'));
+  let wrongOk = true; try { await decryptJson(contentOf(bins[0]), lbP.password); } catch (e) { wrongOk = false; }
+  check('another provider\'s password does not open them', wrongOk === false);
+  // Run the bar's own script, as a provider's browser would, and click the PDF button.
+  const barScript = gsfReport.match(/<div id="sh-dl"[\s\S]*?<script>([\s\S]*?)<\/script>/)[1];
+  let handler = null, saved = null;
+  const msg = { textContent: '' }, anchors = [];
+  const bctx = { crypto: globalThis.crypto, TextEncoder, Uint8Array, atob, location: { pathname: '/p/' + gsfP.slug + '/' }, localStorage: { getItem: () => null },
+    window: { __shPw: gsfP.password, prompt: () => null }, setTimeout: () => 0,
+    URL: { createObjectURL: (blob) => { saved = blob; return 'blob:x'; }, revokeObjectURL() {} }, Blob: class { constructor(parts, o) { this.parts = parts; this.type = o.type; } },
+    fetch: async (file) => ({ ok: true, text: async () => contentOf('p/' + gsfP.slug + '/' + file) }),
+    document: { getElementById: (id) => (id === 'sh-dl' ? { addEventListener: (ev, fn) => { handler = fn; } } : msg), createElement: () => { const a = { click() { a.clicked = true; }, remove() {} }; anchors.push(a); return a; }, body: { appendChild() {} } } };
+  vm.createContext(bctx); vm.runInContext(barScript, bctx);
+  handler({ target: { closest: () => ({ getAttribute: () => '0' }) } });
+  for (let i = 0; i < 200 && !(anchors[0] && anchors[0].clicked) && msg.textContent !== 'Could not open the file.'; i++) await new Promise(r => setTimeout(r, 10));
+  check('clicking a download saves the decrypted file under its name', anchors[0] && anchors[0].clicked && anchors[0].download === 'Report_GSF_Launch-Sept 2026.pdf' && new TextDecoder().decode(new Uint8Array(saved.parts[0])) === '%PDF secret for GSF - Global Surgery Foundation', msg.textContent);
   check('no provider name appears in any path', !tree.some(p => /gsf|lifebox|wfsa/i.test(p)));
   check('an empty repository gets a first commit, then the publish carries on', calls.some(c => c.method === 'PUT' && c.url.endsWith('/contents/README.md')));
   const commit = JSON.parse(calls.find(c => c.url.endsWith('/git/commits')).body);

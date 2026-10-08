@@ -52,12 +52,75 @@ Object.assign(window.App, {
     _pdNewPassword() { const s = this._pdRandom(16, this.PD_PW_ALPHABET); return s.match(/.{4}/g).join('-'); },
 
     _pdB64(bytes) { let s = ''; const u = new Uint8Array(bytes); for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); },
-    async _pdEncrypt(text, password) {
+    // Text (the report page) or bytes (the PDF and workbooks), same scheme.
+    async _pdEncrypt(input, password) {
         const salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12));
         const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']);
         const key = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: this.PD_ITER, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['encrypt']);
-        const data = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(text));
+        const plain = typeof input === 'string' ? new TextEncoder().encode(input) : new Uint8Array(input);
+        const data = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, plain);
         return { s: this._pdB64(salt), i: this._pdB64(iv), n: this.PD_ITER, d: this._pdB64(data) };
+    },
+
+    // ── the files a provider can download from its page ──
+    // The same three the report package holds: the PDF report (with the cover and back
+    // pages, if set) and the anonymised learner and feedback workbooks.
+    async _pdPdfBytes(provider) {
+        const html = await this._buildReportHtml(provider);
+        if (!html) return null;
+        const tmp = electronAPI.path.join(electronAPI.os.tmpdir(), 'surghub_pd_' + Date.now() + '_' + this._pdRandom(6, this.PD_SLUG_ALPHABET) + '.pdf');
+        const r = await electronAPI.invoke('generate-pdf', { html, outputPath: tmp });
+        if (!r || !r.success) throw new Error('PDF: ' + ((r && r.error) || 'not generated'));
+        let file = tmp;
+        if (this.reportCoverPath || this.reportBackPath) {
+            const merged = tmp.replace(/\.pdf$/, '_full.pdf');
+            const m = await electronAPI.invoke('merge-pdfs', { reportPdfPath: tmp, coverPath: this.reportCoverPath || null, backPath: this.reportBackPath || null, outputPath: merged });
+            if (m && m.success) file = merged;
+        }
+        try { return new Uint8Array(electronAPI.fs.readFileSync(file)); }
+        finally { [tmp, file].forEach(f => { try { if (electronAPI.fs.existsSync(f)) electronAPI.fs.unlinkSync(f); } catch (e) { __swallowed(e, 'pd.tmp'); } }); }
+    },
+    _pdWorkbookBytes(wb) { return new Uint8Array(XLSX.write(wb, { bookType: 'xlsx', type: 'array' })); },
+    async _pdAttachments(provider, anonUsers, notes) {
+        const folder = this.providerFolderName ? this.providerFolderName(provider) : provider;
+        const name = (kind, ext) => this.reportFileName ? this.reportFileName(kind, folder, ext) : kind + '.' + ext;
+        const XL = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+        const out = [];
+        const add = async (label, kind, ext, mime, make) => {
+            try { const bytes = await make(); if (bytes && bytes.length) out.push({ label, name: name(kind, ext), mime, bytes }); }
+            catch (e) { if (notes) notes.push(provider + ' ' + label + ': ' + String((e && e.message) || e)); }
+        };
+        await add('Report (PDF)', 'Report', 'pdf', 'application/pdf', () => this._pdPdfBytes(provider));
+        await add('Learners (Excel)', 'Users', 'xlsx', XL, () => { const wb = this._buildUsersWorkbook(provider, anonUsers); return wb ? this._pdWorkbookBytes(wb) : null; });
+        await add('Feedback (Excel)', 'Feedback', 'xlsx', XL, async () => { const wb = await this._buildFeedbackWorkbook(provider); return wb ? this._pdWorkbookBytes(wb) : null; });
+        return out;
+    },
+    // A small bar in the corner of the report: each button fetches its encrypted file,
+    // decrypts it with the password the page was opened with, and saves it under its name.
+    _pdDownloadsHtml(manifest) {
+        if (!manifest || !manifest.length) return '';
+        const esc = (t) => String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        return '<div id="sh-dl" style="position:fixed;right:16px;bottom:16px;z-index:9999;display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 12px;border-radius:12px;background:#0b2233;border:1px solid #1d3a4f;box-shadow:0 6px 24px rgba(0,0,0,.35);font:13px Arial,Helvetica,sans-serif;color:#9fb3c8">'
+            + '<span style="font-weight:700;color:#eef4f9;margin-right:4px">Downloads</span>'
+            + manifest.map((f, i) => '<button data-i="' + i + '" title="' + esc(f.name) + '" style="padding:7px 10px;border:0;border-radius:8px;background:#FFC145;color:#002F4C;font-weight:700;font-size:12px;cursor:pointer">' + esc(f.label) + '</button>').join('')
+            + '<span id="sh-dl-msg" style="min-width:0"></span></div>'
+            + '<script>(function(){var F=' + JSON.stringify(manifest.map(f => ({ name: f.name, file: f.file, mime: f.mime }))).replace(/</g, '\\u003c') + ';var K="surghub-report:"+location.pathname;'
+            + 'function b(s){var x=atob(s),u=new Uint8Array(x.length);for(var i=0;i<x.length;i++)u[i]=x.charCodeAt(i);return u}'
+            + 'function dec(P,pw){return crypto.subtle.importKey("raw",new TextEncoder().encode(pw),"PBKDF2",false,["deriveKey"]).then(function(k){'
+            + 'return crypto.subtle.deriveKey({name:"PBKDF2",salt:b(P.s),iterations:P.n,hash:"SHA-256"},k,{name:"AES-GCM",length:256},false,["decrypt"])}).then(function(key){'
+            + 'return crypto.subtle.decrypt({name:"AES-GCM",iv:b(P.i)},key,b(P.d))})}'
+            + 'function pw(){var p=window.__shPw;if(!p){try{p=localStorage.getItem(K)}catch(x){}}if(!p)p=window.prompt("Password for this report");if(p)window.__shPw=p;return p}'
+            + 'var bar=document.getElementById("sh-dl"),m=document.getElementById("sh-dl-msg");'
+            + 'bar.addEventListener("click",function(ev){var t=ev.target&&ev.target.closest?ev.target.closest("button[data-i]"):null;if(!t)return;var f=F[+t.getAttribute("data-i")],p=pw();if(!f||!p)return;'
+            + 'm.textContent="Preparing\\u2026";fetch(f.file,{cache:"no-store"}).then(function(r){if(!r.ok)throw new Error(r.status);return r.text()}).then(function(txt){return dec(JSON.parse(txt),p)})'
+            + '.then(function(buf){var a=document.createElement("a");a.href=URL.createObjectURL(new Blob([buf],{type:f.mime}));a.download=f.name;document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(a.href);a.remove()},2000);m.textContent=""})'
+            + '.catch(function(){m.textContent="Could not open the file."})});'
+            + '})();<\/script>';
+    },
+    _pdInject(html, extra) {
+        if (!extra) return html;
+        const i = html.lastIndexOf('</body>');
+        return i >= 0 ? html.slice(0, i) + extra + html.slice(i) : html + extra;
     },
 
     // The page a provider opens: asks for the password, decrypts in the browser and
@@ -83,9 +146,9 @@ Object.assign(window.App, {
             + 'function show(h){document.open();document.write(h);document.close()}'
             + 'var f=document.getElementById("f"),e=document.getElementById("err"),g=document.getElementById("go");'
             + 'f.addEventListener("submit",function(ev){ev.preventDefault();var pw=document.getElementById("pw").value.trim();if(!pw)return;g.disabled=true;e.textContent="Opening\\u2026";'
-            + 'open(pw).then(function(h){try{if(document.getElementById("rm").checked)localStorage.setItem(K,pw);else localStorage.removeItem(K)}catch(x){}show(h)})'
+            + 'open(pw).then(function(h){try{if(document.getElementById("rm").checked)localStorage.setItem(K,pw);else localStorage.removeItem(K)}catch(x){}window.__shPw=pw;show(h)})'
             + '.catch(function(){g.disabled=false;e.textContent="That password does not open this report."})});'
-            + 'try{var s=localStorage.getItem(K);if(s){e.textContent="Opening\\u2026";open(s).then(show).catch(function(){try{localStorage.removeItem(K)}catch(x){}e.textContent=""})}}catch(x){}'
+            + 'try{var s=localStorage.getItem(K);if(s){e.textContent="Opening\\u2026";open(s).then(function(h){window.__shPw=s;show(h)}).catch(function(){try{localStorage.removeItem(K)}catch(x){}e.textContent=""})}}catch(x){}'
             + '})();<\/script></body></html>';
     },
     _pdLandingHtml() {
@@ -179,14 +242,24 @@ Object.assign(window.App, {
             this.reportDataThrough = this._lastFullMonth ? this._lastFullMonth() : '';
             this.hideLowLearners = false; this.hidePrivateCourses = false;
             const list = this._pdEnabled();
+            let anonUsers = [];
+            try { anonUsers = (this._getAnonUsers ? await this._getAnonUsers() : []) || []; } catch (e) { __swallowed(e, 'pd.anon'); }
             for (let i = 0; i < list.length; i++) {
                 const prov = list[i], p = s.providers[prov];
                 if (opts.progress) opts.progress('Partner dashboards: ' + (i + 1) + '/' + list.length + ' — ' + prov);
                 try {
                     if (!p.slug) p.slug = this._pdNewSlug();
                     if (!p.password) p.password = this._pdNewPassword();
-                    const html = await this._buildDarkReportHtml(prov);
+                    let html = await this._buildDarkReportHtml(prov);
                     if (!html) { failed.push(prov + ': no data'); continue; }
+                    // The downloads: each encrypted with the provider's password under a random name.
+                    const manifest = [];
+                    for (const a of await this._pdAttachments(prov, anonUsers, failed)) {
+                        const file = this._pdRandom(16, this.PD_SLUG_ALPHABET) + '.bin';
+                        files.push({ path: 'p/' + p.slug + '/' + file, content: JSON.stringify(await this._pdEncrypt(a.bytes, p.password)) });
+                        manifest.push({ label: a.label, name: a.name, mime: a.mime, file });
+                    }
+                    html = this._pdInject(html, this._pdDownloadsHtml(manifest));
                     files.push({ path: 'p/' + p.slug + '/index.html', content: this._pdPageHtml(await this._pdEncrypt(html, p.password)) });
                     built.push(prov);
                 } catch (e) { failed.push(prov + ': ' + String((e && e.message) || e)); }
@@ -288,7 +361,7 @@ Object.assign(window.App, {
         const enabled = this._pdEnabled().length;
         return '<div data-edit-only class="bg-white rounded-xl border border-slate-200 shadow-sm p-6 mb-6">'
             + '<h2 class="text-sm font-bold text-gsf-prussian uppercase tracking-wide mb-1">Partner Dashboards</h2>'
-            + '<p class="text-xs text-slate-400 mb-4 max-w-3xl">Each provider you switch on gets its full web report at a link of its own, behind a password, rebuilt every night after the background sync (Data Sync). Reports show all-time figures with charts through the last full month. They are encrypted on this Mac before upload, and the token, links and passwords stay on this Mac.</p>'
+            + '<p class="text-xs text-slate-400 mb-4 max-w-3xl">Each provider you switch on gets its full web report at a link of its own, behind a password, rebuilt every night after the background sync (Data Sync). Reports show all-time figures with charts through the last full month, with the PDF report and the anonymised learner and feedback workbooks to download. Everything is encrypted on this Mac before upload, and the token, links and passwords stay on this Mac.</p>'
             + '<div class="flex items-center gap-2 flex-wrap mb-4 text-xs">'
             + '<span class="font-bold uppercase tracking-wide text-[10px] text-slate-400">GitHub repository</span>' + input('repo', s.repo, 'owner/repository', 'w-56')
             + '<span class="font-bold uppercase tracking-wide text-[10px] text-slate-400 ml-2">Web address</span>' + input('baseUrl', s.baseUrl, 'https://reports.globalsurgeryfoundation.org', 'w-72')
