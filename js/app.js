@@ -1092,6 +1092,8 @@ window.App = {
                 // change here shouldn't flag "unsynced to cloud".
                 'learnworlds_client_id.json',
                 'learnworlds_api_token.json',
+                'partner_dash.json',
+                'partner_dash_token.json',
                 'learnworlds_school_domain.json',
                 'provider_map.json',
                 'course_links.json',

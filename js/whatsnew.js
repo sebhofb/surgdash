@@ -9,6 +9,13 @@
     // this is shown to the team, not to developers. Update this list per release.
     const RELEASES = [
         {
+            v: '2.1.5',
+            date: 'October 2026',
+            items: [
+                { t: 'Partner dashboards', d: 'Providers you switch on (Reports tab) get their full web report at a link of their own, behind a password, rebuilt every night after the background sync. Reports are encrypted on this Mac before upload; links, passwords and the publishing token never leave it.' },
+            ]
+        },
+        {
             v: '2.1.4',
             date: 'October 2026',
             items: [

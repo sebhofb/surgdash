@@ -14519,7 +14519,8 @@ function _writeProject(ss, d) {
             // stay local too: even hashed, a password hash in a shared spreadsheet is an
             // offline-cracking target.
             const SECRET_KEYS = new Set(['anthropic_api_key', 'learnworlds_api_token', 'learnworlds_client_id',
-                                         'surgdash_edit_password', 'surgdash_report_password']);
+                                         'surgdash_edit_password', 'surgdash_report_password',
+                                         'surgdash_partner_dash', 'surgdash_partner_dash_token']);
             for (const key of allKeys) {
                 if (SURGHUB_INTERNAL_KEYS.has(key)) continue;
                 if (SECRET_KEYS.has(key)) continue;

@@ -107,7 +107,7 @@ const release = (App) => { App._defaultPasswordHash = sha256(EDIT); App._default
   check('both unlocks retire first', /async unlockEdit\(pw\) \{\s*if \(await this\._retirePassword\(pw, 'edit'\)\) return false;/.test(app) && /async unlockReport\(pw\) \{\s*if \(await this\._retirePassword\(pw, 'report'\)\) return false;/.test(app));
   check('start-up loads the records through the one method', /await this\._loadPasswordRecords\(\);/.test(app) && !/Storage\.getItem\('surgdash_edit_password'\)\)\s*\|\|/.test(app));
   check('the login modal tells a colleague the password was replaced, not that it is wrong', /isRetiredPassword\(pw\)\)\s*\? 'That password was replaced in an app update/.test(app));
-  check('password records still never leave the machine in a push', /SECRET_KEYS = new Set\(\[[^\]]*'surgdash_edit_password', 'surgdash_report_password'\]\)/.test(gv));
+  check('password records still never leave the machine in a push', (m => !!m && /'surgdash_edit_password'/.test(m[1]) && /'surgdash_report_password'/.test(m[1]))(gv.match(/SECRET_KEYS = new Set\(\[([^\]]*)\]\)/)));
   check('Settings says where passwords live', (gv.match(/stored on this computer only/gi) || []).length === 2 && /change the built-in one in a release/.test(gv));
   check('the release notes mention it', /Passwords travel with the app, not the Sheet/.test(fs.readFileSync(path.join(ROOT, 'js/whatsnew.js'), 'utf8')));
 

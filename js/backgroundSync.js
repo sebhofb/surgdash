@@ -139,6 +139,12 @@ Object.assign(window.App, {
                     return SheetsSync.describe(r).split('\n')[0];
                 });
             }
+            // Partner dashboards (partnerDash.js): republish the switched-on providers' reports
+            // from the figures just refreshed. Only where the dashboards are set up (the token is
+            // device-local), so other machines skip it silently.
+            if (this._pdReady && (await this._pdReady()).ok) {
+                await step('Partner dashboards', async () => (await this.publishPartnerDashboards({ silent: true, progress: (t) => this._bgProgress(t, null) })).note);
+            }
             // Weekly digest (digest.js): on/after the chosen weekday, once per week, from
             // the figures the cards just refreshed.
             if (this._digestDue && this.buildWeeklyDigest && this._digestDue(s, new Date(), await this._digestLoad())) {

@@ -3077,6 +3077,8 @@ Object.assign(window.App, {
                         <p class="text-sm text-slate-500 mt-1">Configure report settings and generate report packages for providers.</p>
                     </header>
 
+                    ${this._partnerDashHtml ? this._partnerDashHtml() : ''}
+
                     <!-- Courses in reports -->
                     <div class="bg-white rounded-xl border border-slate-200 shadow-sm p-6 mb-6">
                         <h2 class="text-sm font-bold text-gsf-prussian uppercase tracking-wide mb-1">Courses in Reports</h2>

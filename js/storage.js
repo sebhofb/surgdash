@@ -87,6 +87,10 @@
         // API credentials: never enumerated, pushed, exported or restored — it travels only
         // inside the share link the administrator hands to colleagues.
         if (key === 'surgdash_sheets_key')      return path.join('settings', 'sheets_key.json');
+        // Partner dashboards (partnerDash.js): links, passwords and the GitHub token. Device-local like
+        // the above — deliberately absent from the reverse map, so never enumerated, pushed or exported.
+        if (key === 'surgdash_partner_dash')       return path.join('settings', 'partner_dash.json');
+        if (key === 'surgdash_partner_dash_token') return path.join('settings', 'partner_dash_token.json');
         // The latest weekly digest (digest.js) — device-local like the above.
         if (key === 'surgdash_digest')          return path.join('settings', 'digest.json');
         if (key === 'surgdash_onboarding')      return path.join('settings', 'onboarding.json');
