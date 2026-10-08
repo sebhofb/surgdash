@@ -35,7 +35,27 @@ Object.assign(window.App, {
         let v = null; try { v = await Storage.getItem(this.PD_KEY); } catch (e) { __swallowed(e, 'pd.load'); }
         this._pd = Object.assign(this._pdDefaults(), (v && typeof v === 'object') ? v : {});
         if (!this._pd.providers || typeof this._pd.providers !== 'object') this._pd.providers = {};
+        // Links were random (/p/<22 characters>/) at first; they are readable now (/wfsa/).
+        let moved = false;
+        Object.keys(this._pd.providers).forEach(prov => {
+            const p = this._pd.providers[prov];
+            if (p && p.slug && /^[a-z0-9]{22}$/.test(p.slug)) { p.slug = this._pdNiceSlug(prov, prov); p.published = null; moved = true; }
+        });
+        if (moved) await this._pdSave();
         return this._pd;
+    },
+
+    // A readable address: the acronym a LearnWorlds name starts with ("WFSA - World …" → wfsa),
+    // else the report folder name ("ALL SAFE" → all-safe). Unique among the providers.
+    _pdSlugify(t) { return String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60).replace(/-+$/, ''); },
+    _pdNiceSlug(prov, self) {
+        const acro = (String(prov).match(/^\s*([A-Z0-9]{2,10})\s*-\s*\S/) || [])[1];
+        let base = this._pdSlugify(acro || (this.providerFolderName ? this.providerFolderName(prov) : prov)) || 'provider';
+        if (base.length > 32) base = base.slice(0, 33).replace(/-[^-]*$/, '');   // whole words, ~32 characters
+        const taken = new Set(Object.keys((this._pd && this._pd.providers) || {}).filter(k => k !== self).map(k => this._pd.providers[k].slug).filter(Boolean));
+        let slug = base;
+        for (let n = 2; taken.has(slug); n++) slug = base + '-' + n;
+        return slug;
     },
     async _pdSave() { try { await Storage.setItem(this.PD_KEY, this._pd, { internal: true }); } catch (e) { __swallowed(e, 'pd.save'); } },
     async _pdToken() { try { return String((await Storage.getItem(this.PD_TOKEN_KEY)) || '').trim(); } catch (e) { return ''; } },
@@ -48,7 +68,6 @@ Object.assign(window.App, {
         }
         return out.join('');
     },
-    _pdNewSlug() { return this._pdRandom(22, this.PD_SLUG_ALPHABET); },
     _pdNewPassword() { const s = this._pdRandom(16, this.PD_PW_ALPHABET); return s.match(/.{4}/g).join('-'); },
 
     _pdB64(bytes) { let s = ''; const u = new Uint8Array(bytes); for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); },
@@ -159,7 +178,7 @@ Object.assign(window.App, {
 
     _pdUrl(slug) {
         const base = String((this._pd && this._pd.baseUrl) || '').replace(/\/+$/, '');
-        return base ? base + '/p/' + slug + '/' : '';
+        return base ? base + '/' + slug + '/' : '';
     },
 
     // Providers that can have a dashboard: everyone with an included course.
@@ -182,14 +201,29 @@ Object.assign(window.App, {
         const s = await this._pdLoad();
         const p = s.providers[provider] || (s.providers[provider] = {});
         p.enabled = !!on;
-        if (on && !p.slug) p.slug = this._pdNewSlug();
+        if (on && !p.slug) p.slug = this._pdNiceSlug(provider, provider);
         if (on && !p.password) p.password = this._pdNewPassword();
         await this._pdSave(); this._pdRerender();
     },
-    async pdNewLink(provider) {
-        if (!confirm('Give ' + provider + ' a new link?\n\nThe old link stops working at the next publish. Send them the new one.')) return;
+    // The tick in the table header: every provider on, or every provider off.
+    async pdSetAllEnabled(on) {
+        const s = await this._pdLoad();
+        this._pdProviders().forEach(prov => {
+            const p = s.providers[prov] || (s.providers[prov] = {});
+            p.enabled = !!on;
+            if (on && !p.slug) p.slug = this._pdNiceSlug(prov, prov);
+            if (on && !p.password) p.password = this._pdNewPassword();
+        });
+        await this._pdSave(); this._pdRerender();
+    },
+    // Shorten or change an address. The old one stops working at the next publish.
+    async pdSetSlug(provider, value) {
         const s = await this._pdLoad(); const p = s.providers[provider]; if (!p) return;
-        p.slug = this._pdNewSlug(); p.published = null; await this._pdSave(); this._pdRerender();
+        const slug = this._pdSlugify(value);
+        if (!slug) { alert('An address needs at least one letter or digit.'); this._pdRerender(); return; }
+        if (Object.keys(s.providers).some(k => k !== provider && s.providers[k].slug === slug)) { alert('"' + slug + '" is already used by another provider.'); this._pdRerender(); return; }
+        if (slug === p.slug) return;
+        p.slug = slug; p.published = null; await this._pdSave(); this._pdRerender();
     },
     async pdNewPassword(provider) {
         if (!confirm('Give ' + provider + ' a new password?\n\nThe old password stops working at the next publish. Send them the new one.')) return;
@@ -248,7 +282,7 @@ Object.assign(window.App, {
                 const prov = list[i], p = s.providers[prov];
                 if (opts.progress) opts.progress('Partner dashboards: ' + (i + 1) + '/' + list.length + ' — ' + prov);
                 try {
-                    if (!p.slug) p.slug = this._pdNewSlug();
+                    if (!p.slug) p.slug = this._pdNiceSlug(prov, prov);
                     if (!p.password) p.password = this._pdNewPassword();
                     let html = await this._buildDarkReportHtml(prov);
                     if (!html) { failed.push(prov + ': no data'); continue; }
@@ -256,11 +290,11 @@ Object.assign(window.App, {
                     const manifest = [];
                     for (const a of await this._pdAttachments(prov, anonUsers, failed)) {
                         const file = this._pdRandom(16, this.PD_SLUG_ALPHABET) + '.bin';
-                        files.push({ path: 'p/' + p.slug + '/' + file, content: JSON.stringify(await this._pdEncrypt(a.bytes, p.password)) });
+                        files.push({ path: p.slug + '/' + file, content: JSON.stringify(await this._pdEncrypt(a.bytes, p.password)) });
                         manifest.push({ label: a.label, name: a.name, mime: a.mime, file });
                     }
                     html = this._pdInject(html, this._pdDownloadsHtml(manifest));
-                    files.push({ path: 'p/' + p.slug + '/index.html', content: this._pdPageHtml(await this._pdEncrypt(html, p.password)) });
+                    files.push({ path: p.slug + '/index.html', content: this._pdPageHtml(await this._pdEncrypt(html, p.password)) });
                     built.push(prov);
                 } catch (e) { failed.push(prov + ': ' + String((e && e.message) || e)); }
             }
@@ -352,22 +386,23 @@ Object.assign(window.App, {
             const live = p.published && p.published.slug === p.slug;
             return '<tr class="border-b last:border-0 ' + (on ? '' : 'text-slate-400') + '">'
                 + '<td class="py-2 pr-3"><label class="inline-flex items-center gap-2 cursor-pointer"><input type="checkbox" ' + (on ? 'checked' : '') + ' onchange="App.pdSetEnabled(\'' + pe + '\', this.checked)"> <span class="' + (on ? 'font-semibold text-gsf-prussian' : '') + '">' + esc(this.providerFolderName ? this.providerFolderName(prov) : prov) + '</span></label></td>'
-                + '<td class="py-2 pr-3 font-mono text-[11px] break-all">' + (on && p.slug ? (s.baseUrl ? esc(this._pdUrl(p.slug)) : '<span class="text-amber-700 font-sans">set the web address first</span>') : '') + '</td>'
+                + '<td class="py-2 pr-3 font-mono text-[11px] whitespace-nowrap">' + (on && p.slug ? (s.baseUrl ? esc(String(s.baseUrl).replace(/^https?:\/\//, '') + '/') + '<input type="text" value="' + esc(p.slug) + '" title="Edit to change the address; the old one stops working at the next publish" onchange="App.pdSetSlug(\'' + pe + '\', this.value)" class="w-40 font-mono text-[11px] border rounded px-1.5 py-0.5 outline-none focus:ring-2 focus:ring-gsf-boston/30">' : '<span class="text-amber-700 font-sans">set the web address first</span>') : '') + '</td>'
                 + '<td class="py-2 pr-3 font-mono text-[11px] whitespace-nowrap">' + (on && p.password ? esc(p.password) : '') + '</td>'
                 + '<td class="py-2 pr-3 text-[11px] whitespace-nowrap">' + (on ? (live ? '<span class="text-emerald-700">live · ' + esc(when(p.published.at)) + '</span>' : '<span class="text-amber-700">at the next publish</span>') : '') + '</td>'
-                + '<td class="py-2 text-right whitespace-nowrap">' + (on && p.slug && s.baseUrl ? '<button onclick="App.pdCopy(\'' + pe + '\', this)" class="text-[11px] font-bold text-gsf-boston hover:underline mr-2">Copy</button><button onclick="App.pdEmail(\'' + pe + '\')" class="text-[11px] font-bold text-gsf-boston hover:underline mr-2">Email…</button><button onclick="App.pdNewPassword(\'' + pe + '\')" class="text-[11px] text-slate-500 hover:underline mr-2">New password</button><button onclick="App.pdNewLink(\'' + pe + '\')" class="text-[11px] text-slate-500 hover:underline">New link</button>' : '') + '</td></tr>';
+                + '<td class="py-2 text-right whitespace-nowrap">' + (on && p.slug && s.baseUrl ? '<button onclick="App.pdCopy(\'' + pe + '\', this)" class="text-[11px] font-bold text-gsf-boston hover:underline mr-2">Copy</button><button onclick="App.pdEmail(\'' + pe + '\')" class="text-[11px] font-bold text-gsf-boston hover:underline mr-2">Email…</button><button onclick="App.pdNewPassword(\'' + pe + '\')" class="text-[11px] text-slate-500 hover:underline" title="If a link and password have gone further than they should: the old password stops working at the next publish">New password</button>' : '') + '</td></tr>';
         }).join('');
         const lp = s.lastPublish;
         const enabled = this._pdEnabled().length;
+        const all = this._pdProviders(), allOn = all.length > 0 && all.every(prov => s.providers[prov] && s.providers[prov].enabled);
         return '<div data-edit-only class="bg-white rounded-xl border border-slate-200 shadow-sm p-6 mb-6">'
             + '<h2 class="text-sm font-bold text-gsf-prussian uppercase tracking-wide mb-1">Partner Dashboards</h2>'
-            + '<p class="text-xs text-slate-400 mb-4 max-w-3xl">Each provider you switch on gets its full web report at a link of its own, behind a password, rebuilt every night after the background sync (Data Sync). Reports show all-time figures with charts through the last full month, with the PDF report and the anonymised learner and feedback workbooks to download. Everything is encrypted on this Mac before upload, and the token, links and passwords stay on this Mac.</p>'
+            + '<p class="text-xs text-slate-400 mb-4 max-w-3xl">Each provider you switch on gets its full web report at a link of its own, behind a password, rebuilt every night after the background sync (Data Sync). Reports show all-time figures with charts through the last full month, with the PDF report and the anonymised learner and feedback workbooks to download. Everything is encrypted on this Mac before upload, so the password is what protects each report; the token and the passwords stay on this Mac. If a link and password go further than they should, give that provider a new password.</p>'
             + '<div class="flex items-center gap-2 flex-wrap mb-4 text-xs">'
             + '<span class="font-bold uppercase tracking-wide text-[10px] text-slate-400">GitHub repository</span>' + input('repo', s.repo, 'owner/repository', 'w-56')
             + '<span class="font-bold uppercase tracking-wide text-[10px] text-slate-400 ml-2">Web address</span>' + input('baseUrl', s.baseUrl, 'https://reports.globalsurgeryfoundation.org', 'w-72')
             + '<span class="font-bold uppercase tracking-wide text-[10px] text-slate-400 ml-2">Token</span><input type="password" placeholder="' + (this._pdHasToken ? 'saved on this Mac — paste to replace' : 'paste a GitHub token') + '" onchange="App.pdSetToken(this.value).then(() => App._pdTokenSet())" class="w-56 text-xs border rounded px-2 py-1.5 outline-none focus:ring-2 focus:ring-gsf-boston/30">'
             + '</div>'
-            + '<div class="overflow-x-auto max-h-[420px] overflow-y-auto custom-scrollbar"><table class="w-full text-left text-xs"><thead class="text-slate-400 sticky top-0 bg-white"><tr><th class="py-2 pr-3 font-medium">Provider</th><th class="py-2 pr-3 font-medium">Link</th><th class="py-2 pr-3 font-medium">Password</th><th class="py-2 pr-3 font-medium">Status</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>'
+            + '<div class="overflow-x-auto max-h-[420px] overflow-y-auto custom-scrollbar"><table class="w-full text-left text-xs"><thead class="text-slate-400 sticky top-0 bg-white"><tr><th class="py-2 pr-3 font-medium"><label class="inline-flex items-center gap-2 cursor-pointer" title="Switch every provider on or off"><input type="checkbox" ' + (allOn ? 'checked' : '') + ' onchange="App.pdSetAllEnabled(this.checked)"> Provider</label></th><th class="py-2 pr-3 font-medium">Link</th><th class="py-2 pr-3 font-medium">Password</th><th class="py-2 pr-3 font-medium">Status</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>'
             + '<div class="flex items-center gap-3 flex-wrap mt-4">'
             + '<button onclick="App.pdPublishNow()" ' + (enabled ? '' : 'disabled') + ' class="px-4 py-2 rounded-lg text-sm font-bold ' + (enabled ? 'bg-gsf-prussian text-white hover:bg-slate-900' : 'bg-slate-100 text-slate-400 cursor-not-allowed') + '">Publish now</button>'
             + '<span class="text-xs ' + (lp ? (lp.ok ? 'text-emerald-700' : 'text-amber-700') : 'text-slate-400') + '">' + (lp ? 'Last publish ' + esc(when(lp.at)) + ': ' + esc(lp.note) : enabled + ' switched on · not published yet') + '</span>'

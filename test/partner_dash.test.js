@@ -66,9 +66,11 @@ async function openPage(html, pw) {
 
 (async () => {
   // ── links and passwords ──
-  const pw = App._pdNewPassword(), slugs = new Set(Array.from({ length: 200 }, () => App._pdNewSlug()));
+  const pw = App._pdNewPassword();
   check('passwords: 16 random characters in four groups, nothing easily misread', /^[a-km-zA-HJ-NP-Z2-9]{4}(-[a-km-zA-HJ-NP-Z2-9]{4}){3}$/.test(pw) && !/[0O1lI]/.test(pw), pw);
-  check('links: 22 random characters, no repeats in 200', slugs.size === 200 && [...slugs].every(s => /^[a-z0-9]{22}$/.test(s)));
+  check('addresses: the acronym before " - ", else the folder name, lowercase and web-safe',
+    App._pdNiceSlug('WFSA - World Federation') === 'wfsa' && App._pdNiceSlug('Lifebox') === 'lifebox' && App._pdNiceSlug('ALL SAFE') === 'all-safe' && App._pdSlugify(' Médecins / Sans Frontières ') === 'medecins-sans-frontieres'
+    && App._pdNiceSlug('Harvard Medical School - Program in Global Surgery and Social Change') === 'harvard-medical-school-program');
 
   // ── encryption, opened by the page itself ──
   const payload = await App._pdEncrypt('<html>hello report</html>', 'Abcd-Efgh-Jkmn-Pqrs');
@@ -89,7 +91,8 @@ async function openPage(html, pw) {
   await App.pdSetEnabled('GSF - Global Surgery Foundation', true);
   await App.pdSetEnabled('Lifebox', true);
   check('settings are tidied: repository and address', App._pd.repo === 'gsf/reports' && App._pd.baseUrl === 'https://reports.globalsurgeryfoundation.org');
-  check('switching a provider on gives it a link and a password', /^[a-z0-9]{22}$/.test(App._pd.providers.Lifebox.slug) && /-/.test(App._pd.providers.Lifebox.password));
+  check('switching a provider on gives it a readable link and a password', App._pd.providers.Lifebox.slug === 'lifebox' && App._pd.providers['GSF - Global Surgery Foundation'].slug === 'gsf' && /-/.test(App._pd.providers.Lifebox.password));
+  check('…at the site root: https://reports.globalsurgeryfoundation.org/gsf/', App._pdUrl('gsf') === 'https://reports.globalsurgeryfoundation.org/gsf/');
   check('still not ready without the token', (await App._pdReady()).why === 'no GitHub token on this Mac');
   await App.pdSetToken('ghp_TESTTOKEN123');
   check('the token and the settings are written as internal (device) writes', store.get('surgdash_partner_dash_token') === 'ghp_TESTTOKEN123' && ctx.__internal.every(Boolean));
@@ -107,13 +110,13 @@ async function openPage(html, pw) {
   const treeEntries = JSON.parse(calls.find(c => c.url.endsWith('/git/trees')).body).tree;
   const tree = treeEntries.map(t => t.path).sort();
   const gsfP = App._pd.providers['GSF - Global Surgery Foundation'], lbP = App._pd.providers.Lifebox;
-  const under = (slug) => tree.filter(t => t.startsWith('p/' + slug + '/'));
-  check('the site: a page per provider at its random link, plus landing, 404, robots.txt, .nojekyll and the custom domain',
-    ['.nojekyll', '404.html', 'CNAME', 'index.html', 'robots.txt', 'p/' + gsfP.slug + '/index.html', 'p/' + lbP.slug + '/index.html'].every(f => tree.includes(f)) && tree.every(t => !t.startsWith('p/') || t.startsWith('p/' + gsfP.slug + '/') || t.startsWith('p/' + lbP.slug + '/')), tree.join(', '));
+  const under = (slug) => tree.filter(t => t.startsWith(slug + '/'));
+  check('the site: a page per provider at its link, plus landing, 404, robots.txt, .nojekyll and the custom domain',
+    ['.nojekyll', '404.html', 'CNAME', 'index.html', 'robots.txt', 'gsf/index.html', 'lifebox/index.html'].every(f => tree.includes(f)) && tree.every(t => !t.includes('/') || t.startsWith('gsf/') || t.startsWith('lifebox/')), tree.join(', '));
   check('downloads sit beside each page under random names: three for GSF, two where there is no feedback',
     under(gsfP.slug).filter(t => /\/[a-z0-9]{16}\.bin$/.test(t)).length === 3 && under(lbP.slug).filter(t => /\.bin$/.test(t)).length === 2, under(gsfP.slug).join(', '));
   const contentOf = (path_) => blobBySha[treeEntries.find(t => t.path === path_).sha];
-  const gsfPage = contentOf('p/' + gsfP.slug + '/index.html');
+  const gsfPage = contentOf(gsfP.slug + '/index.html');
   const gsfReport = new TextDecoder().decode(await decryptJson(JSON.stringify(JSON.parse(gsfPage.match(/var P=(\{[^;]*\});/)[1])), gsfP.password));
   check('the decrypted report carries a Downloads bar naming each file as in the package', /id="sh-dl"/.test(gsfReport) && /Report_GSF_Launch-Sept 2026\.pdf/.test(gsfReport) && /Users_GSF_Launch-Sept 2026\.xlsx/.test(gsfReport) && /Feedback_GSF_Launch-Sept 2026\.xlsx/.test(gsfReport), (gsfReport.match(/"name":"[^"]+"/g) || []).join(' '));
   const bins = under(gsfP.slug).filter(t => t.endsWith('.bin'));
@@ -125,16 +128,16 @@ async function openPage(html, pw) {
   const barScript = gsfReport.match(/<div id="sh-dl"[\s\S]*?<script>([\s\S]*?)<\/script>/)[1];
   let handler = null, saved = null;
   const msg = { textContent: '' }, anchors = [];
-  const bctx = { crypto: globalThis.crypto, TextEncoder, Uint8Array, atob, location: { pathname: '/p/' + gsfP.slug + '/' }, localStorage: { getItem: () => null },
+  const bctx = { crypto: globalThis.crypto, TextEncoder, Uint8Array, atob, location: { pathname: '/' + gsfP.slug + '/' }, localStorage: { getItem: () => null },
     window: { __shPw: gsfP.password, prompt: () => null }, setTimeout: () => 0,
     URL: { createObjectURL: (blob) => { saved = blob; return 'blob:x'; }, revokeObjectURL() {} }, Blob: class { constructor(parts, o) { this.parts = parts; this.type = o.type; } },
-    fetch: async (file) => ({ ok: true, text: async () => contentOf('p/' + gsfP.slug + '/' + file) }),
+    fetch: async (file) => ({ ok: true, text: async () => contentOf(gsfP.slug + '/' + file) }),
     document: { getElementById: (id) => (id === 'sh-dl' ? { addEventListener: (ev, fn) => { handler = fn; } } : msg), createElement: () => { const a = { click() { a.clicked = true; }, remove() {} }; anchors.push(a); return a; }, body: { appendChild() {} } } };
   vm.createContext(bctx); vm.runInContext(barScript, bctx);
   handler({ target: { closest: () => ({ getAttribute: () => '0' }) } });
   for (let i = 0; i < 200 && !(anchors[0] && anchors[0].clicked) && msg.textContent !== 'Could not open the file.'; i++) await new Promise(r => setTimeout(r, 10));
   check('clicking a download saves the decrypted file under its name', anchors[0] && anchors[0].clicked && anchors[0].download === 'Report_GSF_Launch-Sept 2026.pdf' && new TextDecoder().decode(new Uint8Array(saved.parts[0])) === '%PDF secret for GSF - Global Surgery Foundation', msg.textContent);
-  check('no provider name appears in any path', !tree.some(p => /gsf|lifebox|wfsa/i.test(p)));
+  check('only switched-on providers have a folder (WFSA is off)', !tree.some(p => /wfsa/i.test(p)));
   check('an empty repository gets a first commit, then the publish carries on', calls.some(c => c.method === 'PUT' && c.url.endsWith('/contents/README.md')));
   const commit = JSON.parse(calls.find(c => c.url.endsWith('/git/commits')).body);
   const ref = calls.find(c => c.method === 'PATCH');
@@ -147,12 +150,32 @@ async function openPage(html, pw) {
   check('a branch that does not exist yet is created', calls.some(c => c.method === 'POST' && c.url.endsWith('/git/refs')));
 
   // ── changing a link or password ──
-  const oldSlug = App._pd.providers.Lifebox.slug;
-  await App.pdNewLink('Lifebox');
-  check('a new link drops the old one from the next publish', App._pd.providers.Lifebox.slug !== oldSlug && App._pd.providers.Lifebox.published === null);
+  await App.pdSetSlug('Lifebox', 'gsf');
+  check('an address another provider uses is refused', App._pd.providers.Lifebox.slug === 'lifebox' && App._pd.providers.Lifebox.published !== null);
+  await App.pdSetSlug('Lifebox', '  ');
+  check('an empty address is refused', App._pd.providers.Lifebox.slug === 'lifebox');
+  await App.pdSetSlug('Lifebox', ' LifeBox Global ');
+  check('an edited address is tidied, and the old one drops from the next publish', App._pd.providers.Lifebox.slug === 'lifebox-global' && App._pd.providers.Lifebox.published === null);
   await App.pdNewPassword('Lifebox');
   await App.pdCopy('Lifebox');
   check('the message to the provider carries the link and the password', ctx.__clip.includes(App._pdUrl(App._pd.providers.Lifebox.slug)) && ctx.__clip.includes(App._pd.providers.Lifebox.password));
+
+  // ── the select-all tick ──
+  await App.pdSetAllEnabled(true);
+  check('the header tick switches every provider on (never "Unknown Provider"), each with a link and password',
+    App._pdEnabled().length === 3 && App._pd.providers['WFSA - World Federation'].slug === 'wfsa' && !!App._pd.providers['WFSA - World Federation'].password && !App._pd.providers['Unknown Provider'], App._pdEnabled().join());
+  check('…and shows ticked when all are on', /<input type="checkbox" checked onchange="App\.pdSetAllEnabled/.test(App._partnerDashHtml()));
+  const keepPw = App._pd.providers.Lifebox.password;
+  await App.pdSetAllEnabled(false);
+  check('…and off again, keeping links and passwords for next time', App._pdEnabled().length === 0 && App._pd.providers.Lifebox.password === keepPw && App._pd.providers.Lifebox.slug === 'lifebox-global');
+  await App.pdSetEnabled('Lifebox', true);
+
+  // ── the first random links move to readable ones ──
+  store.set(App.PD_KEY, { repo: 'gsf/reports', providers: { 'GSF - Global Surgery Foundation': { enabled: true, slug: 'abcdefghijkmnopqrstuvw', password: 'x', published: { slug: 'abcdefghijkmnopqrstuvw' } }, 'ALL SAFE': { enabled: true, slug: '0123456789abcdefghijkl', password: 'y' } } });
+  const keepPd = App._pd; App._pd = null;
+  await App._pdLoad();
+  check('random links from the first version become readable, to be republished', App._pd.providers['GSF - Global Surgery Foundation'].slug === 'gsf' && App._pd.providers['ALL SAFE'].slug === 'all-safe' && App._pd.providers['GSF - Global Surgery Foundation'].published === null && store.get(App.PD_KEY).providers['ALL SAFE'].slug === 'all-safe');
+  App._pd = keepPd; store.set(App.PD_KEY, keepPd);
 
   // ── failure is reported, not thrown, when run by hand ──
   ghEmpty = false; const real = ctx.electronAPI.invoke; ctx.electronAPI.invoke = async () => ({ statusCode: 401, body: '{"message":"Bad credentials"}' });
