@@ -387,7 +387,19 @@ Object.assign(window.App, {
         return { files, built, failed };
     },
 
+    // GitHub API call; a dropped connection, a 5xx or GitHub's own "timed out" is tried
+    // again (3 attempts in all) before it counts as a failure.
     async _pdGh(method, path, body, token) {
+        for (let attempt = 1; ; attempt++) {
+            try { return await this._pdGhOnce(method, path, body, token); }
+            catch (e) {
+                const transient = !e.status || e.status >= 500 || (e.status === 422 && /timed out/i.test(e.message));
+                if (!transient || attempt >= 3) throw e;
+                await new Promise(r => setTimeout(r, (this.PD_RETRY_MS || 4000) * attempt));
+            }
+        }
+    },
+    async _pdGhOnce(method, path, body, token) {
         const s = this._pd;
         const res = await electronAPI.invoke('http-request', {
             url: 'https://api.github.com/repos/' + s.repo + path, method,
@@ -420,9 +432,19 @@ Object.assign(window.App, {
                 await this._pdGh('PUT', '/contents/README.md', { message: 'Start', content: btoa('SURGhub partner reports, published by SURGdash.\n'), branch }, token);
                 first = await blob(files[0].content);
             }
-            const tree = [{ path: files[0].path, mode: '100644', type: 'blob', sha: first.sha }];
-            for (const f of files.slice(1)) tree.push({ path: f.path, mode: '100644', type: 'blob', sha: (await blob(f.content)).sha });
-            const t = await this._pdGh('POST', '/git/trees', { tree }, token);
+            const shas = [first.sha];
+            for (const f of files.slice(1)) shas.push((await blob(f.content)).sha);
+            // One small tree per folder, then the root: a single tree of every file is
+            // too much for GitHub to build in one request (it times out).
+            if (opts.progress) opts.progress('Partner dashboards: arranging the site…');
+            const root = [], dirs = {};
+            files.forEach((f, i) => {
+                const cut = f.path.indexOf('/'), entry = { mode: '100644', type: 'blob', sha: shas[i] };
+                if (cut < 0) root.push(Object.assign({ path: f.path }, entry));
+                else (dirs[f.path.slice(0, cut)] = dirs[f.path.slice(0, cut)] || []).push(Object.assign({ path: f.path.slice(cut + 1) }, entry));
+            });
+            for (const d of Object.keys(dirs)) root.push({ path: d, mode: '040000', type: 'tree', sha: (await this._pdGh('POST', '/git/trees', { tree: dirs[d] }, token)).sha });
+            const t = await this._pdGh('POST', '/git/trees', { tree: root }, token);
             const now = new Date().toISOString();
             const c = await this._pdGh('POST', '/git/commits', { message: 'Partner reports ' + now.slice(0, 10), tree: t.sha, parents: [] }, token);
             try { await this._pdGh('PATCH', '/git/refs/heads/' + branch, { sha: c.sha, force: true }, token); }

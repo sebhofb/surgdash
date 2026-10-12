@@ -6,14 +6,18 @@ const ROOT = path.resolve(__dirname, '..');
 let ok = 0, bad = 0; const check = (n, c, d) => { (c ? ok++ : bad++); console.log((c ? 'PASS' : 'FAIL') + ' - ' + n + (d !== undefined ? '  →  ' + String(d).slice(0, 260) : '')); };
 
 const store = new Map(), calls = [];
-let ghRefExists = true, ghEmpty = false, blobN = 0; const blobBySha = {};
+let ghRefExists = true, ghEmpty = false, blobN = 0, treeN = 0, treeTimeouts = 0; const blobBySha = {}, treeBySha = {};
 const gh = async (req) => {
   calls.push(req);
   const p = req.url.replace(/^https:\/\/api\.github\.com\/repos\/gsf\/reports/, ''); const body = req.body ? JSON.parse(req.body) : null;
   const ok = (status, json) => ({ statusCode: status, body: JSON.stringify(json) });
   if (req.method === 'POST' && p === '/git/blobs') { if (ghEmpty) return ok(409, { message: 'Git Repository is empty.' }); const sha = 'blob' + (++blobN); blobBySha[sha] = body.content; return ok(201, { sha }); }
   if (req.method === 'PUT' && p === '/contents/README.md') { ghEmpty = false; return ok(201, {}); }
-  if (req.method === 'POST' && p === '/git/trees') return ok(201, { sha: 'tree1' });
+  if (req.method === 'POST' && p === '/git/trees') {
+    if (treeTimeouts > 0) { treeTimeouts--; return ok(422, { message: 'Sorry, your request timed out.' }); }
+    if (body.tree.length > 40) return ok(422, { message: 'Sorry, your request timed out.  Consider building the tree incrementally' });   // GitHub's limit, roughly
+    const sha = 'tree' + (++treeN); treeBySha[sha] = body.tree; return ok(201, { sha });
+  }
   if (req.method === 'POST' && p === '/git/commits') return ok(201, { sha: 'commit1' });
   if (req.method === 'PATCH' && p === '/git/refs/heads/main') return ghRefExists ? ok(200, {}) : ok(422, { message: 'Reference does not exist' });
   if (req.method === 'POST' && p === '/git/refs') return ok(201, {});
@@ -33,6 +37,7 @@ ctx.App = { reportPeriodFrom: '2026-07', reportPeriodTo: '2026-09', reportDataTh
 vm.createContext(ctx);
 for (const f of ['js/reportNames.js', 'js/partnerDash.js']) { try { vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, { filename: f }); } catch (e) { check('loads ' + f, false, e.message); } }
 const App = ctx.App;
+App.PD_RETRY_MS = 1;
 const seen = [];
 App._buildDarkReportHtml = async (prov) => { seen.push({ prov, from: App.reportPeriodFrom, through: App.reportDataThrough, fb: App.reportFeedbackFromDate, low: App.hideLowLearners, priv: App.hidePrivateCourses }); return '<html><body>SECRET REPORT FOR ' + prov + '</body></html>'; };
 // The three downloads, as the package export builds them (stubbed: no Electron, no XLSX here).
@@ -109,7 +114,10 @@ async function openPage(html, pw) {
   const all = blobs.join('\n');
   check('no readable report, no password, no token in anything uploaded', !/SECRET REPORT|%PDF secret|PK users|PK feedback/.test(all) && !all.includes(App._pd.providers.Lifebox.password) && !all.includes(App._pd.providers['GSF - Global Surgery Foundation'].password) && !/ghp_TESTTOKEN123/.test(all));
   check('the token travels only in the Authorization header', calls.every(c => !String(c.body || '').includes('ghp_TESTTOKEN123')) && calls.every(c => c.headers.Authorization === 'Bearer ghp_TESTTOKEN123'));
-  const treeEntries = JSON.parse(calls.find(c => c.url.endsWith('/git/trees')).body).tree;
+  // The site as GitHub would see it: the root tree, its folders expanded.
+  const treeCalls = calls.filter(c => c.url.endsWith('/git/trees'));
+  const treeEntries = [].concat(...JSON.parse(treeCalls[treeCalls.length - 1].body).tree.map(t => (t.type === 'tree' ? treeBySha[t.sha].map(x => Object.assign({}, x, { path: t.path + '/' + x.path })) : [t])));
+  check('the site goes up as one small tree per folder, then the root', treeCalls.length === 4 && treeCalls.every(c => JSON.parse(c.body).tree.length <= 40) && treeCalls.slice(0, 3).every(c => JSON.parse(c.body).tree.every(t => !t.path.includes('/'))), treeCalls.map(c => JSON.parse(c.body).tree.length).join(','));
   const tree = treeEntries.map(t => t.path).sort();
   const gsfP = App._pd.providers['GSF - Global Surgery Foundation'], lbP = App._pd.providers.Lifebox;
   const under = (slug) => tree.filter(t => t.startsWith(slug + '/'));
@@ -165,8 +173,9 @@ async function openPage(html, pw) {
   check('a live provider gets a Partner dashboard button for its provider and course pages; others none', /App\.pdOpen\('GSF - Global Surgery Foundation'\)/.test(App._pdButtonHtml('GSF - Global Surgery Foundation')) && App._pdButtonHtml('WFSA - World Federation') === '' && App._pdButtonHtml('') === '');
   check('the published state is recorded per provider', App._pd.providers.Lifebox.published && App._pd.providers.Lifebox.published.slug === App._pd.providers.Lifebox.slug && App._pd.lastPublish.ok);
 
-  calls.length = 0; ghRefExists = false;
-  await App.publishPartnerDashboards({ silent: true });
+  calls.length = 0; ghRefExists = false; treeTimeouts = 2;
+  const retried = await App.publishPartnerDashboards({ silent: true });
+  check('GitHub timing out is tried again, and the publish goes through', retried.ok && treeTimeouts === 0, retried.note);
   check('a branch that does not exist yet is created', calls.some(c => c.method === 'POST' && c.url.endsWith('/git/refs')));
 
   // ── changing a link or password ──
