@@ -206,7 +206,7 @@ async function openPage(html, pw) {
   const pageOf = (dir) => blobBySha[sub(dir).find(x => x.path === 'index.html').sha];
   const gsfW = new TextDecoder().decode(await decryptJson(JSON.stringify(JSON.parse(pageOf('gsf').match(/var P=(\{[^;]*\});/)[1])), App._pd.providers['GSF - Global Surgery Foundation'].password));
   const lbD = new TextDecoder().decode(await decryptJson(JSON.stringify(JSON.parse(pageOf(App._pd.providers.Lifebox.slug).match(/var P=(\{[^;]*\});/)[1])), App._pd.providers.Lifebox.password));
-  check('GSF is published white (page, text and downloads bar), Lifebox stays dark', /id="white-theme"/.test(gsfW) && /background:#ffffff;color:#0b2233/.test(gsfW) && /id="sh-dl" style="[^"]*background:#ffffff/.test(gsfW) && !/white-theme/.test(lbD) && /background:#001523/.test(lbD));
+  check('GSF is published white (page, text and downloads bar), Lifebox stays dark', /id="white-theme"/.test(gsfW) && /background:#ffffff;color:#0b2233/i.test(gsfW) && /id="sh-dl" style="[^"]*background:#ffffff/.test(gsfW) && !/white-theme/.test(lbD) && /background:#001523/.test(lbD));
   check('the panel offers Dark / White per provider', /App\.pdSetDesign\('GSF - Global Surgery Foundation', this\.value\)[^>]*><option value="">Dark<\/option><option value="white" selected>White/.test(App._partnerDashHtml()));
   await App.pdSetDesign('GSF - Global Surgery Foundation', '');
 
