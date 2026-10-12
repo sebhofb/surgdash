@@ -35,11 +35,12 @@ ctx.App = { reportPeriodFrom: '2026-07', reportPeriodTo: '2026-09', reportDataTh
   getAnalyticsSnap() { return [{ Provider: 'GSF - Global Surgery Foundation' }, { Provider: 'WFSA - World Federation' }, { Provider: 'Lifebox' }, { Provider: 'Unknown Provider' }]; },
   _withAllCourses(fn) { return fn(); } };
 vm.createContext(ctx);
-for (const f of ['js/reportNames.js', 'js/partnerDash.js']) { try { vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, { filename: f }); } catch (e) { check('loads ' + f, false, e.message); } }
+for (const f of ['js/reportNames.js', 'js/reportTheme.js', 'js/partnerDash.js']) { try { vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, { filename: f }); } catch (e) { check('loads ' + f, false, e.message); } }
 const App = ctx.App;
 App.PD_RETRY_MS = 1;
 const seen = [];
-App._buildDarkReportHtml = async (prov) => { seen.push({ prov, from: App.reportPeriodFrom, through: App.reportDataThrough, fb: App.reportFeedbackFromDate, low: App.hideLowLearners, priv: App.hidePrivateCourses }); return '<html><body>SECRET REPORT FOR ' + prov + '</body></html>'; };
+App._assembleReportData = async (prov, o) => (o && o.platform ? { totalLrn: 110828, totalCert: 34689, coursesSorted: new Array(151), providerCount: 34, providerCountryData: new Array(190), avgRating: 4.7123 } : null);
+App._buildDarkReportHtml = async (prov, platform) => { if (platform) { seen.push({ prov, platform: true }); return '<html><head></head><body style="background:#001523">ALL OF SURGHUB</body></html>'; } seen.push({ prov, from: App.reportPeriodFrom, through: App.reportDataThrough, fb: App.reportFeedbackFromDate, low: App.hideLowLearners, priv: App.hidePrivateCourses }); return '<html><head></head><body style="background:#001523;color:#eef4f9">SECRET REPORT FOR ' + prov + '</body></html>'; };
 // The three downloads, as the package export builds them (stubbed: no Electron, no XLSX here).
 const FILEBYTES = { pdf: (prov) => new TextEncoder().encode('%PDF secret for ' + prov), users: (prov) => new TextEncoder().encode('PK users of ' + prov), fb: (prov) => new TextEncoder().encode('PK feedback of ' + prov) };
 App._pdPdfBytes = async (prov) => FILEBYTES.pdf(prov);
@@ -107,8 +108,8 @@ async function openPage(html, pw) {
   // ── publish ──
   calls.length = 0; ghEmpty = true;
   const r = await App.publishPartnerDashboards({ silent: true });
-  check('publishes the two switched-on providers only', r.ok && /2 reports published/.test(r.note) && seen.map(s => s.prov).join() === 'GSF - Global Surgery Foundation,Lifebox', r.note);
-  check('reports are built all-time, through the last full month, every course, no feedback filter', seen.every(s => s.from === '' && s.through === '2026-09' && s.fb === '' && !s.low && !s.priv));
+  check('publishes the two switched-on providers only', r.ok && /2 reports published/.test(r.note) && seen.filter(s => !s.platform).map(s => s.prov).join() === 'GSF - Global Surgery Foundation,Lifebox' && seen.filter(s => s.platform).length === 1, r.note);
+  check('reports are built all-time, through the last full month, every course, no feedback filter', seen.filter(s => !s.platform).every(s => s.from === '' && s.through === '2026-09' && s.fb === '' && !s.low && !s.priv));
   check('…and the user\'s report settings are put back', App.reportPeriodFrom === '2026-07' && App.reportDataThrough === '' && App.reportFeedbackFromDate === '2026-01-01' && App.hideLowLearners && App.hidePrivateCourses);
   const blobs = calls.filter(c => c.url.endsWith('/git/blobs')).map(c => JSON.parse(c.body).content);
   const all = blobs.join('\n');
@@ -117,12 +118,12 @@ async function openPage(html, pw) {
   // The site as GitHub would see it: the root tree, its folders expanded.
   const treeCalls = calls.filter(c => c.url.endsWith('/git/trees'));
   const treeEntries = [].concat(...JSON.parse(treeCalls[treeCalls.length - 1].body).tree.map(t => (t.type === 'tree' ? treeBySha[t.sha].map(x => Object.assign({}, x, { path: t.path + '/' + x.path })) : [t])));
-  check('the site goes up as one small tree per folder, then the root', treeCalls.length === 4 && treeCalls.every(c => JSON.parse(c.body).tree.length <= 40) && treeCalls.slice(0, 3).every(c => JSON.parse(c.body).tree.every(t => !t.path.includes('/'))), treeCalls.map(c => JSON.parse(c.body).tree.length).join(','));
+  check('the site goes up as one small tree per folder, then the root', treeCalls.length === 5 && treeCalls.every(c => JSON.parse(c.body).tree.length <= 40) && treeCalls.slice(0, 4).every(c => JSON.parse(c.body).tree.every(t => !t.path.includes('/'))), treeCalls.map(c => JSON.parse(c.body).tree.length).join(','));
   const tree = treeEntries.map(t => t.path).sort();
   const gsfP = App._pd.providers['GSF - Global Surgery Foundation'], lbP = App._pd.providers.Lifebox;
   const under = (slug) => tree.filter(t => t.startsWith(slug + '/'));
   check('the site: a page per provider at its link, plus landing, 404, robots.txt, .nojekyll and the custom domain',
-    ['.nojekyll', '404.html', 'CNAME', 'index.html', 'robots.txt', 'gsf/index.html', 'lifebox/index.html'].every(f => tree.includes(f)) && tree.every(t => !t.includes('/') || t.startsWith('gsf/') || t.startsWith('lifebox/') || t === 'team/index.html'), tree.join(', '));
+    ['.nojekyll', '404.html', 'CNAME', 'index.html', 'robots.txt', 'gsf/index.html', 'lifebox/index.html'].every(f => tree.includes(f)) && tree.every(t => !t.includes('/') || t.startsWith('gsf/') || t.startsWith('lifebox/') || t === 'team/index.html' || t === 'surghub/index.html'), tree.join(', '));
   check('downloads sit beside each page under random names: three for GSF, two where there is no feedback',
     under(gsfP.slug).filter(t => /\/[a-z0-9]{16}\.bin$/.test(t)).length === 3 && under(lbP.slug).filter(t => /\.bin$/.test(t)).length === 2, under(gsfP.slug).join(', '));
   const contentOf = (path_) => blobBySha[treeEntries.find(t => t.path === path_).sha];
@@ -164,10 +165,13 @@ async function openPage(html, pw) {
   check('…the team password opens a list of every published provider with its link', /href="\/gsf\/"/.test(teamOpen.written || '') && /href="\/lifebox\/"/.test(teamOpen.written || '') && /SURGhub partner reports/.test(teamOpen.written || ''));
   check('…as a logo tile per provider (initials where there is no logo), each tile opening that report',
     /<a class="card" href="\/lifebox\/"[^>]*><span class="logo"><img src="data:image\/png;base64,TElGRUJPWA=="/.test(teamOpen.written) && /<a class="card" href="\/gsf\/"[^>]*><span class="logo"><span class="ini">G<\/span>/.test(teamOpen.written) && /<span class="n">Lifebox<\/span>/.test(teamOpen.written));
+  check('…with a SURGhub-overall card first: headline numbers, opening /surghub/', /<a class="hub" href="\/surghub\/"/.test(teamOpen.written) && teamOpen.written.indexOf('class="hub"') < teamOpen.written.indexOf('class="card"') && /110,828<\/b><i>enrolled learners/.test(teamOpen.written) && /34,689<\/b><i>certificates/.test(teamOpen.written) && /4\.71<\/b><i>avg rating/.test(teamOpen.written));
+  const hubOpen = await openPage(contentOf('surghub/index.html'), teamPw);
+  check('the SURGhub-wide report opens with the team password, and with no provider password', /ALL OF SURGHUB/.test(hubOpen.written || '') && (await openPage(contentOf('surghub/index.html'), gsfP.password)).written === null);
   const ls = {};
   const tctx = { localStorage: { setItem: (k, v) => { ls[k] = v; } }, document: { getElementById: () => ({ addEventListener() {} }), querySelectorAll: () => [] } };
   vm.createContext(tctx); vm.runInContext(teamOpen.written.match(/<script>([\s\S]*?)<\/script>/)[1], tctx);
-  check('…and remembers each provider password in that browser, under the key the provider pages read', ls['surghub-report:/gsf/'] === gsfP.password && ls['surghub-report:/lifebox/'] === lbP.password);
+  check('…and remembers each provider password in that browser, under the key the provider pages read', ls['surghub-report:/gsf/'] === gsfP.password && ls['surghub-report:/lifebox/'] === lbP.password && ls['surghub-report:/surghub/'] === teamPw);
   check('"team" is never given to a provider', App._pdNiceSlug('TEAM - Trauma Education') === 'team-2');
   check('the panel shows the team page, its password and Open', /Your team page/.test(App._partnerDashHtml()) && App._partnerDashHtml().includes(teamPw) && /App\.pdOpenTeam\(\)/.test(App._partnerDashHtml()));
   check('a live provider gets a Partner dashboard button for its provider and course pages; others none', /App\.pdOpen\('GSF - Global Surgery Foundation'\)/.test(App._pdButtonHtml('GSF - Global Surgery Foundation')) && App._pdButtonHtml('WFSA - World Federation') === '' && App._pdButtonHtml('') === '');
@@ -181,6 +185,8 @@ async function openPage(html, pw) {
   // ── changing a link or password ──
   await App.pdSetSlug('Lifebox', 'gsf');
   check('an address another provider uses is refused', App._pd.providers.Lifebox.slug === 'lifebox' && App._pd.providers.Lifebox.published !== null);
+  await App.pdSetSlug('Lifebox', 'surghub');
+  check('the SURGhub-wide address is refused too', App._pd.providers.Lifebox.slug === 'lifebox');
   await App.pdSetSlug('Lifebox', 'Team');
   check('the team page address is refused', App._pd.providers.Lifebox.slug === 'lifebox');
   await App.pdSetSlug('Lifebox', '  ');
@@ -190,6 +196,19 @@ async function openPage(html, pw) {
   await App.pdNewPassword('Lifebox');
   await App.pdCopy('Lifebox');
   check('the message to the provider carries the link and the password', ctx.__clip.includes(App._pdUrl(App._pd.providers.Lifebox.slug)) && ctx.__clip.includes(App._pd.providers.Lifebox.password));
+
+  // ── the white design ──
+  await App.pdSetDesign('GSF - Global Surgery Foundation', 'white');
+  check('choosing a design marks the page for the next publish', App._pd.providers['GSF - Global Surgery Foundation'].design === 'white' && App._pd.providers['GSF - Global Surgery Foundation'].published === null);
+  calls.length = 0; ghRefExists = true;
+  await App.publishPartnerDashboards({ silent: true });
+  const tc2 = calls.filter(c => c.url.endsWith('/git/trees')), sub = (dir) => { const t = JSON.parse(tc2[tc2.length - 1].body).tree.find(x => x.path === dir); return treeBySha[t.sha]; };
+  const pageOf = (dir) => blobBySha[sub(dir).find(x => x.path === 'index.html').sha];
+  const gsfW = new TextDecoder().decode(await decryptJson(JSON.stringify(JSON.parse(pageOf('gsf').match(/var P=(\{[^;]*\});/)[1])), App._pd.providers['GSF - Global Surgery Foundation'].password));
+  const lbD = new TextDecoder().decode(await decryptJson(JSON.stringify(JSON.parse(pageOf(App._pd.providers.Lifebox.slug).match(/var P=(\{[^;]*\});/)[1])), App._pd.providers.Lifebox.password));
+  check('GSF is published white (page, text and downloads bar), Lifebox stays dark', /id="white-theme"/.test(gsfW) && /background:#ffffff;color:#0b2233/.test(gsfW) && /id="sh-dl" style="[^"]*background:#ffffff/.test(gsfW) && !/white-theme/.test(lbD) && /background:#001523/.test(lbD));
+  check('the panel offers Dark / White per provider', /App\.pdSetDesign\('GSF - Global Surgery Foundation', this\.value\)[^>]*><option value="">Dark<\/option><option value="white" selected>White/.test(App._partnerDashHtml()));
+  await App.pdSetDesign('GSF - Global Surgery Foundation', '');
 
   // ── the select-all tick ──
   await App.pdSetAllEnabled(true);

@@ -29,6 +29,7 @@ Object.assign(window.App, {
     PD_PW_ALPHABET: 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789',   // no 0/O, 1/l/I
     PD_SLUG_ALPHABET: 'abcdefghijklmnopqrstuvwxyz0123456789',
     PD_TEAM_SLUG: 'team',   // GSF's own page: every provider, one password
+    PD_PLATFORM_SLUG: 'surghub',   // all of SURGhub, opened with the team password
 
     _pdDefaults() { return { repo: '', branch: 'main', baseUrl: '', providers: {}, lastPublish: null }; },
     async _pdLoad() {
@@ -54,7 +55,7 @@ Object.assign(window.App, {
         let base = this._pdSlugify(acro || (this.providerFolderName ? this.providerFolderName(prov) : prov)) || 'provider';
         if (base.length > 32) base = base.slice(0, 33).replace(/-[^-]*$/, '');   // whole words, ~32 characters
         const taken = new Set(Object.keys((this._pd && this._pd.providers) || {}).filter(k => k !== self).map(k => this._pd.providers[k].slug).filter(Boolean));
-        taken.add(this.PD_TEAM_SLUG);
+        taken.add(this.PD_TEAM_SLUG); taken.add(this.PD_PLATFORM_SLUG);
         let slug = base;
         for (let n = 2; taken.has(slug); n++) slug = base + '-' + n;
         return slug;
@@ -118,11 +119,12 @@ Object.assign(window.App, {
     },
     // A small bar in the corner of the report: each button fetches its encrypted file,
     // decrypts it with the password the page was opened with, and saves it under its name.
-    _pdDownloadsHtml(manifest) {
+    _pdDownloadsHtml(manifest, white) {
         if (!manifest || !manifest.length) return '';
+        const bar = white ? 'background:#ffffff;border:1px solid #e1e7ee;box-shadow:0 6px 24px rgba(11,34,51,.14)' : 'background:#0b2233;border:1px solid #1d3a4f;box-shadow:0 6px 24px rgba(0,0,0,.35)';
         const esc = (t) => String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-        return '<div id="sh-dl" style="position:fixed;right:16px;bottom:16px;z-index:9999;display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 12px;border-radius:12px;background:#0b2233;border:1px solid #1d3a4f;box-shadow:0 6px 24px rgba(0,0,0,.35);font:13px Arial,Helvetica,sans-serif;color:#9fb3c8">'
-            + '<span style="font-weight:700;color:#eef4f9;margin-right:4px">Downloads</span>'
+        return '<div id="sh-dl" style="position:fixed;right:16px;bottom:16px;z-index:9999;display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 12px;border-radius:12px;' + bar + ';font:13px Arial,Helvetica,sans-serif;color:#9fb3c8">'
+            + '<span style="font-weight:700;color:' + (white ? '#0b2233' : '#eef4f9') + ';margin-right:4px">Downloads</span>'
             + manifest.map((f, i) => '<button data-i="' + i + '" title="' + esc(f.name) + '" style="padding:7px 10px;border:0;border-radius:8px;background:#FFC145;color:#002F4C;font-weight:700;font-size:12px;cursor:pointer">' + esc(f.label) + '</button>').join('')
             + '<span id="sh-dl-msg" style="min-width:0"></span></div>'
             + '<script>(function(){var F=' + JSON.stringify(manifest.map(f => ({ name: f.name, file: f.file, mime: f.mime }))).replace(/</g, '\\u003c') + ';var K="surghub-report:"+location.pathname;'
@@ -176,7 +178,7 @@ Object.assign(window.App, {
     // The team page, once decrypted: every published provider with its link. It also
     // remembers each provider's password in this browser (the same localStorage key the
     // provider pages use), so from here every report opens without a password prompt.
-    _pdTeamHtml(list) {
+    _pdTeamHtml(list, overall, teamPassword) {
         const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
         const at = new Date().toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' }) + ' UTC';
         const initials = (n) => String(n).replace(/[^\p{L}\p{N} ]/gu, ' ').split(/\s+/).filter(w => w && !/^(of|and|the|for|de|des|in)$/i.test(w)).slice(0, 3).map(w => w[0].toUpperCase()).join('');
@@ -185,6 +187,16 @@ Object.assign(window.App, {
             + '<span class="logo">' + (x.logo ? '<img src="' + esc(x.logo) + '" alt="' + esc(x.name) + '" loading="lazy">' : '<span class="ini">' + esc(initials(x.name)) + '</span>') + '</span>'
             + '<span class="n">' + esc(x.name) + '</span></a>').join('');
         const pw = {}; list.forEach(x => { pw[x.slug] = x.password; });
+        // All of SURGhub first: a wide card with the headline numbers, opening the platform report.
+        const num = (v) => (v == null || v === '' || isNaN(v)) ? '' : Number(v).toLocaleString('en-GB', { maximumFractionDigits: 2 });
+        let hub = '';
+        if (overall) {
+            pw[this.PD_PLATFORM_SLUG] = teamPassword;
+            const stat = (v, l) => num(v) ? '<span class="st"><b>' + num(v) + '</b><i>' + l + '</i></span>' : '';
+            hub = '<a class="hub" href="/' + this.PD_PLATFORM_SLUG + '/" data-k="surghub all overall platform" title="Open the report for all of SURGhub">'
+                + '<span class="hub-top">' + (overall.logo ? '<img src="' + esc(overall.logo) + '" alt="SURGhub">' : '') + '<span><span class="eye">All providers</span><span class="ht">SURGhub overall</span></span><span class="go">Open report →</span></span>'
+                + '<span class="stats">' + stat(overall.learners, 'enrolled learners') + stat(overall.certificates, 'certificates') + stat(overall.courses, 'courses') + stat(overall.providers, 'providers') + stat(overall.countries, 'countries') + (overall.rating ? stat(Math.round(overall.rating * 100) / 100, 'avg rating') : '') + '</span></a>';
+        }
         return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow,noarchive"><title>SURGhub reports · GSF team</title>'
             + '<style>*{box-sizing:border-box}body{margin:0;background:#001523;color:#eef4f9;font:15px/1.5 Arial,Helvetica,sans-serif}.w{max-width:1120px;margin:0 auto;padding:44px 20px 64px}'
             + '.top{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:26px}.eye{font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#FFC145;margin:0 0 6px}'
@@ -197,11 +209,19 @@ Object.assign(window.App, {
             + '.ini{font-size:30px;font-weight:800;letter-spacing:.04em;color:#0b4f7c}'
             + '.card:hover .logo,.card:focus-visible .logo{transform:translateY(-3px);border-color:#FFC145;box-shadow:0 10px 24px rgba(0,0,0,.45)}.card:focus-visible{outline:none}'
             + '.n{font-size:12px;line-height:1.35;color:#9fb3c8;text-align:center;padding:0 4px}.card:hover .n{color:#eef4f9}'
-            + '.none{display:none;color:#9fb3c8;font-size:14px;margin-top:8px}@media (max-width:520px){.grid{grid-template-columns:repeat(2,1fr);gap:12px}.logo{height:100px;padding:12px}}</style></head>'
+            + '.hub{grid-column:1/-1;display:flex;flex-direction:column;gap:18px;padding:22px 26px;border-radius:16px;text-decoration:none;color:#eef4f9;background:linear-gradient(135deg,#0B4F7C,#002F4C 70%);border:2px solid transparent;box-shadow:0 1px 2px rgba(0,0,0,.3);transition:transform .15s,border-color .15s,box-shadow .15s}'
+            + '.hub:hover,.hub:focus-visible{transform:translateY(-3px);border-color:#FFC145;box-shadow:0 10px 24px rgba(0,0,0,.45);outline:none}'
+            + '.hub-top{display:flex;align-items:center;gap:16px}.hub-top img{height:52px;width:auto;border-radius:10px}.hub-top .eye{display:block;margin:0}.ht{display:block;font-size:22px;font-weight:800}.go{margin-left:auto;font-size:13px;font-weight:700;color:#FFC145;white-space:nowrap}'
+            + '.stats{display:flex;flex-wrap:wrap;gap:12px 34px}.st b{display:block;font-size:26px;line-height:1.1;font-family:Georgia,serif}.st i{font-style:normal;font-size:12px;color:#9fb3c8}'
+            + '.none{display:none;color:#9fb3c8;font-size:14px;margin-top:8px}@media (max-width:520px){.grid{grid-template-columns:repeat(2,1fr);gap:12px}.logo{height:100px;padding:12px}.hub{padding:18px}.go{display:none}.hub-top img{height:40px}.ht{font-size:18px}.stats{gap:10px 22px}.st b{font-size:21px}}</style></head>'
             + '<body><div class="w"><div class="top"><div><div class="eye">GSF team</div><h1>SURGhub partner reports</h1><p>' + list.length + ' provider' + (list.length === 1 ? '' : 's') + ' · published ' + esc(at) + ' · click a logo to open that report</p></div>'
-            + '<input id="q" type="search" placeholder="Find a provider" autofocus></div><div class="grid">' + cards + '</div><div class="none" id="none">No provider matches.</div></div>'
+            + '<input id="q" type="search" placeholder="Find a provider" autofocus></div><div class="grid">' + hub + cards + '</div><div class="none" id="none">No provider matches.</div></div>'
             + '<script>(function(){var P=' + JSON.stringify(pw).replace(/</g, '\\u003c') + ';try{Object.keys(P).forEach(function(s){localStorage.setItem("surghub-report:/"+s+"/",P[s]);localStorage.setItem("surghub-report:/"+s+"/index.html",P[s])})}catch(x){}'
-            + 'var q=document.getElementById("q"),no=document.getElementById("none");q.addEventListener("input",function(){var v=q.value.toLowerCase().trim(),n=0;[].forEach.call(document.querySelectorAll(".card"),function(r){var on=!v||r.getAttribute("data-k").indexOf(v)>=0;r.style.display=on?"":"none";if(on)n++});no.style.display=n?"none":"block"})})();<\/script></body></html>';
+            + 'var q=document.getElementById("q"),no=document.getElementById("none");q.addEventListener("input",function(){var v=q.value.toLowerCase().trim(),n=0;[].forEach.call(document.querySelectorAll(".card,.hub"),function(r){var on=!v||r.getAttribute("data-k").indexOf(v)>=0;r.style.display=on?"":"none";if(on)n++});no.style.display=n?"none":"block"})})();<\/script></body></html>';
+    },
+    _pdBuildImage(f) {
+        try { const p = electronAPI.path.join(electronAPI.appPath, 'build', f); return electronAPI.fs.existsSync(p) ? 'data:image/png;base64,' + electronAPI.fs.readFileBase64(p) : ''; }
+        catch (e) { return ''; }
     },
     // A logo as a small PNG (tiles are ~140 px high; the originals are up to a few hundred KB each).
     async _pdThumb(uri) {
@@ -266,10 +286,14 @@ Object.assign(window.App, {
         const s = await this._pdLoad(); const p = s.providers[provider]; if (!p) return;
         const slug = this._pdSlugify(value);
         if (!slug) { alert('An address needs at least one letter or digit.'); this._pdRerender(); return; }
-        if (slug === this.PD_TEAM_SLUG) { alert('"' + slug + '" is the address of your own team page.'); this._pdRerender(); return; }
+        if (slug === this.PD_TEAM_SLUG || slug === this.PD_PLATFORM_SLUG) { alert('"' + slug + '" is kept for the team pages.'); this._pdRerender(); return; }
         if (Object.keys(s.providers).some(k => k !== provider && s.providers[k].slug === slug)) { alert('"' + slug + '" is already used by another provider.'); this._pdRerender(); return; }
         if (slug === p.slug) return;
         p.slug = slug; p.published = null; await this._pdSave(); this._pdRerender();
+    },
+    async pdSetDesign(provider, value) {
+        const s = await this._pdLoad(); const p = s.providers[provider]; if (!p) return;
+        p.design = value === 'white' ? 'white' : ''; p.published = null; await this._pdSave(); this._pdRerender();
     },
     async pdNewPassword(provider) {
         if (!confirm('Give ' + provider + ' a new password?\n\nThe old password stops working at the next publish. Send them the new one.')) return;
@@ -338,6 +362,7 @@ Object.assign(window.App, {
         const s = await this._pdLoad();
         const keep = { from: this.reportPeriodFrom, to: this.reportPeriodTo, through: this.reportDataThrough, fb: this.reportFeedbackFromDate, low: this.hideLowLearners, priv: this.hidePrivateCourses };
         const files = [], built = [], failed = [];
+        let overall = null;
         try {
             this.reportPeriodFrom = ''; this.reportPeriodTo = ''; this.reportFeedbackFromDate = '';
             this.reportDataThrough = this._lastFullMonth ? this._lastFullMonth() : '';
@@ -353,6 +378,8 @@ Object.assign(window.App, {
                     if (!p.password) p.password = this._pdNewPassword();
                     let html = await this._buildDarkReportHtml(prov);
                     if (!html) { failed.push(prov + ': no data'); continue; }
+                    const white = p.design === 'white' && !!this.reportToWhite;
+                    if (white) html = this.reportToWhite(html);
                     // The downloads: each encrypted with the provider's password under a random name.
                     const manifest = [];
                     for (const a of await this._pdAttachments(prov, anonUsers, failed)) {
@@ -360,10 +387,25 @@ Object.assign(window.App, {
                         files.push({ path: p.slug + '/' + file, content: JSON.stringify(await this._pdEncrypt(a.bytes, p.password)) });
                         manifest.push({ label: a.label, name: a.name, mime: a.mime, file });
                     }
-                    html = this._pdInject(html, this._pdDownloadsHtml(manifest));
+                    html = this._pdInject(html, this._pdDownloadsHtml(manifest, white));
                     files.push({ path: p.slug + '/index.html', content: this._pdPageHtml(await this._pdEncrypt(html, p.password)) });
                     built.push(prov);
                 } catch (e) { failed.push(prov + ': ' + String((e && e.message) || e)); }
+            }
+            // All of SURGhub, for the team page: its report, and the headline numbers for its card.
+            if (built.length) {
+                try {
+                    if (opts.progress) opts.progress('Partner dashboards: all of SURGhub…');
+                    const D = this._assembleReportData ? await this._assembleReportData('SURGhub', { platform: true }) : null;
+                    const html = await this._buildDarkReportHtml('SURGhub', true);
+                    if (html) {
+                        if (!s.teamPassword) s.teamPassword = this._pdNewPassword();
+                        files.push({ path: this.PD_PLATFORM_SLUG + '/index.html', content: this._pdPageHtml(await this._pdEncrypt(html, s.teamPassword), 'SURGhub · all providers', 'Enter the team password.') });
+                        const cc = D && D.providerCountryData;
+                        overall = D ? { learners: D.totalLrn, certificates: D.totalCert, courses: (D.coursesSorted || []).length, providers: D.providerCount,
+                            countries: Array.isArray(cc) ? cc.length : (cc && typeof cc === 'object' ? Object.keys(cc).length : 0), rating: D.avgRating } : {};
+                    }
+                } catch (e) { failed.push('All of SURGhub: ' + String((e && e.message) || e)); }
             }
         } finally {
             this.reportPeriodFrom = keep.from; this.reportPeriodTo = keep.to; this.reportDataThrough = keep.through;
@@ -376,7 +418,8 @@ Object.assign(window.App, {
             for (const prov of built) list.push({ name: this.providerFolderName ? this.providerFolderName(prov) : prov, slug: s.providers[prov].slug, password: s.providers[prov].password,
                 logo: this._providerLogoFor ? await this._pdThumb(this._providerLogoFor(prov)) : '' });
             list.sort((a, b) => a.name.localeCompare(b.name));
-            files.push({ path: this.PD_TEAM_SLUG + '/index.html', content: this._pdPageHtml(await this._pdEncrypt(this._pdTeamHtml(list), s.teamPassword), 'SURGhub reports · GSF team', 'Enter the team password.') });
+            if (overall) overall.logo = await this._pdThumb(this._pdBuildImage('SURGhub_app_square_white.png') || this._pdBuildImage('surghub_logo_white.png'));
+            files.push({ path: this.PD_TEAM_SLUG + '/index.html', content: this._pdPageHtml(await this._pdEncrypt(this._pdTeamHtml(list, overall, s.teamPassword), s.teamPassword), 'SURGhub reports · GSF team', 'Enter the team password.') });
         }
         const host = (String(s.baseUrl || '').match(/^https?:\/\/([^/]+)/) || [])[1] || '';
         files.push({ path: 'index.html', content: this._pdLandingHtml() });
@@ -487,6 +530,7 @@ Object.assign(window.App, {
                 + '<td class="py-2 pr-3"><label class="inline-flex items-center gap-2 cursor-pointer"><input type="checkbox" ' + (on ? 'checked' : '') + ' onchange="App.pdSetEnabled(\'' + pe + '\', this.checked)"> <span class="' + (on ? 'font-semibold text-gsf-prussian' : '') + '">' + esc(this.providerFolderName ? this.providerFolderName(prov) : prov) + '</span></label></td>'
                 + '<td class="py-2 pr-3 font-mono text-[11px] whitespace-nowrap">' + (on && p.slug ? (s.baseUrl ? esc(String(s.baseUrl).replace(/^https?:\/\//, '') + '/') + '<input type="text" value="' + esc(p.slug) + '" title="Edit to change the address; the old one stops working at the next publish" onchange="App.pdSetSlug(\'' + pe + '\', this.value)" class="w-40 font-mono text-[11px] border rounded px-1.5 py-0.5 outline-none focus:ring-2 focus:ring-gsf-boston/30">' : '<span class="text-amber-700 font-sans">set the web address first</span>') : '') + '</td>'
                 + '<td class="py-2 pr-3 font-mono text-[11px] whitespace-nowrap">' + (on && p.password ? esc(p.password) : '') + '</td>'
+                + '<td class="py-2 pr-3">' + (on ? '<select onchange="App.pdSetDesign(\'' + pe + '\', this.value)" class="text-[11px] border rounded px-1 py-0.5 bg-white"><option value=""' + (p.design === 'white' ? '' : ' selected') + '>Dark</option><option value="white"' + (p.design === 'white' ? ' selected' : '') + '>White</option></select>' : '') + '</td>'
                 + '<td class="py-2 pr-3 text-[11px] whitespace-nowrap">' + (on ? (live ? '<span class="text-emerald-700">live · ' + esc(when(p.published.at)) + '</span>' : '<span class="text-amber-700">at the next publish</span>') : '') + '</td>'
                 + '<td class="py-2 text-right whitespace-nowrap">' + (on && p.slug && s.baseUrl ? (live ? '<button onclick="App.pdOpen(\'' + pe + '\')" class="text-[11px] font-bold text-gsf-boston hover:underline mr-2">Open</button>' : '') + '<button onclick="App.pdCopy(\'' + pe + '\', this)" class="text-[11px] font-bold text-gsf-boston hover:underline mr-2">Copy</button><button onclick="App.pdEmail(\'' + pe + '\')" class="text-[11px] font-bold text-gsf-boston hover:underline mr-2">Email…</button><button onclick="App.pdNewPassword(\'' + pe + '\')" class="text-[11px] text-slate-500 hover:underline" title="If a link and password have gone further than they should: the old password stops working at the next publish">New password</button>' : '') + '</td></tr>';
         }).join('');
@@ -508,7 +552,7 @@ Object.assign(window.App, {
                 + '<button onclick="App.pdCopyTeam(this)" class="font-bold text-gsf-boston hover:underline">Copy password</button>'
                 + '<button onclick="App.pdNewTeamPassword()" class="text-slate-500 hover:underline">New password</button>'
                 + '<span class="text-slate-400">Every provider in one list, for GSF only. Unlocking it once lets that browser open every report without its password.</span></div>' : '')
-            + '<div class="overflow-x-auto max-h-[420px] overflow-y-auto custom-scrollbar"><table class="w-full text-left text-xs"><thead class="text-slate-400 sticky top-0 bg-white"><tr><th class="py-2 pr-3 font-medium"><label class="inline-flex items-center gap-2 cursor-pointer" title="Switch every provider on or off"><input type="checkbox" ' + (allOn ? 'checked' : '') + ' onchange="App.pdSetAllEnabled(this.checked)"> Provider</label></th><th class="py-2 pr-3 font-medium">Link</th><th class="py-2 pr-3 font-medium">Password</th><th class="py-2 pr-3 font-medium">Status</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>'
+            + '<div class="overflow-x-auto max-h-[420px] overflow-y-auto custom-scrollbar"><table class="w-full text-left text-xs"><thead class="text-slate-400 sticky top-0 bg-white"><tr><th class="py-2 pr-3 font-medium"><label class="inline-flex items-center gap-2 cursor-pointer" title="Switch every provider on or off"><input type="checkbox" ' + (allOn ? 'checked' : '') + ' onchange="App.pdSetAllEnabled(this.checked)"> Provider</label></th><th class="py-2 pr-3 font-medium">Link</th><th class="py-2 pr-3 font-medium">Password</th><th class="py-2 pr-3 font-medium">Design</th><th class="py-2 pr-3 font-medium">Status</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>'
             + '<div class="flex items-center gap-3 flex-wrap mt-4">'
             + '<button onclick="App.pdPublishNow()" ' + (enabled ? '' : 'disabled') + ' class="px-4 py-2 rounded-lg text-sm font-bold ' + (enabled ? 'bg-gsf-prussian text-white hover:bg-slate-900' : 'bg-slate-100 text-slate-400 cursor-not-allowed') + '">Publish now</button>'
             + '<span class="text-xs ' + (lp ? (lp.ok ? 'text-emerald-700' : 'text-amber-700') : 'text-slate-400') + '">' + (lp ? 'Last publish ' + esc(when(lp.at)) + ': ' + esc(lp.note) : enabled + ' switched on · not published yet') + '</span>'
