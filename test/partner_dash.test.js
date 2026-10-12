@@ -40,6 +40,8 @@ const FILEBYTES = { pdf: (prov) => new TextEncoder().encode('%PDF secret for ' +
 App._pdPdfBytes = async (prov) => FILEBYTES.pdf(prov);
 App._buildUsersWorkbook = (prov, anon) => ({ kind: 'users', prov });
 App._buildFeedbackWorkbook = async (prov) => (prov === 'Lifebox' ? null : { kind: 'fb', prov });   // Lifebox has no survey feedback
+App._ensureProviderLogos = async () => ({});
+App._providerLogoFor = (prov) => (prov === 'Lifebox' ? 'data:image/png;base64,TElGRUJPWA==' : '');
 App._pdWorkbookBytes = (wb) => (wb.kind === 'users' ? FILEBYTES.users(wb.prov) : FILEBYTES.fb(wb.prov));
 async function decryptJson(json, pw) {
   const P = JSON.parse(json), b = (x) => Uint8Array.from(Buffer.from(x, 'base64'));
@@ -152,6 +154,8 @@ async function openPage(html, pw) {
   const teamOpen = await openPage(teamWrapped, teamPw);
   check('…a provider password does not open it', (await openPage(teamWrapped, lbP.password)).written === null);
   check('…the team password opens a list of every published provider with its link', /href="\/gsf\/"/.test(teamOpen.written || '') && /href="\/lifebox\/"/.test(teamOpen.written || '') && /SURGhub partner reports/.test(teamOpen.written || ''));
+  check('…as a logo tile per provider (initials where there is no logo), each tile opening that report',
+    /<a class="card" href="\/lifebox\/"[^>]*><span class="logo"><img src="data:image\/png;base64,TElGRUJPWA=="/.test(teamOpen.written) && /<a class="card" href="\/gsf\/"[^>]*><span class="logo"><span class="ini">G<\/span>/.test(teamOpen.written) && /<span class="n">Lifebox<\/span>/.test(teamOpen.written));
   const ls = {};
   const tctx = { localStorage: { setItem: (k, v) => { ls[k] = v; } }, document: { getElementById: () => ({ addEventListener() {} }), querySelectorAll: () => [] } };
   vm.createContext(tctx); vm.runInContext(teamOpen.written.match(/<script>([\s\S]*?)<\/script>/)[1], tctx);

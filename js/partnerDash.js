@@ -179,17 +179,41 @@ Object.assign(window.App, {
     _pdTeamHtml(list) {
         const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
         const at = new Date().toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' }) + ' UTC';
-        const rows = list.map(x => '<a class="row" href="/' + esc(x.slug) + '/" data-k="' + esc((x.name + ' ' + x.slug).toLowerCase()) + '"><span class="n">' + esc(x.name) + '</span><span class="s">/' + esc(x.slug) + '/</span></a>').join('');
+        const initials = (n) => String(n).replace(/[^\p{L}\p{N} ]/gu, ' ').split(/\s+/).filter(w => w && !/^(of|and|the|for|de|des|in)$/i.test(w)).slice(0, 3).map(w => w[0].toUpperCase()).join('');
+        // A white tile per provider with its logo (the click target), the name small beneath.
+        const cards = list.map(x => '<a class="card" href="/' + esc(x.slug) + '/" data-k="' + esc((x.name + ' ' + x.slug).toLowerCase()) + '" title="Open the ' + esc(x.name) + ' report">'
+            + '<span class="logo">' + (x.logo ? '<img src="' + esc(x.logo) + '" alt="' + esc(x.name) + '" loading="lazy">' : '<span class="ini">' + esc(initials(x.name)) + '</span>') + '</span>'
+            + '<span class="n">' + esc(x.name) + '</span></a>').join('');
         const pw = {}; list.forEach(x => { pw[x.slug] = x.password; });
         return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow,noarchive"><title>SURGhub reports · GSF team</title>'
-            + '<style>body{margin:0;background:#001523;color:#eef4f9;font:15px/1.5 Arial,Helvetica,sans-serif}.w{max-width:760px;margin:0 auto;padding:40px 20px}'
-            + 'h1{margin:0 0 4px;font-size:24px}p{margin:0 0 18px;color:#9fb3c8;font-size:13px}input{box-sizing:border-box;width:100%;padding:11px 12px;margin-bottom:14px;border-radius:10px;border:1px solid #2c4a60;background:#0b2233;color:#eef4f9;font-size:15px}'
-            + '.row{display:flex;justify-content:space-between;gap:12px;padding:12px 14px;margin-bottom:6px;border-radius:10px;background:#0b2233;border:1px solid #1d3a4f;color:#eef4f9;text-decoration:none}.row:hover{border-color:#FFC145}'
-            + '.n{font-weight:700}.s{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:#9fb3c8;white-space:nowrap}</style></head>'
-            + '<body><div class="w"><h1>SURGhub partner reports</h1><p>' + list.length + ' provider' + (list.length === 1 ? '' : 's') + ' · published ' + esc(at) + '. Reports open from here without their passwords, in this browser.</p>'
-            + '<input id="q" type="search" placeholder="Find a provider" autofocus>' + rows + '</div>'
+            + '<style>*{box-sizing:border-box}body{margin:0;background:#001523;color:#eef4f9;font:15px/1.5 Arial,Helvetica,sans-serif}.w{max-width:1120px;margin:0 auto;padding:44px 20px 64px}'
+            + '.top{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:26px}.eye{font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#FFC145;margin:0 0 6px}'
+            + 'h1{margin:0 0 4px;font-size:28px;line-height:1.15}p{margin:0;color:#9fb3c8;font-size:13px}'
+            + 'input{width:min(320px,100%);padding:11px 14px;border-radius:10px;border:1px solid #2c4a60;background:#0b2233;color:#eef4f9;font-size:15px;outline:none}input:focus{border-color:#FFC145}'
+            + '.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(176px,1fr));gap:18px}'
+            + '.card{display:flex;flex-direction:column;gap:9px;text-decoration:none;color:inherit}'
+            + '.logo{display:flex;align-items:center;justify-content:center;height:124px;padding:16px 18px;border-radius:14px;background:#fff;border:2px solid transparent;box-shadow:0 1px 2px rgba(0,0,0,.3);transition:transform .15s,border-color .15s,box-shadow .15s}'
+            + '.logo img{max-width:100%;max-height:100%;object-fit:contain;display:block}'
+            + '.ini{font-size:30px;font-weight:800;letter-spacing:.04em;color:#0b4f7c}'
+            + '.card:hover .logo,.card:focus-visible .logo{transform:translateY(-3px);border-color:#FFC145;box-shadow:0 10px 24px rgba(0,0,0,.45)}.card:focus-visible{outline:none}'
+            + '.n{font-size:12px;line-height:1.35;color:#9fb3c8;text-align:center;padding:0 4px}.card:hover .n{color:#eef4f9}'
+            + '.none{display:none;color:#9fb3c8;font-size:14px;margin-top:8px}@media (max-width:520px){.grid{grid-template-columns:repeat(2,1fr);gap:12px}.logo{height:100px;padding:12px}}</style></head>'
+            + '<body><div class="w"><div class="top"><div><div class="eye">GSF team</div><h1>SURGhub partner reports</h1><p>' + list.length + ' provider' + (list.length === 1 ? '' : 's') + ' · published ' + esc(at) + ' · click a logo to open that report</p></div>'
+            + '<input id="q" type="search" placeholder="Find a provider" autofocus></div><div class="grid">' + cards + '</div><div class="none" id="none">No provider matches.</div></div>'
             + '<script>(function(){var P=' + JSON.stringify(pw).replace(/</g, '\\u003c') + ';try{Object.keys(P).forEach(function(s){localStorage.setItem("surghub-report:/"+s+"/",P[s]);localStorage.setItem("surghub-report:/"+s+"/index.html",P[s])})}catch(x){}'
-            + 'var q=document.getElementById("q");q.addEventListener("input",function(){var v=q.value.toLowerCase().trim();[].forEach.call(document.querySelectorAll(".row"),function(r){r.style.display=!v||r.getAttribute("data-k").indexOf(v)>=0?"":"none"})})})();<\/script></body></html>';
+            + 'var q=document.getElementById("q"),no=document.getElementById("none");q.addEventListener("input",function(){var v=q.value.toLowerCase().trim(),n=0;[].forEach.call(document.querySelectorAll(".card"),function(r){var on=!v||r.getAttribute("data-k").indexOf(v)>=0;r.style.display=on?"":"none";if(on)n++});no.style.display=n?"none":"block"})})();<\/script></body></html>';
+    },
+    // A logo as a small PNG (tiles are ~140 px high; the originals are up to a few hundred KB each).
+    async _pdThumb(uri) {
+        if (!uri || typeof Image === 'undefined' || typeof document === 'undefined') return uri || '';
+        try {
+            const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = uri; });
+            const k = Math.min(1, 480 / img.naturalWidth, 240 / img.naturalHeight);
+            if (k >= 1) return uri;
+            const c = document.createElement('canvas'); c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+            const g = c.getContext('2d'); g.imageSmoothingQuality = 'high'; g.drawImage(img, 0, 0, c.width, c.height);
+            return c.toDataURL('image/png');
+        } catch (e) { __swallowed(e, 'pd.thumb'); return uri; }
     },
     _pdLandingHtml() {
         return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="robots" content="noindex,nofollow,noarchive"><title>SURGhub partner reports</title>'
@@ -347,8 +371,11 @@ Object.assign(window.App, {
         }
         if (built.length) {
             if (!s.teamPassword) s.teamPassword = this._pdNewPassword();
-            const list = built.map(prov => ({ name: this.providerFolderName ? this.providerFolderName(prov) : prov, slug: s.providers[prov].slug, password: s.providers[prov].password }))
-                .sort((a, b) => a.name.localeCompare(b.name));
+            if (this._ensureProviderLogos) { try { await this._ensureProviderLogos(); } catch (e) { __swallowed(e, 'pd.logos'); } }
+            const list = [];
+            for (const prov of built) list.push({ name: this.providerFolderName ? this.providerFolderName(prov) : prov, slug: s.providers[prov].slug, password: s.providers[prov].password,
+                logo: this._providerLogoFor ? await this._pdThumb(this._providerLogoFor(prov)) : '' });
+            list.sort((a, b) => a.name.localeCompare(b.name));
             files.push({ path: this.PD_TEAM_SLUG + '/index.html', content: this._pdPageHtml(await this._pdEncrypt(this._pdTeamHtml(list), s.teamPassword), 'SURGhub reports · GSF team', 'Enter the team password.') });
         }
         const host = (String(s.baseUrl || '').match(/^https?:\/\/([^/]+)/) || [])[1] || '';
