@@ -15,11 +15,12 @@ Object.assign(window.App, {
         // (first: the single-colour swaps below would break these strings)
         ["['#123a5c','#1a5485','#2474b3','#3f97d6','#74bce9','#bce3fb']", "['#D6E6F4','#AECDEA','#7FAFDC','#4F8FCB','#2A6DAA','#0E4C80']"],
         ['#123a5c,#1a5485,#2474b3,#3f97d6,#74bce9,#bce3fb', '#D6E6F4,#AECDEA,#7FAFDC,#4F8FCB,#2A6DAA,#0E4C80'],
-        // borders tinted with an accent: a plain hairline
-        [/(border(?:-top|-bottom|-left|-right)?:\s*\d+px solid )#[0-9A-Fa-f]{6}[0-9A-Fa-f]{2}(?![0-9A-Fa-f])/g, '$1#E6EAEF'],
-        // the tinted gradients of the dark cards: plain white
-        [/linear-gradient\(\d+deg,#[0-9A-Fa-f]{6,8},#(?:001a2b|002033|001523) \d+%\)/g, '#ffffff'],
-        [/radial-gradient\([^()]*(?:\([^()]*\)[^()]*)*\),var\(--surface\)/g, 'var(--surface)'],
+        // coloured boxes: the dark cards' tinted gradients become a flat light tint of the same
+        // colour, and their accent-tinted borders a slightly stronger tint
+        [/linear-gradient\(\d+deg,(#[0-9A-Fa-f]{6})([0-9A-Fa-f]{2})?,#(?:001a2b|002033|001523) \d+%\)/g, (m, c, a) => App._wTint(c, a ? Math.min(0.2, parseInt(a, 16) / 255 * 1.7) : 0.08)],
+        [/(border(?:-top|-bottom|-left|-right)?:\s*\d+px solid )(#[0-9A-Fa-f]{6})[0-9A-Fa-f]{2}(?![0-9A-Fa-f])/g, (m, pre, c) => pre + App._wTint(c, 0.32)],
+        // the report header: a light brand-blue box
+        [/radial-gradient\([^()]*(?:\([^()]*\)[^()]*)*\),var\(--surface\)/g, '#EFF5FB'],
         // page and surfaces
         ['#001523', '#ffffff'], ['#001a2b', '#ffffff'], ['#002033', '#ffffff'], ['#002a42', '#F7F9FB'], ['#00101b', '#F7F9FB'],
         ['#04293f', '#ffffff'], ['#0b2c46', '#EEF1F4'], ['#0a3a57', '#E6EAEF'],
@@ -42,9 +43,11 @@ Object.assign(window.App, {
         'body{font-family:var(--sans)!important}',
         // structure: hairlines, no shadows, no lift
         '.chart-card,.ratingband,.gstep-card{background:#fff!important;border:1px solid #E6EAEF!important;border-radius:10px!important;box-shadow:none!important}',
-        '.kcard{background:#fff!important;border:1px solid #E6EAEF!important;border-top:1px solid #E6EAEF!important;border-radius:10px!important;box-shadow:none!important}',
+        '.kcard{border:1px solid transparent!important;border-radius:10px!important;box-shadow:none!important}',
         '.kcard>div[style*="height:3px"]{display:none!important}',
-        '.kcard:hover{transform:none!important;box-shadow:none!important;border-color:#C9D3DD!important}',
+        '.kcard:hover{transform:none!important;box-shadow:none!important;border-color:rgba(11,34,51,.14)!important}',
+        // testimonials: a warm box with the gold rule
+        '[style*="border-left:3px solid var(--accent)"]{background:#FFF8E7!important;border-color:#F5E6BF!important;border-left-color:#E3A008!important}',
         '.kpi-modal{background:rgba(11,34,51,.35)!important}.kpi-modal-box{box-shadow:0 20px 50px rgba(11,34,51,.18)!important;border-color:#E6EAEF!important}',
         // section labels: brand blue, quiet rule
         '.sec-eyebrow{color:#0B4F7C!important;letter-spacing:.16em!important}.sec-eyebrow::after{background:#E6EAEF!important;opacity:1!important;max-width:none!important}',
@@ -58,6 +61,15 @@ Object.assign(window.App, {
         '@media print{html,body{background:#fff!important}}',
     ].join(''),
 
+    // a colour mixed with white (light box fills) or towards the ink (labels that must read on them)
+    _wMix(hex, to, k) {
+        const p = (x) => [1, 3, 5].map(i => parseInt(x.slice(i, i + 2), 16));
+        const a = p(hex), b = p(to);
+        return '#' + a.map((v, i) => Math.round(v + (b[i] - v) * k).toString(16).padStart(2, '0')).join('').toUpperCase();
+    },
+    _wTint(hex, alpha) { return this._wMix(hex, '#FFFFFF', 1 - alpha); },
+    _wDeep(hex) { return this._wMix(hex, '#0B2233', 0.42); },
+
     reportToWhite(html) {
         let h = String(html || '');
         if (!h) return h;
@@ -65,10 +77,11 @@ Object.assign(window.App, {
         // 0. star ratings are marks, not text: they keep the gold
         h = h.replace(/color:var\(--accent\)(;font-size:11px;margin-left:8px;letter-spacing:\.1em)/g, 'color:#E3A008$1');
         // 1. text in an accent colour (the CSS property `color`, never border-/background-color):
-        //    small-caps labels take the brand blue of the section labels, everything else ink
+        //    small-caps labels a deep shade of their own colour (the tile's identity), everything else ink
         for (const a of this.REPORT_WHITE_TEXT_ACCENTS) {
             const esc = a.replace(/[()\-]/g, '\\$&');
-            h = h.replace(new RegExp('(text-transform:uppercase;\\s*)color:\\s*' + esc + '(?![0-9A-Fa-f])', 'gi'), '$1color:' + I.label);
+            const deep = a === 'var(--accent)' ? '#8F6400' : this._wDeep(a);
+            h = h.replace(new RegExp('(text-transform:uppercase;\\s*)color:\\s*' + esc + '(?![0-9A-Fa-f])', 'gi'), '$1color:' + deep);
             h = h.replace(new RegExp('(^|[^\\w-])color:\\s*' + esc + '(?![0-9A-Fa-f])', 'gi'), '$1color:' + I.ink2);
         }
         // 2. everything else, colour for colour (hex in any letter case; an alpha suffix stays)
