@@ -1092,6 +1092,8 @@ window.App = {
                 // change here shouldn't flag "unsynced to cloud".
                 'learnworlds_client_id.json',
                 'learnworlds_api_token.json',
+                'learnworlds_client_secret.json',
+                'learnworlds_api_token_exp.json',
                 'partner_dash.json',
                 'partner_dash_token.json',
                 'learnworlds_school_domain.json',
@@ -1248,15 +1250,30 @@ window.App = {
     async saveLearnWorldsCreds() {
         const clientId = (document.getElementById('lw-client-id')?.value || '').trim();
         const apiToken = (document.getElementById('lw-api-token')?.value || '').trim();
+        const clientSecret = (document.getElementById('lw-client-secret')?.value || '').trim();
         const resultEl = document.getElementById('lw-api-result');
         const statusEl = document.getElementById('lw-api-status');
-        if (!clientId || !apiToken) {
-            if (resultEl) resultEl.innerHTML = '<span class="text-red-600">⚠ Fill in both fields</span>';
+        if (!clientId || (!apiToken && !clientSecret)) {
+            if (resultEl) resultEl.innerHTML = '<span class="text-red-600">⚠ Fill in the Client ID, and the Client Secret (or a token)</span>';
             return;
         }
-        await window.LearnWorlds.setCredentials({ clientId, apiToken });
-        if (resultEl) resultEl.innerHTML = '<span class="text-emerald-600">✓ Saved locally</span>';
-        if (statusEl) statusEl.innerHTML = '<span class="text-emerald-600">● Credentials set</span>';
+        const prev = await window.LearnWorlds.getCredentials();
+        await window.LearnWorlds.setCredentials({ clientId, apiToken, schoolDomain: prev.schoolDomain, clientSecret });
+        if (clientSecret) {
+            // With the secret, fetch a token now: proves the secret works and fills the token field.
+            if (resultEl) resultEl.innerHTML = '<span class="text-slate-500">Getting a token from LearnWorlds…</span>';
+            try { await window.LearnWorlds.renewToken(); }
+            catch (e) { if (resultEl) resultEl.innerHTML = '<span class="text-red-600">✗ ' + this.escapeHtml(e.message) + '</span>'; return; }
+            await this._populateLearnWorldsCreds();
+        }
+        if (resultEl) resultEl.innerHTML = '<span class="text-emerald-600">✓ Saved locally' + (clientSecret ? ' · the token now renews itself' : '') + '</span>';
+        if (statusEl && !clientSecret) statusEl.innerHTML = '<span class="text-emerald-600">● Credentials set</span>';
+    },
+    _lwTokenStatus(c) {
+        if (!(c.clientId && (c.apiToken || c.clientSecret))) return '<span class="text-slate-400">● Not configured</span>';
+        if (!c.clientSecret) return '<span class="text-emerald-600">● Credentials set</span> <span class="text-amber-600">· token does not renew itself — add the Client Secret</span>';
+        const t = c.tokenExp ? new Date(c.tokenExp).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+        return '<span class="text-emerald-600">● Renews itself' + (t ? ' · current token until ' + t : '') + '</span>';
     },
 
     async probeLearnWorldsApi() {
@@ -1291,8 +1308,10 @@ window.App = {
         // ones) so the user can verify before clicking Save.
         const clientId = (document.getElementById('lw-client-id')?.value || '').trim();
         const apiToken = (document.getElementById('lw-api-token')?.value || '').trim();
-        if (clientId && apiToken) {
-            await window.LearnWorlds.setCredentials({ clientId, apiToken });
+        const clientSecret = (document.getElementById('lw-client-secret')?.value || '').trim();
+        if (clientId && (apiToken || clientSecret)) {
+            const prev = await window.LearnWorlds.getCredentials();
+            await window.LearnWorlds.setCredentials({ clientId, apiToken, schoolDomain: prev.schoolDomain, clientSecret });
         }
         const r = await window.LearnWorlds.testConnection();
         if (resultEl) {
@@ -1301,7 +1320,9 @@ window.App = {
                 : `<span class="text-red-600">✗ ${r.error}</span>`;
         }
         const statusEl = document.getElementById('lw-api-status');
-        if (statusEl && r.ok) statusEl.innerHTML = '<span class="text-emerald-600">● Connected</span>';
+        if (statusEl && r.ok) statusEl.innerHTML = this._lwTokenStatus(await window.LearnWorlds.getCredentials());
+        const tokEl = document.getElementById('lw-api-token'), c2 = await window.LearnWorlds.getCredentials();
+        if (tokEl && c2.apiToken) tokEl.value = c2.apiToken;   // a renewal during the test replaced it
     },
 
     // Populate credential inputs when the Data Sync view opens. Called from
@@ -1312,14 +1333,12 @@ window.App = {
         const c = await window.LearnWorlds.getCredentials();
         const idEl = document.getElementById('lw-client-id');
         const tokEl = document.getElementById('lw-api-token');
+        const secEl = document.getElementById('lw-client-secret');
         const statusEl = document.getElementById('lw-api-status');
         if (idEl && c.clientId) idEl.value = c.clientId;
         if (tokEl && c.apiToken) tokEl.value = c.apiToken;
-        if (statusEl) {
-            statusEl.innerHTML = (c.clientId && c.apiToken)
-                ? '<span class="text-emerald-600">● Credentials set</span>'
-                : '<span class="text-slate-400">● Not configured</span>';
-        }
+        if (secEl && c.clientSecret) secEl.value = c.clientSecret;
+        if (statusEl) statusEl.innerHTML = this._lwTokenStatus(c);
         // Provider/links mapping status
         const mapEl = document.getElementById('mapping-status');
         if (mapEl) {

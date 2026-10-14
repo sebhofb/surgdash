@@ -14518,7 +14518,7 @@ function _writeProject(ss, d) {
             // a restore instead of living in the spreadsheet. The two role-password records
             // stay local too: even hashed, a password hash in a shared spreadsheet is an
             // offline-cracking target.
-            const SECRET_KEYS = new Set(['anthropic_api_key', 'learnworlds_api_token', 'learnworlds_client_id',
+            const SECRET_KEYS = new Set(['anthropic_api_key', 'learnworlds_api_token', 'learnworlds_client_id', 'learnworlds_client_secret', 'learnworlds_api_token_exp',
                                          'surgdash_edit_password', 'surgdash_report_password',
                                          'surgdash_partner_dash', 'surgdash_partner_dash_token']);
             for (const key of allKeys) {

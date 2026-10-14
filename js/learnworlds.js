@@ -25,7 +25,8 @@ window.LearnWorlds = (function () {
     const USERS_PAGE_SIZE = 200;    // /users max per LearnWorlds API: 1-200
     const REQ_DELAY_MS = 350;       // Polite delay between calls (rate-limit safety — LW free tier ≈ 60/min)
 
-    let _creds = null;              // {clientId, apiToken, schoolDomain}
+    let _creds = null;              // {clientId, apiToken, schoolDomain, clientSecret, tokenExp}
+    let _renewing = null;           // one token renewal at a time, shared by every caller
 
     // ── Credentials ─────────────────────────────────────────────────────────
     async function getCredentials() {
@@ -33,20 +34,72 @@ window.LearnWorlds = (function () {
         const clientId = await Storage.getItem('learnworlds_client_id');
         const apiToken = await Storage.getItem('learnworlds_api_token');
         const schoolDomain = await Storage.getItem('learnworlds_school_domain');
-        _creds = { clientId: clientId || '', apiToken: apiToken || '', schoolDomain: schoolDomain || '' };
+        const clientSecret = await Storage.getItem('learnworlds_client_secret');
+        const tokenExp = await Storage.getItem('learnworlds_api_token_exp');
+        _creds = { clientId: clientId || '', apiToken: apiToken || '', schoolDomain: schoolDomain || '',
+                   clientSecret: clientSecret || '', tokenExp: Number(tokenExp) || 0 };
         return _creds;
     }
 
-    async function setCredentials({ clientId, apiToken, schoolDomain }) {
+    // clientSecret is optional and kept when not given; a pasted token has no known expiry.
+    async function setCredentials({ clientId, apiToken, schoolDomain, clientSecret }) {
+        const prev = await getCredentials();
         await Storage.setItem('learnworlds_client_id', clientId || '');
         await Storage.setItem('learnworlds_api_token', apiToken || '');
         await Storage.setItem('learnworlds_school_domain', schoolDomain || '');
-        _creds = { clientId: clientId || '', apiToken: apiToken || '', schoolDomain: schoolDomain || '' };
+        const secret = clientSecret === undefined ? prev.clientSecret : String(clientSecret || '').trim();
+        if (clientSecret !== undefined) await Storage.setItem('learnworlds_client_secret', secret, { internal: true });
+        const keepExp = apiToken && apiToken === prev.apiToken ? prev.tokenExp : 0;
+        await Storage.setItem('learnworlds_api_token_exp', keepExp, { internal: true });
+        _creds = { clientId: clientId || '', apiToken: apiToken || '', schoolDomain: schoolDomain || '', clientSecret: secret || '', tokenExp: keepExp };
         return _creds;
     }
 
+    // ── Token renewal (client credentials) ──────────────────────────────────
+    // With the Client Secret (SURGhub admin → Settings → Developers → API) the app asks
+    // LearnWorlds for a token itself (POST /admin/api/oauth2/access_token, the documented
+    // client-credentials grant; tokens last ~8000 s) and renews it before it runs out, or
+    // at once when LearnWorlds refuses the one it has. Without a secret, the pasted token
+    // is used as it is, as before.
+    const RENEW_MARGIN_MS = 5 * 60 * 1000;
+    async function renewToken() {
+        if (_renewing) return _renewing;
+        _renewing = (async () => {
+            const c = await getCredentials();
+            if (!c.clientId || !c.clientSecret) throw new Error('Auth failed: add the Client Secret (Data Sync → LearnWorlds API Credentials) so SURGdash can renew the token itself.');
+            const url = _resolveBaseUrl(c).replace(/\/v2$/, '') + '/oauth2/access_token';
+            const body = 'data=' + encodeURIComponent(JSON.stringify({ client_id: c.clientId, client_secret: c.clientSecret, grant_type: 'client_credentials' }));
+            const res = await electronAPI.invoke('http-request', { url, method: 'POST', body,
+                headers: { 'Lw-Client': c.clientId, 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' } });
+            if (res.error) throw new Error(`Network error renewing the LearnWorlds token: ${res.error}`);
+            let j = null; try { j = JSON.parse(res.body || ''); } catch (e) { j = null; }
+            const td = (j && (j.tokenData || j)) || {};
+            if (res.statusCode < 200 || res.statusCode >= 300 || !td.access_token) {
+                const why = (j && j.errors && j.errors[0] && (j.errors[0].message || j.errors[0].context)) || (res.body || '').slice(0, 160);
+                throw new Error(`Auth failed: could not renew the LearnWorlds token (${res.statusCode}): ${why}. Check the Client ID and Client Secret.`);
+            }
+            const exp = Date.now() + (Number(td.expires_in) > 0 ? Number(td.expires_in) * 1000 : 3600 * 1000);
+            await Storage.setItem('learnworlds_api_token', td.access_token);
+            await Storage.setItem('learnworlds_api_token_exp', exp, { internal: true });
+            _creds = Object.assign({}, c, { apiToken: td.access_token, tokenExp: exp });
+            return _creds;
+        })();
+        try { return await _renewing; } finally { _renewing = null; }
+    }
+    // The token to send now: renewed first when a secret is set and the token is missing
+    // or about to run out.
+    async function _currentToken() {
+        let c = await getCredentials();
+        if (c.clientSecret && (!c.apiToken || (c.tokenExp && Date.now() > c.tokenExp - RENEW_MARGIN_MS))) c = await renewToken();
+        return c;
+    }
+    // LearnWorlds' answer to a dead token: 401/403, or 400 "access_denied".
+    function _tokenRefused(res) {
+        return res && (res.statusCode === 401 || res.statusCode === 403 || (res.statusCode === 400 && /access_denied/.test(res.body || '')));
+    }
+
     function hasCredentials(c) {
-        return !!(c && c.clientId && c.apiToken);
+        return !!(c && c.clientId && (c.apiToken || c.clientSecret));
     }
 
     // ── HTTP helper ─────────────────────────────────────────────────────────
@@ -91,7 +144,7 @@ window.LearnWorlds = (function () {
     // that runs several requests at a time and must hold ALL of them while it waits.
     async function _apiGet(path, params, retryDepth, opts) {
         _checkAbort();
-        const c = await getCredentials();
+        const c = await _currentToken();
         if (!hasCredentials(c)) {
             throw new Error('LearnWorlds API credentials not set. Open Settings → LearnWorlds API to add your Client ID and Access Token.');
         }
@@ -105,8 +158,15 @@ window.LearnWorlds = (function () {
         };
         const res = await electronAPI.invoke('http-request', { url, method: 'GET', headers });
         if (res.error) throw new Error(`Network error reaching ${url}: ${res.error}`);
-        if (res.statusCode === 401 || res.statusCode === 403) {
-            throw new Error(`Auth failed (${res.statusCode}) at ${url}. Check Client ID + token scopes (need courses:read).`);
+        // A refused token: renew it once (when the secret is set) and ask again.
+        if (_tokenRefused(res) && c.clientSecret && !(opts && opts._renewed)) {
+            await renewToken();
+            return _apiGet(path, params, retryDepth, Object.assign({}, opts, { _renewed: true }));
+        }
+        if (_tokenRefused(res)) {
+            throw new Error(`Auth failed: LearnWorlds refused the access token (${res.statusCode}) at ${url}. `
+                + (c.clientSecret ? 'Even a freshly renewed token was refused: check the Client ID, Client Secret and the app\'s permissions in SURGhub admin.'
+                                  : 'It has probably expired. Add the Client Secret (Data Sync → LearnWorlds API Credentials) and SURGdash renews it itself, or paste a new token.'));
         }
         if (res.statusCode === 429) {
             if (opts && opts.rateLimit === 'throw') {
@@ -1528,7 +1588,7 @@ window.LearnWorlds = (function () {
 
         async function probe(name, path, params) {
             if (onProgress) onProgress(name);
-            const c = await getCredentials();
+            const c = await _currentToken();
             const base = _resolveBaseUrl(c);
             const qs = params ? '?' + new URLSearchParams(params).toString() : '';
             const url = `${base}${path}${qs}`;
@@ -1609,6 +1669,7 @@ window.LearnWorlds = (function () {
         getCredentials,
         setCredentials,
         hasCredentials: () => getCredentials().then(hasCredentials),
+        renewToken,
         testConnection,
         fetchAllCourses,
         fetchCourseFoundation,

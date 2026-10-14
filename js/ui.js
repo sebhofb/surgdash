@@ -3687,15 +3687,19 @@ Object.assign(window.App, {
                             <span id="lw-api-status" class="ml-auto text-xs text-slate-400 font-medium"></span>
                         </summary>
                         <div class="px-5 pb-5 pt-2 border-t border-slate-100">
-                            <p class="text-sm text-slate-500 mb-4">Provision in SURGhub admin → <strong>Settings → Integrations → API & Webhooks → New App</strong>. Credentials are stored locally only — they're never uploaded to Google Sheets or shared snapshots.</p>
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                            <p class="text-sm text-slate-500 mb-4">From SURGhub admin → <strong>Settings → Developers → API</strong>. With the <strong>Client ID and Client Secret</strong>, SURGdash gets its own access token and renews it before it runs out, so expired tokens no longer stop the syncs; a pasted token alone works until it expires. Credentials are stored on this Mac only — never uploaded to Google Sheets or shared snapshots.</p>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                                 <div>
                                     <label class="block text-xs font-bold text-slate-500 mb-1 uppercase">Client ID (Lw-Client)</label>
                                     <input type="text" id="lw-client-id" placeholder="e.g. 6534a..." class="w-full px-3 py-2 border rounded-lg text-sm font-mono" />
                                 </div>
                                 <div>
+                                    <label class="block text-xs font-bold text-slate-500 mb-1 uppercase">Client Secret</label>
+                                    <input type="password" id="lw-client-secret" placeholder="paste once — tokens then renew themselves" class="w-full px-3 py-2 border rounded-lg text-sm font-mono" />
+                                </div>
+                                <div>
                                     <label class="block text-xs font-bold text-slate-500 mb-1 uppercase">Access Token (Bearer)</label>
-                                    <input type="password" id="lw-api-token" placeholder="paste API token" class="w-full px-3 py-2 border rounded-lg text-sm font-mono" />
+                                    <input type="password" id="lw-api-token" placeholder="filled in automatically with the secret" class="w-full px-3 py-2 border rounded-lg text-sm font-mono" />
                                 </div>
                             </div>
                             <div class="flex flex-wrap items-center gap-2">

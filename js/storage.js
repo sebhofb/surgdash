@@ -107,6 +107,9 @@
         if (key === 'learnworlds_client_id')     return path.join('settings', 'learnworlds_client_id.json');
         if (key === 'learnworlds_api_token')     return path.join('settings', 'learnworlds_api_token.json');
         if (key === 'learnworlds_school_domain') return path.join('settings', 'learnworlds_school_domain.json');
+        // device-only: never mapped back below, so never enumerated, pushed or exported
+        if (key === 'learnworlds_client_secret') return path.join('settings', 'learnworlds_client_secret.json');
+        if (key === 'learnworlds_api_token_exp') return path.join('settings', 'learnworlds_api_token_exp.json');
         if (key === 'surgdash_provider_map')     return path.join('settings', 'provider_map.json');
         if (key === 'surgdash_course_links')     return path.join('settings', 'course_links.json');
         if (key === 'surghub_local_mtime')   return path.join('settings', 'surghub_local_mtime.json');
