@@ -1563,8 +1563,9 @@ a.shl:hover{color:var(--accent);border-bottom-color:var(--accent);}
 .globe-cap{position:absolute;left:0;right:0;bottom:5%;display:flex;align-items:center;justify-content:center;gap:11px;font-family:var(--serif);font-size:18px;font-weight:700;letter-spacing:.01em;color:#eaf2f8;pointer-events:none;text-shadow:0 2px 14px rgba(0,0,0,.6);transition:opacity .4s ease;}
 .globe-cap .gc-flag{font-size:26px;line-height:1;}
 .globe-steps{display:flex;flex-direction:column;}
-.gstep{min-height:64vh;display:flex;align-items:center;}
+.gstep{min-height:92vh;padding:4vh 0;box-sizing:border-box;display:flex;align-items:center;}
 @media(max-width:860px){.gstep{min-height:auto;padding:26px 0;}}
+@media(min-width:861px) and (max-height:820px){.globe-steps .gstep-media{aspect-ratio:2/1}.globe-steps .gstep-body{padding:14px 20px 16px}.globe-steps .gstep-nm{font-size:20px;margin-top:6px}.globe-steps .gstep-sum{font-size:13px;line-height:1.5;margin-bottom:10px}}
 .gstep-card{width:100%;background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;opacity:.42;transform:scale(.985);transition:opacity .45s ease,transform .45s cubic-bezier(.2,.7,.2,1),border-color .45s ease,background .45s ease;}
 .gstep.on .gstep-card{opacity:1;transform:none;border-color:rgba(63,185,132,.5);background:var(--surface2);}
 .gstep-media{position:relative;aspect-ratio:16/9;display:flex;align-items:center;justify-content:center;overflow:hidden;}
