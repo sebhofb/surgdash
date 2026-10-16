@@ -2329,7 +2329,7 @@ function initGlobe(){
     }
   }
   function shortest(d){d=(d+540)%360-180; return d;}
-  var raf=0,vis=false;
+  var raf=0,vis=false,fadeT=0;   // fadeT: Reduce Motion cross-fade
   function loop(now){
     if(reachActive){if(!reduce){cur.lon+=0.16; cur.lat+=(10-cur.lat)*0.05; reachRev+=(1-reachRev)*0.05;}}
     else{if(!reduce){if(pts[active]){cur.lon+=shortest(tgt.lon-cur.lon)*0.085; cur.lat+=(tgt.lat-cur.lat)*0.085;} reachRev+=(0-reachRev)*0.08;}}
@@ -2342,7 +2342,7 @@ function initGlobe(){
     if(!reachActive&&pts[i]){tgt.lon=pts[i].lon; tgt.lat=pts[i].lat;}
     if(cap){cap.innerHTML=''; var f=document.createElement('span'); f.className='gc-flag'; var c=document.createElement('span'); if(reachActive){f.textContent='🌍'; c.textContent=((typeof GLB_CN!=='undefined'&&GLB_CN)?fmtN(GLB_CN)+' countries':'Worldwide');}else{f.textContent=(pts[i]&&pts[i].flag)||''; c.textContent=(pts[i]&&pts[i].country)||'';} cap.appendChild(f); cap.appendChild(c);}
     for(var j=0;j<steps.length;j++) steps[j].classList.toggle('on',j===i);
-    if(reduce){reachRev=reachActive?1:0; if(reachActive) cur.lat=10; else if(pts[i]){cur.lon=pts[i].lon; cur.lat=pts[i].lat;} draw(0);}else kick();
+    if(reduce){clearTimeout(fadeT); cv.style.transition='opacity .2s ease'; cv.style.opacity='0'; fadeT=setTimeout(function(){reachRev=reachActive?1:0; if(reachActive) cur.lat=10; else if(pts[active]){cur.lon=pts[active].lon; cur.lat=pts[active].lat;} draw(0); cv.style.opacity='1';},200);}else kick();
   }
   function pick(){var mid=(window.innerHeight||0)*0.5,best=0,bd=1e9; for(var i=0;i<steps.length;i++){var r=steps[i].getBoundingClientRect(); var ctr=r.top+r.height/2; var d=Math.abs(ctr-mid); if(d<bd){bd=d;best=i;}} setActive(best);}
   if('IntersectionObserver' in window){var io2=new IntersectionObserver(function(es){es.forEach(function(e){vis=e.isIntersecting; if(vis) kick();});},{threshold:0.01}); io2.observe(cv);}else{vis=true;}
