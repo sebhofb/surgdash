@@ -732,20 +732,23 @@
             }
           }
           function shortest(d) { d = (d + 540) % 360 - 180; return d; }
-          var raf = 0, vis = false, fadeT = 0;   // fadeT: Reduce Motion cross-fade
+          var raf = 0, vis = false;
+          // Always glides to the next country; Reduce Motion only drops the endless finale spin
+          // and the pulse, and the loop stops once the globe has arrived.
           function loop(now) {
-            if (reachActive) { if (!reduce) { cur.lon += 0.16; cur.lat += (10 - cur.lat) * 0.05; reachRev += (1 - reachRev) * 0.05; } }
-            else { if (!reduce) { if (pts[active]) { cur.lon += shortest(tgt.lon - cur.lon) * 0.085; cur.lat += (tgt.lat - cur.lat) * 0.085; } reachRev += (0 - reachRev) * 0.08; } }
+            if (reachActive) { if (!reduce) cur.lon += 0.16; cur.lat += (10 - cur.lat) * 0.05; reachRev += (1 - reachRev) * 0.05; }
+            else { if (pts[active]) { cur.lon += shortest(tgt.lon - cur.lon) * 0.085; cur.lat += (tgt.lat - cur.lat) * 0.085; } reachRev += (0 - reachRev) * 0.08; }
             draw(now);
-            if (reduce || !vis) { raf = 0; return; } raf = requestAnimationFrame(loop);
+            var settled = reduce && (reachActive ? (Math.abs(10 - cur.lat) < 0.05 && reachRev > 0.995) : (Math.abs(shortest(tgt.lon - cur.lon)) < 0.05 && Math.abs(tgt.lat - cur.lat) < 0.05 && reachRev < 0.005));
+            if (settled || !vis) { raf = 0; return; } raf = requestAnimationFrame(loop);
           }
-          function kick() { if (!raf && !reduce) raf = requestAnimationFrame(loop); }
+          function kick() { if (!raf) raf = requestAnimationFrame(loop); }
           function setActive(i) {
             i = Math.max(0, Math.min(steps.length - 1, i)); if (i === active) return; active = i; reachActive = (i === reachIdx);
             if (!reachActive && pts[i]) { tgt.lon = pts[i].lon; tgt.lat = pts[i].lat; }
             if (cap) { cap.innerHTML = ''; var f = document.createElement('span'); f.className = 'gc-flag'; var c = document.createElement('span'); if (reachActive) { f.textContent = '\u{1F30D}'; c.textContent = (D && D.countries ? fmt(D.countries) + ' countries' : 'Worldwide'); } else { f.textContent = (pts[i] && pts[i].flag) || ''; c.textContent = (pts[i] && pts[i].country) || ''; } cap.appendChild(f); cap.appendChild(c); }
             for (var j = 0; j < steps.length; j++) steps[j].classList.toggle('on', j === i);
-            if (reduce) { clearTimeout(fadeT); cv.style.transition = 'opacity .2s ease'; cv.style.opacity = '0'; fadeT = setTimeout(function () { reachRev = reachActive ? 1 : 0; if (reachActive) cur.lat = 10; else if (pts[active]) { cur.lon = pts[active].lon; cur.lat = pts[active].lat; } draw(0); cv.style.opacity = '1'; }, 200); } else kick();
+            kick();
           }
           function pick() { var mid = (window.innerHeight || 0) * 0.5, best = 0, bd = 1e9; for (var i = 0; i < steps.length; i++) { var r = steps[i].getBoundingClientRect(); var ctr = r.top + r.height / 2; var d = Math.abs(ctr - mid); if (d < bd) { bd = d; best = i; } } setActive(best); }
           if ('IntersectionObserver' in window) { var io2 = new IntersectionObserver(function (es) { es.forEach(function (e) { vis = e.isIntersecting; if (vis) kick(); }); }, { threshold: 0.01 }); io2.observe(cv); } else { vis = true; }
