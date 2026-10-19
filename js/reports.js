@@ -139,10 +139,14 @@
             const snapData = this.getAnalyticsSnap();
             const pSnap = platform ? snapData.slice() : snapData.filter(d => d.Provider === providerName && (!courseOnly || d.Course === courseOnly));
             if (pSnap.length === 0) return null;
+            // Platform report: totals and aggregates count EVERY course, private and unpublished
+            // ("Excluded") ones too, as the dashboard does (Seb, 19 Oct 2026); course and provider
+            // counts and every listing stay with the included courses (pSnap).
+            const tSnap = platform && this.getPlatformSnap ? this.getPlatformSnap() : pSnap;
 
             const courseMins = this.getCourseLearningMinutes ? this.getCourseLearningMinutes() : {}; // anon fallback — matches the dashboard provider total
             let totalLrn = 0, totalCert = 0, totalResp = 0, rSum = 0, rCnt = 0, totalMin = 0;
-            pSnap.forEach(d => {
+            tSnap.forEach(d => {
                 totalLrn += (Number(d.Learners) || 0);
                 totalCert += (Number(d.Certificates) || 0);
                 totalResp += (Number(d.Responses) || 0);
@@ -169,7 +173,9 @@
             // Build provider-level timeline data
             let provTimeline = {};
             const historyData = platform ? this.getAnalyticsHistory() : this.getAnalyticsHistory().filter(d => d.Provider === providerName && (!courseOnly || d.Course === courseOnly));
-            historyData.forEach(d => {
+            // the growth curve ends at the platform totals, so it counts every course too
+            const totalsHistory = platform && this.getPlatformHistory ? this.getPlatformHistory() : historyData;
+            totalsHistory.forEach(d => {
                 if (d.CourseTimeline) {
                     let parsed = window.Charts.safeParse(d.CourseTimeline);
                     let tl = parsed.timeline || parsed;
@@ -271,7 +277,7 @@
             // "likely I will use the information acquired"). All-time figures.
             const qAgg = {};
             const qOrder = [];
-            pSnap.forEach(d => {
+            tSnap.forEach(d => {
                 if (!d.QuestionStats) return;
                 let qs; try { qs = JSON.parse(d.QuestionStats); } catch (e) { return; }
                 (Array.isArray(qs) ? qs : []).forEach(s => {
@@ -406,7 +412,7 @@
             // Growth Timelines sync. FALLBACK (CSV): anonymized per-user records.
             let providerCountryData = {};
             let _usedCountryStats = false;
-            coursesSorted.forEach(c => {
+            (platform ? tSnap : coursesSorted).forEach(c => {
                 if (!c.CountryStats) return;
                 try {
                     const cs = JSON.parse(c.CountryStats);
@@ -461,7 +467,7 @@
             // comment) for the report's rating band: share giving 4–5 stars, average, and
             // count. Mirrors the Impact Showcase's rating band; needs ≥10 ratings to show.
             let rbTotal = 0, rbSum = 0, rb45 = 0;
-            pSnap.forEach(c => {
+            tSnap.forEach(c => {
                 if (!c.FeedbackBank) return;
                 try {
                     const fb = JSON.parse(c.FeedbackBank);
@@ -604,7 +610,7 @@
 
             // Provider-scoped survey-impact stats (New Knowledge / Intent to
             // Apply) — used by the dark HTML report's Learning Impact band.
-            const surveyImpact = (typeof this._surveyImpactStats === 'function') ? this._surveyImpactStats(pSnap) : null;
+            const surveyImpact = (typeof this._surveyImpactStats === 'function') ? this._surveyImpactStats(tSnap) : null;
 
             // Optional provider page URL. SURGhub has no provider URL scheme, so
             // this only comes from a manual "Provider URL" column added to the
@@ -672,11 +678,12 @@
             // Platform mode: per-provider roll-up (Top Providers section) + provider count.
             let topProviders = [], providerCount = 0;
             if (platform) {
-                const pm = {};
-                pSnap.forEach(d => {
-                    const p = String(d.Provider || 'Unknown').trim() || 'Unknown';
-                    const m = pm[p] || (pm[p] = { name: p, courses: 0, lrn: 0, cert: 0, rSum: 0, rCnt: 0 });
-                    m.courses++; m.lrn += Number(d.Learners) || 0; m.cert += Number(d.Certificates) || 0;
+                // Figures from every course; the providers listed, and their course counts, from the included ones.
+                const pm = {}, pName = (d) => String(d.Provider || 'Unknown').trim() || 'Unknown';
+                pSnap.forEach(d => { const p = pName(d); (pm[p] || (pm[p] = { name: p, courses: 0, lrn: 0, cert: 0, rSum: 0, rCnt: 0 })).courses++; });
+                tSnap.forEach(d => {
+                    const m = pm[pName(d)]; if (!m) return;
+                    m.lrn += Number(d.Learners) || 0; m.cert += Number(d.Certificates) || 0;
                     const r = Number(d.Rating) || 0; if (r > 0) { m.rSum += r; m.rCnt++; }
                 });
                 providerCount = Object.keys(pm).length;

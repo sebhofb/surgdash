@@ -13,7 +13,8 @@
 //   certificates         every certificate issued, all courses (dashboard "Certificates")
 //   content_providers    providers with at least one included course (public 34)
 // Also, for the website's pop-ups (added 19 Oct 2026), from the SURGhub overall report's own
-// data (included courses, toggles and filters off) — so they match that report:
+// data (toggles and filters off) — so they match that report. Like enrolments and certificates,
+// they count EVERY course, private and unpublished too; only `courses` is the public catalogue:
 //   overall_satisfaction_pct  share of end-of-course survey answers rating overall satisfaction 4 or 5
 //   likely_to_apply_pct       the same for "it is likely that I will use the information acquired"
 //   satisfaction_responses    how many answered the overall-satisfaction question
