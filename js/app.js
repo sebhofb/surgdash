@@ -1096,6 +1096,7 @@ window.App = {
                 'learnworlds_api_token_exp.json',
                 'partner_dash.json',
                 'partner_dash_token.json',
+                'website_metrics.json',
                 'learnworlds_school_domain.json',
                 'provider_map.json',
                 'course_links.json',

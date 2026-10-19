@@ -14522,7 +14522,7 @@ function _writeProject(ss, d) {
             // offline-cracking target.
             const SECRET_KEYS = new Set(['anthropic_api_key', 'learnworlds_api_token', 'learnworlds_client_id', 'learnworlds_client_secret', 'learnworlds_api_token_exp',
                                          'surgdash_edit_password', 'surgdash_report_password',
-                                         'surgdash_partner_dash', 'surgdash_partner_dash_token']);
+                                         'surgdash_partner_dash', 'surgdash_partner_dash_token', 'surgdash_website_metrics']);
             for (const key of allKeys) {
                 if (SURGHUB_INTERNAL_KEYS.has(key)) continue;
                 if (SECRET_KEYS.has(key)) continue;

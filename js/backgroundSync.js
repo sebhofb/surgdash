@@ -143,7 +143,10 @@ Object.assign(window.App, {
             // from the figures just refreshed. Only where the dashboards are set up (the token is
             // device-local), so other machines skip it silently.
             if (this._pdReady && (await this._pdReady()).ok) {
-                await step('Partner dashboards', async () => (await this.publishPartnerDashboards({ silent: true, progress: (t) => this._bgProgress(t, null) })).note);
+                // syncOk: the website figures (metrics.json) only change after a clean LearnWorlds sync.
+                const lwSteps = ['Learners & demographics', 'Ambassadors', 'Enrolments & progress'];
+                const syncOk = steps.filter(x => lwSteps.includes(x.label)).every(x => x.ok);
+                await step('Partner dashboards', async () => (await this.publishPartnerDashboards({ silent: true, syncOk, progress: (t) => this._bgProgress(t, null) })).note);
             }
             // Weekly digest (digest.js): on/after the chosen weekday, once per week, from
             // the figures the cards just refreshed.

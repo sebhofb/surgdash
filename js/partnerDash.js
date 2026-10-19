@@ -421,13 +421,19 @@ Object.assign(window.App, {
             if (overall) overall.logo = await this._pdThumb(this._pdBuildImage('SURGhub_app_square_white.png') || this._pdBuildImage('surghub_logo_white.png'));
             files.push({ path: this.PD_TEAM_SLUG + '/index.html', content: this._pdPageHtml(await this._pdEncrypt(this._pdTeamHtml(list, overall, s.teamPassword), s.teamPassword), 'SURGhub reports · GSF team', 'Enter the team password.') });
         }
+        // The GSF website's six headline figures (websiteMetrics.js), published with the site.
+        let wm = null;
+        if (this.websiteMetricsFile) {
+            try { wm = await this.websiteMetricsFile({ syncOk: opts.syncOk }); if (wm.content) files.push({ path: 'metrics.json', content: wm.content }); }
+            catch (e) { failed.push('Website figures: ' + String((e && e.message) || e)); }
+        }
         const host = (String(s.baseUrl || '').match(/^https?:\/\/([^/]+)/) || [])[1] || '';
         files.push({ path: 'index.html', content: this._pdLandingHtml() });
         files.push({ path: '404.html', content: this._pdLandingHtml() });
         files.push({ path: 'robots.txt', content: 'User-agent: *\nDisallow: /\n' });
         files.push({ path: '.nojekyll', content: '' });
         if (host && !/\.github\.io$/i.test(host)) files.push({ path: 'CNAME', content: host + '\n' });
-        return { files, built, failed };
+        return { files, built, failed, wm };
     },
 
     // GitHub API call; a dropped connection, a 5xx or GitHub's own "timed out" is tried
@@ -464,7 +470,7 @@ Object.assign(window.App, {
         if (!ready.ok) { if (!opts.silent) alert('Partner dashboards are not ready: ' + ready.why + '.'); return { ok: false, note: 'skipped — ' + ready.why }; }
         const s = this._pd, token = await this._pdToken(), branch = s.branch || 'main';
         try {
-            const { files, built, failed } = await this._pdBuildFiles(opts);
+            const { files, built, failed, wm } = await this._pdBuildFiles(opts);
             if (!built.length) throw new Error('no report could be built' + (failed.length ? ' (' + failed.join('; ') + ')' : ''));
             if (opts.progress) opts.progress('Partner dashboards: uploading ' + built.length + ' report' + (built.length === 1 ? '' : 's') + '…');
             const blob = (content) => this._pdGh('POST', '/git/blobs', { content, encoding: 'utf-8' }, token);
@@ -493,6 +499,7 @@ Object.assign(window.App, {
             try { await this._pdGh('PATCH', '/git/refs/heads/' + branch, { sha: c.sha, force: true }, token); }
             catch (e) { if (e.status !== 404 && e.status !== 422) throw e; await this._pdGh('POST', '/git/refs', { ref: 'refs/heads/' + branch, sha: c.sha }, token); }
             built.forEach(p => { s.providers[p].published = { at: now, slug: s.providers[p].slug }; });
+            if (wm && wm.content && this._wmPublished) await this._wmPublished(wm);
             s.teamPublished = { at: now };
             const note = built.length + ' report' + (built.length === 1 ? '' : 's') + ' published' + (failed.length ? ', ' + failed.length + ' failed: ' + failed.join('; ') : '');
             s.lastPublish = { at: now, ok: !failed.length, note };
@@ -556,7 +563,7 @@ Object.assign(window.App, {
             + '<div class="flex items-center gap-3 flex-wrap mt-4">'
             + '<button onclick="App.pdPublishNow()" ' + (enabled ? '' : 'disabled') + ' class="px-4 py-2 rounded-lg text-sm font-bold ' + (enabled ? 'bg-gsf-prussian text-white hover:bg-slate-900' : 'bg-slate-100 text-slate-400 cursor-not-allowed') + '">Publish now</button>'
             + '<span class="text-xs ' + (lp ? (lp.ok ? 'text-emerald-700' : 'text-amber-700') : 'text-slate-400') + '">' + (lp ? 'Last publish ' + esc(when(lp.at)) + ': ' + esc(lp.note) : enabled + ' switched on · not published yet') + '</span>'
-            + '</div></div>';
+            + '</div>' + (this._websiteMetricsHtml ? this._websiteMetricsHtml() : '') + '</div>';
     },
     async _pdTokenSet() { this._pdHasToken = !!(await this._pdToken()); },
 });
