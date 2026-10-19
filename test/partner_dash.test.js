@@ -243,7 +243,7 @@ async function openPage(html, pw) {
   check('links, passwords and token live in settings/ and are never mapped back (so never pushed or exported)',
     /'surgdash_partner_dash'\)\s+return path\.join\('settings', 'partner_dash\.json'\)/.test(storage) && /'surgdash_partner_dash_token'\) return path\.join\('settings', 'partner_dash_token\.json'\)/.test(storage) && !/'partner_dash'\s*:/.test(storage));
   check('…and the Sheets push skips them even if listed', /'surgdash_partner_dash', 'surgdash_partner_dash_token'/.test(gv));
-  check('the nightly sync republishes, only where the dashboards are set up', /if \(this\._pdReady && \(await this\._pdReady\(\)\)\.ok\) \{\s*await step\('Partner dashboards'/.test(bg));
+  check('the nightly sync republishes, only where the dashboards are set up', /if \(this\._pdReady && \(await this\._pdReady\(\)\)\.ok\) \{[^}]*?await step\('Partner dashboards'/.test(bg));
 
   const page_ = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8'), ui = fs.readFileSync(path.join(ROOT, 'js/ui.js'), 'utf8');
   check('the module loads before uiState.js', page_.indexOf('js/partnerDash.js') > 0 && page_.indexOf('js/partnerDash.js') < page_.indexOf('js/uiState.js'));
