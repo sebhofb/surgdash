@@ -15,8 +15,8 @@
 // Also, for the website's pop-ups (added 19 Oct 2026), from the SURGhub overall report's own
 // data (toggles and filters off) — so they match that report. Like enrolments and certificates,
 // they count EVERY course, private and unpublished too; only `courses` is the public catalogue:
-//   overall_satisfaction_pct  share of end-of-course survey answers rating overall satisfaction 4 or 5
-//   likely_to_apply_pct       the same for "it is likely that I will use the information acquired"
+//   overall_satisfaction_pct  share of end-of-course survey answers rating overall satisfaction 4 or 5 (1 decimal)
+//   likely_to_apply_pct       the same for "it is likely that I will use the information acquired" (1 decimal)
 //   satisfaction_responses    how many answered the overall-satisfaction question
 //   average_rating            average course rating (the report's "Avg Rating"), 2 decimals
 //   study_minutes / study_years   recorded learning time, all courses (years = minutes / 525,960, 1 decimal)
@@ -102,8 +102,8 @@ Object.assign(window.App, {
         const top = ent.slice(0, 10).map(([c, n]) => ({ country: c, iso2: iso(c), enrolments: Math.round(Number(n)), share_pct: Math.round(Number(n) / total * 1000) / 10 }));
         const r = Number(D.avgRating);
         return {
-            overall_satisfaction_pct: sat ? Math.round(sat.hiPct) : null,
-            likely_to_apply_pct: app ? Math.round(app.hiPct) : null,
+            overall_satisfaction_pct: sat ? Math.round(sat.hiPct * 10) / 10 : null,
+            likely_to_apply_pct: app ? Math.round(app.hiPct * 10) / 10 : null,
             satisfaction_responses: sat ? sat.n : null,
             average_rating: Number.isFinite(r) && r > 0 ? Math.round(r * 100) / 100 : null,
             study_minutes: Math.round(Number(D.totalMin) || 0) || null,
@@ -113,7 +113,7 @@ Object.assign(window.App, {
     // Each extra on its own: a value that fails keeps the previous one (or is left out).
     _wmExtrasChecked(x, prev) {
         prev = prev || {}; const out = {}, kept = [];
-        const pct = (v) => Number.isInteger(v) && v >= 0 && v <= 100;
+        const pct = (v) => Number.isFinite(v) && v >= 0 && v <= 100 && Math.abs(Math.round(v * 10) - v * 10) < 1e-6;   // one decimal
         const ok = {
             overall_satisfaction_pct: pct, likely_to_apply_pct: pct,
             satisfaction_responses: (v) => Number.isInteger(v) && v > 0,

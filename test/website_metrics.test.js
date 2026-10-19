@@ -79,8 +79,8 @@ const mkD = (sat, app, rating, min) => ({ avgRating: rating, totalMin: min, prov
   const jx = JSON.parse(fx.content);
   check('the overall report is assembled for all of SURGhub with every filter off, and the filters put back',
     seenFilters.prov === 'SURGhub' && seenFilters.platform === true && !seenFilters.low && !seenFilters.priv && seenFilters.from === '' && seenFilters.fb === '' && App.reportPeriodFrom === '2026-07' && App.reportFeedbackFromDate === '2026-01-01' && App.hideLowLearners === true);
-  check('satisfaction and likely-to-apply: share answering 4 or 5, whole percent, with the number who answered',
-    jx.overall_satisfaction_pct === 92 && jx.likely_to_apply_pct === 92 && jx.satisfaction_responses === 10421);
+  check('satisfaction and likely-to-apply: share answering 4 or 5, one decimal, with the number who answered',
+    jx.overall_satisfaction_pct === 91.6 && jx.likely_to_apply_pct === 92.4 && jx.satisfaction_responses === 10421, JSON.stringify([jx.overall_satisfaction_pct, jx.likely_to_apply_pct]));
   check('average rating to 2 decimals; study time in minutes and years', jx.average_rating === 4.63 && jx.study_minutes === 19034567 && jx.study_years === 36.2, JSON.stringify({ r: jx.average_rating, y: jx.study_years }));
   check('certification rate from this file\'s own enrolments and certificates', jx.certification_rate_pct === Math.round(jx.certificates / jx.enrolments * 1000) / 10);
   check('top 10 countries by enrolments, largest first, with ISO code and share of enrolments with a known country',
@@ -90,7 +90,7 @@ const mkD = (sat, app, rating, min) => ({ avgRating: rating, totalMin: min, prov
   D = mkD(140, 93.2, '4.64', 10000);   // a broken percentage and study time falling by half
   const fy = await App.websiteMetricsFile({});
   const jy = JSON.parse(fy.content);
-  check('a pop-up figure that fails its own check keeps its previous value; the others update', fy.fresh && jy.overall_satisfaction_pct === 92 && jy.study_minutes === 19034567 && jy.likely_to_apply_pct === 93 && jy.average_rating === 4.64 && fy.kept.join() === 'overall_satisfaction_pct,study_minutes', fy.kept.join());
+  check('a pop-up figure that fails its own check keeps its previous value; the others update', fy.fresh && jy.overall_satisfaction_pct === 91.6 && jy.study_minutes === 19034567 && jy.likely_to_apply_pct === 93.2 && jy.average_rating === 4.64 && fy.kept.join() === 'overall_satisfaction_pct,study_minutes', fy.kept.join());
   await App._wmPublished(fy);
 
   // ── safety checks keep the old figures ──
@@ -106,7 +106,7 @@ const mkD = (sat, app, rating, min) => ({ avgRating: rating, totalMin: min, prov
   check('a zero (a sync that came back empty) is held back', !f4.fresh && /Registered learners is not a positive whole number/.test(f4.why));
   App.userHistory.pop();
   const f5 = await App.websiteMetricsFile({ syncOk: false });
-  check('after a sync with LearnWorlds errors, the last good figures stay, pop-up figures included', !f5.fresh && /LearnWorlds errors/.test(f5.why) && JSON.parse(f5.content).enrolments === 1355 && JSON.parse(f5.content).likely_to_apply_pct === 93);
+  check('after a sync with LearnWorlds errors, the last good figures stay, pop-up figures included', !f5.fresh && /LearnWorlds errors/.test(f5.why) && JSON.parse(f5.content).enrolments === 1355 && JSON.parse(f5.content).likely_to_apply_pct === 93.2);
   C[0].Learners = 1010;   // a normal day: small growth
   const f6 = await App.websiteMetricsFile({});
   check('small growth goes out', f6.fresh && JSON.parse(f6.content).enrolments === 1365);
