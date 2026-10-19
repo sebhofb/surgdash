@@ -44,6 +44,14 @@ vm.createContext(ctx);
 for (const f of ['js/partnerDash.js', 'js/websiteMetrics.js']) vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, { filename: f });
 const App = ctx.App;
 App._pdReady = async () => ({ ok: true }); App._pdToken = async () => 'ghp_T';
+ctx.countryToISO = (c) => ({ India: 'IN', 'United Arab Emirates': 'AE', 'United States': 'US' }[c] || '');
+// The SURGhub overall report's data (reports.js _assembleReportData), as far as the extras use it.
+const CC = { India: 7000, 'United Arab Emirates': 6400, 'United States': 5200, 'United Kingdom': 3300, Mexico: 1800, Pakistan: 3310, Kenya: 2140, Egypt: 2230, Nigeria: 2210, Ethiopia: 1820, Malta: 180, Fiji: 80 };
+let D = null, seenFilters = null;
+App.reportPeriodFrom = '2026-07'; App.reportFeedbackFromDate = '2026-01-01';
+App._assembleReportData = async (prov, o) => { seenFilters = { prov, platform: o.platform, low: App.hideLowLearners, priv: App.hidePrivateCourses, from: App.reportPeriodFrom, fb: App.reportFeedbackFromDate }; return D; };
+const mkD = (sat, app, rating, min) => ({ avgRating: rating, totalMin: min, providerCountryData: CC,
+  surveyQRows: [{ title: 'Overall satisfaction', hiPct: sat, n: 10421 }, { title: 'Learning objectives', hiPct: 95, n: 10000 }, { title: 'Intent to apply', hiPct: app, n: 9800 }] });
 
 (async () => {
   const v = App.websiteMetricsCompute();
@@ -57,11 +65,33 @@ App._pdReady = async () => ({ ok: true }); App._pdToken = async () => 'ghp_T';
   const f1 = await App.websiteMetricsFile({});
   const j1 = JSON.parse(f1.content);
   check('metrics.json: the six keys in order, whole numbers, an as_of date (UTC) and nothing else personal',
-    Object.keys(j1).join() === 'as_of,updated_at,source,registered_learners,enrolments,countries,courses,certificates,content_providers' && /^\d{4}-\d{2}-\d{2}$/.test(j1.as_of) && App.WM_ORDER.every(k => Number.isInteger(j1[k])), f1.content);
+    Object.keys(j1).slice(0, 9).join() === 'as_of,updated_at,source,registered_learners,enrolments,countries,courses,certificates,content_providers' && /^\d{4}-\d{2}-\d{2}$/.test(j1.as_of) && App.WM_ORDER.every(k => Number.isInteger(j1[k])), f1.content);
   check('a first publish has nothing to compare with, so it goes out', f1.fresh === true);
   check('…but is not the baseline until the upload went through', !(store.get('surgdash_website_metrics') || {}).last);
   await App._wmPublished(f1);
   check('after the upload it is, stored on this device only', store.get('surgdash_website_metrics').last.values.enrolments === 1355 && ctx.__internal === true);
+
+  check('without the overall report, the extras are simply left out', !('overall_satisfaction_pct' in j1) && j1.certification_rate_pct === 26.9, f1.content);
+
+  // ── the pop-up figures ──
+  D = mkD(91.6, 92.4, '4.63', 19034567);
+  const fx = await App.websiteMetricsFile({});
+  const jx = JSON.parse(fx.content);
+  check('the overall report is assembled for all of SURGhub with every filter off, and the filters put back',
+    seenFilters.prov === 'SURGhub' && seenFilters.platform === true && !seenFilters.low && !seenFilters.priv && seenFilters.from === '' && seenFilters.fb === '' && App.reportPeriodFrom === '2026-07' && App.reportFeedbackFromDate === '2026-01-01' && App.hideLowLearners === true);
+  check('satisfaction and likely-to-apply: share answering 4 or 5, whole percent, with the number who answered',
+    jx.overall_satisfaction_pct === 92 && jx.likely_to_apply_pct === 92 && jx.satisfaction_responses === 10421);
+  check('average rating to 2 decimals; study time in minutes and years', jx.average_rating === 4.63 && jx.study_minutes === 19034567 && jx.study_years === 36.2, JSON.stringify({ r: jx.average_rating, y: jx.study_years }));
+  check('certification rate from this file\'s own enrolments and certificates', jx.certification_rate_pct === Math.round(jx.certificates / jx.enrolments * 1000) / 10);
+  check('top 10 countries by enrolments, largest first, with ISO code and share of enrolments with a known country',
+    jx.top_countries.length === 10 && jx.top_countries[0].country === 'India' && jx.top_countries[0].iso2 === 'IN' && jx.top_countries[0].enrolments === 7000 && jx.top_countries[0].share_pct === Math.round(7000 / 35670 * 1000) / 10
+    && jx.top_countries.map(c => c.country).indexOf('Malta') === -1 && jx.top_countries.every((c, i, a) => i === 0 || a[i - 1].enrolments >= c.enrolments), JSON.stringify(jx.top_countries.slice(0, 2)));
+  await App._wmPublished(fx);
+  D = mkD(140, 93.2, '4.64', 10000);   // a broken percentage and study time falling by half
+  const fy = await App.websiteMetricsFile({});
+  const jy = JSON.parse(fy.content);
+  check('a pop-up figure that fails its own check keeps its previous value; the others update', fy.fresh && jy.overall_satisfaction_pct === 92 && jy.study_minutes === 19034567 && jy.likely_to_apply_pct === 93 && jy.average_rating === 4.64 && fy.kept.join() === 'overall_satisfaction_pct,study_minutes', fy.kept.join());
+  await App._wmPublished(fy);
 
   // ── safety checks keep the old figures ──
   C[0].Learners = 900;   // enrolments 1355 → 1255: −7%
@@ -76,7 +106,7 @@ App._pdReady = async () => ({ ok: true }); App._pdToken = async () => 'ghp_T';
   check('a zero (a sync that came back empty) is held back', !f4.fresh && /Registered learners is not a positive whole number/.test(f4.why));
   App.userHistory.pop();
   const f5 = await App.websiteMetricsFile({ syncOk: false });
-  check('after a sync with LearnWorlds errors, the last good figures stay', !f5.fresh && /LearnWorlds errors/.test(f5.why) && JSON.parse(f5.content).enrolments === 1355);
+  check('after a sync with LearnWorlds errors, the last good figures stay, pop-up figures included', !f5.fresh && /LearnWorlds errors/.test(f5.why) && JSON.parse(f5.content).enrolments === 1355 && JSON.parse(f5.content).likely_to_apply_pct === 93);
   C[0].Learners = 1010;   // a normal day: small growth
   const f6 = await App.websiteMetricsFile({});
   check('small growth goes out', f6.fresh && JSON.parse(f6.content).enrolments === 1365);

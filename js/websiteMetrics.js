@@ -12,6 +12,17 @@
 //   courses              live courses: included, not private, not draft
 //   certificates         every certificate issued, all courses (dashboard "Certificates")
 //   content_providers    providers with at least one included course (public 34)
+// Also, for the website's pop-ups (added 19 Oct 2026), from the SURGhub overall report's own
+// data (included courses, toggles and filters off) — so they match that report:
+//   overall_satisfaction_pct  share of end-of-course survey answers rating overall satisfaction 4 or 5
+//   likely_to_apply_pct       the same for "it is likely that I will use the information acquired"
+//   satisfaction_responses    how many answered the overall-satisfaction question
+//   average_rating            average course rating (the report's "Avg Rating"), 2 decimals
+//   study_minutes / study_years   recorded learning time, all courses (years = minutes / 525,960, 1 decimal)
+//   certification_rate_pct    certificates ÷ enrolments in this same file, 1 decimal
+//   top_countries             the 10 countries with most enrolments: country, iso2, enrolments, share_pct
+// Each is checked on its own (0–100, 1–5, ten countries, study time not falling >2% or
+// doubling); one that fails keeps its previous value.
 // Safety: every value a positive whole number, none down more than 2% or more than doubled
 // against the last published values, and the sync before it without LearnWorlds errors.
 // When a check fails, the last good file is published again unchanged and the reason kept.
@@ -59,7 +70,61 @@ Object.assign(window.App, {
     _wmJson(rec) {
         const o = { as_of: rec.as_of, updated_at: rec.at, source: 'SURGhub, via SURGdash (Global Surgery Foundation)' };
         this.WM_ORDER.forEach(k => { o[k] = rec.values[k]; });
+        const v = rec.values, x = rec.extras || {};
+        if (v.enrolments > 0) o.certification_rate_pct = Math.round(v.certificates / v.enrolments * 1000) / 10;
+        ['overall_satisfaction_pct', 'likely_to_apply_pct', 'satisfaction_responses', 'average_rating'].forEach(k => { if (x[k] != null) o[k] = x[k]; });
+        if (x.study_minutes != null) { o.study_minutes = x.study_minutes; o.study_years = Math.round(x.study_minutes / 525960 * 10) / 10; }
+        if (x.top_countries) o.top_countries = x.top_countries;
         return JSON.stringify(o, null, 2) + '\n';
+    },
+
+    // The SURGhub overall report's data, assembled with every report filter off.
+    async _wmReportData() {
+        if (!this._assembleReportData) return null;
+        const keep = { from: this.reportPeriodFrom, to: this.reportPeriodTo, fb: this.reportFeedbackFromDate, low: this.hideLowLearners, priv: this.hidePrivateCourses };
+        try {
+            this.reportPeriodFrom = ''; this.reportPeriodTo = ''; this.reportFeedbackFromDate = ''; this.hideLowLearners = false; this.hidePrivateCourses = false;
+            return await this._assembleReportData('SURGhub', { platform: true });
+        } finally {
+            this.reportPeriodFrom = keep.from; this.reportPeriodTo = keep.to; this.reportFeedbackFromDate = keep.fb; this.hideLowLearners = keep.low; this.hidePrivateCourses = keep.priv;
+        }
+    },
+    async websiteMetricsExtras() {
+        const D = await this._wmReportData();
+        if (!D) return {};
+        const row = (t) => (D.surveyQRows || []).find(r => r && r.title === t);
+        const sat = row('Overall satisfaction'), app = row('Intent to apply');
+        const cc = D.providerCountryData || {};
+        const ent = Object.entries(cc).filter(([k, n]) => k && Number(n) > 0).sort((a, b) => b[1] - a[1]);
+        const total = ent.reduce((t, e) => t + Number(e[1]), 0);
+        const iso = (c) => { try { return (window.countryToISO && window.countryToISO(c)) || ''; } catch (e) { return ''; } };
+        const top = ent.slice(0, 10).map(([c, n]) => ({ country: c, iso2: iso(c), enrolments: Math.round(Number(n)), share_pct: Math.round(Number(n) / total * 1000) / 10 }));
+        const r = Number(D.avgRating);
+        return {
+            overall_satisfaction_pct: sat ? Math.round(sat.hiPct) : null,
+            likely_to_apply_pct: app ? Math.round(app.hiPct) : null,
+            satisfaction_responses: sat ? sat.n : null,
+            average_rating: Number.isFinite(r) && r > 0 ? Math.round(r * 100) / 100 : null,
+            study_minutes: Math.round(Number(D.totalMin) || 0) || null,
+            top_countries: top.length === 10 ? top : null,
+        };
+    },
+    // Each extra on its own: a value that fails keeps the previous one (or is left out).
+    _wmExtrasChecked(x, prev) {
+        prev = prev || {}; const out = {}, kept = [];
+        const pct = (v) => Number.isInteger(v) && v >= 0 && v <= 100;
+        const ok = {
+            overall_satisfaction_pct: pct, likely_to_apply_pct: pct,
+            satisfaction_responses: (v) => Number.isInteger(v) && v > 0,
+            average_rating: (v) => Number.isFinite(v) && v >= 1 && v <= 5,
+            study_minutes: (v) => Number.isInteger(v) && v > 0 && !(prev.study_minutes > 0 && (v < prev.study_minutes * (1 - this.WM_MAX_DROP) || v > prev.study_minutes * 2)),
+            top_countries: (v) => Array.isArray(v) && v.length === 10 && v.every(c => c && typeof c.country === 'string' && c.country && Number.isInteger(c.enrolments) && c.enrolments > 0),
+        };
+        Object.keys(ok).forEach(k => {
+            if (x && x[k] != null && ok[k](x[k])) out[k] = x[k];
+            else { if (prev[k] != null) out[k] = prev[k]; if (x && x[k] != null) kept.push(k); }
+        });
+        return { extras: out, kept };
     },
 
     // The metrics.json to publish now: fresh figures when they pass, otherwise the last
@@ -71,10 +136,15 @@ Object.assign(window.App, {
         const now = new Date();
         const values = this.websiteMetricsCompute();
         const why = opts.syncOk === false ? 'the sync before it had LearnWorlds errors' : this._wmProblem(values, s.last && s.last.values);
-        s.attempt = { at: now.toISOString(), values, ok: !why, why };
+        let extras = null, kept = [];
+        if (!why) {
+            let raw = {}; try { raw = await this.websiteMetricsExtras(); } catch (e) { __swallowed(e, 'wm.extras'); }
+            ({ extras, kept } = this._wmExtrasChecked(raw, s.last && s.last.extras));
+        }
+        s.attempt = { at: now.toISOString(), values, extras, ok: !why, why, kept };
         await this._wmSave();
-        const rec = !why ? { values, as_of: now.toISOString().slice(0, 10), at: now.toISOString() } : s.last;
-        return { content: rec ? this._wmJson(rec) : null, rec, fresh: !why, why };
+        const rec = !why ? { values, extras, as_of: now.toISOString().slice(0, 10), at: now.toISOString() } : s.last;
+        return { content: rec ? this._wmJson(rec) : null, rec, fresh: !why, why, kept };
     },
     // After the upload went through: fresh figures become the new baseline for the checks.
     async _wmPublished(f) {
@@ -134,6 +204,14 @@ Object.assign(window.App, {
             + (url ? '<button onclick="electronAPI.openExternal(\'' + this.escapeJsArg(url) + '\')" class="font-mono text-[11px] text-gsf-boston hover:underline">' + esc(url.replace(/^https?:\/\//, '')) + '</button>' : '') + '</div>'
             + '<p class="text-xs text-slate-400 mb-3 max-w-3xl">Six totals the GSF website reads on page load, published with every nightly run (and here on demand). Report toggles do not apply; courses are the live, included, non-private ones. A figure that falls more than 2% or doubles keeps the previous values online until checked.</p>'
             + '<div class="grid grid-cols-2 md:grid-cols-6 gap-2 mb-3">' + cells + '</div>'
+            + (() => { const x = (s.last && s.last.extras) || {}; const v = s.last && s.last.values; const bits = [];
+                if (v && v.enrolments) bits.push('certification ' + (Math.round(v.certificates / v.enrolments * 1000) / 10) + '%');
+                if (x.overall_satisfaction_pct != null) bits.push('satisfaction ' + x.overall_satisfaction_pct + '%');
+                if (x.likely_to_apply_pct != null) bits.push('likely to apply ' + x.likely_to_apply_pct + '%');
+                if (x.average_rating != null) bits.push('rating ' + x.average_rating);
+                if (x.study_minutes != null) bits.push((Math.round(x.study_minutes / 525960 * 10) / 10) + ' years of study');
+                if (x.top_countries) bits.push('top: ' + x.top_countries.slice(0, 3).map(c => c.country).join(', ') + '…');
+                return bits.length ? '<p class="text-[11px] text-slate-500 mb-3">Also online: ' + esc(bits.join(' · ')) + '</p>' : ''; })()
             + '<div class="flex items-center gap-3 flex-wrap text-xs"><button onclick="App.publishWebsiteMetrics(this)" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-gsf-boston text-white hover:bg-gsf-prussian">Publish figures now</button>' + status + '</div></div>';
     },
 });
