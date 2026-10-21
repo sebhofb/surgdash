@@ -54,6 +54,22 @@ const App = ctx.App;
   check('the directory tick box and date win over the defaults (and are stored with the SURGhub data)', c2.tags.join() === 'Free,Popular,CME/CPD,New' && c2.published_on === day(30) && !g.courses.find(c => c.id === 'wfsa-a').tags.includes('CME/CPD') && store.get('surghub_course_meta').byId['carb-go-1'].cme === true);
   await App.setCoursePublishedOn('carb-go-1', '');
   check('clearing the date goes back to the default', JSON.parse((await App.coursesFeedFile({ resolveSlugs: false })).content).courses.find(c => c.id === 'carb-go-1').published_on === day(120));
+  // ── Trending: an established course picking up ──
+  {
+    const keepD = App.data, keepC = App._rawCompletion;
+    App.data = keepD.concat([C({ Course: 'Rising', CourseId: 'rising', CourseCreated: '2025-01-01' }), C({ Course: 'Steady Big', CourseId: 'steady', CourseCreated: '2025-01-01' }), C({ Course: 'Brand New', CourseId: 'brandnew', CourseCreated: day(40) })]);
+    App._rawCompletion = keepC.concat(enr('Rising', 25, 200), enr('Rising', 60, 10), enr('Rising', 30, 60),          // 60 now vs 10 per 30 days before
+      enr('Steady Big', 25, 200), enr('Steady Big', 45, 10), ...[40, 70, 100].map(a => enr('Steady Big', 45, a)).flat(),   // 45 vs 45: big, not rising
+      enr('Brand New', 25, 35), enr('Brand New', 80, 5));                                                                 // rising but new (New instead)
+    const T = App.coursesFeedBuild(NOW), tg = (id) => T.courses.find(c => c.id === id).tags;
+    check('Trending: 40+ in 30 days and 1.5x its own average before', tg('rising').includes('Trending') && T.courses.find(c => c.id === 'rising').learners_30d === 60, tg('rising').join());
+    check('…not a big course enrolling at its usual pace', !tg('steady').includes('Trending'));
+    check('…not a course published in the last 90 days (it is New)', !tg('brandnew').includes('Trending') && tg('brandnew').includes('New'));
+    check('…nor one under 40 in 30 days, however fast it grows', !tg('wfsa-a').includes('Trending'));
+    check('tag order: Free, Popular, Trending, CME/CPD, New', JSON.stringify(App.CF_TAGS) === JSON.stringify(['Free', 'Popular', 'Trending', 'CME/CPD', 'New']) && tg('rising').indexOf('Trending') === tg('rising').indexOf('Popular') + 1);
+    App.data = keepD; App._rawCompletion = keepC;
+  }
+
   // ── tags by hand (the course page band) ──
   App.formatNumber = (n) => String(n); App.showMsg = () => {}; App.renderView = () => {}; App.view = 'course';
   const tagsOf = async (id) => JSON.parse((await App.coursesFeedFile({ resolveSlugs: false })).content).courses.find(c => c.id === id).tags.join();
@@ -74,7 +90,7 @@ const App = ctx.App;
   App._cfState = App._cfState || {};
   const rec = (id) => App.data.find(d => d.CourseId === id);
   let band = App._cfCourseBandHtml(rec('wfsa-a'));
-  check('the band: public address, published date, the four chips (with state), custom-tag box, 90-day rank and rating', /On surghub\.org/.test(band) && /\/course\/wfsa-a/.test(band) && /type="date"[^>]*value="/.test(band) && (band.match(/App\.cycleCourseTag\('wfsa-a'/g) || []).length === 4 && /placeholder="\+ tag"/.test(band) && /enrolments in 90 days \(#\d+ of 15\)/.test(band) && /rating 4\.50 from 40/.test(band));
+  check('the band: public address, published date, the five chips (with state), custom-tag box, 90-day rank and rating', /On surghub\.org/.test(band) && /\/course\/wfsa-a/.test(band) && /type="date"[^>]*value="/.test(band) && (band.match(/App\.cycleCourseTag\('wfsa-a'/g) || []).length === 5 && /in 30 days vs \d+ before/.test(band) && /placeholder="\+ tag"/.test(band) && /enrolments in 90 days \(#\d+ of 15\)/.test(band) && /rating 4\.50 from 40/.test(band));
   check('…says the change is not online yet, with a Publish button', /not online yet/.test(band) && /App\.publishWebsiteMetrics\(this\)/.test(band));
   check('a course that is not listed says why', /not in the course feed, because it is private/.test(App._cfCourseBandHtml(rec('priv'))) && /because it is excluded from analytics/.test(App._cfCourseBandHtml(rec('exc'))) && /marks it as a template/.test(App._cfCourseBandHtml(rec('tpl'))));
   const ui2 = fs.readFileSync(path.join(ROOT, 'js/ui.js'), 'utf8');

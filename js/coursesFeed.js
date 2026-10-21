@@ -23,7 +23,11 @@
 //   tags             Free (price 0), Popular (top 15% by learners_90d, every run), CME/CPD
 //                    (directory tick box, seeded from the LearnWorlds "CME/CPD" label), New
 //                    (published_on within 90 days) — in that order, then any custom tags.
-//                    Each of the four can be forced on or off per course (the course page's
+//                    Trending (added 21 Oct 2026, after Popular): an ESTABLISHED course (published
+//                    90+ days ago; newer ones have New) with 40+ enrolments in the last 30 days and
+//                    at least 1.5x its own average per 30 days over the 90 days before — picking up,
+//                    whatever its size (6 courses on 21 Oct 2026).
+//                    Each standard tag can be forced on or off per course (the course page's
 //                    "On surghub.org" band, 21 Oct 2026); a tag left on automatic follows the rule.
 // Safety: a file with no courses, or under 80% of the last published count, or after a sync
 // with LearnWorlds errors, is not published; the previous one is republished unchanged.
@@ -32,6 +36,7 @@ Object.assign(window.App, {
     CF_SLUG_KEY: 'surgdash_course_slugs',    // device-local cache: {byId: {id: {slug, at}}}
     CF_STATE_KEY: 'surgdash_courses_feed',   // device-local: the last published file and the last attempt
     CF_LAUNCH_N: 25, CF_NEW_DAYS: 90, CF_RECENT_DAYS: 90, CF_POP_SHARE: 0.15, CF_MIN_KEEP: 0.8, CF_SLUG_DAYS: 30,
+    CF_TREND_DAYS: 30, CF_TREND_BASE_DAYS: 90, CF_TREND_MIN: 40, CF_TREND_RATIO: 1.5, CF_TREND_ESTABLISHED_DAYS: 90,
     CF_Q: [
         ['satisfaction', /overall satisfaction|satisfaction with this course|satisfaction concernant ce cours|satisfacci.n general|satisfacci.n con este curso/i],
         ['objectives', /learning objectives|objectives stated|objectifs mentionn|objectifs d.apprentissage|objetivos mencionados|objetivos enunciados|alcanzar los objetivos/i],
@@ -47,7 +52,7 @@ Object.assign(window.App, {
         if (!this._cfState) this._cfState = (await get(this.CF_STATE_KEY)) || {};
     },
     async _cfSaveMeta() { this._cfMetaRev = (this._cfMetaRev || 0) + 1; try { await Storage.setItem(this.CF_META_KEY, this._cfMeta); } catch (e) { __swallowed(e, 'cf.meta'); } },
-    CF_TAGS: ['Free', 'Popular', 'CME/CPD', 'New'],
+    CF_TAGS: ['Free', 'Popular', 'Trending', 'CME/CPD', 'New'],
     // A tag's override for one course: true / false, or undefined (automatic). CME/CPD keeps its
     // directory tick box (`cme`), the others live under `tags`.
     _cfTagOverride(id, tag) {
@@ -135,6 +140,7 @@ Object.assign(window.App, {
         const t = (now || new Date()), today = t.toISOString().slice(0, 10);
         const since = (days) => new Date(t.getTime() - days * 86400000).toISOString().slice(0, 10);
         const recentFrom = since(this.CF_RECENT_DAYS), newFrom = since(this.CF_NEW_DAYS);
+        const trendFrom = since(this.CF_TREND_DAYS), trendBaseFrom = since(this.CF_TREND_DAYS + this.CF_TREND_BASE_DAYS), establishedBy = since(this.CF_TREND_ESTABLISHED_DAYS);
         const dates = this._cfEnrolDates() || {};
         const raw = this._cfRawCourses(), slugs = (this._cfSlugs && this._cfSlugs.byId) || {};
         const list = this._cfCandidates().map(d => {
@@ -144,7 +150,8 @@ Object.assign(window.App, {
             const price = d.Price != null ? Number(d.Price) || 0 : (rawC.final_price != null ? Number(rawC.final_price) || 0 : 0);
             const slug = String((slugs[d.CourseId] && slugs[d.CourseId].slug) || d.CourseId).toLowerCase();
             const o = { slug, id: d.CourseId, url: 'https://www.surghub.org/course/' + slug, title: String(d.Course || '').trim(), provider: this._cfProviderName(d.Provider),
-                published_on: this._cfPublished(d), learners: Number(d.Learners) || 0, learners_90d: ds.filter(x => x >= recentFrom).length,
+                published_on: this._cfPublished(d), learners: Number(d.Learners) || 0, learners_90d: ds.filter(x => x >= recentFrom).length, learners_30d: ds.filter(x => x >= trendFrom).length,
+                _trendBase: ds.filter(x => x >= trendBaseFrom && x < trendFrom).length * this.CF_TREND_DAYS / this.CF_TREND_BASE_DAYS,
                 certificates: Number(d.Certificates) || 0, rating_responses: r.n, average_rating: r.avg, ratings: r.ratings, _free: price === 0, _cme: this._cfCme(d, true) };
             return o;
         });
@@ -154,12 +161,15 @@ Object.assign(window.App, {
         const cut = sorted.length ? sorted[Math.min(k, sorted.length) - 1] : Infinity;
         const auto = {};
         list.forEach(c => {
-            const a = { 'Free': c._free, 'Popular': c.learners_90d > 0 && c.learners_90d >= cut, 'CME/CPD': c._cme, 'New': !!(c.published_on && c.published_on >= newFrom && c.published_on <= today) };
+            const a = { 'Free': c._free, 'Popular': c.learners_90d > 0 && c.learners_90d >= cut,
+                'Trending': !!(c.published_on && c.published_on <= establishedBy && c.learners_30d >= this.CF_TREND_MIN && c.learners_30d >= c._trendBase * this.CF_TREND_RATIO),
+                'CME/CPD': c._cme, 'New': !!(c.published_on && c.published_on >= newFrom && c.published_on <= today) };
+            a._trendBase = c._trendBase;
             auto[c.id] = a;
             const tags = this.CF_TAGS.filter(t => { const o = this._cfTagOverride(c.id, t); return o === undefined ? a[t] : o; });
             const m = (this._cfMeta && this._cfMeta.byId[c.id]) || {};
             (Array.isArray(m.extraTags) ? m.extraTags : []).forEach(t => { if (t && tags.indexOf(t) < 0) tags.push(t); });
-            c.tags = tags; delete c._free; delete c._cme;
+            c.tags = tags; delete c._free; delete c._cme; delete c._trendBase;
             if (c.average_rating == null) delete c.average_rating;
         });
         list.sort((a, b) => a.title.localeCompare(b.title));
@@ -274,7 +284,9 @@ Object.assign(window.App, {
         const rank = feed.courses.map(c => c.learners_90d).sort((a, b) => b - a).indexOf(e.learners_90d) + 1;
         const chip = (t) => {
             const o = this._cfTagOverride(id, t), on = o === undefined ? !!auto[t] : o;
-            const why2 = { 'Free': 'no price on LearnWorlds', 'Popular': 'top 15% by enrolments in the last 90 days (cut-off ' + feed.popular_cutoff_90d + ')', 'CME/CPD': 'the LearnWorlds "CME/CPD" label', 'New': 'published within the last 90 days' }[t];
+            const why2 = { 'Free': 'no price on LearnWorlds', 'Popular': 'top 15% by enrolments in the last 90 days (cut-off ' + feed.popular_cutoff_90d + ')',
+                'Trending': this.CF_TREND_MIN + '+ enrolments in the last 30 days and ' + this.CF_TREND_RATIO + 'x its average before, for courses published 90+ days ago — now ' + e.learners_30d + ' vs ' + Math.round(auto._trendBase || 0),
+                'CME/CPD': 'the LearnWorlds "CME/CPD" label', 'New': 'published within the last 90 days' }[t];
             const state = o === undefined ? 'automatic: ' + (on ? 'on' : 'off') + ' (' + why2 + ')' : (o ? 'always on' : 'always off') + ' (set by hand; the rule would say ' + (auto[t] ? 'on' : 'off') + ')';
             const cls = on ? (o === undefined ? 'bg-gsf-boston text-white border-gsf-boston' : 'bg-gsf-prussian text-white border-gsf-prussian') : (o === undefined ? 'bg-white text-slate-400 border-slate-200' : 'bg-white text-slate-400 border-slate-300 line-through');
             return '<button data-edit-only onclick="App.cycleCourseTag(\'' + idJs + '\', \'' + t + '\')" title="' + esc(t + ': ' + state + '. Click: automatic → always on → always off.') + '" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full border text-[11px] font-bold ' + cls + '">' + (o !== undefined ? '<i data-lucide="pin" width="10"></i>' : '') + esc(t) + '</button>';
@@ -293,7 +305,7 @@ Object.assign(window.App, {
             + (set ? '<button data-edit-only onclick="App.setCoursePublishedOn(\'' + idJs + '\', \'\')" class="text-[10px] text-slate-400 hover:text-gsf-boston underline" title="Back to the default: ' + esc(def || 'none') + '">reset</button>' : '<span class="text-[10px] text-slate-400">default: day of the ' + this.CF_LAUNCH_N + 'th enrolment</span>') + '</span>'
             + '<span class="inline-flex items-center gap-1.5 flex-wrap"><span class="text-slate-400">Tags</span>' + this.CF_TAGS.map(chip).join('') + extras
             + '<input data-edit-only type="text" placeholder="+ tag" maxlength="30" onkeydown="if(event.key===\'Enter\'){App.addCourseTag(\'' + idJs + '\', this.value); this.value=\'\';}" class="w-20 text-[11px] border rounded-full px-2 py-1 outline-none focus:ring-2 focus:ring-gsf-boston/30" title="Add a tag of your own (Enter)"></span>'
-            + '<span class="text-[11px] text-slate-400">' + this.formatNumber(e.learners_90d) + ' enrolments in 90 days (#' + rank + ' of ' + feed.courses.length + ')' + (e.average_rating != null ? ' · rating ' + e.average_rating.toFixed(2) + ' from ' + this.formatNumber(e.rating_responses) : ' · no ratings yet') + '</span>'
+            + '<span class="text-[11px] text-slate-400">' + this.formatNumber(e.learners_90d) + ' enrolments in 90 days (#' + rank + ' of ' + feed.courses.length + ') · ' + this.formatNumber(e.learners_30d) + ' in 30 days vs ' + this.formatNumber(Math.round(auto._trendBase || 0)) + ' before' + (e.average_rating != null ? ' · rating ' + e.average_rating.toFixed(2) + ' from ' + this.formatNumber(e.rating_responses) : ' · no ratings yet') + '</span>'
             + '</div>');
     },
 
