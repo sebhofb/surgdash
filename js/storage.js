@@ -59,6 +59,8 @@
             // Monthly forum-post counts per course (js/forumActivity.js) — counts only,
             // no user ids and no post text.
             'surghub_forum':        path.join('surghub', 'forum.json'),
+            // Course directory fields for the public course feed (coursesFeed.js): CME/CPD and published-on.
+            'surghub_course_meta':  path.join('surghub', 'course_meta.json'),
         };
         if (surghubMap[key]) return surghubMap[key];
 
@@ -112,6 +114,8 @@
         if (key === 'learnworlds_api_token_exp') return path.join('settings', 'learnworlds_api_token_exp.json');
         if (key === 'surgdash_website_metrics') return path.join('settings', 'website_metrics.json');
         if (key === 'surgdash_course_wakeups') return path.join('settings', 'course_wakeups.json');
+        if (key === 'surgdash_course_slugs') return path.join('settings', 'course_slugs.json');
+        if (key === 'surgdash_courses_feed') return path.join('settings', 'courses_feed.json');
         if (key === 'surgdash_provider_map')     return path.join('settings', 'provider_map.json');
         if (key === 'surgdash_course_links')     return path.join('settings', 'course_links.json');
         if (key === 'surghub_local_mtime')   return path.join('settings', 'surghub_local_mtime.json');
@@ -147,6 +151,7 @@
                 'private_courses': 'surghub_private_courses',
                 'course_details': 'surghub_course_details',
                 'forum': 'surghub_forum',
+                'course_meta': 'surghub_course_meta',
                 // Raw feedback-survey responses (updater.js Surveys sync). Its reverse entry
                 // sat in the settings/ map by mistake, so keys() never listed it: it was
                 // missing from every Sheets push, local backup, restore and wipe until 11 Sep 2026.

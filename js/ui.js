@@ -3292,6 +3292,8 @@ Object.assign(window.App, {
                                     <th class="py-3 px-3 font-medium text-center w-[40px] cursor-pointer hover:text-gsf-boston select-none" onclick="App._sortCourseDir('url')">URL ${this._shCourseSortCol==='url' ? (this._shCourseSortAsc ? '&#9650;' : '&#9660;') : '<span class="text-slate-300">&#8597;</span>'}</th>
                                     <th class="py-3 px-3 font-medium text-center w-[60px]" title="Private: in-country workshops and other closed cohorts. Left out of UNITAR batch reports unless you tick to include them.">Private</th>
                                     <th class="py-3 px-3 font-medium text-center w-[60px]">Include</th>
+                                    <th class="py-3 px-3 font-medium text-center w-[64px]" title="CME/CPD course: tagged on surghub.org (courses.json). Seeded from the LearnWorlds course label.">CME/CPD</th>
+                                    <th class="py-3 px-2 font-medium w-[132px]" title="Published on, for the New tag on surghub.org. Default: the day the course reached 25 enrolments, else its creation date. Grey = default; bold = set by hand.">Published</th>
                                     <th class="py-3 px-3 font-medium text-center w-[40px]"></th>
                                 </tr></thead>
                                 <tbody>
@@ -3303,7 +3305,7 @@ Object.assign(window.App, {
                                             // badge shows the live/published status, not a 0-learner clone.
                                             const d = this.data.filter(course => course.Course === s.Course && !course.IsShell)
                                                 .sort((a, b) => (Number(b.Learners) || 0) - (Number(a.Learners) || 0))[0] || {};
-                                            return { ...s, idx, Learners: Number(d.Learners) || 0, Responses: Number(d.Responses) || 0, Rating: Number(d.Rating) || 0, Access: (d && d.Access) || null, isExcluded: this.data.some(course => course.Course === s.Course && course.Excluded) };
+                                            return { ...s, idx, _rec: d, Learners: Number(d.Learners) || 0, Responses: Number(d.Responses) || 0, Rating: Number(d.Rating) || 0, Access: (d && d.Access) || null, isExcluded: this.data.some(course => course.Course === s.Course && course.Excluded) };
                                         });
                                         const col = this._shCourseSortCol;
                                         const asc = this._shCourseSortAsc;
@@ -3340,6 +3342,7 @@ Object.assign(window.App, {
                                             <td class="py-2 px-3 text-center text-xs">${s.URL ? '<span class="text-green-600">Y</span>' : '<span class="text-red-400">N</span>'}</td>
                                             <td class="py-2 px-3 text-center"><input type="checkbox" data-edit-only ${(App.isCourseRecordPrivate ? App.isCourseRecordPrivate(s) : (App.isCoursePrivate && App.isCoursePrivate(s.Course))) ? 'checked' : ''} onchange="App.toggleCoursePrivate('${courseEsc}', this.checked)" class="rounded border-slate-300 text-purple-600 focus:ring-purple-500/30" title="Private: an in-country workshop or other closed cohort. Left out of UNITAR batch reports unless you tick to include them. Defaults to what LearnWorlds says." /></td>
                                             <td class="py-2 px-3 text-center"><input type="checkbox" ${s.isExcluded ? '' : 'checked'} onchange="App.toggleExcludeCourse(${s.idx})" title="${s.isExcluded ? 'Click to include in analytics' : 'Click to exclude from analytics'}"></td>
+                                            ${this._cfDirCells ? this._cfDirCells(s._rec) : ''}
                                             <td class="py-2 px-3 text-center"><button data-edit-only onclick="App.editCourseByIndex(${s.idx})" class="text-gsf-boston hover:text-gsf-prussian text-xs underline">edit</button></td>
                                         </tr>`;
                                         }).join('');

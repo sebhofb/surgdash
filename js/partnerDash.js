@@ -427,13 +427,19 @@ Object.assign(window.App, {
             try { wm = await this.websiteMetricsFile({ syncOk: opts.syncOk }); if (wm.content) files.push({ path: 'metrics.json', content: wm.content }); }
             catch (e) { failed.push('Website figures: ' + String((e && e.message) || e)); }
         }
+        // The per-course feed surghub.org course pages read (coursesFeed.js).
+        let cf = null;
+        if (this.coursesFeedFile) {
+            try { cf = await this.coursesFeedFile({ syncOk: opts.syncOk, progress: opts.progress }); if (cf.content) files.push({ path: 'courses.json', content: cf.content }); }
+            catch (e) { failed.push('Course feed: ' + String((e && e.message) || e)); }
+        }
         const host = (String(s.baseUrl || '').match(/^https?:\/\/([^/]+)/) || [])[1] || '';
         files.push({ path: 'index.html', content: this._pdLandingHtml() });
         files.push({ path: '404.html', content: this._pdLandingHtml() });
         files.push({ path: 'robots.txt', content: 'User-agent: *\nDisallow: /\n' });
         files.push({ path: '.nojekyll', content: '' });
         if (host && !/\.github\.io$/i.test(host)) files.push({ path: 'CNAME', content: host + '\n' });
-        return { files, built, failed, wm };
+        return { files, built, failed, wm, cf };
     },
 
     // GitHub API call; a dropped connection, a 5xx or GitHub's own "timed out" is tried
@@ -470,7 +476,7 @@ Object.assign(window.App, {
         if (!ready.ok) { if (!opts.silent) alert('Partner dashboards are not ready: ' + ready.why + '.'); return { ok: false, note: 'skipped — ' + ready.why }; }
         const s = this._pd, token = await this._pdToken(), branch = s.branch || 'main';
         try {
-            const { files, built, failed, wm } = await this._pdBuildFiles(opts);
+            const { files, built, failed, wm, cf } = await this._pdBuildFiles(opts);
             if (!built.length) throw new Error('no report could be built' + (failed.length ? ' (' + failed.join('; ') + ')' : ''));
             if (opts.progress) opts.progress('Partner dashboards: uploading ' + built.length + ' report' + (built.length === 1 ? '' : 's') + '…');
             const blob = (content) => this._pdGh('POST', '/git/blobs', { content, encoding: 'utf-8' }, token);
@@ -500,6 +506,7 @@ Object.assign(window.App, {
             catch (e) { if (e.status !== 404 && e.status !== 422) throw e; await this._pdGh('POST', '/git/refs', { ref: 'refs/heads/' + branch, sha: c.sha }, token); }
             built.forEach(p => { s.providers[p].published = { at: now, slug: s.providers[p].slug }; });
             if (wm && wm.content && this._wmPublished) await this._wmPublished(wm);
+            if (cf && cf.content && this._cfMarkPublished) await this._cfMarkPublished(cf);
             s.teamPublished = { at: now };
             const note = built.length + ' report' + (built.length === 1 ? '' : 's') + ' published' + (failed.length ? ', ' + failed.length + ' failed: ' + failed.join('; ') : '');
             s.lastPublish = { at: now, ok: !failed.length, note };

@@ -164,15 +164,20 @@ Object.assign(window.App, {
         try {
             const f = await this.websiteMetricsFile({});
             if (!f.content) throw new Error('nothing to publish yet: ' + f.why);
+            const cf = this.coursesFeedFile ? await this.coursesFeedFile({ progress: (t) => { if (btn) btn.textContent = t; } }) : null;
             const s = this._pd, token = await this._pdToken(), branch = s.branch || 'main';
             const ref = await this._pdGh('GET', '/git/ref/heads/' + branch, null, token);
             const head = ref.object.sha, commit = await this._pdGh('GET', '/git/commits/' + head, null, token);
             const blob = await this._pdGh('POST', '/git/blobs', { content: f.content, encoding: 'utf-8' }, token);
-            const tree = await this._pdGh('POST', '/git/trees', { base_tree: commit.tree.sha, tree: [{ path: 'metrics.json', mode: '100644', type: 'blob', sha: blob.sha }] }, token);
+            const entries = [{ path: 'metrics.json', mode: '100644', type: 'blob', sha: blob.sha }];
+            if (cf && cf.content) entries.push({ path: 'courses.json', mode: '100644', type: 'blob', sha: (await this._pdGh('POST', '/git/blobs', { content: cf.content, encoding: 'utf-8' }, token)).sha });
+            const tree = await this._pdGh('POST', '/git/trees', { base_tree: commit.tree.sha, tree: entries }, token);
             const c = await this._pdGh('POST', '/git/commits', { message: 'Website metrics ' + new Date().toISOString().slice(0, 10), tree: tree.sha, parents: [head] }, token);
             await this._pdGh('PATCH', '/git/refs/heads/' + branch, { sha: c.sha, force: false }, token);
             await this._wmPublished(f);
-            this.showMsg(f.fresh ? '✓ Website figures published. The GSF website shows them within about 10 minutes.' : '⚠ Kept the last figures: ' + f.why + '.', !f.fresh);
+            if (cf && cf.content && this._cfMarkPublished) await this._cfMarkPublished(cf);
+            const cfNote = cf ? (cf.fresh ? ' Course feed: ' + cf.count + ' courses.' : ' Course feed kept as it was: ' + cf.why + '.') : '';
+            this.showMsg(f.fresh && (!cf || cf.fresh) ? '✓ Website figures published.' + cfNote + ' The websites show them within about 10 minutes.' : '⚠ ' + (f.fresh ? '' : 'Kept the last figures: ' + f.why + '.') + cfNote, f.fresh && (!cf || cf.fresh) ? false : 'warn');
             return { ok: true, fresh: f.fresh };
         } catch (e) {
             alert('Could not publish the website figures:\n\n' + String((e && e.message) || e));
@@ -213,6 +218,10 @@ Object.assign(window.App, {
                 if (x.study_minutes != null) bits.push((Math.round(x.study_minutes / 525960 * 10) / 10) + ' years of study');
                 if (x.top_countries) bits.push('top: ' + x.top_countries.slice(0, 3).map(c => c.country).join(', ') + '…');
                 return bits.length ? '<p class="text-[11px] text-slate-500 mb-3">Also online: ' + esc(bits.join(' · ')) + '</p>' : ''; })()
+            + (() => { const c = this._cfState; if (!c) { if (this._cfLoad && this._cfState === undefined) this._cfLoad().then(() => this._pdRerender && this._pdRerender()); return ''; }
+                const u = url.replace(/metrics\.json$/, 'courses.json');
+                return '<p class="text-[11px] text-slate-500 mb-3">Course feed for surghub.org course pages: <button onclick="electronAPI.openExternal(\'' + this.escapeJsArg(u) + '\')" class="font-mono text-gsf-boston hover:underline">' + esc(u.replace(/^https?:\/\//, '')) + '</button>'
+                    + (c.last ? ' · ' + c.last.count + ' courses, online since ' + esc(when(c.last.at)) : ' · not published yet') + (c.attempt && !c.attempt.ok ? ' · <span class="text-amber-700">last check kept the previous file: ' + esc(c.attempt.why) + '</span>' : '') + '</p>'; })()
             + '<div class="flex items-center gap-3 flex-wrap text-xs"><button onclick="App.publishWebsiteMetrics(this)" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-gsf-boston text-white hover:bg-gsf-prussian">Publish figures now</button>' + status + '</div></div>';
     },
 });

@@ -1098,6 +1098,8 @@ window.App = {
                 'partner_dash_token.json',
                 'website_metrics.json',
                 'course_wakeups.json',
+                'course_slugs.json',
+                'courses_feed.json',
                 'learnworlds_school_domain.json',
                 'provider_map.json',
                 'course_links.json',
