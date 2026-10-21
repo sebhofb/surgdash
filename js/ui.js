@@ -4417,6 +4417,7 @@ Object.assign(window.App, {
                         <div id="crs-logo-slot" class="shrink-0" style="display:none"></div>
                     </header>
                     ${this._jrnCourseStripHtml ? this._jrnCourseStripHtml(this.selectedCourse) : ''}
+                    ${this._cfCourseBandHtml ? this._cfCourseBandHtml(cSnap) : ''}
 
                     <div class="flex items-center justify-between gap-3 flex-wrap bg-white border border-slate-200 rounded-xl shadow-sm px-4 py-3 mb-6">
                         <p class="text-sm text-slate-500">Provider: ${(cSnap.Provider && cSnap.Provider !== 'Unknown' && cSnap.Provider !== 'Unknown Provider') ? '<button onclick="App.openProvider(\'' + this.escapeJsArg(cSnap.Provider) + '\')" class="font-bold text-gsf-boston hover:underline cursor-pointer">' + this.escapeHtml(cSnap.Provider) + ' &rsaquo;</button>' : '<span class="font-bold text-gsf-boston">' + this.escapeHtml(cSnap.Provider || 'Unknown') + '</span>'}${this._courseStatusBadge(cSnap.Access)}</p>

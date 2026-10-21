@@ -54,8 +54,35 @@ const App = ctx.App;
   check('the directory tick box and date win over the defaults (and are stored with the SURGhub data)', c2.tags.join() === 'Free,Popular,CME/CPD,New' && c2.published_on === day(30) && !g.courses.find(c => c.id === 'wfsa-a').tags.includes('CME/CPD') && store.get('surghub_course_meta').byId['carb-go-1'].cme === true);
   await App.setCoursePublishedOn('carb-go-1', '');
   check('clearing the date goes back to the default', JSON.parse((await App.coursesFeedFile({ resolveSlugs: false })).content).courses.find(c => c.id === 'carb-go-1').published_on === day(120));
+  // ── tags by hand (the course page band) ──
+  App.formatNumber = (n) => String(n); App.showMsg = () => {}; App.renderView = () => {}; App.view = 'course';
+  const tagsOf = async (id) => JSON.parse((await App.coursesFeedFile({ resolveSlugs: false })).content).courses.find(c => c.id === id).tags.join();
+  check('before: WFSA A is Free, Popular (and CME/CPD off by the tick box above)', (await tagsOf('wfsa-a')) === 'Free,Popular');
+  await App.cycleCourseTag('wfsa-a', 'Popular');
+  check('a tag clicked once is forced on (already on: no change in the feed)', (await tagsOf('wfsa-a')) === 'Free,Popular' && store.get('surghub_course_meta').byId['wfsa-a'].tags.Popular === true);
+  await App.cycleCourseTag('wfsa-a', 'Popular');
+  check('twice: forced off, whatever the rule says', (await tagsOf('wfsa-a')) === 'Free' && store.get('surghub_course_meta').byId['wfsa-a'].tags.Popular === false);
+  await App.cycleCourseTag('wfsa-a', 'Popular');
+  check('three times: back to automatic', (await tagsOf('wfsa-a')) === 'Free,Popular' && store.get('surghub_course_meta').byId['wfsa-a'].tags.Popular === undefined);
+  await App.cycleCourseTag('wfsa-a', 'CME/CPD');   // the tick box had it off (false): next is automatic (the label says on)
+  check('CME/CPD shares the directory tick box: false → automatic (label: on)', (await tagsOf('wfsa-a')) === 'Free,Popular,CME/CPD' && store.get('surghub_course_meta').byId['wfsa-a'].cme === undefined);
+  await App.addCourseTag('wfsa-a', '  Featured  '); await App.addCourseTag('wfsa-a', 'featured'); await App.addCourseTag('wfsa-a', 'new');
+  check('custom tags come after the four, once each; a standard name is not added as custom', (await tagsOf('wfsa-a')) === 'Free,Popular,CME/CPD,featured', await tagsOf('wfsa-a'));
+  await App.removeCourseTag('wfsa-a', 'featured');
+  check('…and can be removed', (await tagsOf('wfsa-a')) === 'Free,Popular,CME/CPD');
+  // the band on the course page
+  App._cfState = App._cfState || {};
+  const rec = (id) => App.data.find(d => d.CourseId === id);
+  let band = App._cfCourseBandHtml(rec('wfsa-a'));
+  check('the band: public address, published date, the four chips (with state), custom-tag box, 90-day rank and rating', /On surghub\.org/.test(band) && /\/course\/wfsa-a/.test(band) && /type="date"[^>]*value="/.test(band) && (band.match(/App\.cycleCourseTag\('wfsa-a'/g) || []).length === 4 && /placeholder="\+ tag"/.test(band) && /enrolments in 90 days \(#\d+ of 15\)/.test(band) && /rating 4\.50 from 40/.test(band));
+  check('…says the change is not online yet, with a Publish button', /not online yet/.test(band) && /App\.publishWebsiteMetrics\(this\)/.test(band));
+  check('a course that is not listed says why', /not in the course feed, because it is private/.test(App._cfCourseBandHtml(rec('priv'))) && /because it is excluded from analytics/.test(App._cfCourseBandHtml(rec('exc'))) && /marks it as a template/.test(App._cfCourseBandHtml(rec('tpl'))));
+  const ui2 = fs.readFileSync(path.join(ROOT, 'js/ui.js'), 'utf8');
+  check('shown on every course page, under the header', /\$\{this\._cfCourseBandHtml \? this\._cfCourseBandHtml\(cSnap\) : ''\}/.test(ui2));
+
   // safety
   await App._cfMarkPublished(await App.coursesFeedFile({ resolveSlugs: false }));
+  check('once published, the band says it is online as shown', /online as shown/.test(App._cfCourseBandHtml(App.data.find(d => d.CourseId === 'wfsa-a'))));
   const keep = App.data; App.data = App.data.slice(0, 5);
   const s1 = await App.coursesFeedFile({ resolveSlugs: false });
   check('a file with under 80% of the last count is not published: the previous one is kept', !s1.fresh && /only 5 courses against 15/.test(s1.why) && JSON.parse(s1.content).courses.length === 15);

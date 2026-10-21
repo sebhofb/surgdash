@@ -22,7 +22,9 @@
 //                    enrolments, else its LearnWorlds creation date
 //   tags             Free (price 0), Popular (top 15% by learners_90d, every run), CME/CPD
 //                    (directory tick box, seeded from the LearnWorlds "CME/CPD" label), New
-//                    (published_on within 90 days) — in that order
+//                    (published_on within 90 days) — in that order, then any custom tags.
+//                    Each of the four can be forced on or off per course (the course page's
+//                    "On surghub.org" band, 21 Oct 2026); a tag left on automatic follows the rule.
 // Safety: a file with no courses, or under 80% of the last published count, or after a sync
 // with LearnWorlds errors, is not published; the previous one is republished unchanged.
 Object.assign(window.App, {
@@ -44,7 +46,14 @@ Object.assign(window.App, {
         if (!this._cfSlugs) this._cfSlugs = Object.assign({ byId: {} }, (await get(this.CF_SLUG_KEY)) || {});
         if (!this._cfState) this._cfState = (await get(this.CF_STATE_KEY)) || {};
     },
-    async _cfSaveMeta() { try { await Storage.setItem(this.CF_META_KEY, this._cfMeta); } catch (e) { __swallowed(e, 'cf.meta'); } },
+    async _cfSaveMeta() { this._cfMetaRev = (this._cfMetaRev || 0) + 1; try { await Storage.setItem(this.CF_META_KEY, this._cfMeta); } catch (e) { __swallowed(e, 'cf.meta'); } },
+    CF_TAGS: ['Free', 'Popular', 'CME/CPD', 'New'],
+    // A tag's override for one course: true / false, or undefined (automatic). CME/CPD keeps its
+    // directory tick box (`cme`), the others live under `tags`.
+    _cfTagOverride(id, tag) {
+        const m = (this._cfMeta && this._cfMeta.byId[id]) || {};
+        return tag === 'CME/CPD' ? (typeof m.cme === 'boolean' ? m.cme : undefined) : (m.tags && typeof m.tags[tag] === 'boolean' ? m.tags[tag] : undefined);
+    },
 
     // Label, price and creation date by LearnWorlds id: the course records carry them since the
     // 21 Oct 2026 Sync Courses; until then, the newest raw course pull.
@@ -84,9 +93,9 @@ Object.assign(window.App, {
         (this.data || []).forEach(d => { if (d && !d.IsShell && d.CourseId && (!rec[d.CourseId] || String(d.Timestamp || '') > String(rec[d.CourseId].Timestamp || ''))) rec[d.CourseId] = d; });
         return Object.values(rec).filter(d => String(d.Access || '').toLowerCase() === 'free' && !d.Excluded && !/template/i.test(String(d.Course || '')));
     },
-    _cfCme(d) {
+    _cfCme(d, autoOnly) {
         const m = this._cfMeta && this._cfMeta.byId[d.CourseId];
-        if (m && typeof m.cme === 'boolean') return m.cme;
+        if (!autoOnly && m && typeof m.cme === 'boolean') return m.cme;
         const raw = this._cfRawCourses()[d.CourseId];
         const label = d.Label != null ? d.Label : (raw ? raw.label : '');
         return /CME\s*\/\s*CPD/i.test(String(label || ''));
@@ -136,24 +145,27 @@ Object.assign(window.App, {
             const slug = String((slugs[d.CourseId] && slugs[d.CourseId].slug) || d.CourseId).toLowerCase();
             const o = { slug, id: d.CourseId, url: 'https://www.surghub.org/course/' + slug, title: String(d.Course || '').trim(), provider: this._cfProviderName(d.Provider),
                 published_on: this._cfPublished(d), learners: Number(d.Learners) || 0, learners_90d: ds.filter(x => x >= recentFrom).length,
-                certificates: Number(d.Certificates) || 0, rating_responses: r.n, average_rating: r.avg, ratings: r.ratings, _free: price === 0, _cme: this._cfCme(d) };
+                certificates: Number(d.Certificates) || 0, rating_responses: r.n, average_rating: r.avg, ratings: r.ratings, _free: price === 0, _cme: this._cfCme(d, true) };
             return o;
         });
         // Popular: the top 15% by learners_90d this run (ties at the cut-off included; never a course with none)
         const sorted = list.map(c => c.learners_90d).sort((a, b) => b - a);
         const k = Math.max(1, Math.ceil(list.length * this.CF_POP_SHARE));
         const cut = sorted.length ? sorted[Math.min(k, sorted.length) - 1] : Infinity;
+        const auto = {};
         list.forEach(c => {
-            const tags = [];
-            if (c._free) tags.push('Free');
-            if (c.learners_90d > 0 && c.learners_90d >= cut) tags.push('Popular');
-            if (c._cme) tags.push('CME/CPD');
-            if (c.published_on && c.published_on >= newFrom && c.published_on <= today) tags.push('New');
+            const a = { 'Free': c._free, 'Popular': c.learners_90d > 0 && c.learners_90d >= cut, 'CME/CPD': c._cme, 'New': !!(c.published_on && c.published_on >= newFrom && c.published_on <= today) };
+            auto[c.id] = a;
+            const tags = this.CF_TAGS.filter(t => { const o = this._cfTagOverride(c.id, t); return o === undefined ? a[t] : o; });
+            const m = (this._cfMeta && this._cfMeta.byId[c.id]) || {};
+            (Array.isArray(m.extraTags) ? m.extraTags : []).forEach(t => { if (t && tags.indexOf(t) < 0) tags.push(t); });
             c.tags = tags; delete c._free; delete c._cme;
             if (c.average_rating == null) delete c.average_rating;
         });
         list.sort((a, b) => a.title.localeCompare(b.title));
-        return { as_of: today, updated_at: t.toISOString(), source: 'SURGhub, via SURGdash (Global Surgery Foundation)', popular_cutoff_90d: cut === Infinity ? null : cut, courses: list };
+        const feedOut = { as_of: today, updated_at: t.toISOString(), source: 'SURGhub, via SURGdash (Global Surgery Foundation)', popular_cutoff_90d: cut === Infinity ? null : cut, courses: list };
+        Object.defineProperty(feedOut, '_auto', { value: auto, enumerable: false });   // the course page's band reads it; never published
+        return feedOut;
     },
 
     // Public slugs: read the canonical link of the pages not yet known (or not checked for a
@@ -201,6 +213,88 @@ Object.assign(window.App, {
         st.published = { at: new Date().toISOString(), fresh: !!(f && f.fresh), why: (f && f.why) || '' };
         this._cfState = st;
         try { await Storage.setItem(this.CF_STATE_KEY, st, { internal: true }); } catch (e) { __swallowed(e, 'cf.state'); }
+    },
+
+    // ── tags by hand (the course page band) ──
+    async cycleCourseTag(courseId, tag) {
+        await this._cfLoad();
+        const m = this._cfMeta.byId[courseId] || (this._cfMeta.byId[courseId] = {});
+        const cur = this._cfTagOverride(courseId, tag), next = cur === undefined ? true : cur === true ? false : undefined;   // automatic → on → off → automatic
+        if (tag === 'CME/CPD') { if (next === undefined) delete m.cme; else m.cme = next; }
+        else { m.tags = m.tags || {}; if (next === undefined) delete m.tags[tag]; else m.tags[tag] = next; }
+        await this._cfSaveMeta(); if (this.renderView) this.renderView();
+    },
+    async addCourseTag(courseId, text) {
+        const t = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 30);
+        if (!t) return;
+        await this._cfLoad();
+        if (this.CF_TAGS.some(x => x.toLowerCase() === t.toLowerCase())) { this.showMsg('"' + t + '" is one of the standard tags: click its chip to switch it on or off.', 'warn'); return; }
+        const m = this._cfMeta.byId[courseId] || (this._cfMeta.byId[courseId] = {});
+        m.extraTags = (Array.isArray(m.extraTags) ? m.extraTags : []).filter(x => x.toLowerCase() !== t.toLowerCase()).concat([t]);
+        await this._cfSaveMeta(); if (this.renderView) this.renderView();
+    },
+    async removeCourseTag(courseId, text) {
+        await this._cfLoad();
+        const m = this._cfMeta.byId[courseId]; if (!m || !Array.isArray(m.extraTags)) return;
+        m.extraTags = m.extraTags.filter(x => x !== text);
+        await this._cfSaveMeta(); if (this.renderView) this.renderView();
+    },
+
+    // The feed as it would be published now, rebuilt only when its inputs change.
+    _cfFeedNow() {
+        const key = [this.data && this.data.length, this._rawCompletion && this._rawCompletion.length, this._cfMetaRev || 0, new Date().toISOString().slice(0, 10)].join('|');
+        if (this._cfNowCache && this._cfNowCache.key === key && this._cfNowCache.data === this.data) return this._cfNowCache.feed;
+        const feed = this.coursesFeedBuild();
+        this._cfNowCache = { key, data: this.data, feed };
+        return feed;
+    },
+    _cfLiveEntry(id) {
+        const st = this._cfState, txt = st && st.last && st.last.content;
+        if (!txt) return null;
+        if (!this._cfLiveParsed || this._cfLiveParsed.src !== txt) { let f = null; try { f = JSON.parse(txt); } catch (e) { f = null; } this._cfLiveParsed = { src: txt, feed: f }; }
+        const f = this._cfLiveParsed.feed;
+        return f && f.courses ? (f.courses.find(c => c.id === id) || null) : null;
+    },
+
+    // "On surghub.org": how the course appears in courses.json, with the controls to change it.
+    _cfCourseBandHtml(d) {
+        if (!d || !d.CourseId) return '';
+        if (this._cfMeta === undefined || this._cfState === undefined) { this._cfMeta = this._cfMeta || null; this._cfLoad().then(() => { if (this.view === 'course' && this.renderView) this.renderView(); }); return ''; }
+        if (!this._cfMeta) return '';
+        const esc = (t) => this.escapeHtml(String(t == null ? '' : t)), id = d.CourseId, idJs = this.escapeJsArg(id);
+        const access = String(d.Access || '').toLowerCase();
+        const why = access === 'private' ? 'it is private on LearnWorlds' : access === 'draft' ? 'it is a draft on LearnWorlds' : access !== 'free' ? 'its LearnWorlds status is not public' : d.Excluded ? 'it is excluded from analytics (Include unticked)' : /template/i.test(String(d.Course || '')) ? 'its title marks it as a template' : '';
+        const box = (inner) => '<div class="bg-white border border-slate-200 rounded-xl shadow-sm px-4 py-3 mb-4">' + inner + '</div>';
+        const head = '<div class="flex items-center gap-2 mb-2"><i data-lucide="globe" width="15" class="text-gsf-boston"></i><span class="text-xs font-bold uppercase tracking-wide text-gsf-prussian">On surghub.org</span>';
+        if (why) return box(head + '<span class="text-xs text-slate-400">· not in the course feed, because ' + esc(why) + '.</span></div>');
+        const feed = this._cfFeedNow(), e = feed.courses.find(c => c.id === id);
+        if (!e) return box(head + '<span class="text-xs text-slate-400">· not in the course feed.</span></div>');
+        const auto = (feed._auto && feed._auto[id]) || {}, m = this._cfMeta.byId[id] || {};
+        const set = m.publishedOn || '', def = this._cfDefaultPublished(d);
+        const rank = feed.courses.map(c => c.learners_90d).sort((a, b) => b - a).indexOf(e.learners_90d) + 1;
+        const chip = (t) => {
+            const o = this._cfTagOverride(id, t), on = o === undefined ? !!auto[t] : o;
+            const why2 = { 'Free': 'no price on LearnWorlds', 'Popular': 'top 15% by enrolments in the last 90 days (cut-off ' + feed.popular_cutoff_90d + ')', 'CME/CPD': 'the LearnWorlds "CME/CPD" label', 'New': 'published within the last 90 days' }[t];
+            const state = o === undefined ? 'automatic: ' + (on ? 'on' : 'off') + ' (' + why2 + ')' : (o ? 'always on' : 'always off') + ' (set by hand; the rule would say ' + (auto[t] ? 'on' : 'off') + ')';
+            const cls = on ? (o === undefined ? 'bg-gsf-boston text-white border-gsf-boston' : 'bg-gsf-prussian text-white border-gsf-prussian') : (o === undefined ? 'bg-white text-slate-400 border-slate-200' : 'bg-white text-slate-400 border-slate-300 line-through');
+            return '<button data-edit-only onclick="App.cycleCourseTag(\'' + idJs + '\', \'' + t + '\')" title="' + esc(t + ': ' + state + '. Click: automatic → always on → always off.') + '" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full border text-[11px] font-bold ' + cls + '">' + (o !== undefined ? '<i data-lucide="pin" width="10"></i>' : '') + esc(t) + '</button>';
+        };
+        const extras = (Array.isArray(m.extraTags) ? m.extraTags : []).map(t => '<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full border border-amber-300 bg-amber-50 text-amber-800 text-[11px] font-bold">' + esc(t)
+            + '<button data-edit-only onclick="App.removeCourseTag(\'' + idJs + '\', \'' + this.escapeJsArg(t) + '\')" title="Remove this tag" class="ml-0.5 text-amber-600 hover:text-amber-900">×</button></span>').join('');
+        const live = this._cfLiveEntry(id);
+        const pending = live ? (live.tags.join() !== e.tags.join() || live.published_on !== e.published_on || live.slug !== e.slug) : true;
+        const liveNote = !live ? '<span class="text-amber-700">not online yet — goes live at the next publish</span>'
+            : pending ? '<span class="text-amber-700">online now: ' + esc(live.tags.join(', ') || 'no tags') + ' · published ' + esc(live.published_on) + ' — your changes go live at the next publish</span>'
+            : '<span class="text-emerald-700">online as shown</span>';
+        return box(head + '<a href="#" onclick="electronAPI.openExternal(\'' + this.escapeJsArg(e.url) + '\'); return false" class="font-mono text-[11px] text-gsf-boston hover:underline">/course/' + esc(e.slug) + '</a>'
+            + '<span class="ml-auto text-[11px]">' + liveNote + (pending ? ' <button data-edit-only onclick="App.publishWebsiteMetrics(this)" class="ml-1 font-bold text-gsf-boston hover:underline">Publish now</button>' : '') + '</span></div>'
+            + '<div class="flex items-center gap-x-5 gap-y-2 flex-wrap text-xs text-slate-600">'
+            + '<span class="inline-flex items-center gap-1.5"><span class="text-slate-400">Published</span><input type="date" data-edit-only value="' + esc(set || def) + '" onchange="App.setCoursePublishedOn(\'' + idJs + '\', this.value)" class="text-[11px] border rounded px-1 py-0.5 ' + (set ? 'text-gsf-prussian font-bold' : 'text-slate-500') + '">'
+            + (set ? '<button data-edit-only onclick="App.setCoursePublishedOn(\'' + idJs + '\', \'\')" class="text-[10px] text-slate-400 hover:text-gsf-boston underline" title="Back to the default: ' + esc(def || 'none') + '">reset</button>' : '<span class="text-[10px] text-slate-400">default: day of the ' + this.CF_LAUNCH_N + 'th enrolment</span>') + '</span>'
+            + '<span class="inline-flex items-center gap-1.5 flex-wrap"><span class="text-slate-400">Tags</span>' + this.CF_TAGS.map(chip).join('') + extras
+            + '<input data-edit-only type="text" placeholder="+ tag" maxlength="30" onkeydown="if(event.key===\'Enter\'){App.addCourseTag(\'' + idJs + '\', this.value); this.value=\'\';}" class="w-20 text-[11px] border rounded-full px-2 py-1 outline-none focus:ring-2 focus:ring-gsf-boston/30" title="Add a tag of your own (Enter)"></span>'
+            + '<span class="text-[11px] text-slate-400">' + this.formatNumber(e.learners_90d) + ' enrolments in 90 days (#' + rank + ' of ' + feed.courses.length + ')' + (e.average_rating != null ? ' · rating ' + e.average_rating.toFixed(2) + ' from ' + this.formatNumber(e.rating_responses) : ' · no ratings yet') + '</span>'
+            + '</div>');
     },
 
     // ── the two directory fields ──
