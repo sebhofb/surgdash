@@ -3424,6 +3424,7 @@ Object.assign(window.App, {
                         </div>
                     </div>
 
+                    ${this._courseWakeupsHtml ? this._courseWakeupsHtml() : ''}
                     ${(() => {
                         // ── New-course triage: courses the sync brought in without a provider
                         // and/or survey link. Fill them in here; saves update the course AND the

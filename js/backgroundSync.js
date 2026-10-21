@@ -1,4 +1,5 @@
-// ── Background sync: cards 2 and 3 refresh themselves while the app is open ────
+// ── Background sync: cards 1, 2, 3 and the forum refresh themselves while the app is open ────
+// (Card 1, Sync Courses, and Forum activity joined the nightly run on 21 Oct 2026.)
 // Once a day, at the first quiet moment after a chosen hour (default 02:00), the
 // app runs the Learners & Ambassadors sync (card 3: demographics + lead
 // attribution, then ambassadors) and the incremental Enrolments & progress sync
@@ -25,7 +26,7 @@ Object.assign(window.App, {
     BG_IDLE_MS: 3 * 60 * 1000,      // no mouse / keyboard for this long = quiet moment
     BG_DEFAULT_HOUR: 2,             // earliest hour (local) a day's run may start
 
-    _bgDefaults() { return { enabled: false, hour: this.BG_DEFAULT_HOUR, cards: { learners: true, enrolments: true, publish: false }, digest: { enabled: true, day: 1, narrative: false }, lastRun: null, lastError: null, history: [] }; },
+    _bgDefaults() { return { enabled: false, hour: this.BG_DEFAULT_HOUR, cards: { courses: true, learners: true, enrolments: true, forum: true, publish: false }, digest: { enabled: true, day: 1, narrative: false }, lastRun: null, lastError: null, history: [] }; },
     async _bgLoad() {
         if (this._bgSettings) return this._bgSettings;
         let v = null; try { v = await Storage.getItem(this.BG_KEY); } catch (e) { __swallowed(e, 'bg.load'); }
@@ -102,6 +103,15 @@ Object.assign(window.App, {
             catch (e) { const msg = String((e && e.message) || e || ''); steps.push({ label, ok: false, note: msg, ms: Date.now() - st }); console.warn('[bg-sync] ' + label + ' failed:', msg); if (/cancelled/i.test(msg)) throw e; }
         };
         try {
+            if (s.cards.courses) {
+                // Card 1 first: the course list, totals, providers and survey links everything after it reads.
+                // The usual pre-sync backup, then the same silent call Sync Everything makes.
+                try { if (this._backupSurghubBeforeSync) await this._backupSurghubBeforeSync(); } catch (e) { __swallowed(e, 'bg.backup'); }
+                this._apiSyncInFlight = true;
+                try {
+                    await step('Courses', async () => { const r = await this.syncCourseFoundationFromApi({ silent: true }); return r && r.courses ? Number(r.courses).toLocaleString() + ' courses' + (r.summary && r.summary.newCourses ? ' · ' + r.summary.newCourses + ' new' : '') : 'done'; });
+                } finally { this._apiSyncInFlight = false; }
+            }
             if (s.cards.learners) {
                 // Card 3, the same two stages the button runs, one after the other.
                 this._apiSyncInFlight = true;
@@ -125,6 +135,19 @@ Object.assign(window.App, {
                     return parts.join(' · ') || 'done';
                 });
             }
+            // Courses that started enrolling without a provider or survey link (courseAlerts.js):
+            // after the course and enrolment refresh, before anything is published.
+            if (this.courseWakeupsCheck && (s.cards.courses || s.cards.enrolments)) {
+                await step('New course activity', async () => await this.courseWakeupsCheck());
+            }
+            if (s.cards.forum && this.syncForumActivity) {
+                // Forum activity (card 7): before the publish, so the refreshed counts travel with it.
+                await step('Forum activity', async () => {
+                    const idx = await this.syncForumActivity({ silent: true, progress: (t) => this._bgProgress(t, null) });
+                    if (!idx) throw new Error('could not read the forums');
+                    return Number(idx.totals.joined || 0).toLocaleString() + ' posts in ' + Number(idx.totals.courses || 0).toLocaleString() + ' courses';
+                });
+            }
             if (s.cards.publish) {
                 // Publish the refreshed data to Google Sheets, so viewers wake up to it. Editor
                 // devices only: a device that auto-pulls is a viewer and must never overwrite
@@ -144,7 +167,7 @@ Object.assign(window.App, {
             // device-local), so other machines skip it silently.
             if (this._pdReady && (await this._pdReady()).ok) {
                 // syncOk: the website figures (metrics.json) only change after a clean LearnWorlds sync.
-                const lwSteps = ['Learners & demographics', 'Ambassadors', 'Enrolments & progress'];
+                const lwSteps = ['Courses', 'Learners & demographics', 'Ambassadors', 'Enrolments & progress'];
                 const syncOk = steps.filter(x => lwSteps.includes(x.label)).every(x => x.ok);
                 await step('Partner dashboards', async () => (await this.publishPartnerDashboards({ silent: true, syncOk, progress: (t) => this._bgProgress(t, null) })).note);
             }
@@ -229,8 +252,10 @@ Object.assign(window.App, {
                                 <label class="inline-flex items-center gap-2 font-bold text-slate-700 cursor-pointer"><input type="checkbox" data-edit-only ${s.enabled ? 'checked' : ''} onchange="App._bgSet({ enabled: this.checked })"> Enabled</label>
                                 <label class="inline-flex items-center gap-2 text-slate-600">From <select data-edit-only onchange="App._bgSet({ hour: Number(this.value) })" class="border rounded px-1.5 py-1">${hours}</select></label>
                                 <div class="flex items-center gap-3 text-slate-600">
+                                    <label class="inline-flex items-center gap-1.5 cursor-pointer" title="Sync Courses: course list, totals, providers, survey links"><input type="checkbox" data-edit-only ${s.cards.courses ? 'checked' : ''} onchange="App._bgSet({ cards: { courses: this.checked } })"> Card 1</label>
                                     <label class="inline-flex items-center gap-1.5 cursor-pointer"><input type="checkbox" data-edit-only ${s.cards.learners ? 'checked' : ''} onchange="App._bgSet({ cards: { learners: this.checked } })"> Card 3</label>
                                     <label class="inline-flex items-center gap-1.5 cursor-pointer"><input type="checkbox" data-edit-only ${s.cards.enrolments ? 'checked' : ''} onchange="App._bgSet({ cards: { enrolments: this.checked } })"> Card 2</label>
+                                    <label class="inline-flex items-center gap-1.5 cursor-pointer" title="Forum activity (card 7): posts in the course discussion spaces"><input type="checkbox" data-edit-only ${s.cards.forum ? 'checked' : ''} onchange="App._bgSet({ cards: { forum: this.checked } })"> Forum</label>
                                     <label class="inline-flex items-center gap-1.5 cursor-pointer" title="Editor device only: after the cards, push the refreshed data to Google Sheets so colleagues wake up to it. Unchanged parts are skipped. Never runs on a device that auto-pulls."><input type="checkbox" data-edit-only ${s.cards.publish ? 'checked' : ''} onchange="App._bgSet({ cards: { publish: this.checked } })"> Publish to Sheets</label>
                                 </div>
                                 <button data-edit-only onclick="App._bgRunNow()" ${this._bgRunning ? 'disabled' : ''} class="px-3 py-1.5 border rounded-lg font-bold text-slate-600 hover:text-gsf-boston hover:bg-slate-50 disabled:opacity-40" title="Run both cards now, silently, the way the schedule would">Run now</button>

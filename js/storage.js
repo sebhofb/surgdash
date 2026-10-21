@@ -111,6 +111,7 @@
         if (key === 'learnworlds_client_secret') return path.join('settings', 'learnworlds_client_secret.json');
         if (key === 'learnworlds_api_token_exp') return path.join('settings', 'learnworlds_api_token_exp.json');
         if (key === 'surgdash_website_metrics') return path.join('settings', 'website_metrics.json');
+        if (key === 'surgdash_course_wakeups') return path.join('settings', 'course_wakeups.json');
         if (key === 'surgdash_provider_map')     return path.join('settings', 'provider_map.json');
         if (key === 'surgdash_course_links')     return path.join('settings', 'course_links.json');
         if (key === 'surghub_local_mtime')   return path.join('settings', 'surghub_local_mtime.json');

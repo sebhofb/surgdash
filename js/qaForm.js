@@ -386,7 +386,7 @@ Object.assign(window.App, {
             if (!savePath) return;
             electronAPI.fs.writeFileSync(savePath, bytes);
             this.showMsg('QA form saved — ' + filled.length + ' rows filled'
-                + (answers.blanks.length ? ' · left for you: ' + answers.blanks.join(', ') : ''), 'success');
+                + (answers.blanks.length ? ' · left for you: ' + answers.blanks.join(', ') : ''));
         } catch (e) {
             console.error('[QA]', e);
             alert('Could not build the QA form: ' + (e && e.message || e));

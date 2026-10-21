@@ -4,6 +4,9 @@ const ROOT = require('path').resolve(__dirname, '..');
 let ok = 0, bad = 0; const check = (n, c, d) => { (c ? ok++ : bad++); console.log((c ? 'PASS' : 'FAIL') + ' - ' + n + (d !== undefined ? '  →  ' + String(d).slice(0, 220) : '')); };
 const mk = (opts) => {
   opts = opts || {};
+  // The older checks below are about cards 2 and 3: unless a test asks for them, the two steps added on
+  // 21 Oct 2026 (card 1 Sync Courses, Forum activity) are switched off in its stored settings.
+  if (opts.stored && !opts.withNew) opts.stored = Object.assign({}, opts.stored, { cards: Object.assign({ courses: false, forum: false }, opts.stored.cards || {}) });
   const store = new Map(); if (opts.stored) store.set('surgdash_bg_sync', opts.stored);
   const dom = { nodes: {}, body: { appendChild(n) { dom.nodes[n.id] = n; } } };
   const mkEl = () => ({ id: '', style: {}, innerHTML: '', textContent: '', remove() { delete dom.nodes[this.id]; } });
@@ -24,6 +27,9 @@ const mk = (opts) => {
     async syncAmbassadorsFromApi(o) { calls.push('amb' + (o && o.silent ? ':silent' : '')); return { totalReferrals: 3286 }; },
     async syncEnrolmentsFromApi(o) { calls.push('enr' + (o && o.silent ? ':silent' : '')); if (opts.enrCancel) throw new Error('Sync cancelled by user.'); return { mode: 'incremental', done: 412, certsNew: 37 }; },
     async _enrLoadMeta() { return meta || {}; },
+    async _backupSurghubBeforeSync() { calls.push('backup'); },
+    async syncCourseFoundationFromApi(o) { calls.push('courses' + (o && o.silent ? ':silent' : '') + (ctx.App._apiSyncInFlight ? ':inflight' : '')); if (opts.coursesFail) throw new Error(opts.coursesFail); return { ok: true, courses: 281, summary: { newCourses: 2 } }; },
+    async syncForumActivity(o) { calls.push('forum' + (o && o.silent ? ':silent' : '')); return opts.forumFail ? null : { totals: { joined: 14475, courses: 158 } }; },
   };
   vm.createContext(ctx); vm.runInContext(fs.readFileSync(ROOT + '/js/backgroundSync.js', 'utf8'), ctx, { filename: 'backgroundSync.js' });
   return { App: ctx.App, store, calls, timers, dom };
@@ -31,7 +37,7 @@ const mk = (opts) => {
 (async () => {
   // defaults + persistence
   let h = mk(); let s = await h.App._bgLoad();
-  check('defaults: off, 02:00, both cards', s.enabled === false && s.hour === 2 && s.cards.learners && s.cards.enrolments);
+  check('defaults: off, 02:00, cards 1, 2, 3 and the forum', s.enabled === false && s.hour === 2 && s.cards.learners && s.cards.enrolments && s.cards.courses && s.cards.forum);
   await h.App._bgSet({ enabled: true, hour: 3, cards: { enrolments: false } });
   check('settings saved as an internal device setting', JSON.stringify(h.store.get('surgdash_bg_sync')).includes('"hour":3') && h.store.get('surgdash_bg_sync').cards.enrolments === false && h.store.get('surgdash_bg_sync').cards.learners === true);
   await h.App._bgSet({ hour: 99 }); check('invalid hour falls back to the default', (await h.App._bgLoad()).hour === 2);
@@ -109,6 +115,23 @@ const mk = (opts) => {
   };
   const badDemo = gated('syncDemographicsFromApi'), badAmb = gated('syncAmbassadorsFromApi');
   check('card-3 syncs: every navigate/alert/confirm is inside a non-silent block', badDemo.length === 0 && badAmb.length === 0, JSON.stringify(badDemo.concat(badAmb)));
+  // ── card 1 (Sync Courses) and the forum in the nightly run ──
+  {
+    let h = mk({ stored: { enabled: true, hour: 0 }, withNew: true }); h.App._bgLastInput = Date.now() - 10 * 60 * 1000;
+    await h.App._bgTick(); const s1 = await h.App._bgLoad();
+    check('courses first (after the pre-sync backup, flagged as a sync in flight), the forum after the enrolments',
+      h.calls.join(',') === 'backup,courses:silent:inflight,demo:silent,amb:silent,enr:silent,forum:silent', h.calls.join(','));
+    check('…each a step with its note', s1.lastRun.ok && s1.lastRun.steps.map(x => x.label).join('|') === 'Courses|Learners & demographics|Ambassadors|Enrolments & progress|Forum activity'
+      && s1.lastRun.steps[0].note === '281 courses · 2 new' && s1.lastRun.steps[4].note === '14,475 posts in 158 courses', JSON.stringify(s1.lastRun.steps.map(x => x.note)));
+    h = mk({ stored: { enabled: true, hour: 0 }, withNew: true, forumFail: true, coursesFail: 'API error 500' }); h.App._bgLastInput = Date.now() - 10 * 60 * 1000;
+    await h.App._bgTick(); const s2 = await h.App._bgLoad();
+    check('a failed course or forum read is a failed step; the other cards still run', !s2.lastRun.ok && !s2.lastRun.steps[0].ok && /API error 500/.test(s2.lastRun.steps[0].note) && !s2.lastRun.steps[4].ok && /could not read the forums/.test(s2.lastRun.steps[4].note) && h.calls.includes('enr:silent'));
+    check('…and the flag is cleared afterwards', !h.App._apiSyncInFlight);
+    const src = fs.readFileSync(ROOT + '/js/backgroundSync.js', 'utf8');
+    check('the panel offers Card 1 and Forum checkboxes', /cards: \{ courses: this\.checked \}[^\n]*Card 1<\/label>/.test(src) && /cards: \{ forum: this\.checked \}[^\n]*Forum<\/label>/.test(src));
+    check('the website figures only change after a clean sync, card 1 included', /const lwSteps = \['Courses', 'Learners & demographics', 'Ambassadors', 'Enrolments & progress'\]/.test(src));
+  }
+
   // ── publish to Sheets after the cards ──
   {
     const pub = []; const globals = (url) => { const o = {};

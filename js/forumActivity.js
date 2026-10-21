@@ -165,7 +165,7 @@ Object.assign(window.App, {
             try { await Storage.setItem(this.FORUM_KEY, index); } catch (e) { __swallowed(e, 'forum.store'); }
             if (!opts.silent) {
                 this.showMsg('Forum activity updated — ' + this.formatNumber(index.totals.joined) + ' posts across '
-                    + this.formatNumber(index.totals.courses) + ' courses.', 'success');
+                    + this.formatNumber(index.totals.courses) + ' courses.');
             }
             return index;
         } catch (e) {

@@ -168,7 +168,7 @@ Object.assign(window.App, {
         if (on === this._unitarPlatformPrivate(name)) delete over[name]; else over[name] = on;
         try { await Storage.setItem(this.UNITAR_PRIVATE_KEY, over); } catch (e) { __swallowed(e, 'unitar.private.save'); }
         this.showMsg(on ? '"' + name + '" is private — left out of UNITAR batch reports unless you tick to include them.'
-                        : '"' + name + '" is no longer private.', 'success');
+                        : '"' + name + '" is no longer private.');
         if (this.renderView) this.renderView();
     },
 
@@ -803,7 +803,7 @@ Object.assign(window.App, {
             const { X, wb } = this._unitarEmsWorkbook(report, template);
             const out = this._unitarAddLogo(new Uint8Array(X.write(wb, { bookType: 'xlsx', type: 'array' })), await this._unitarLogoBytes(), { firstOnly: true });
             electronAPI.fs.writeFileSync(savePath, out);
-            this.showMsg('UNITAR report saved — ' + this.formatNumber(report.totals.participants) + ' participants · ' + report.period.label + '.', 'success');
+            this.showMsg('UNITAR report saved — ' + this.formatNumber(report.totals.participants) + ' participants · ' + report.period.label + '.');
         } catch (e) {
             console.error('[UNITAR]', e);
             alert('Could not build the report: ' + (e && e.message || e));
