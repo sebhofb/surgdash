@@ -127,6 +127,7 @@ Object.assign(window.App, {
         if (dt === 'institutions') return this._dashInstitutionsHtml(snapData, audSnap);
         if (dt === 'compare') return this._dashCompareHtml(snapData, audSnap);
         if (dt === 'journeys') return this._dashJourneysHtml(snapData, audSnap);
+        if (dt === 'forum' && this._dashForumHtml) return this._dashForumHtml();
         // 'health' lives on the Data Sync page and 'lookup' in the Directory since 11 Sep 2026
         // (see _dashTabKey) — anything else is the overview.
         return this._dashOverviewHtml(snapData, audSnap, kpiCards);
@@ -140,6 +141,7 @@ Object.assign(window.App, {
         if (dt === 'nurses' && this._drawNurseCharts) this._drawNurseCharts();
         if (dt === 'institutions' && this._drawInstitutionCharts) this._drawInstitutionCharts();
         if (dt === 'compare' && this._drawCompareCharts) this._drawCompareCharts();
+        if (dt === 'forum' && this._drawForumCharts) this._drawForumCharts();
     },
     redrawCharts() {
         if (!this._currentDraw) return false;
@@ -3986,6 +3988,7 @@ Object.assign(window.App, {
                 ['institutions', 'Institutions', 'building-2', 'Institutions — who arrives together'],
                 ['compare', 'Compare', 'git-compare', 'Compare periods'],
                 ['journeys', 'Journeys', 'route', 'Learner journeys'],
+                ['forum', 'Forum', 'messages-square', 'Forum activity — posts in the course discussion spaces'],
             ];
             const dashPill = ([k, l, ic, full, editOnly]) => `<button ${editOnly ? 'data-edit-only ' : ''}title="${this.escapeHtml(full || l)}" onclick="App._dashTab='${k}'; App.renderView()" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold whitespace-nowrap transition-colors ${dt === k ? 'bg-gsf-prussian text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100'}"><i data-lucide="${ic}" width="14"></i> ${l}</button>`;
             const dashPills = dashPillDefs.map(dashPill).join('');

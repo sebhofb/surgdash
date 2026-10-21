@@ -205,6 +205,84 @@ Object.assign(window.App, {
         return M[Number(p[1]) - 1] + ' ' + p[0];
     },
 
+    // ── The Forum tab on the dashboard (21 Oct 2026) ─────────────────────────────
+    // Platform-wide view of the same store: headline counts, posts per month, and every
+    // course with posts. "People" is per course: someone posting in two courses counts in
+    // both, so it is never summed across courses (the platform chart shows posts only).
+    _forumQuarter(m) { return m.slice(0, 4) + ' Q' + Math.ceil(Number(m.slice(5, 7)) / 3); },
+    _forumQuarterMonths(q) { const y = q.slice(0, 4), n = Number(q.slice(-1)); return [1, 2, 3].map(i => y + '-' + String((n - 1) * 3 + i).padStart(2, '0')); },
+    _forumPrevQuarter(q) { let y = Number(q.slice(0, 4)), n = Number(q.slice(-1)) - 1; if (n < 1) { n = 4; y--; } return y + ' Q' + n; },
+    forumOverview(now) {
+        const f = this._forum;
+        if (!f || !f.byCourse) return null;
+        const today = (now || new Date()).toISOString().slice(0, 7);
+        const curQ = this._forumQuarter(today), lastQ = this._forumPrevQuarter(curQ), prevQ = this._forumPrevQuarter(lastQ);
+        // course record per id (newest), for the name, provider, access and enrolments
+        const rec = {};
+        (this.data || []).forEach(d => { if (d && !d.IsShell && d.CourseId && (!rec[d.CourseId] || String(d.Timestamp || '') > String(rec[d.CourseId].Timestamp || ''))) rec[d.CourseId] = d; });
+        const months = {}, qPosts = (a, q) => this._forumQuarterMonths(q).reduce((t, m) => t + (((a.months || {})[m] || {}).posts || 0), 0);
+        const courses = Object.keys(f.byCourse).map(id => {
+            const a = f.byCourse[id], d = rec[id] || {};
+            Object.entries(a.months || {}).forEach(([m, v]) => { months[m] = (months[m] || 0) + (v.posts || 0); });
+            const lrn = Number(d.Learners) || 0;
+            return { id, name: d.Course || id, provider: d.Provider || '', access: d.Access, learners: lrn, posts: a.posts || 0, people: a.people || 0,
+                last: a.last || '', lastQ: qPosts(a, lastQ), curQ: qPosts(a, curQ), per100: lrn ? (a.posts || 0) / lrn * 100 : null };
+        }).filter(c => c.posts > 0);
+        const series = [];
+        const ms = Object.keys(months).sort();
+        if (ms.length) { let m = ms[0]; for (let g = 0; m <= ms[ms.length - 1] && g < 600; g++) { series.push({ month: m, posts: months[m] || 0, people: null }); let [y, mo] = m.split('-').map(Number); mo++; if (mo > 12) { mo = 1; y++; } m = y + '-' + String(mo).padStart(2, '0'); } }
+        const qSum = (q) => this._forumQuarterMonths(q).reduce((t, m) => t + (months[m] || 0), 0);
+        const busiest = series.reduce((b, p) => (p.posts > (b ? b.posts : -1) ? p : b), null);
+        const prov = {};
+        courses.forEach(c => { const p = c.provider || 'No provider'; const o = prov[p] || (prov[p] = { provider: p, posts: 0, lastQ: 0, courses: 0 }); o.posts += c.posts; o.lastQ += c.lastQ; o.courses++; });
+        return { fetchedAt: f.fetchedAt, totals: f.totals || {}, courses, series, curQ, lastQ, prevQ,
+            curQPosts: qSum(curQ), lastQPosts: qSum(lastQ), prevQPosts: qSum(prevQ), busiest,
+            providers: Object.values(prov).sort((a, b) => b.posts - a.posts) };
+    },
+    setForumSort(k) { this._forumSort = k; if (this.rerenderDashTab) this.rerenderDashTab(); },
+    toggleForumAll() { this._forumShowAll = !this._forumShowAll; if (this.rerenderDashTab) this.rerenderDashTab(); },
+    _dashForumHtml() {
+        if (this._forum === undefined) { this._forum = null; this._forumLoad().then(() => { if (this.view === 'platform' && this.rerenderDashTab) this.rerenderDashTab(); }); }
+        const esc = (t) => this.escapeHtml(String(t == null ? '' : t)), fmt = (n) => this.formatNumber(n);
+        const refresh = '<button data-edit-only onclick="App.syncForumActivityWithProgress()" class="flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-xs font-bold text-slate-600 hover:text-gsf-boston hover:bg-slate-50"><i data-lucide="refresh-cw" width="13"></i> Refresh forum data</button>';
+        const o = this.forumOverview();
+        if (!o) return '<div class="bg-white p-6 rounded-xl shadow-sm border"><h3 class="text-lg font-bold text-gsf-prussian mb-1">Forum activity</h3><p class="text-sm text-slate-400 mb-3">No forum data yet. It is read from the course discussion spaces (Data Sync &rarr; 7 &middot; Forum activity).</p>' + refresh + '</div>';
+        const chg = o.prevQPosts ? Math.round((o.lastQPosts / o.prevQPosts - 1) * 100) : null;
+        const card = (label, value, sub, color) => '<div class="bg-white rounded-xl border shadow-sm p-4"><div class="text-[10px] font-bold uppercase tracking-wide" style="color:' + color + '">' + label + '</div><div class="text-2xl font-black text-gsf-prussian mt-1 tabular-nums">' + value + '</div><div class="text-[11px] text-slate-400 mt-0.5">' + sub + '</div></div>';
+        const t = o.totals;
+        const cards = '<div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">'
+            + card('Posts', fmt(t.posts || 0), fmt(t.joined || 0) + ' in course spaces · ' + fmt(t.orphan || 0) + ' in general areas', '#4389C8')
+            + card('Courses with discussion', fmt(o.courses.length), 'at least one post', '#206095')
+            + card('Posts ' + o.lastQ, fmt(o.lastQPosts), chg == null ? '&nbsp;' : (chg >= 0 ? '+' : '') + chg + '% on ' + o.prevQ, '#3FB984')
+            + card('Posts ' + o.curQ + ' so far', fmt(o.curQPosts), 'to ' + esc(this._forumWhen().replace(/^on /, '')), '#E28743')
+            + card('Busiest month', o.busiest ? fmt(o.busiest.posts) : '–', o.busiest ? esc(this._forumMonthName(o.busiest.month)) : '&nbsp;', '#D03734')
+            + '</div>';
+        const sorts = { posts: 'All time', lastQ: o.lastQ, per100: 'Per 100 enrolled', people: 'People' };
+        const sk = sorts[this._forumSort] ? this._forumSort : 'posts';
+        const rows = o.courses.slice().sort((a, b) => ((b[sk] == null ? -1 : b[sk]) - (a[sk] == null ? -1 : a[sk])) || b.posts - a.posts);
+        const shown = this._forumShowAll ? rows : rows.slice(0, 25);
+        const th = (k, l) => '<th class="py-2 px-3 text-right font-medium"><button onclick="App.setForumSort(\'' + k + '\')" class="' + (sk === k ? 'text-gsf-prussian font-bold underline' : 'hover:text-gsf-boston') + '">' + l + '</button></th>';
+        const table = '<div class="bg-white rounded-xl border shadow-sm p-5 mb-6"><div class="flex items-center justify-between gap-3 flex-wrap mb-3"><h3 class="font-bold text-gsf-prussian">Courses with posts <span class="text-slate-400 font-medium text-sm">(' + rows.length + ')</span></h3><span class="text-[11px] text-slate-400">Click a column to sort · click a course to open it</span></div>'
+            + '<div class="overflow-x-auto"><table class="w-full text-xs"><thead class="text-slate-400 border-b"><tr><th class="py-2 px-3 text-left font-medium">Course</th><th class="py-2 px-3 text-left font-medium">Provider</th>'
+            + th('posts', 'Posts') + th('lastQ', o.lastQ) + th('people', 'People') + th('per100', 'Per 100 enrolled') + '<th class="py-2 px-3 text-right font-medium">Last post</th></tr></thead><tbody>'
+            + shown.map(c => '<tr class="border-b last:border-0 hover:bg-slate-50"><td class="py-2 px-3 font-bold"><button onclick="App.openCourse(\'' + this.escapeJsArg(c.name) + '\')" class="text-gsf-prussian hover:text-gsf-boston hover:underline text-left">' + esc(c.name) + '</button>' + (this._courseStatusBadge ? this._courseStatusBadge(c.access) : '') + '</td>'
+                + '<td class="py-2 px-3 text-slate-500">' + esc(this.providerFolderName ? this.providerFolderName(c.provider) : c.provider) + '</td>'
+                + '<td class="py-2 px-3 text-right tabular-nums font-bold">' + fmt(c.posts) + '</td><td class="py-2 px-3 text-right tabular-nums">' + fmt(c.lastQ) + '</td><td class="py-2 px-3 text-right tabular-nums">' + fmt(c.people) + '</td>'
+                + '<td class="py-2 px-3 text-right tabular-nums">' + (c.per100 == null ? '–' : c.per100.toFixed(1)) + '</td><td class="py-2 px-3 text-right text-slate-400 whitespace-nowrap">' + esc(this._forumMonthName(c.last).replace(/^(\w{3})\w*/, '$1')) + '</td></tr>').join('')
+            + '</tbody></table></div>' + (rows.length > 25 ? '<button onclick="App.toggleForumAll()" class="mt-3 text-xs font-bold text-gsf-boston hover:underline">' + (this._forumShowAll ? 'Show the top 25' : 'Show all ' + rows.length) + '</button>' : '') + '</div>';
+        const provs = '<div class="bg-white rounded-xl border shadow-sm p-5 mb-6"><h3 class="font-bold text-gsf-prussian mb-3">By provider</h3><div class="overflow-x-auto"><table class="w-full text-xs"><thead class="text-slate-400 border-b"><tr><th class="py-2 px-3 text-left font-medium">Provider</th><th class="py-2 px-3 text-right font-medium">Courses with posts</th><th class="py-2 px-3 text-right font-medium">Posts</th><th class="py-2 px-3 text-right font-medium">' + o.lastQ + '</th></tr></thead><tbody>'
+            + o.providers.map(p => '<tr class="border-b last:border-0"><td class="py-2 px-3 font-bold text-gsf-prussian">' + esc(this.providerFolderName ? this.providerFolderName(p.provider) : p.provider) + '</td><td class="py-2 px-3 text-right tabular-nums">' + fmt(p.courses) + '</td><td class="py-2 px-3 text-right tabular-nums font-bold">' + fmt(p.posts) + '</td><td class="py-2 px-3 text-right tabular-nums">' + fmt(p.lastQ) + '</td></tr>').join('')
+            + '</tbody></table></div></div>';
+        return '<div class="flex items-center justify-between gap-3 flex-wrap mb-4"><p class="text-sm text-slate-500 max-w-3xl">Posts in the discussion spaces beside each course, read ' + esc(this._forumWhen()) + '. Replies under a post are not counted: the platform does not report them. "People" is per course, so it is not added up across courses.</p>' + refresh + '</div>'
+            + cards
+            + '<div class="bg-white rounded-xl border shadow-sm p-5 mb-6"><h3 class="font-bold text-gsf-prussian mb-1">Posts per month</h3><p class="text-[11px] text-slate-400 mb-2">All discussion spaces linked to a course. The current month is partial.</p><div id="chart_forum_platform" style="width:100%;height:320px"></div></div>'
+            + table + provs;
+    },
+    _drawForumCharts() {
+        const o = this.forumOverview();
+        if (o && window.Charts && Charts.drawForumActivity) Charts.drawForumActivity('chart_forum_platform', o.series);
+    },
+
     // Every month between the first and the last, so a quiet month reads as a gap in the
     // conversation rather than being skipped over.
     forumSeries(activity) {

@@ -588,11 +588,13 @@ window.Charts = {
         if (!el) return;
         if (!series || !series.length) { this.clearChart(elementId, 'No forum posts for this course.'); return; }
 
+        // people: null = posts only (the platform view: people per course must not be summed)
+        const withPeople = series.some(p => p.people != null);
         const dataTable = new google.visualization.DataTable();
         dataTable.addColumn('string', 'Month');
         dataTable.addColumn('number', 'Posts');
-        dataTable.addColumn('number', 'Learners posting');
-        series.forEach(p => dataTable.addRow([this.formatDate(p.month + '-01'), p.posts, p.people]));
+        if (withPeople) dataTable.addColumn('number', 'Learners posting');
+        series.forEach(p => dataTable.addRow(withPeople ? [this.formatDate(p.month + '-01'), p.posts, p.people] : [this.formatDate(p.month + '-01'), p.posts]));
 
         const opts = {
             colors: [GSF_COLORS[3], GSF_COLORS[1]],
