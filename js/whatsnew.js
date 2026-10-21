@@ -9,7 +9,7 @@
     // this is shown to the team, not to developers. Update this list per release.
     const RELEASES = [
         {
-            v: '2.1.5',
+            v: '2.2.0',
             date: 'October 2026',
             items: [
                 { t: 'Partner dashboards', d: 'Providers you switch on (Reports tab) get their full web report at a short address of their own (e.g. reports.globalsurgeryfoundation.org/wfsa), behind a password, rebuilt every night after the background sync, with the PDF report and the anonymised learner and feedback workbooks to download. Reports are encrypted on this Mac before upload; passwords and the publishing token never leave it.' },
