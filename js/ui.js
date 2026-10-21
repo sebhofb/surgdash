@@ -128,6 +128,7 @@ Object.assign(window.App, {
         if (dt === 'compare') return this._dashCompareHtml(snapData, audSnap);
         if (dt === 'journeys') return this._dashJourneysHtml(snapData, audSnap);
         if (dt === 'forum' && this._dashForumHtml) return this._dashForumHtml();
+        if (dt === 'quarterly' && this._dashQuarterlyHtml) return this._dashQuarterlyHtml();
         // 'health' lives on the Data Sync page and 'lookup' in the Directory since 11 Sep 2026
         // (see _dashTabKey) — anything else is the overview.
         return this._dashOverviewHtml(snapData, audSnap, kpiCards);
@@ -3978,6 +3979,7 @@ Object.assign(window.App, {
             // the page. Data Health is on the Data Sync page, Learner lookup in the Directory.
             const dashPillDefs = [
                 ['overview', 'Overview', 'layout-dashboard', 'Overview'],
+                ['quarterly', 'Quarterly', 'calendar-range', 'Quarterly metrics — the core figures per quarter'],
                 ['learners', 'Learners', 'users', 'Learners'],
                 ['geography', 'Geography', 'globe', 'Geography'],
                 ['performance', 'Performance', 'award', 'Performance'],

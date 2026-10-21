@@ -70,23 +70,40 @@ Object.assign(window.App, {
     _cmpParse(v) { if (!v) return null; if (typeof v === 'string') { try { return JSON.parse(v); } catch (e) { return null; } } return v; },
 
     // Survey rows → [{iso, score}] once, memoised on the raw store object.
-    _cmpSurveyRows() {
-        const raw = this._surveyRawMap; if (!raw) return null;
+    // Scored survey answers ({iso, score}) from the raw survey store. Columns are found by their
+    // heading, not position: the export gained "Started at" / "Ended at" (Oct 2026), which pushed the
+    // satisfaction question from column 4 to 5 — read by position, the "Ended at" date's day
+    // (1–5) was taken for a score and every other answer dropped. Date: when the survey was
+    // completed ("Ended at", else "Date Time"/"Submitted", else column 3); score: the overall-
+    // satisfaction question (English, French or Spanish), else column 4 for old exports.
+    _cmpSurveyRows(rawArg) {
+        const raw = rawArg || this._surveyRawMap; if (!raw) return null;
         if (this._cmpSurveyCache && this._cmpSurveySrc === raw) return this._cmpSurveyCache;
         const M = { Jan: '01', Feb: '02', Mar: '03', Apr: '04', May: '05', Jun: '06', Jul: '07', Aug: '08', Sep: '09', Oct: '10', Nov: '11', Dec: '12' };
+        const SAT = /overall satisfaction|satisfaction with this course|satisfaction concernant ce cours|satisfacci.n general|satisfacci.n con este curso/i;
+        const iso = (t) => {
+            t = String(t || '').trim();
+            let m = t.match(/^(\d{1,2}) (\w{3})\w* (\d{4})/); if (m && M[m[2].slice(0, 3)]) return m[3] + '-' + M[m[2].slice(0, 3)] + '-' + String(m[1]).padStart(2, '0');
+            m = t.match(/^(\d{4})-(\d{2})-(\d{2})/); if (m) return m[1] + '-' + m[2] + '-' + m[3];
+            return '';
+        };
         const out = [];
         Object.values(raw).forEach(v => {
             if (!v || !Array.isArray(v.data)) return;
+            const cols = Array.isArray(v.cols) ? v.cols.map(c => String(c || '')) : [];
+            const find = (re) => cols.findIndex(c => re.test(c));
+            let di = find(/^ended at$/i); if (di < 0) di = find(/^(date time|date|submitted( at)?|completed( at)?)$/i); if (di < 0) di = 3;
+            let si = find(SAT); if (si < 0) si = cols.length ? -1 : 4;
             v.data.forEach(r => {
-                const m = String(r[3] || '').match(/^(\d{1,2}) (\w{3}) (\d{4})/); if (!m || !M[m[2]]) return;
-                const sc = parseFloat(r[4]);
-                out.push({ iso: m[3] + '-' + M[m[2]] + '-' + String(m[1]).padStart(2, '0'), score: (sc >= 1 && sc <= 5) ? sc : null });
+                const d = iso(r[di]); if (!d) return;
+                const raw5 = si >= 0 ? String(r[si] == null ? '' : r[si]).trim() : '';
+                const sc = /^[1-5](\.0+)?$/.test(raw5) ? Number(raw5) : null;
+                out.push({ iso: d, score: sc });
             });
         });
         this._cmpSurveyCache = out; this._cmpSurveySrc = raw;
         return out;
     },
-
     _cmpAnonUsers() {
         const rows = this._rawAnonymizedUsers; if (!Array.isArray(rows) || !rows.length) return null;
         if (this._cmpAnonCache && this._cmpAnonSrc === rows) return this._cmpAnonCache;
