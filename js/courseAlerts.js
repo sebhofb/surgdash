@@ -4,14 +4,16 @@
 // often silenced in the triage list or unticked (excluded). When it is published,
 // learners start enrolling — and that is the moment its provider and survey link are
 // needed. This watches for it: any course missing either, silenced and excluded ones
-// INCLUDED, with WAKE_MIN or more enrolments in the last WAKE_DAYS days (a few reviewer
+// INCLUDED, with WAKE_MIN or more enrolments in the last WAKE_DAYS days (reviewer
 // enrolments on a draft do not trip it). Shown at the top of the Data Sync page; the
-// nightly run announces a course the first time it wakes. "Dismiss" hides one until its
-// enrolments double. Counts only, from the learner records already on this Mac.
+// nightly run announces a course the first time it wakes. "Silence" hides one until it has
+// WAKE_MIN more enrolments than when it was silenced (however long that takes), and the
+// nightly run announces it again then (Seb, 21 Oct 2026). Counts only, from the learner
+// records already on this Mac.
 Object.assign(window.App, {
-    WAKE_KEY: 'surgdash_course_wakeups',   // device-local: {dismissed: {course: learnersThen}, notified: [course]}
+    WAKE_KEY: 'surgdash_course_wakeups',   // device-local: {dismissed: {course: learnersWhenSilenced}, notified: [course]}
     WAKE_DAYS: 14,
-    WAKE_MIN: 5,
+    WAKE_MIN: 25,                          // enrolments in WAKE_DAYS to flag; and more since silencing to flag again
 
     async _wakeLoad() {
         if (this._wake) return this._wake;
@@ -41,12 +43,12 @@ Object.assign(window.App, {
         return Object.values(latest).map(d => {
             const noProv = this._wakeNoProvider(d), noUrl = !d.URL;
             if (!noProv && !noUrl) return null;
-            const n = recent[norm(d.Course)] || 0;
-            if (n < this.WAKE_MIN) return null;
-            const learners = Number(d.Learners) || 0, was = dismissed[d.Course];
-            if (was != null && learners < Math.max(was * 2, was + this.WAKE_MIN)) return null;
+            const n = recent[norm(d.Course)] || 0, learners = Number(d.Learners) || 0, was = dismissed[d.Course];
+            // silenced here: back once WAKE_MIN more have enrolled since, at any pace
+            if (was != null) { if (learners < was + this.WAKE_MIN) return null; }
+            else if (n < this.WAKE_MIN) return null;
             return { course: d.Course, key: d.CourseId || d.Course, access: String(d.Access || ''), excluded: !!d.Excluded, silenced: silenced.indexOf(d.Course) >= 0,
-                recent: n, learners, missing: [noProv && 'provider', noUrl && 'survey link'].filter(Boolean) };
+                recent: n, learners, sinceSilenced: was != null ? learners - was : null, missing: [noProv && 'provider', noUrl && 'survey link'].filter(Boolean) };
         }).filter(Boolean).sort((a, b) => b.recent - a.recent);
     },
 
@@ -64,7 +66,9 @@ Object.assign(window.App, {
         const w = await this._wakeLoad();
         const rec = (this.data || []).filter(d => d && d.Course === course && !d.IsShell).sort((a, b) => String(b.Timestamp || '').localeCompare(String(a.Timestamp || '')))[0];
         w.dismissed[course] = Number(rec && rec.Learners) || 0;
+        w.notified = w.notified.filter(c => c !== course);   // when it comes back, the nightly run says so again
         await this._wakeSave();
+        this.showMsg('Silenced — "' + course + '" comes back after ' + this.WAKE_MIN + ' more enrolments.');
         if (this.renderView) this.renderView();
     },
 
@@ -92,15 +96,15 @@ Object.assign(window.App, {
         const badge = (t, cls) => '<span class="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ' + cls + '">' + t + '</span>';
         const rows = list.map(x => '<div class="flex items-center gap-3 flex-wrap py-2.5 border-b border-amber-100 last:border-0">'
             + '<div class="min-w-[240px] flex-1"><p class="text-sm font-bold text-gsf-prussian">' + esc(x.course) + '</p>'
-            + '<p class="text-[11px] text-slate-500 flex items-center gap-1.5 flex-wrap mt-0.5"><strong class="text-amber-700">' + this.formatNumber(x.recent) + ' enrolments in ' + this.WAKE_DAYS + ' days</strong> · ' + this.formatNumber(x.learners) + ' in all · missing ' + esc(x.missing.join(' + '))
+            + '<p class="text-[11px] text-slate-500 flex items-center gap-1.5 flex-wrap mt-0.5"><strong class="text-amber-700">' + this.formatNumber(x.recent) + ' enrolments in ' + this.WAKE_DAYS + ' days' + (x.sinceSilenced != null ? ' · back: ' + this.formatNumber(x.sinceSilenced) + ' more since silenced' : '') + '</strong> · ' + this.formatNumber(x.learners) + ' in all · missing ' + esc(x.missing.join(' + '))
             + (x.access ? ' ' + badge(esc(x.access), x.access === 'free' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500') : '')
             + (x.silenced ? ' ' + badge('silenced', 'bg-slate-100 text-slate-500') : '') + (x.excluded ? ' ' + badge('excluded', 'bg-rose-50 text-rose-600') : '') + '</p></div>'
             + '<button onclick="App.wakeAddDetails(\'' + this.escapeJsArg(x.course) + '\')" class="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-lg">Add details</button>'
-            + '<button onclick="App.wakeDismiss(\'' + this.escapeJsArg(x.course) + '\')" class="px-2.5 py-1.5 text-xs font-semibold text-slate-400 hover:text-slate-600" title="Hide until its enrolments double">Dismiss</button></div>').join('');
+            + '<button onclick="App.wakeDismiss(\'' + this.escapeJsArg(x.course) + '\')" class="px-2.5 py-1.5 text-xs font-semibold text-slate-400 hover:text-slate-600" title="Hide until ' + this.WAKE_MIN + ' more learners have enrolled">Silence</button></div>').join('');
         return '<div data-edit-only class="bg-gradient-to-br from-amber-50 to-white border border-amber-200 rounded-2xl p-6 mb-4 shadow-sm">'
             + '<div class="flex items-center gap-2 mb-1"><i data-lucide="bell-ring" width="18" class="text-amber-600"></i><h2 class="text-lg font-bold text-gsf-prussian">Courses that started enrolling</h2>'
             + '<span class="text-[10px] font-bold uppercase text-amber-700 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-full">' + list.length + '</span></div>'
-            + '<p class="text-sm text-slate-600 max-w-3xl mb-3">These courses have no provider and/or survey link but ' + this.WAKE_MIN + ' or more enrolments in the last ' + this.WAKE_DAYS + ' days — usually a draft that has just been published. Silenced and excluded courses are included. <strong>Add details</strong> brings one back into the list below (and includes it again if it was excluded).</p>'
+            + '<p class="text-sm text-slate-600 max-w-3xl mb-3">These courses have no provider and/or survey link but ' + this.WAKE_MIN + ' or more enrolments in the last ' + this.WAKE_DAYS + ' days — usually a draft that has just been published. Silenced and excluded courses are included. <strong>Add details</strong> brings one back into the list below (and includes it again if it was excluded); <strong>Silence</strong> hides one until ' + this.WAKE_MIN + ' more learners have enrolled.</p>'
             + rows + '</div>';
     },
 });
