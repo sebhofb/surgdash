@@ -318,6 +318,84 @@ Object.assign(window.App, {
             + '</div>');
     },
 
+    // ── Directory: every course carrying a tag, one tag at a time (Seb, 21 Oct 2026) ──
+    // What courses.json will carry at the next publish, with the figures behind each rule.
+    // Courses switched off by hand while the rule says on are listed too, struck through.
+    pickCourseTag(t) { this._cfTagPick = t; if (this.renderView) this.renderView(); },
+    _cfTagBoardHtml() {
+        if (this._cfMeta === undefined || this._cfState === undefined) { this._cfMeta = this._cfMeta || null; this._cfLoad().then(() => { if (this.view === 'manage' && this.renderView) this.renderView(); }); return ''; }
+        if (!this._cfMeta) return '';
+        if (this._rawCompletion == null) { if (this.ensureCompletionLoaded && !this._completionLoadPromise) this.ensureCompletionLoaded().then(() => { if (this.view === 'manage' && this.renderView) this.renderView(); }); return ''; }
+        const feed = this._cfFeedNow(), auto = feed._auto || {};
+        const esc = (t) => this.escapeHtml(String(t == null ? '' : t)), num = (n) => this.formatNumber(n);
+        const custom = [];
+        feed.courses.forEach(c => c.tags.forEach(t => { if (this.CF_TAGS.indexOf(t) < 0 && custom.indexOf(t) < 0) custom.push(t); }));
+        const all = this.CF_TAGS.concat(custom.sort((a, b) => a.localeCompare(b)));
+        const count = (t) => feed.courses.filter(c => c.tags.indexOf(t) >= 0).length;
+        const pick = all.indexOf(this._cfTagPick) >= 0 ? this._cfTagPick : 'Trending';
+        const std = this.CF_TAGS.indexOf(pick) >= 0;
+        const courseName = {}; (this.data || []).forEach(d => { if (d && !d.IsShell && d.CourseId) courseName[d.CourseId] = d.Course; });
+        const pills = all.map(t => {
+            const on = t === pick, custom_ = this.CF_TAGS.indexOf(t) < 0;
+            return '<button onclick="App.pickCourseTag(\'' + this.escapeJsArg(t) + '\')" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-bold '
+                + (on ? 'bg-gsf-prussian text-white border-gsf-prussian' : custom_ ? 'bg-amber-50 text-amber-800 border-amber-300 hover:border-amber-500' : 'bg-white text-gsf-prussian border-slate-200 hover:border-gsf-boston') + '">'
+                + esc(t) + '<span class="text-[10px] font-semibold ' + (on ? 'text-white/70' : 'text-slate-400') + '">' + count(t) + '</span></button>';
+        }).join('');
+        const rule = {
+            'Free': 'No price on LearnWorlds.',
+            'Popular': 'Top 15% by enrolments in the last 90 days (cut-off now ' + num(feed.popular_cutoff_90d || 0) + ').',
+            'Trending': 'Published 90+ days ago, ' + this.CF_TREND_MIN + '+ enrolments in the last 30 days, and at least ' + this.CF_TREND_RATIO + 'x its usual pace (per 30 days over the 90 days before).',
+            'Top rated': 'Top 10% by average rating among courses rated by ' + this.CF_TOP_MIN_N + '+ learners (cut-off now ' + (feed.top_rated_cutoff != null ? feed.top_rated_cutoff : '—') + ').',
+            'CME/CPD': 'The CME/CPD tick box in the directory below (seeded from the LearnWorlds "CME/CPD" label).',
+            'New': 'Published within the last ' + this.CF_NEW_DAYS + ' days.',
+        }[pick] || 'A tag added by hand on the course pages.';
+        // the figures that explain each tag, and the order to list them in
+        const ratio = (c) => { const b = (auto[c.id] || {})._trendBase || 0; return b > 0 ? c.learners_30d / b : (c.learners_30d ? Infinity : 0); };
+        const cols = {
+            'Popular': [['90 days', c => num(c.learners_90d)]],
+            'Trending': [['30 days', c => num(c.learners_30d)], ['Usual / 30 days', c => num(Math.round((auto[c.id] || {})._trendBase || 0))], ['Pace', c => { const r = ratio(c); return r === Infinity ? 'new' : r.toFixed(1) + 'x'; }]],
+            'Top rated': [['Rating', c => c.average_rating != null ? c.average_rating.toFixed(2) : '—'], ['Ratings', c => num(c.rating_responses)]],
+            'New': [['Published', c => esc(c.published_on)], ['Learners', c => num(c.learners)]],
+        }[pick] || [['Learners', c => num(c.learners)], ['90 days', c => num(c.learners_90d)]];
+        const key = {
+            'Trending': ratio, 'Top rated': c => c.average_rating || 0, 'New': c => c.published_on || '',
+        }[pick] || (c => c.learners_90d);
+        const on = feed.courses.filter(c => c.tags.indexOf(pick) >= 0);
+        const offByHand = std ? feed.courses.filter(c => c.tags.indexOf(pick) < 0 && auto[c.id] && auto[c.id][pick] && this._cfTagOverride(c.id, pick) === false) : [];
+        const sortDesc = (a, b) => { const x = key(a), y = key(b); return x < y ? 1 : x > y ? -1 : a.title.localeCompare(b.title); };
+        const row = (c, struck) => {
+            const o = std ? this._cfTagOverride(c.id, pick) : true;
+            const live = this._cfLiveEntry(c.id), liveHas = !!(live && live.tags.indexOf(pick) >= 0);
+            const online = struck ? (liveHas ? '<span class="text-amber-700">off at next publish</span>' : '<span class="text-slate-400">off</span>')
+                : liveHas ? '<span class="text-emerald-700">online</span>' : '<span class="text-amber-700">at next publish</span>';
+            const how = !std ? '<span class="text-slate-400">by hand</span>'
+                : '<button data-edit-only onclick="App.cycleCourseTag(\'' + this.escapeJsArg(c.id) + '\', \'' + this.escapeJsArg(pick) + '\')" title="Click: automatic → always on → always off" class="hover:text-gsf-boston hover:underline">'
+                    + (o === undefined ? 'automatic' : o ? '<i data-lucide="pin" width="10" class="inline"></i> always on' : '<i data-lucide="pin" width="10" class="inline"></i> always off') + '</button>'
+                    + (o !== undefined ? '<span class="text-slate-400"> (rule: ' + ((auto[c.id] || {})[pick] ? 'on' : 'off') + ')</span>' : '');
+            const name = courseName[c.id] || c.title;
+            return '<tr class="border-b border-slate-100 ' + (struck ? 'opacity-60' : '') + '">'
+                + '<td class="py-2 px-3 text-xs font-bold ' + (struck ? 'line-through' : '') + '"><button onclick="App.openCourse(\'' + this.escapeJsArg(name) + '\')" class="text-gsf-prussian hover:text-gsf-boston hover:underline text-left">' + esc(c.title) + '</button></td>'
+                + '<td class="py-2 px-3 text-xs text-slate-500 truncate max-w-[220px]" title="' + esc(c.provider) + '">' + esc(c.provider) + '</td>'
+                + cols.map(([, f]) => '<td class="py-2 px-3 text-xs text-right tabular-nums">' + f(c) + '</td>').join('')
+                + '<td class="py-2 px-3 text-[11px] text-slate-600 whitespace-nowrap">' + how + '</td>'
+                + '<td class="py-2 px-3 text-[11px] whitespace-nowrap">' + online + '</td></tr>';
+        };
+        const th = (t, right) => '<th class="py-2 px-3 font-medium ' + (right ? 'text-right' : '') + '">' + t + '</th>';
+        const table = (on.length || offByHand.length)
+            ? '<div class="overflow-x-auto max-h-[420px] overflow-y-auto custom-scrollbar"><table class="w-full text-left border-collapse text-sm">'
+                + '<thead class="sticky top-0 bg-white shadow-sm"><tr class="border-b text-slate-500 text-xs">' + th('Course') + th('Provider') + cols.map(([h]) => th(h, true)).join('') + th('How') + th('surghub.org') + '</tr></thead><tbody>'
+                + on.slice().sort(sortDesc).map(c => row(c, false)).join('')
+                + (offByHand.length ? '<tr><td colspan="' + (4 + cols.length) + '" class="pt-4 pb-1 px-3 text-[10px] font-bold uppercase tracking-wide text-slate-400">Switched off by hand — the rule says ' + esc(pick) + '</td></tr>' + offByHand.slice().sort(sortDesc).map(c => row(c, true)).join('') : '')
+                + '</tbody></table></div>'
+            : '<p class="text-sm text-slate-400 px-5 py-6">No course has this tag right now.</p>';
+        return '<div class="bg-white rounded-xl shadow-sm border overflow-hidden mb-8">'
+            + '<div class="bg-slate-50 border-b p-5"><div class="flex items-center gap-2"><i data-lucide="tags" width="18" class="text-gsf-boston"></i><h2 class="font-bold text-lg text-gsf-prussian">Tags on surghub.org</h2></div>'
+            + '<p class="text-xs text-slate-500 mt-1 max-w-3xl">The tags each public course carries in courses.json at the next publish. Pick a tag to see its courses and the figures behind it; open a course to change its tags.</p>'
+            + '<div class="flex flex-wrap gap-2 mt-3">' + pills + '</div>'
+            + '<p class="text-xs text-slate-600 mt-3"><strong>' + esc(pick) + ':</strong> ' + esc(rule) + ' <span class="text-slate-400">' + on.length + ' of ' + feed.courses.length + ' public courses.</span></p></div>'
+            + table + '</div>';
+    },
+
     // ── the two directory fields ──
     async setCourseCme(courseId, on) {
         await this._cfLoad();

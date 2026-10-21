@@ -67,7 +67,12 @@ const App = ctx.App;
     check('…not a course published in the last 90 days (it is New)', !tg('brandnew').includes('Trending') && tg('brandnew').includes('New'));
     check('…nor one under 40 in 30 days, however fast it grows', !tg('wfsa-a').includes('Trending'));
     check('tag order: Free, Popular, Trending, Top rated, CME/CPD, New', JSON.stringify(App.CF_TAGS) === JSON.stringify(['Free', 'Popular', 'Trending', 'Top rated', 'CME/CPD', 'New']) && tg('rising').indexOf('Trending') === tg('rising').indexOf('Popular') + 1);
-    App.data = keepD; App._rawCompletion = keepC;
+    App._cfNowCache = null; App._cfTagPick = 'Trending'; App.view = 'manage'; App.formatNumber = App.formatNumber || ((n) => String(n));
+    const board = App._cfTagBoardHtml();
+    check('Directory tag board: a pill per tag with counts, the Trending list with its pace', /Tags on surghub\.org/.test(board) && (board.match(/App\.pickCourseTag\(/g) || []).length >= 6 && /Rising/.test(board) && !/Steady Big/.test(board) && /6\.0x/.test(board), board.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, 300));
+    App._cfTagPick = 'New'; App._cfNowCache = null;
+    check('…another tag lists its own courses', /Brand New/.test(App._cfTagBoardHtml()));
+    App.data = keepD; App._rawCompletion = keepC; App._cfNowCache = null;
   }
 
   // ── Top rated: the top 10% by average rating among courses rated by 50+ learners ──

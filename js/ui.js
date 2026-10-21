@@ -3275,6 +3275,8 @@ Object.assign(window.App, {
                         </div>`;
                     })()}
 
+                    ${this._cfTagBoardHtml ? this._cfTagBoardHtml() : ''}
+
                     <div class="bg-white rounded-xl shadow-sm border overflow-hidden mb-8">
                         <div class="bg-slate-50 border-b p-5 flex justify-between items-center">
                             <h2 class="font-bold text-lg text-gsf-prussian">Tracked Course Directory (${shells.length})</h2>
