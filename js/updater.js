@@ -1166,11 +1166,7 @@ Object.assign(window.App, {
                                    lk.includes('escala del 1 al 5') || lk.includes('1 al 5') ||
                                    lk.includes('échelle de 1') || lk.includes('1 à 5');
                         });
-                        const dateCol = cols.find(k => {
-                            const lk = k.toLowerCase();
-                            return lk.includes('date') || lk.includes('submitted') || lk.includes('created') || lk.includes('timestamp') ||
-                                lk.includes('fecha') || lk.includes('soumis');
-                        });
+                        const dateCol = this._surveyDateCol(cols);
                         // 1–5 scale questions, detected up-front so the open-ended detector can exclude
                         // them (also reused below for QuestionStats).
                         const scaleCols = cols.filter(k => {
@@ -1809,6 +1805,19 @@ Object.assign(window.App, {
 
     // Short deterministic one-way hash (djb2) — used to anonymize emails into a
     // stable user_uid so we can do per-user analytics without storing PII on disk.
+    // The survey export's response date. Since Oct 2026 it has "Started at" and "Ended at"
+    // and no "Date Time": a heading search for "date" found nothing and every response took
+    // the sync day (154,664 feedback items all dated 20 Oct 2026). Preference: when the
+    // survey was COMPLETED, then any older date heading, then when it was started.
+    _surveyDateCol(cols) {
+        const list = (cols || []).map(k => String(k || ''));
+        const find = (re) => list.find(k => re.test(k.trim()));
+        return find(/^(ended|completed|finished|submitted)( at| on| date)?$/i)
+            || list.find(k => { const lk = k.toLowerCase(); return lk.includes('date') || lk.includes('submitted') || lk.includes('created') || lk.includes('timestamp') || lk.includes('fecha') || lk.includes('soumis'); })
+            || find(/^started( at| on)?$/i)
+            || undefined;
+    },
+
     _djb2Hash(str) {
         let hash = 5381;
         for (let i = 0; i < str.length; i++) hash = (((hash << 5) + hash) + str.charCodeAt(i)) | 0;
