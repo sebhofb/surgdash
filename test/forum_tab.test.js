@@ -36,6 +36,36 @@ App.rerenderDashTab = () => {}; App.setForumSort('per100');
 check('sorting by posts per 100 enrolled puts Research Methods (150) first', App._dashForumHtml().indexOf('Research Methods') < App._dashForumHtml().indexOf('Surgical Foundations'));
 App._forum = null;
 check('without data, a clear note and the refresh button', /No forum data yet/.test(App._dashForumHtml()) && /syncForumActivityWithProgress/.test(App._dashForumHtml()));
+// ── shared spaces: a course and its template / copy ──
+App.data = [
+  { Course: 'Live Series Template', CourseId: 'live-series-template', Access: 'draft', Learners: 0, Excluded: true, Timestamp: '2026-06-14' },
+  { Course: 'Navigating the Global Surgery Ecosystem', CourseId: 'navigating', Access: 'free', Learners: 1689, Timestamp: '2026-10-20' },
+  { Course: 'Surgical Foundations', CourseId: 'sf', Access: 'free', Learners: 8711, Timestamp: '2026-10-20' },
+  { Course: 'Surgical Foundations (copy)', CourseId: 'sf-draft', Access: 'draft', Learners: 0, Excluded: true, Timestamp: '2026-10-20' },
+  { Course: 'Ambassadors', CourseId: 'amb', Access: 'private', Learners: 414, Excluded: true, Timestamp: '2026-10-20' },
+  { Course: 'Council Portal', CourseId: 'council', Access: 'draft', Learners: 0, Excluded: true, Timestamp: '2026-10-20' },
+  { Course: 'Anaesthesia in War', CourseId: 'aw', Access: 'free', Learners: 686, Timestamp: '2026-10-20' },
+  { Course: 'Fundamentals of War Surgery', CourseId: 'fws', Access: 'free', Learners: 793, Timestamp: '2026-10-20' },
+  { Course: 'OSSC', CourseId: 'ossc', Access: 'private', Learners: 54, Timestamp: '2026-10-20' },
+  { Course: 'SELF community', CourseId: 'self', Access: 'private', Learners: 282, Excluded: true, Timestamp: '2026-10-20' }];
+const sp = (id, ...courses) => ({ id, usages: courses.map(c => ({ courseId: c })) });
+const SPACES = [sp('s1', 'live-series-template', 'navigating'), sp('s2', 'navigating', 'live-series-template'), sp('s3', 'sf-draft', 'sf'),
+  sp('s4', 'council', 'amb'), sp('s5', 'aw', 'fws'), sp('s6', 'self', 'ossc'), sp('s7', 'aw')];
+const post = (space, uid) => ({ posted_in: { id: space }, created: 1790000000, user: { id: uid } });
+const POSTS = [post('s1', 'a'), post('s1', 'b'), post('s2', 'c'), post('s3', 'd'), post('s4', 'e'), post('s5', 'f'), post('s6', 'g'), post('s7', 'h')];
+const idx = App.buildForumIndex(SPACES, POSTS, '2026-10-21T00:00:00Z', (ids) => App._forumPickCourse(ids));
+const bc = idx.byCourse;
+check('a space shared with a draft template goes to the live course, whichever is listed first', bc.navigating && bc.navigating.posts === 3 && !bc['live-series-template'], JSON.stringify(Object.keys(bc)));
+check('…and to the course rather than its draft copy', bc.sf && bc.sf.posts === 1 && !bc['sf-draft']);
+check('between two excluded courses, the private one with learners beats the draft', bc.amb && bc.amb.posts === 1 && !bc.council);
+check('a space shared by live courses goes to the one with most learners, counted once', bc.fws && bc.fws.posts === 1 && bc.aw && bc.aw.posts === 1 && idx.totals.joined === 8);
+check('an included course beats an excluded one with more learners', bc.ossc && bc.ossc.posts === 1 && !bc.self);
+check('shared spaces are counted', idx.totals.sharedSpaces === 6);
+const old = App.buildForumIndex(SPACES, POSTS, '2026-10-21T00:00:00Z');
+check('without a picker, the first link as before', old.byCourse['live-series-template'].posts === 2 && old.byCourse.navigating.posts === 1);
+const fa = fs.readFileSync(path.join(ROOT, 'js/forumActivity.js'), 'utf8');
+check('the sync attributes shared spaces with the picker', /this\.buildForumIndex\(spaces, posts, null, \(ids\) => this\._forumPickCourse\(ids\)\)/.test(fa));
+
 const ui = fs.readFileSync(path.join(ROOT, 'js/ui.js'), 'utf8'), ch = fs.readFileSync(path.join(ROOT, 'js/charts.js'), 'utf8');
 check('wired into the dashboard: pill, content and draw hook', /\['forum', 'Forum', 'messages-square'/.test(ui) && /if \(dt === 'forum' && this\._dashForumHtml\) return this\._dashForumHtml\(\);/.test(ui) && /if \(dt === 'forum' && this\._drawForumCharts\) this\._drawForumCharts\(\);/.test(ui));
 check('the chart draws posts alone when there are no people figures', /const withPeople = series\.some\(p => p\.people != null\)/.test(ch));

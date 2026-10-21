@@ -54,12 +54,22 @@ Object.assign(window.App, {
 
     // Fold posts and spaces into a per-course monthly series. Pure, so the counting is
     // checkable without touching the network.
-    buildForumIndex(spaces, posts, now) {
+    // SHARED SPACES (fixed 21 Oct 2026). A space can be linked to several courses: a course
+    // copied from a template or an earlier version keeps the forum links, so the Navigating the
+    // Global Surgery Ecosystem forums are also linked to the draft "Live Series Template", and
+    // Surgical Foundations' to its draft copy. Taking the first link filed ~1,300 Navigating posts
+    // under the template. `pick` chooses among the linked courses (the app prefers the real one:
+    // see _forumPickCourse); without it, the first link, as before. A post has no course of its
+    // own, so a space genuinely shared by live courses goes wholly to the one picked.
+    buildForumIndex(spaces, posts, now, pick) {
         const spaceCourse = {};
+        let shared = 0;
         (spaces || []).forEach(s => {
             if (!s || !s.id) return;
-            const use = (s.usages || []).find(x => x && x.courseId);
-            if (use) spaceCourse[s.id] = String(use.courseId);
+            const ids = [...new Set((s.usages || []).filter(x => x && x.courseId).map(x => String(x.courseId)))];
+            if (!ids.length) return;
+            if (ids.length > 1) shared++;
+            spaceCourse[s.id] = (ids.length > 1 && pick) ? (pick(ids) || ids[0]) : ids[0];
         });
 
         const byCourse = {};
@@ -103,11 +113,22 @@ Object.assign(window.App, {
                 posts: (posts || []).length,
                 spaces: (spaces || []).length,
                 spacesWithCourse: Object.keys(spaceCourse).length,
+                sharedSpaces: shared,
                 courses: Object.keys(byCourse).length,
                 joined, orphan,
             },
             byCourse,
         };
+    },
+
+    // The real course behind a shared space: included before excluded, then free before private
+    // before draft, then the most learners. A template or a draft copy loses to the live course.
+    _forumPickCourse(ids) {
+        const rec = {};
+        (this.data || []).forEach(d => { if (d && !d.IsShell && d.CourseId && (!rec[d.CourseId] || String(d.Timestamp || '') > String(rec[d.CourseId].Timestamp || ''))) rec[d.CourseId] = d; });
+        const access = { free: 2, paid: 2, private: 1 };
+        const rank = (id) => { const d = rec[id]; if (!d) return [-1, -1, -1]; return [d.Excluded ? 0 : 1, access[String(d.Access || '').toLowerCase()] || 0, Number(d.Learners) || 0]; };
+        return ids.slice().sort((a, b) => { const x = rank(a), y = rank(b); return (y[0] - x[0]) || (y[1] - x[1]) || (y[2] - x[2]); })[0];
     },
 
     // Walk a paginated community endpoint to the end, politely.
@@ -139,7 +160,7 @@ Object.assign(window.App, {
             const spaces = await this._forumFetchAll('/community/spaces', { progress: opts.progress, label: 'Discussion spaces, page' });
             await new Promise(res => setTimeout(res, this.FORUM_GAP_MS));
             const posts = await this._forumFetchAll('/community/posts', { progress: opts.progress, label: 'Forum posts, page' });
-            const index = this.buildForumIndex(spaces, posts);
+            const index = this.buildForumIndex(spaces, posts, null, (ids) => this._forumPickCourse(ids));
             this._forum = index;
             try { await Storage.setItem(this.FORUM_KEY, index); } catch (e) { __swallowed(e, 'forum.store'); }
             if (!opts.silent) {
@@ -221,9 +242,9 @@ Object.assign(window.App, {
         const rec = {};
         (this.data || []).forEach(d => { if (d && !d.IsShell && d.CourseId && (!rec[d.CourseId] || String(d.Timestamp || '') > String(rec[d.CourseId].Timestamp || ''))) rec[d.CourseId] = d; });
         const months = {}, qPosts = (a, q) => this._forumQuarterMonths(q).reduce((t, m) => t + (((a.months || {})[m] || {}).posts || 0), 0);
-        // A space beside a course nobody is enrolled in (a draft template, e.g. the Live Series
-        // Template whose space hosts the live-session community) is not course discussion:
-        // its posts count as general areas, outside the course figures (Seb, 21 Oct 2026).
+        // Safety net: posts still filed under a course nobody is enrolled in (a template that owns
+        // a space alone, or data read before shared spaces were attributed properly) count as
+        // general areas, outside the course figures.
         const noLearners = (id) => !!rec[id] && !(Number(rec[id].Learners) > 0);
         const generalIds = Object.keys(f.byCourse).filter(noLearners);
         const generalPosts = generalIds.reduce((t, id) => t + (f.byCourse[id].posts || 0), 0);
@@ -281,7 +302,7 @@ Object.assign(window.App, {
         const provs = '<div class="bg-white rounded-xl border shadow-sm p-5 mb-6"><h3 class="font-bold text-gsf-prussian mb-3">By provider</h3><div class="overflow-x-auto"><table class="w-full text-xs"><thead class="text-slate-400 border-b"><tr><th class="py-2 px-3 text-left font-medium">Provider</th><th class="py-2 px-3 text-right font-medium">Courses with posts</th><th class="py-2 px-3 text-right font-medium">Posts</th><th class="py-2 px-3 text-right font-medium">' + o.lastQ + '</th></tr></thead><tbody>'
             + o.providers.map(p => '<tr class="border-b last:border-0"><td class="py-2 px-3 font-bold text-gsf-prussian">' + esc(this.providerFolderName ? this.providerFolderName(p.provider) : p.provider) + '</td><td class="py-2 px-3 text-right tabular-nums">' + fmt(p.courses) + '</td><td class="py-2 px-3 text-right tabular-nums font-bold">' + fmt(p.posts) + '</td><td class="py-2 px-3 text-right tabular-nums">' + fmt(p.lastQ) + '</td></tr>').join('')
             + '</tbody></table></div></div>';
-        return '<div class="flex items-center justify-between gap-3 flex-wrap mb-4"><p class="text-sm text-slate-500 max-w-3xl">Posts in the discussion spaces beside each course, read ' + esc(this._forumWhen()) + '. Replies under a post are not counted: the platform does not report them. "People" is per course, so it is not added up across courses. Spaces beside courses with no enrolled learners (such as the Live Series Template) count as general areas.</p>' + refresh + '</div>'
+        return '<div class="flex items-center justify-between gap-3 flex-wrap mb-4"><p class="text-sm text-slate-500 max-w-3xl">Posts in the discussion spaces beside each course, read ' + esc(this._forumWhen()) + '. Replies under a post are not counted: the platform does not report them. "People" is per course, so it is not added up across courses. Spaces beside courses with no enrolled learners count as general areas; a space linked to several courses (a course and its template) counts once, for the live course.</p>' + refresh + '</div>'
             + cards
             + '<div class="bg-white rounded-xl border shadow-sm p-5 mb-6"><h3 class="font-bold text-gsf-prussian mb-1">Posts per month</h3><p class="text-[11px] text-slate-400 mb-2">All discussion spaces linked to a course. The current month is partial.</p><div id="chart_forum_platform" style="width:100%;height:320px"></div></div>'
             + table + provs;
