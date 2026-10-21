@@ -221,7 +221,13 @@ Object.assign(window.App, {
         const rec = {};
         (this.data || []).forEach(d => { if (d && !d.IsShell && d.CourseId && (!rec[d.CourseId] || String(d.Timestamp || '') > String(rec[d.CourseId].Timestamp || ''))) rec[d.CourseId] = d; });
         const months = {}, qPosts = (a, q) => this._forumQuarterMonths(q).reduce((t, m) => t + (((a.months || {})[m] || {}).posts || 0), 0);
-        const courses = Object.keys(f.byCourse).map(id => {
+        // A space beside a course nobody is enrolled in (a draft template, e.g. the Live Series
+        // Template whose space hosts the live-session community) is not course discussion:
+        // its posts count as general areas, outside the course figures (Seb, 21 Oct 2026).
+        const noLearners = (id) => !!rec[id] && !(Number(rec[id].Learners) > 0);
+        const generalIds = Object.keys(f.byCourse).filter(noLearners);
+        const generalPosts = generalIds.reduce((t, id) => t + (f.byCourse[id].posts || 0), 0);
+        const courses = Object.keys(f.byCourse).filter(id => !noLearners(id)).map(id => {
             const a = f.byCourse[id], d = rec[id] || {};
             Object.entries(a.months || {}).forEach(([m, v]) => { months[m] = (months[m] || 0) + (v.posts || 0); });
             const lrn = Number(d.Learners) || 0;
@@ -235,7 +241,9 @@ Object.assign(window.App, {
         const busiest = series.reduce((b, p) => (p.posts > (b ? b.posts : -1) ? p : b), null);
         const prov = {};
         courses.forEach(c => { const p = c.provider || 'No provider'; const o = prov[p] || (prov[p] = { provider: p, posts: 0, lastQ: 0, courses: 0 }); o.posts += c.posts; o.lastQ += c.lastQ; o.courses++; });
-        return { fetchedAt: f.fetchedAt, totals: f.totals || {}, courses, series, curQ, lastQ, prevQ,
+        const t0 = f.totals || {};
+        const totals = Object.assign({}, t0, { joined: (t0.joined || 0) - generalPosts, orphan: (t0.orphan || 0) + generalPosts });
+        return { fetchedAt: f.fetchedAt, totals, generalIds, courses, series, curQ, lastQ, prevQ,
             curQPosts: qSum(curQ), lastQPosts: qSum(lastQ), prevQPosts: qSum(prevQ), busiest,
             providers: Object.values(prov).sort((a, b) => b.posts - a.posts) };
     },
@@ -273,7 +281,7 @@ Object.assign(window.App, {
         const provs = '<div class="bg-white rounded-xl border shadow-sm p-5 mb-6"><h3 class="font-bold text-gsf-prussian mb-3">By provider</h3><div class="overflow-x-auto"><table class="w-full text-xs"><thead class="text-slate-400 border-b"><tr><th class="py-2 px-3 text-left font-medium">Provider</th><th class="py-2 px-3 text-right font-medium">Courses with posts</th><th class="py-2 px-3 text-right font-medium">Posts</th><th class="py-2 px-3 text-right font-medium">' + o.lastQ + '</th></tr></thead><tbody>'
             + o.providers.map(p => '<tr class="border-b last:border-0"><td class="py-2 px-3 font-bold text-gsf-prussian">' + esc(this.providerFolderName ? this.providerFolderName(p.provider) : p.provider) + '</td><td class="py-2 px-3 text-right tabular-nums">' + fmt(p.courses) + '</td><td class="py-2 px-3 text-right tabular-nums font-bold">' + fmt(p.posts) + '</td><td class="py-2 px-3 text-right tabular-nums">' + fmt(p.lastQ) + '</td></tr>').join('')
             + '</tbody></table></div></div>';
-        return '<div class="flex items-center justify-between gap-3 flex-wrap mb-4"><p class="text-sm text-slate-500 max-w-3xl">Posts in the discussion spaces beside each course, read ' + esc(this._forumWhen()) + '. Replies under a post are not counted: the platform does not report them. "People" is per course, so it is not added up across courses.</p>' + refresh + '</div>'
+        return '<div class="flex items-center justify-between gap-3 flex-wrap mb-4"><p class="text-sm text-slate-500 max-w-3xl">Posts in the discussion spaces beside each course, read ' + esc(this._forumWhen()) + '. Replies under a post are not counted: the platform does not report them. "People" is per course, so it is not added up across courses. Spaces beside courses with no enrolled learners (such as the Live Series Template) count as general areas.</p>' + refresh + '</div>'
             + cards
             + '<div class="bg-white rounded-xl border shadow-sm p-5 mb-6"><h3 class="font-bold text-gsf-prussian mb-1">Posts per month</h3><p class="text-[11px] text-slate-400 mb-2">All discussion spaces linked to a course. The current month is partial.</p><div id="chart_forum_platform" style="width:100%;height:320px"></div></div>'
             + table + provs;
