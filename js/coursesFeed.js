@@ -16,7 +16,7 @@
 //   learners_90d     enrolments in the last 90 days (per-learner records), for Popular
 //   certificates     the LearnWorlds course count
 //   ratings          mean score per post-course survey question: satisfaction, objectives,
-//                    relevance ("relevant and engaging"), platform; EN/FR/ES question texts
+//                    relevance ("relevant and engaging"), platform; EN/FR/ES/AR question texts
 //   average_rating   mean of the four, 2 decimals; rating_responses = satisfaction answers
 //   published_on     the directory field: as set, else the day the course reached 25
 //                    enrolments, else its LearnWorlds creation date
@@ -27,6 +27,9 @@
 //                    90+ days ago; newer ones have New) with 40+ enrolments in the last 30 days and
 //                    at least 1.5x its own average per 30 days over the 90 days before — picking up,
 //                    whatever its size (6 courses on 21 Oct 2026).
+//                    Top rated (21 Oct 2026, after Trending): in the top 10% by average_rating among
+//                    the courses rated by 50+ learners (ties at the cut-off included). Relative, like
+//                    Popular, because the ratings sit close together (median 4.62; cut-off 4.71 and 15 courses then).
 //                    Each standard tag can be forced on or off per course (the course page's
 //                    "On surghub.org" band, 21 Oct 2026); a tag left on automatic follows the rule.
 // Safety: a file with no courses, or under 80% of the last published count, or after a sync
@@ -37,12 +40,13 @@ Object.assign(window.App, {
     CF_STATE_KEY: 'surgdash_courses_feed',   // device-local: the last published file and the last attempt
     CF_LAUNCH_N: 25, CF_NEW_DAYS: 90, CF_RECENT_DAYS: 90, CF_POP_SHARE: 0.15, CF_MIN_KEEP: 0.8, CF_SLUG_DAYS: 30,
     CF_TREND_DAYS: 30, CF_TREND_BASE_DAYS: 90, CF_TREND_MIN: 40, CF_TREND_RATIO: 1.5, CF_TREND_ESTABLISHED_DAYS: 90,
+    CF_TOP_SHARE: 0.10, CF_TOP_MIN_N: 50,
     CF_Q: [
-        ['satisfaction', /overall satisfaction|satisfaction with this course|satisfaction concernant ce cours|satisfacci.n general|satisfacci.n con este curso/i],
-        ['objectives', /learning objectives|objectives stated|objectifs mentionn|objectifs d.apprentissage|objetivos mencionados|objetivos enunciados|alcanzar los objetivos/i],
+        ['satisfaction', /overall satisfaction|satisfaction with this course|satisfaction concernant ce cours|satisfacci.n general|satisfacci.n con este curso|رضاك/i],
+        ['objectives', /learning objectives|objectives stated|objectifs mentionn|objectifs d.apprentissage|objetivos mencionados|objetivos enunciados|alcanzar los objetivos|أهداف التعل/i],
         // Spanish: "pertinencia de los contenidos para alcanzar los objetivos" is the OBJECTIVES question; relevance is "interactividad"
-        ['relevance', /relevant and engaging|pertinent et engageant|pertinente y atractivo|interactividad de los contenidos/i],
-        ['platform', /user-friendly|reliable was the course platform|course platform|facile . utiliser|f.cil de usar|interfaz|ergonom.a|accesibilidad\s*de la plataforma/i],
+        ['relevance', /relevant and engaging|pertinent et engageant|pertinente y atractivo|interactividad de los contenidos|ذا صلة وجذاب/i],
+        ['platform', /user-friendly|reliable was the course platform|course platform|facile . utiliser|f.cil de usar|interfaz|ergonom.a|accesibilidad\s*de la plataforma|استخدام المنصة/i],
     ],
 
     async _cfLoad() {
@@ -52,7 +56,7 @@ Object.assign(window.App, {
         if (!this._cfState) this._cfState = (await get(this.CF_STATE_KEY)) || {};
     },
     async _cfSaveMeta() { this._cfMetaRev = (this._cfMetaRev || 0) + 1; try { await Storage.setItem(this.CF_META_KEY, this._cfMeta); } catch (e) { __swallowed(e, 'cf.meta'); } },
-    CF_TAGS: ['Free', 'Popular', 'Trending', 'CME/CPD', 'New'],
+    CF_TAGS: ['Free', 'Popular', 'Trending', 'Top rated', 'CME/CPD', 'New'],
     // A tag's override for one course: true / false, or undefined (automatic). CME/CPD keeps its
     // directory tick box (`cme`), the others live under `tags`.
     _cfTagOverride(id, tag) {
@@ -159,10 +163,14 @@ Object.assign(window.App, {
         const sorted = list.map(c => c.learners_90d).sort((a, b) => b - a);
         const k = Math.max(1, Math.ceil(list.length * this.CF_POP_SHARE));
         const cut = sorted.length ? sorted[Math.min(k, sorted.length) - 1] : Infinity;
+        // Top rated: the top 10% by average_rating among courses rated by 50+ learners (ties included)
+        const rated = list.filter(c => c.average_rating != null && c.rating_responses >= this.CF_TOP_MIN_N).map(c => c.average_rating).sort((a, b) => b - a);
+        const topCut = rated.length ? rated[Math.max(1, Math.ceil(rated.length * this.CF_TOP_SHARE)) - 1] : Infinity;
         const auto = {};
         list.forEach(c => {
             const a = { 'Free': c._free, 'Popular': c.learners_90d > 0 && c.learners_90d >= cut,
                 'Trending': !!(c.published_on && c.published_on <= establishedBy && c.learners_30d >= this.CF_TREND_MIN && c.learners_30d >= c._trendBase * this.CF_TREND_RATIO),
+                'Top rated': c.average_rating != null && c.rating_responses >= this.CF_TOP_MIN_N && c.average_rating >= topCut,
                 'CME/CPD': c._cme, 'New': !!(c.published_on && c.published_on >= newFrom && c.published_on <= today) };
             a._trendBase = c._trendBase;
             auto[c.id] = a;
@@ -173,7 +181,7 @@ Object.assign(window.App, {
             if (c.average_rating == null) delete c.average_rating;
         });
         list.sort((a, b) => a.title.localeCompare(b.title));
-        const feedOut = { as_of: today, updated_at: t.toISOString(), source: 'SURGhub, via SURGdash (Global Surgery Foundation)', popular_cutoff_90d: cut === Infinity ? null : cut, courses: list };
+        const feedOut = { as_of: today, updated_at: t.toISOString(), source: 'SURGhub, via SURGdash (Global Surgery Foundation)', popular_cutoff_90d: cut === Infinity ? null : cut, top_rated_cutoff: topCut === Infinity ? null : topCut, courses: list };
         Object.defineProperty(feedOut, '_auto', { value: auto, enumerable: false });   // the course page's band reads it; never published
         return feedOut;
     },
@@ -286,6 +294,7 @@ Object.assign(window.App, {
             const o = this._cfTagOverride(id, t), on = o === undefined ? !!auto[t] : o;
             const why2 = { 'Free': 'no price on LearnWorlds', 'Popular': 'top 15% by enrolments in the last 90 days (cut-off ' + feed.popular_cutoff_90d + ')',
                 'Trending': this.CF_TREND_MIN + '+ enrolments in the last 30 days and ' + this.CF_TREND_RATIO + 'x its average before, for courses published 90+ days ago — now ' + e.learners_30d + ' vs ' + Math.round(auto._trendBase || 0),
+                'Top rated': 'top 10% by average rating among courses rated by ' + this.CF_TOP_MIN_N + '+ learners (cut-off ' + feed.top_rated_cutoff + ') — this one ' + (e.average_rating != null ? e.average_rating : 'unrated') + ' from ' + (e.rating_responses || 0),
                 'CME/CPD': 'the LearnWorlds "CME/CPD" label', 'New': 'published within the last 90 days' }[t];
             const state = o === undefined ? 'automatic: ' + (on ? 'on' : 'off') + ' (' + why2 + ')' : (o ? 'always on' : 'always off') + ' (set by hand; the rule would say ' + (auto[t] ? 'on' : 'off') + ')';
             const cls = on ? (o === undefined ? 'bg-gsf-boston text-white border-gsf-boston' : 'bg-gsf-prussian text-white border-gsf-prussian') : (o === undefined ? 'bg-white text-slate-400 border-slate-200' : 'bg-white text-slate-400 border-slate-300 line-through');

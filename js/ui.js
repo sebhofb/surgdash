@@ -278,13 +278,13 @@ Object.assign(window.App, {
                 if (!s || !s.q || !s.n) return;
                 const lq = String(s.q).toLowerCase();
                 const hi = s.dist ? ((s.dist[4] || 0) + (s.dist[5] || 0)) : 0;
-                if (lq.includes('was new to me') || lq.includes('nuevo para m') || lq.includes('nouvelle pour moi') || lq.includes('nouvelles pour moi')) {
+                if (lq.includes('was new to me') || lq.includes('nuevo para m') || lq.includes('nouvelle pour moi') || lq.includes('nouvelles pour moi') || lq.includes('جديدة بالنسبة لي')) {
                     agg.newSum += (s.avg || 0) * s.n; agg.newN += s.n; agg.newHi += hi;
                 } else if (lq.includes('will use the information') || lq.includes('use the information acquired') ||
                            (lq.includes('usar') && lq.includes('informaci')) ||
-                           (lq.includes('utilise') && lq.includes('information'))) {
+                           (lq.includes('utilise') && lq.includes('information')) || lq.includes('أستخدم المعلومات')) {
                     agg.applySum += (s.avg || 0) * s.n; agg.applyN += s.n; agg.applyHi += hi;
-                } else if (lq.includes('job success') || lq.includes('ussite professionnelle') || lq.includes('xito laboral')) {
+                } else if (lq.includes('job success') || lq.includes('ussite professionnelle') || lq.includes('xito laboral') || lq.includes('نجاحك المهني')) {
                     // "How important are the knowledge/skills acquired … to your job success?" (1–5 importance)
                     agg.careerSum += (s.avg || 0) * s.n; agg.careerN += s.n; agg.careerHi += hi;
                 }
@@ -381,10 +381,10 @@ Object.assign(window.App, {
         if (!Array.isArray(qs)) return null;
         const flagged = qs.find(s => s && s.overall === true && s.n);   // marked by the survey sync
         if (flagged) return flagged;
-        return qs.find(s => {                                             // older data: by wording (EN/ES/FR)
+        return qs.find(s => {                                             // older data: by wording (EN/ES/FR/AR)
             if (!s || !s.q || !s.n) return false;
             const lq = String(s.q).toLowerCase();
-            return lq.includes('satisf') || lq.includes('overall quality') || lq.includes('rate the overall');
+            return lq.includes('satisf') || lq.includes('overall quality') || lq.includes('rate the overall') || lq.includes('رضاك');
         }) || null;
     },
     // Aggregate the overall-satisfaction distribution across course records.
@@ -5157,14 +5157,14 @@ Object.assign(window.App, {
     },
     _surveyInsightsRows(snapData) {
         const CANON = [
-            [/satisfaction concernant ce cours|satisfacci.n general/i, 'how would you rate your overall satisfaction with this course?'],
-            [/objectifs mentionn|objetivos mencionados|objetivos enunciados|pertinencia de los contenidos para alcanzar/i, 'how well did the course help you achieve the learning objectives stated on the course description?'],
-            [/pertinent et engageant|pertinente y atractivo|interactividad de los contenidos/i, 'how relevant and engaging was the course content?'],
-            [/nouvelle pour moi|nuevo para m/i, 'the information presented in this course (e.g., knowledge, concepts, awareness, skills, etc.) was new to me'],
-            [/pertinent pour mon travail|relevante para mi trabajo/i, 'the content of the course is relevant to my job'],
-            [/informations acquises|informaci.n adquirida/i, 'it is likely that I will use the information acquired in this course'],
-            [/r.ussite professionnelle|.xito laboral/i, 'How important are the knowledge/skills acquired in the event to your job success?'],
-            [/facile . utiliser|f.cil de usar|interfaz|ergonom.a y la accesibilidad|accesibilidad de la plataforma/i, 'how user-friendly and reliable was the course platform?']
+            [/satisfaction concernant ce cours|satisfacci.n general|رضاك/i, 'how would you rate your overall satisfaction with this course?'],
+            [/objectifs mentionn|objetivos mencionados|objetivos enunciados|pertinencia de los contenidos para alcanzar|أهداف التعل/i, 'how well did the course help you achieve the learning objectives stated on the course description?'],
+            [/pertinent et engageant|pertinente y atractivo|interactividad de los contenidos|ذا صلة وجذاب/i, 'how relevant and engaging was the course content?'],
+            [/nouvelle pour moi|nuevo para m|جديدة بالنسبة لي/i, 'the information presented in this course (e.g., knowledge, concepts, awareness, skills, etc.) was new to me'],
+            [/pertinent pour mon travail|relevante para mi trabajo|صلة بعملي/i, 'the content of the course is relevant to my job'],
+            [/informations acquises|informaci.n adquirida|أستخدم المعلومات/i, 'it is likely that I will use the information acquired in this course'],
+            [/r.ussite professionnelle|.xito laboral|نجاحك المهني/i, 'How important are the knowledge/skills acquired in the event to your job success?'],
+            [/facile . utiliser|f.cil de usar|interfaz|ergonom.a y la accesibilidad|accesibilidad de la plataforma|استخدام المنصة/i, 'how user-friendly and reliable was the course platform?']
         ];
         const cleanQ = (q) => String(q)
             .replace(/^on a scale from 1 to 5,?\s*/i, '')

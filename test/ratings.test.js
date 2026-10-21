@@ -104,4 +104,13 @@ check('the survey sync marks the question behind Rating so newer data needs no g
 check('the fallback overall question is always among the scale questions that get a distribution',
   /\(rCol && k === rCol\) \|\| \(rColFinal && k === rColFinal\)/.test(upd));
 
+// ── Arabic (Oct 2026: an Arabic course showed no rating) ──
+{
+  const arq = [Q('على مقياس من 1 إلى 5، ما مدى رضاك عن هذه الدورة؟', { 2: 3, 3: 1, 4: 4, 5: 16 }),
+    Q('إلى أي مدى توافق على العبارة التالية: "كانت المعلومات المقدمة في هذه الدورة جديدة بالنسبة لي"؟', { 3: 2, 4: 5, 5: 17 }),
+    Q('إلى أي مدى توافق على العبارة التالية: «من المرجّح أن أستخدم المعلومات التي اكتسبتها في هذه الدورة»؟', { 4: 2, 5: 22 })];
+  check('Arabic: the overall question is found by its wording', /رضاك/.test(App._overallRatingQuestion(arq).q));
+  const si = App._surveyImpactStats([{ Course: 'AR', QuestionStats: JSON.stringify(arq) }]);
+  check('Arabic: counts toward "new to me" and "intent to apply"', si && si.contentNew && si.contentNew.n === 24 && si.willApply && si.willApply.n === 24, JSON.stringify(si));
+}
 console.log(`\n${ok}/${ok + bad} passed`); process.exit(bad ? 1 : 0);

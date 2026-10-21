@@ -365,7 +365,7 @@ Object.assign(window.App, {
         const valid = qs.filter(q => q && (Number(q.n) >= 3) && (Number(q.avg) > 0));
         if (!valid.length) return 0;
         const find = (re) => valid.find(q => re.test(String(q.q || '').toLowerCase()));
-        const sat = find(/overall satisfaction|satisfacci|niveau de satisfaction/);
+        const sat = find(/overall satisfaction|satisfacci|niveau de satisfaction|رضاك/);
         if (sat) return Number(sat.avg);
         const quality = find(/overall quality|rate the overall/);
         if (quality) return Number(quality.avg);
@@ -1143,7 +1143,7 @@ Object.assign(window.App, {
                     if (json && json.length > 0) {
                         course.Responses = json.length;
                         const cols = Object.keys(json[0]);
-                        // Rating column: first question about overall satisfaction (EN/FR/ES)
+                        // Rating column: first question about overall satisfaction (EN/FR/ES/AR)
                         // Use the FIRST "escala del 1 al 5" / "échelle de 1 à 5" / "rating" match = overall satisfaction
                         const rCol = cols.find(k => {
                             const lk = k.toLowerCase();
@@ -1157,7 +1157,9 @@ Object.assign(window.App, {
                                 (lk.includes('1 à 5') && lk.includes('satisfac')) ||
                                 // Some courses word the overall question differently (e.g. "rate the
                                 // overall quality of this module") — catch those too.
-                                lk.includes('overall quality') || lk.includes('rate the overall');
+                                lk.includes('overall quality') || lk.includes('rate the overall') ||
+                                // Arabic: "ما مدى رضاك عن هذه الدورة؟" (how satisfied are you with this course)
+                                lk.includes('رضاك');
                         });
                         // Fallback: if no satisfaction-style column matched, use the FIRST 1–5 scale
                         // question (conventionally the overall rating). Without this, courses whose
@@ -1167,7 +1169,8 @@ Object.assign(window.App, {
                             const lk = k.toLowerCase();
                             return lk.includes('scale from 1 to 5') || lk.includes('1 to 5') ||
                                    lk.includes('escala del 1 al 5') || lk.includes('1 al 5') ||
-                                   lk.includes('échelle de 1') || lk.includes('1 à 5');
+                                   lk.includes('échelle de 1') || lk.includes('1 à 5') ||
+                                   lk.includes('مقياس من 1') || lk.includes('1 إلى 5');
                         });
                         const dateCol = this._surveyDateCol(cols);
                         // 1–5 scale questions, detected up-front so the open-ended detector can exclude
@@ -1178,7 +1181,9 @@ Object.assign(window.App, {
                                 lk.includes('échelle de 1') || lk.includes('echelle de 1') ||
                                 lk.includes('how strongly do you agree') || lk.includes('how important') ||
                                 lk.includes('qué tan de acuerdo') || lk.includes('que tan de acuerdo') ||
-                                lk.includes('dans quelle mesure') || (rCol && k === rCol) || (rColFinal && k === rColFinal);
+                                lk.includes('dans quelle mesure') ||
+                                // Arabic: "على مقياس من 1 إلى 5" (on a scale of 1 to 5), "إلى أي مدى توافق على العبارة" (agree), "ما هي أهمية" (how important)
+                                lk.includes('مقياس من 1') || lk.includes('توافق على العبارة') || lk.includes('ما هي أهمية') || (rCol && k === rCol) || (rColFinal && k === rColFinal);
                         });
                         const userCol = cols.find(k => k.toLowerCase() === 'user' || k.toLowerCase() === 'usuario' || k.toLowerCase() === 'utilisateur');
 
@@ -1195,7 +1200,9 @@ Object.assign(window.App, {
                             'comentario', 'sugerencia', 'mejores aspectos', 'peores aspectos', 'problemas técnicos', 'problemas tecnicos',
                             // French
                             'commentaire', 'intéressants', 'interessants', 'amélioré', 'ameliore', 'problèmes techniques',
-                            'problemes techniques', "d'autres commentaires", 'autres commentaires'
+                            'problemes techniques', "d'autres commentaires", 'autres commentaires',
+                            // Arabic
+                            'تعليقات', 'مشكلات تقنية', 'إثارة للاهتمام'
                         ];
                         const metaCol = /^\s*(id|user|usuario|utilisateur|e-?mail|correo|name|full name|nombre|nom|country|pa[ií]s|pays|profession|profesi|cadre|gender|sex|sexo|genre|organi|institution|date|time|fecha|hora|soumis|submitted|created|timestamp|score|grade|status|course|curso|cours)\b/;
                         const looksProse = (k) => {
@@ -1306,13 +1313,15 @@ Object.assign(window.App, {
                                     let colType = (
                                         lk.includes('additional') || lk.includes('other') || lk.includes('tell us') || lk.includes('open') || lk.includes('anything else') ||
                                         lk.includes('comentario o sugerencia') || lk.includes("d'autres commentaires") || lk.includes('autres commentaires') ||
-                                        lk.includes('problemas técnicos') || lk.includes('problemas tecnicos') || lk.includes('problèmes techniques') || lk.includes('problemes techniques')
+                                        lk.includes('problemas técnicos') || lk.includes('problemas tecnicos') || lk.includes('problèmes techniques') || lk.includes('problemes techniques') ||
+                                        lk.includes('تعليقات أخرى') || lk.includes('مشكلات تقنية')
                                     )
                                         ? 'additional'
                                         : (
                                             lk.includes('improve') || lk.includes('suggest') || lk.includes('change') || lk.includes('better') ||
                                             lk.includes('peores aspectos') || lk.includes('moins intéressants') || lk.includes('moins interessants') ||
-                                            lk.includes('amélioré') || lk.includes('ameliore')
+                                            lk.includes('amélioré') || lk.includes('ameliore') ||
+                                            lk.includes('الأقل إثارة') || lk.includes('تحسين')
                                         )
                                         ? 'improve'
                                         : 'general';

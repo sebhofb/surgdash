@@ -75,12 +75,12 @@ Object.assign(window.App, {
     // satisfaction question from column 4 to 5 — read by position, the "Ended at" date's day
     // (1–5) was taken for a score and every other answer dropped. Date: when the survey was
     // completed ("Ended at", else "Date Time"/"Submitted", else column 3); score: the overall-
-    // satisfaction question (English, French or Spanish), else column 4 for old exports.
+    // satisfaction question (English, French, Spanish or Arabic), else column 4 for old exports.
     _cmpSurveyRows(rawArg) {
         const raw = rawArg || this._surveyRawMap; if (!raw) return null;
         if (this._cmpSurveyCache && this._cmpSurveySrc === raw) return this._cmpSurveyCache;
         const M = { Jan: '01', Feb: '02', Mar: '03', Apr: '04', May: '05', Jun: '06', Jul: '07', Aug: '08', Sep: '09', Oct: '10', Nov: '11', Dec: '12' };
-        const SAT = /overall satisfaction|satisfaction with this course|satisfaction concernant ce cours|satisfacci.n general|satisfacci.n con este curso/i;
+        const SAT = /overall satisfaction|satisfaction with this course|satisfaction concernant ce cours|satisfacci.n general|satisfacci.n con este curso|رضاك/i;
         const iso = (t) => {
             t = String(t || '').trim();
             let m = t.match(/^(\d{1,2}) (\w{3})\w* (\d{4})/); if (m && M[m[2].slice(0, 3)]) return m[3] + '-' + M[m[2].slice(0, 3)] + '-' + String(m[1]).padStart(2, '0');

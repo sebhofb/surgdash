@@ -51,7 +51,7 @@ const App = ctx.App;
   await App.setCourseCme('carb-go-1', true); await App.setCourseCme('wfsa-a', false); await App.setCoursePublishedOn('carb-go-1', day(30));
   const g = JSON.parse((await App.coursesFeedFile({ resolveSlugs: false })).content);
   const c2 = g.courses.find(c => c.id === 'carb-go-1');
-  check('the directory tick box and date win over the defaults (and are stored with the SURGhub data)', c2.tags.join() === 'Free,Popular,CME/CPD,New' && c2.published_on === day(30) && !g.courses.find(c => c.id === 'wfsa-a').tags.includes('CME/CPD') && store.get('surghub_course_meta').byId['carb-go-1'].cme === true);
+  check('the directory tick box and date win over the defaults (and are stored with the SURGhub data)', c2.tags.join() === 'Free,Popular,Top rated,CME/CPD,New' && c2.published_on === day(30) && !g.courses.find(c => c.id === 'wfsa-a').tags.includes('CME/CPD') && store.get('surghub_course_meta').byId['carb-go-1'].cme === true);
   await App.setCoursePublishedOn('carb-go-1', '');
   check('clearing the date goes back to the default', JSON.parse((await App.coursesFeedFile({ resolveSlugs: false })).content).courses.find(c => c.id === 'carb-go-1').published_on === day(120));
   // ── Trending: an established course picking up ──
@@ -66,8 +66,31 @@ const App = ctx.App;
     check('…not a big course enrolling at its usual pace', !tg('steady').includes('Trending'));
     check('…not a course published in the last 90 days (it is New)', !tg('brandnew').includes('Trending') && tg('brandnew').includes('New'));
     check('…nor one under 40 in 30 days, however fast it grows', !tg('wfsa-a').includes('Trending'));
-    check('tag order: Free, Popular, Trending, CME/CPD, New', JSON.stringify(App.CF_TAGS) === JSON.stringify(['Free', 'Popular', 'Trending', 'CME/CPD', 'New']) && tg('rising').indexOf('Trending') === tg('rising').indexOf('Popular') + 1);
+    check('tag order: Free, Popular, Trending, Top rated, CME/CPD, New', JSON.stringify(App.CF_TAGS) === JSON.stringify(['Free', 'Popular', 'Trending', 'Top rated', 'CME/CPD', 'New']) && tg('rising').indexOf('Trending') === tg('rising').indexOf('Popular') + 1);
     App.data = keepD; App._rawCompletion = keepC;
+  }
+
+  // ── Top rated: the top 10% by average rating among courses rated by 50+ learners ──
+  {
+    const keepD = App.data;
+    const sat = (avg, n) => JSON.stringify(['overall satisfaction with this course', 'learning objectives stated', 'relevant and engaging', 'course platform'].map(q => ({ q, avg, n, na: 0 })));
+    const extra = [];
+    for (let i = 0; i < 20; i++) extra.push(C({ Course: 'Rated ' + i, CourseId: 'rated' + i, CourseCreated: '2025-01-01', QuestionStats: sat(4.5 + i * 0.01, 60) }));
+    extra.push(C({ Course: 'Few Raters', CourseId: 'few', CourseCreated: '2025-01-01', QuestionStats: sat(5, 12) }));
+    App.data = keepD.concat(extra);
+    const T = App.coursesFeedBuild(NOW), tg = (id) => (T.courses.find(c => c.id === id) || { tags: [] }).tags;
+    const top = T.courses.filter(c => c.tags.includes('Top rated')).map(c => c.id).sort();
+    check('Top rated: the top 10% of courses rated by 50+ learners (3 of 21 with the fixture course), cut-off published', JSON.stringify(top) === JSON.stringify(['carb-go-1', 'rated18', 'rated19']) && T.top_rated_cutoff === 4.68, top.join() + ' cut ' + T.top_rated_cutoff);
+    check('…never a course with under 50 ratings, however high', !tg('few').includes('Top rated'));
+    App.data = keepD;
+  }
+
+  // ── an Arabic survey's questions are read (Oct 2026: it showed 0 responses) ──
+  {
+    const q = (t, avg, n) => ({ q: t, avg, n, na: 0 });
+    const r = App._cfRatings({ QuestionStats: JSON.stringify([q('على مقياس من 1 إلى 5، ما مدى رضاك عن هذه الدورة؟', 4.38, 24), q('على مقياس من 1 إلى 5، إلى أي مدى ساعدتك هذه الدورة على تحقيق أهداف التعلّم المذكورة في وصف الدورة؟', 4.48, 25),
+      q('على مقياس من 1 إلى 5، إلى أي مدى بدا لك محتوى الدورة ذا صلة وجذاباً؟', 4.52, 25), q('على مقياس من 1 إلى 5، إلى أي مدى كان استخدام المنصة سهلًا وموثوقًا؟', 4.55, 22)]) });
+    check('Arabic survey: all four ratings and the satisfaction count', r.n === 24 && r.ratings.satisfaction === 4.38 && r.ratings.objectives === 4.48 && r.ratings.relevance === 4.52 && r.ratings.platform === 4.55, JSON.stringify(r));
   }
 
   // ── tags by hand (the course page band) ──
@@ -90,7 +113,7 @@ const App = ctx.App;
   App._cfState = App._cfState || {};
   const rec = (id) => App.data.find(d => d.CourseId === id);
   let band = App._cfCourseBandHtml(rec('wfsa-a'));
-  check('the band: public address, published date, the five chips (with state), custom-tag box, 90-day rank and rating', /On surghub\.org/.test(band) && /\/course\/wfsa-a/.test(band) && /type="date"[^>]*value="/.test(band) && (band.match(/App\.cycleCourseTag\('wfsa-a'/g) || []).length === 5 && /in 30 days vs \d+ before/.test(band) && /placeholder="\+ tag"/.test(band) && /enrolments in 90 days \(#\d+ of 15\)/.test(band) && /rating 4\.50 from 40/.test(band));
+  check('the band: public address, published date, the six chips (with state), custom-tag box, 90-day rank and rating', /On surghub\.org/.test(band) && /\/course\/wfsa-a/.test(band) && /type="date"[^>]*value="/.test(band) && (band.match(/App\.cycleCourseTag\('wfsa-a'/g) || []).length === 6 && /in 30 days vs \d+ before/.test(band) && /placeholder="\+ tag"/.test(band) && /enrolments in 90 days \(#\d+ of 15\)/.test(band) && /rating 4\.50 from 40/.test(band));
   check('…says the change is not online yet, with a Publish button', /not online yet/.test(band) && /App\.publishWebsiteMetrics\(this\)/.test(band));
   check('a course that is not listed says why', /not in the course feed, because it is private/.test(App._cfCourseBandHtml(rec('priv'))) && /because it is excluded from analytics/.test(App._cfCourseBandHtml(rec('exc'))) && /marks it as a template/.test(App._cfCourseBandHtml(rec('tpl'))));
   const ui2 = fs.readFileSync(path.join(ROOT, 'js/ui.js'), 'utf8');

@@ -295,17 +295,17 @@
                 .replace(/if you are currently unemployed.*$/i, '')
                 .replace(/["“”]/g, '')
                 .replace(/\s+/g, ' ').trim();
-            // Fold known French/Spanish question variants into the English
+            // Fold known French/Spanish/Arabic question variants into the English
             // canonical row so multilingual providers get one merged table.
             const CANON = [
-                [/satisfaction concernant ce cours|satisfacci.n general/i, 'how would you rate your overall satisfaction with this course?'],
-                [/objectifs mentionn|objetivos mencionados|objetivos enunciados|pertinencia de los contenidos para alcanzar/i, 'how well did the course help you achieve the learning objectives stated on the course description?'],
-                [/pertinent et engageant|pertinente y atractivo|interactividad de los contenidos/i, 'how relevant and engaging was the course content?'],
-                [/nouvelle pour moi|nuevo para m/i, 'the information presented in this course (e.g., knowledge, concepts, awareness, skills, etc.) was new to me"?'],
-                [/pertinent pour mon travail|relevante para mi trabajo/i, 'the content of the course is relevant to my job"?'],
-                [/informations acquises|informaci.n adquirida/i, 'it is likely that I will use the information acquired in this course"?'],
-                [/r.ussite professionnelle|.xito laboral/i, 'How important are the knowledge/skills acquired in the event to your job success?'],
-                [/facile . utiliser|f.cil de usar|interfaz|ergonom.a y la accesibilidad|accesibilidad de la plataforma/i, 'how user-friendly and reliable was the course platform?']
+                [/satisfaction concernant ce cours|satisfacci.n general|رضاك/i, 'how would you rate your overall satisfaction with this course?'],
+                [/objectifs mentionn|objetivos mencionados|objetivos enunciados|pertinencia de los contenidos para alcanzar|أهداف التعل/i, 'how well did the course help you achieve the learning objectives stated on the course description?'],
+                [/pertinent et engageant|pertinente y atractivo|interactividad de los contenidos|ذا صلة وجذاب/i, 'how relevant and engaging was the course content?'],
+                [/nouvelle pour moi|nuevo para m|جديدة بالنسبة لي/i, 'the information presented in this course (e.g., knowledge, concepts, awareness, skills, etc.) was new to me"?'],
+                [/pertinent pour mon travail|relevante para mi trabajo|صلة بعملي/i, 'the content of the course is relevant to my job"?'],
+                [/informations acquises|informaci.n adquirida|أستخدم المعلومات/i, 'it is likely that I will use the information acquired in this course"?'],
+                [/r.ussite professionnelle|.xito laboral|نجاحك المهني/i, 'How important are the knowledge/skills acquired in the event to your job success?'],
+                [/facile . utiliser|f.cil de usar|interfaz|ergonom.a y la accesibilidad|accesibilidad de la plataforma|استخدام المنصة/i, 'how user-friendly and reliable was the course platform?']
             ];
             const canonMerged = {};
             const canonOrder = [];
