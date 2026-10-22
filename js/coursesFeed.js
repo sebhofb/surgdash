@@ -15,8 +15,12 @@
 //   learners         the LearnWorlds course count (= the agency feed's "Total Learners")
 //   learners_90d     enrolments in the last 90 days (per-learner records), for Popular
 //   certificates     the LearnWorlds course count
-//   image            the course card image (LearnWorlds courseImage, the same file as the course
-//                    page's share image; public, any origin), or null (22 Oct 2026)
+//   image            the course card image: a small copy SURGdash makes when it publishes (640 px
+//                    wide WebP, ~20–60 KB) at <reports site>/thumbs/<slug>-<hash>.webp, else the
+//                    LearnWorlds original; null when the course has none (22 Oct 2026)
+//   image_full       the LearnWorlds original (courseImage, the same file as the course page's
+//                    share image; often 0.2–1.5 MB). The hash in the thumbnail's name changes when
+//                    the original does, so the thumbnails can be cached for good.
 //   ratings          mean score per post-course survey question: satisfaction, objectives,
 //                    relevance ("relevant and engaging"), platform; EN/FR/ES/AR question texts
 //   average_rating   mean of the four, 2 decimals; rating_responses = satisfaction answers
@@ -247,15 +251,101 @@ Object.assign(window.App, {
         if (opts.resolveSlugs !== false) await this._cfResolveSlugs(ids, { progress: opts.progress });
         const st = this._cfState, prevN = (st.last && st.last.count) || 0;
         const feed = this.coursesFeedBuild();
+        if (opts.thumbs !== false) { try { await this._cfApplyThumbs(feed, opts.progress); } catch (e) { __swallowed(e, 'cf.thumbs'); } }
         const n = feed.courses.length;
         const why = opts.syncOk === false ? 'the sync before it had LearnWorlds errors'
             : !n ? 'no courses' : (prevN && n < prevN * this.CF_MIN_KEEP) ? 'only ' + n + ' courses against ' + prevN + ' last time' : '';
         st.attempt = { at: new Date().toISOString(), count: n, ok: !why, why };
         const content = !why ? JSON.stringify(feed, null, 2) + '\n' : (st.last && st.last.content) || null;
         try { await Storage.setItem(this.CF_STATE_KEY, st, { internal: true }); } catch (e) { __swallowed(e, 'cf.state'); }
-        return { content, fresh: !why, why, count: n, feed };
+        return { content, fresh: !why, why, count: n, feed, thumbs: this._cfThumbFiles(content) };
+    },
+
+    // ── Card thumbnails (Seb, 22 Oct 2026) ──
+    // LearnWorlds card images are full-size uploads (often 1.5 MB). On each publish SURGdash makes
+    // a 640 px WebP of each, cached on this Mac (data/cache/course_thumbs: never synced or backed up,
+    // rebuilt if lost), and publishes it beside courses.json. Only a changed or new image is fetched.
+    CF_THUMB_W: 640, CF_THUMB_DIR: 'thumbs',
+    _cfThumbCacheDir() { return Storage.DATA_DIR ? electronAPI.path.join(Storage.DATA_DIR, 'cache', 'course_thumbs') : ''; },
+    _cfThumbIndex() {
+        if (this._cfThumbIdx) return this._cfThumbIdx;
+        let v = null; const dir = this._cfThumbCacheDir();
+        try { const f = dir && electronAPI.path.join(dir, 'index.json'); if (f && electronAPI.fs.existsSync(f)) v = JSON.parse(electronAPI.fs.readFileSync(f, 'utf8')); } catch (e) { v = null; }
+        this._cfThumbIdx = (v && v.bySrc) ? v : { bySrc: {} };
+        return this._cfThumbIdx;
+    },
+    _cfThumbHash(t) { let h = 5381; for (let i = 0; i < t.length; i++) h = (((h << 5) + h) + t.charCodeAt(i)) | 0; return (h >>> 0).toString(36); },
+    async _cfMakeThumb(src) {
+        const r = await fetch(src); if (!r.ok) throw new Error('HTTP ' + r.status);
+        const bmp = await createImageBitmap(await r.blob());
+        const k = Math.min(1, this.CF_THUMB_W / bmp.width), w = Math.max(1, Math.round(bmp.width * k)), h = Math.max(1, Math.round(bmp.height * k));
+        const c = new OffscreenCanvas(w, h), g = c.getContext('2d');
+        g.imageSmoothingQuality = 'high'; g.drawImage(bmp, 0, 0, w, h); if (bmp.close) bmp.close();
+        let out = await c.convertToBlob({ type: 'image/webp', quality: 0.8 });
+        if (out.type !== 'image/webp') out = await c.convertToBlob({ type: 'image/jpeg', quality: 0.82 });
+        return { bytes: new Uint8Array(await out.arrayBuffer()), ext: out.type === 'image/webp' ? 'webp' : 'jpg', w, h };
+    },
+    // Point each course's image at its thumbnail (making any that are missing); image_full keeps the original.
+    async _cfApplyThumbs(feed, progress) {
+        const base = String((this._pd && this._pd.baseUrl) || '').replace(/\/+$/, ''), dir = this._cfThumbCacheDir();
+        feed.courses.forEach(c => { c.image_full = c.image; });
+        if (!/^https:\/\//.test(base) || !dir || typeof OffscreenCanvas === 'undefined') return;
+        const fs = electronAPI.fs, path = electronAPI.path, idx = this._cfThumbIndex();
+        try { if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true }); } catch (e) { return; }
+        const todo = feed.courses.filter(c => c.image_full && !(idx.bySrc[c.image_full] && fs.existsSync(path.join(dir, idx.bySrc[c.image_full].file))));
+        let done = 0, failed = 0; const total = todo.length;
+        const work = async () => {
+            for (let c; (c = todo.shift());) {
+                try {
+                    const t = await this._cfMakeThumb(c.image_full);
+                    const file = c.slug.replace(/[^a-z0-9-]/gi, '-').slice(0, 80) + '-' + this._cfThumbHash(c.image_full) + '.' + t.ext;
+                    fs.writeFileSync(path.join(dir, file), t.bytes);
+                    idx.bySrc[c.image_full] = { file, w: t.w, h: t.h, bytes: t.bytes.length, at: new Date().toISOString() };
+                } catch (e) { failed++; __swallowed(e, 'cf.thumb'); }
+                done++; if (progress) progress('Course images: ' + done + ' of ' + total + '…');
+            }
+        };
+        if (todo.length) await Promise.all([work(), work(), work(), work()]);
+        feed.courses.forEach(c => {
+            const e = c.image_full && idx.bySrc[c.image_full];
+            if (e && fs.existsSync(path.join(dir, e.file))) c.image = base + '/' + this.CF_THUMB_DIR + '/' + e.file;
+        });
+        try { fs.writeFileSync(path.join(dir, 'index.json'), JSON.stringify(idx), 'utf8'); } catch (e) { __swallowed(e, 'cf.thumbIdx'); }
+        this._cfThumbFailed = failed;
+    },
+    // After a publish: drop cached thumbnails the published file no longer points at.
+    _cfThumbPrune(published) {
+        const dir = this._cfThumbCacheDir(); if (!dir) return;
+        const keep = new Set(published.map(t => t.path.slice(this.CF_THUMB_DIR.length + 1))), idx = this._cfThumbIndex();
+        let changed = false;
+        Object.keys(idx.bySrc).forEach(src => {
+            if (keep.has(idx.bySrc[src].file)) return;
+            try { electronAPI.fs.unlinkSync(electronAPI.path.join(dir, idx.bySrc[src].file)); } catch (e) { /* already gone */ }
+            delete idx.bySrc[src]; changed = true;
+        });
+        if (changed) { try { electronAPI.fs.writeFileSync(electronAPI.path.join(dir, 'index.json'), JSON.stringify(idx), 'utf8'); } catch (e) { __swallowed(e, 'cf.thumbIdx'); } }
+    },
+    // The thumbnails a courses.json text points at, as files to publish beside it: [{ path, base64 }].
+    _cfThumbFiles(content) {
+        const out = [], dir = this._cfThumbCacheDir(), base = String((this._pd && this._pd.baseUrl) || '').replace(/\/+$/, '');
+        if (!content || !dir || !base) return out;
+        let f = null; try { f = JSON.parse(content); } catch (e) { return out; }
+        const pre = base + '/' + this.CF_THUMB_DIR + '/', seen = new Set();
+        ((f && f.courses) || []).forEach(c => {
+            const u = String((c && c.image) || '');
+            if (!u.startsWith(pre)) return;
+            const file = u.slice(pre.length);
+            if (!/^[a-z0-9-]+\.(webp|jpg)$/i.test(file) || seen.has(file)) return;
+            try {
+                const buf = new Uint8Array(electronAPI.fs.readFileSync(electronAPI.path.join(dir, file)));
+                let bin = ''; for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
+                out.push({ path: this.CF_THUMB_DIR + '/' + file, base64: btoa(bin) }); seen.add(file);
+            } catch (e) { __swallowed(e, 'cf.thumbRead'); }
+        });
+        return out;
     },
     async _cfMarkPublished(f) {
+        if (f && f.fresh && f.content && f.thumbs && f.thumbs.length) this._cfThumbPrune(f.thumbs);   // never on a publish that carried none
         const st = this._cfState || {};
         if (f && f.fresh && f.content) st.last = { at: new Date().toISOString(), count: f.count, content: f.content };
         st.published = { at: new Date().toISOString(), fresh: !!(f && f.fresh), why: (f && f.why) || '' };

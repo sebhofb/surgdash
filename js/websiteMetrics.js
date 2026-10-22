@@ -171,6 +171,20 @@ Object.assign(window.App, {
             const blob = await this._pdGh('POST', '/git/blobs', { content: f.content, encoding: 'utf-8' }, token);
             const entries = [{ path: 'metrics.json', mode: '100644', type: 'blob', sha: blob.sha }];
             if (cf && cf.content) entries.push({ path: 'courses.json', mode: '100644', type: 'blob', sha: (await this._pdGh('POST', '/git/blobs', { content: cf.content, encoding: 'utf-8' }, token)).sha });
+            // course card thumbnails (coursesFeed.js): upload only those the site does not have yet
+            if (cf && cf.thumbs && cf.thumbs.length) {
+                let have = new Set();
+                try {
+                    const root = await this._pdGh('GET', '/git/trees/' + commit.tree.sha, null, token);
+                    const td = (root.tree || []).find(e => e.path === 'thumbs' && e.type === 'tree');
+                    if (td) have = new Set(((await this._pdGh('GET', '/git/trees/' + td.sha, null, token)).tree || []).map(e => 'thumbs/' + e.path));
+                } catch (e) { __swallowed(e, 'wm.thumbTree'); }
+                const add = cf.thumbs.filter(t => !have.has(t.path));
+                for (let i = 0; i < add.length; i++) {
+                    if (btn) btn.textContent = 'Course images ' + (i + 1) + '/' + add.length + '…';
+                    entries.push({ path: add[i].path, mode: '100644', type: 'blob', sha: (await this._pdGh('POST', '/git/blobs', { content: add[i].base64, encoding: 'base64' }, token)).sha });
+                }
+            }
             const tree = await this._pdGh('POST', '/git/trees', { base_tree: commit.tree.sha, tree: entries }, token);
             const c = await this._pdGh('POST', '/git/commits', { message: 'Website metrics ' + new Date().toISOString().slice(0, 10), tree: tree.sha, parents: [head] }, token);
             await this._pdGh('PATCH', '/git/refs/heads/' + branch, { sha: c.sha, force: false }, token);

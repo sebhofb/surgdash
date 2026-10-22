@@ -430,7 +430,7 @@ Object.assign(window.App, {
         // The per-course feed surghub.org course pages read (coursesFeed.js).
         let cf = null;
         if (this.coursesFeedFile) {
-            try { cf = await this.coursesFeedFile({ syncOk: opts.syncOk, progress: opts.progress }); if (cf.content) files.push({ path: 'courses.json', content: cf.content }); }
+            try { cf = await this.coursesFeedFile({ syncOk: opts.syncOk, progress: opts.progress }); if (cf.content) { files.push({ path: 'courses.json', content: cf.content }); (cf.thumbs || []).forEach(t => files.push({ path: t.path, content: t.base64, encoding: 'base64' })); } }
             catch (e) { failed.push('Course feed: ' + String((e && e.message) || e)); }
         }
         const host = (String(s.baseUrl || '').match(/^https?:\/\/([^/]+)/) || [])[1] || '';
@@ -479,16 +479,16 @@ Object.assign(window.App, {
             const { files, built, failed, wm, cf } = await this._pdBuildFiles(opts);
             if (!built.length) throw new Error('no report could be built' + (failed.length ? ' (' + failed.join('; ') + ')' : ''));
             if (opts.progress) opts.progress('Partner dashboards: uploading ' + built.length + ' report' + (built.length === 1 ? '' : 's') + '…');
-            const blob = (content) => this._pdGh('POST', '/git/blobs', { content, encoding: 'utf-8' }, token);
+            const blob = (f) => this._pdGh('POST', '/git/blobs', { content: f.content, encoding: f.encoding || 'utf-8' }, token);
             let first;
-            try { first = await blob(files[0].content); }
+            try { first = await blob(files[0]); }
             catch (e) {
                 if (e.status !== 409) throw e;   // an empty repository has no git database yet: give it a first commit
                 await this._pdGh('PUT', '/contents/README.md', { message: 'Start', content: btoa('SURGhub partner reports, published by SURGdash.\n'), branch }, token);
-                first = await blob(files[0].content);
+                first = await blob(files[0]);
             }
             const shas = [first.sha];
-            for (const f of files.slice(1)) shas.push((await blob(f.content)).sha);
+            for (const f of files.slice(1)) shas.push((await blob(f)).sha);
             // One small tree per folder, then the root: a single tree of every file is
             // too much for GitHub to build in one request (it times out).
             if (opts.progress) opts.progress('Partner dashboards: arranging the site…');
