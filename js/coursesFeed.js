@@ -33,15 +33,16 @@
 //                    the courses rated by 50+ learners (ties at the cut-off included). Relative, like
 //                    Popular, because the ratings sit close together (median 4.62; cut-off 4.71 and 15 courses then).
 //                    Featured (22 Oct 2026, first): set by hand only, never by a rule — the editorial
-//                    pick for spots such as the menu's course card.
+//                    pick for spots such as the menu's course card. ONE course at a time: featuring
+//                    another asks, then takes the tag off the current one (Seb, 22 Oct 2026).
 //                    Each standard tag can be forced on or off per course (the course page's
 //                    "On surghub.org" band, 21 Oct 2026); a tag left on automatic follows the rule.
 //   lists            top level: per standard tag, the slugs carrying it, ranked for display —
 //                    Featured and New newest first, Popular by learners_90d, Trending by pace, Top
 //                    rated by average_rating, Free and CME/CPD by learners_90d. The website takes
 //                    the first n for a spot (e.g. the menu's "Most popular") and never re-sorts.
-//   spotlight        top level: one slug for a single "new course" card — the newest Featured
-//                    course, else the newest New one, else null.
+//   spotlight        top level: one slug for a single "new course" card — the Featured course,
+//                    else the newest New one, else null.
 // Safety: a file with no courses, or under 80% of the last published count, or after a sync
 // with LearnWorlds errors, is not published; the previous one is republished unchanged.
 Object.assign(window.App, {
@@ -269,6 +270,17 @@ Object.assign(window.App, {
         const cur = this._cfTagOverride(courseId, tag);
         const next = this.CF_MANUAL_TAGS.indexOf(tag) >= 0 ? (cur === true ? undefined : true)   // Featured: on ⇄ off
             : cur === undefined ? true : cur === true ? false : undefined;                          // automatic → on → off → automatic
+        // Featured is one course at a time: featuring another takes it off the current one, after asking
+        if (tag === 'Featured' && next === true) {
+            const isF = (id, x) => (x.tags && x.tags.Featured === true) || (Array.isArray(x.extraTags) && x.extraTags.some(t => /^featured$/i.test(t)));
+            const others = Object.keys(this._cfMeta.byId).filter(id => id !== courseId && isF(id, this._cfMeta.byId[id]));
+            if (others.length) {
+                const name = (id) => { const d = (this.data || []).find(r => r && !r.IsShell && r.CourseId === id); return d ? d.Course : id; };
+                const list = others.map(id => '"' + name(id) + '"').join(', ');
+                if (!confirm('Only one course can be featured. Featuring "' + name(courseId) + '" removes the Featured tag from ' + list + '. Continue?')) return;
+                others.forEach(id => { const x = this._cfMeta.byId[id]; if (x.tags) delete x.tags.Featured; if (Array.isArray(x.extraTags)) x.extraTags = x.extraTags.filter(t => !/^featured$/i.test(t)); });
+            }
+        }
         if (tag === 'CME/CPD') { if (next === undefined) delete m.cme; else m.cme = next; }
         else { m.tags = m.tags || {}; if (next === undefined) delete m.tags[tag]; else m.tags[tag] = next; }
         await this._cfSaveMeta(); if (this.renderView) this.renderView();
@@ -328,7 +340,7 @@ Object.assign(window.App, {
                 'Top rated': 'top 10% by average rating among courses rated by ' + this.CF_TOP_MIN_N + '+ learners (cut-off ' + feed.top_rated_cutoff + ') — this one ' + (e.average_rating != null ? e.average_rating : 'unrated') + ' from ' + (e.rating_responses || 0),
                 'CME/CPD': 'the LearnWorlds "CME/CPD" label', 'New': 'published within the last 90 days' }[t];
             const manual = this.CF_MANUAL_TAGS.indexOf(t) >= 0;
-            const state = manual ? (on ? 'on, set by hand — it is the menu spotlight while it is the newest Featured course' : 'off — set by hand only. Click to feature this course')
+            const state = manual ? (on ? 'on, set by hand — this is the spotlight course (the menu\'s course card). Click to take it off' : 'off. Click to feature this course instead (only one course is featured at a time)')
                 : o === undefined ? 'automatic: ' + (on ? 'on' : 'off') + ' (' + why2 + ')' : (o ? 'always on' : 'always off') + ' (set by hand; the rule would say ' + (auto[t] ? 'on' : 'off') + ')';
             const cls = on ? (o === undefined ? 'bg-gsf-boston text-white border-gsf-boston' : 'bg-gsf-prussian text-white border-gsf-prussian') : (o === undefined ? 'bg-white text-slate-400 border-slate-200' : 'bg-white text-slate-400 border-slate-300 line-through');
             return '<button data-edit-only onclick="App.cycleCourseTag(\'' + idJs + '\', \'' + t + '\')" title="' + esc(t + ': ' + state + (manual ? '.' : '. Click: automatic → always on → always off.')) + '" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full border text-[11px] font-bold ' + cls + '">' + (o !== undefined ? '<i data-lucide="pin" width="10"></i>' : '') + esc(t) + '</button>';
@@ -375,7 +387,7 @@ Object.assign(window.App, {
                 + esc(t) + '<span class="text-[10px] font-semibold ' + (on ? 'text-white/70' : 'text-slate-400') + '">' + count(t) + '</span></button>';
         }).join('');
         const rule = {
-            'Featured': 'Set by hand only: click Featured on a course page, or "by hand" here to take it off. The newest Featured course is the spotlight (the menu\'s course card); with none, the newest New course is.',
+            'Featured': 'One course at a time, set by hand: click Featured on a course page (featuring another moves the tag, after asking), or "by hand" here to take it off. The Featured course is the spotlight (the menu\'s course card); with none, the newest New course is.',
             'Free': 'No price on LearnWorlds.',
             'Popular': 'Top 15% by enrolments in the last 90 days (cut-off now ' + num(feed.popular_cutoff_90d || 0) + ').',
             'Trending': 'Published 90+ days ago, ' + this.CF_TREND_MIN + '+ enrolments in the last 30 days, and at least ' + this.CF_TREND_RATIO + 'x its usual pace (per 30 days over the 90 days before).',

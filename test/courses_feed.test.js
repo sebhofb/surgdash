@@ -126,6 +126,18 @@ const App = ctx.App;
   check('Featured: one click on', (await tagsOf('wfsa-a')).startsWith('Featured,') && store.get('surghub_course_meta').byId['wfsa-a'].tags.Featured === true);
   { App._cfNowCache = null; const F = App.coursesFeedBuild(NOW);
     check('…it is the spotlight and heads lists.Featured; lists.Popular is ranked by 90-day enrolments', F.spotlight === 'wfsa-a' && JSON.stringify(F.lists.Featured) === '["wfsa-a"]' && F.lists.Popular.every((sl, i, arr) => i === 0 || F.courses.find(c => c.slug === arr[i - 1]).learners_90d >= F.courses.find(c => c.slug === sl).learners_90d) && Object.keys(F.lists).length === 7, JSON.stringify(F.lists)); }
+  { // one at a time: featuring another asks first; no → nothing changes, yes → the tag moves
+    let asked = ''; ctx.confirm = (m) => { asked = m; return false; };
+    await App.cycleCourseTag('carb-go-1', 'Featured');
+    check('Featured is one course at a time: featuring another names the current one and asks', /removes the Featured tag from "WFSA A"/.test(asked) && !(await tagsOf('carb-go-1')).includes('Featured') && (await tagsOf('wfsa-a')).startsWith('Featured,'), asked);
+    ctx.confirm = () => true;
+    await App.cycleCourseTag('carb-go-1', 'Featured');
+    check('…on yes the tag moves', (await tagsOf('carb-go-1')).startsWith('Featured,') && !(await tagsOf('wfsa-a')).includes('Featured'));
+    asked = ''; ctx.confirm = (m) => { asked = m; return true; };
+    await App.cycleCourseTag('carb-go-1', 'Featured');
+    await App.cycleCourseTag('wfsa-a', 'Featured');
+    check('…with nothing featured there is nothing to ask', asked === '' && (await tagsOf('wfsa-a')).startsWith('Featured,'));
+  }
   await App.cycleCourseTag('wfsa-a', 'Featured');
   { App._cfNowCache = null; const F = App.coursesFeedBuild(NOW);
     check('…a second click takes it off (never "always off"); with nothing featured the spotlight is the newest New course', !(await tagsOf('wfsa-a')).includes('Featured') && store.get('surghub_course_meta').byId['wfsa-a'].tags.Featured === undefined && F.spotlight === (F.lists.New[0] || null), F.spotlight); }
