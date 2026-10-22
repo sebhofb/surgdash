@@ -30,8 +30,16 @@
 //                    Top rated (21 Oct 2026, after Trending): in the top 10% by average_rating among
 //                    the courses rated by 50+ learners (ties at the cut-off included). Relative, like
 //                    Popular, because the ratings sit close together (median 4.62; cut-off 4.71 and 15 courses then).
+//                    Featured (22 Oct 2026, first): set by hand only, never by a rule — the editorial
+//                    pick for spots such as the menu's course card.
 //                    Each standard tag can be forced on or off per course (the course page's
 //                    "On surghub.org" band, 21 Oct 2026); a tag left on automatic follows the rule.
+//   lists            top level: per standard tag, the slugs carrying it, ranked for display —
+//                    Featured and New newest first, Popular by learners_90d, Trending by pace, Top
+//                    rated by average_rating, Free and CME/CPD by learners_90d. The website takes
+//                    the first n for a spot (e.g. the menu's "Most popular") and never re-sorts.
+//   spotlight        top level: one slug for a single "new course" card — the newest Featured
+//                    course, else the newest New one, else null.
 // Safety: a file with no courses, or under 80% of the last published count, or after a sync
 // with LearnWorlds errors, is not published; the previous one is republished unchanged.
 Object.assign(window.App, {
@@ -56,7 +64,8 @@ Object.assign(window.App, {
         if (!this._cfState) this._cfState = (await get(this.CF_STATE_KEY)) || {};
     },
     async _cfSaveMeta() { this._cfMetaRev = (this._cfMetaRev || 0) + 1; try { await Storage.setItem(this.CF_META_KEY, this._cfMeta); } catch (e) { __swallowed(e, 'cf.meta'); } },
-    CF_TAGS: ['Free', 'Popular', 'Trending', 'Top rated', 'CME/CPD', 'New'],
+    CF_TAGS: ['Featured', 'Free', 'Popular', 'Trending', 'Top rated', 'CME/CPD', 'New'],
+    CF_MANUAL_TAGS: ['Featured'],            // no rule: on only when set by hand
     // A tag's override for one course: true / false, or undefined (automatic). CME/CPD keeps its
     // directory tick box (`cme`), the others live under `tags`.
     _cfTagOverride(id, tag) {
@@ -168,20 +177,32 @@ Object.assign(window.App, {
         const topCut = rated.length ? rated[Math.max(1, Math.ceil(rated.length * this.CF_TOP_SHARE)) - 1] : Infinity;
         const auto = {};
         list.forEach(c => {
-            const a = { 'Free': c._free, 'Popular': c.learners_90d > 0 && c.learners_90d >= cut,
+            const a = { 'Featured': false, 'Free': c._free, 'Popular': c.learners_90d > 0 && c.learners_90d >= cut,
                 'Trending': !!(c.published_on && c.published_on <= establishedBy && c.learners_30d >= this.CF_TREND_MIN && c.learners_30d >= c._trendBase * this.CF_TREND_RATIO),
                 'Top rated': c.average_rating != null && c.rating_responses >= this.CF_TOP_MIN_N && c.average_rating >= topCut,
                 'CME/CPD': c._cme, 'New': !!(c.published_on && c.published_on >= newFrom && c.published_on <= today) };
             a._trendBase = c._trendBase;
             auto[c.id] = a;
-            const tags = this.CF_TAGS.filter(t => { const o = this._cfTagOverride(c.id, t); return o === undefined ? a[t] : o; });
             const m = (this._cfMeta && this._cfMeta.byId[c.id]) || {};
-            (Array.isArray(m.extraTags) ? m.extraTags : []).forEach(t => { if (t && tags.indexOf(t) < 0) tags.push(t); });
+            const extra = Array.isArray(m.extraTags) ? m.extraTags : [];
+            // a custom tag added before its name became standard ("featured") counts as that tag, never twice
+            const std = (t) => this.CF_TAGS.find(x => x.toLowerCase() === String(t).toLowerCase());
+            const tags = this.CF_TAGS.filter(t => { const o = this._cfTagOverride(c.id, t); return o === undefined ? (a[t] || (this.CF_MANUAL_TAGS.indexOf(t) >= 0 && extra.some(x => std(x) === t))) : o; });
+            extra.forEach(t => { if (t && !std(t) && tags.indexOf(t) < 0) tags.push(t); });
             c.tags = tags; delete c._free; delete c._cme; delete c._trendBase;
             if (c.average_rating == null) delete c.average_rating;
         });
         list.sort((a, b) => a.title.localeCompare(b.title));
-        const feedOut = { as_of: today, updated_at: t.toISOString(), source: 'SURGhub, via SURGdash (Global Surgery Foundation)', popular_cutoff_90d: cut === Infinity ? null : cut, top_rated_cutoff: topCut === Infinity ? null : topCut, courses: list };
+        // lists: each standard tag's courses, ranked for display (ties by title, as list is sorted)
+        const pace = (c) => { const b = (auto[c.id] || {})._trendBase || 0; return b > 0 ? c.learners_30d / b : c.learners_30d; };
+        const rank = { 'Featured': c => c.published_on || '', 'New': c => c.published_on || '', 'Trending': pace, 'Top rated': c => c.average_rating || 0 };
+        const lists = {};
+        this.CF_TAGS.forEach(tag => {
+            const k = rank[tag] || (c => c.learners_90d);
+            lists[tag] = list.filter(c => c.tags.indexOf(tag) >= 0).sort((a, b) => { const x = k(a), y = k(b); return x < y ? 1 : x > y ? -1 : 0; }).map(c => c.slug);
+        });
+        const spotlight = lists['Featured'][0] || lists['New'][0] || null;
+        const feedOut = { as_of: today, updated_at: t.toISOString(), source: 'SURGhub, via SURGdash (Global Surgery Foundation)', popular_cutoff_90d: cut === Infinity ? null : cut, top_rated_cutoff: topCut === Infinity ? null : topCut, spotlight, lists, courses: list };
         Object.defineProperty(feedOut, '_auto', { value: auto, enumerable: false });   // the course page's band reads it; never published
         return feedOut;
     },
@@ -237,7 +258,9 @@ Object.assign(window.App, {
     async cycleCourseTag(courseId, tag) {
         await this._cfLoad();
         const m = this._cfMeta.byId[courseId] || (this._cfMeta.byId[courseId] = {});
-        const cur = this._cfTagOverride(courseId, tag), next = cur === undefined ? true : cur === true ? false : undefined;   // automatic → on → off → automatic
+        const cur = this._cfTagOverride(courseId, tag);
+        const next = this.CF_MANUAL_TAGS.indexOf(tag) >= 0 ? (cur === true ? undefined : true)   // Featured: on ⇄ off
+            : cur === undefined ? true : cur === true ? false : undefined;                          // automatic → on → off → automatic
         if (tag === 'CME/CPD') { if (next === undefined) delete m.cme; else m.cme = next; }
         else { m.tags = m.tags || {}; if (next === undefined) delete m.tags[tag]; else m.tags[tag] = next; }
         await this._cfSaveMeta(); if (this.renderView) this.renderView();
@@ -296,9 +319,11 @@ Object.assign(window.App, {
                 'Trending': this.CF_TREND_MIN + '+ enrolments in the last 30 days and ' + this.CF_TREND_RATIO + 'x its average before, for courses published 90+ days ago — now ' + e.learners_30d + ' vs ' + Math.round(auto._trendBase || 0),
                 'Top rated': 'top 10% by average rating among courses rated by ' + this.CF_TOP_MIN_N + '+ learners (cut-off ' + feed.top_rated_cutoff + ') — this one ' + (e.average_rating != null ? e.average_rating : 'unrated') + ' from ' + (e.rating_responses || 0),
                 'CME/CPD': 'the LearnWorlds "CME/CPD" label', 'New': 'published within the last 90 days' }[t];
-            const state = o === undefined ? 'automatic: ' + (on ? 'on' : 'off') + ' (' + why2 + ')' : (o ? 'always on' : 'always off') + ' (set by hand; the rule would say ' + (auto[t] ? 'on' : 'off') + ')';
+            const manual = this.CF_MANUAL_TAGS.indexOf(t) >= 0;
+            const state = manual ? (on ? 'on, set by hand — it is the menu spotlight while it is the newest Featured course' : 'off — set by hand only. Click to feature this course')
+                : o === undefined ? 'automatic: ' + (on ? 'on' : 'off') + ' (' + why2 + ')' : (o ? 'always on' : 'always off') + ' (set by hand; the rule would say ' + (auto[t] ? 'on' : 'off') + ')';
             const cls = on ? (o === undefined ? 'bg-gsf-boston text-white border-gsf-boston' : 'bg-gsf-prussian text-white border-gsf-prussian') : (o === undefined ? 'bg-white text-slate-400 border-slate-200' : 'bg-white text-slate-400 border-slate-300 line-through');
-            return '<button data-edit-only onclick="App.cycleCourseTag(\'' + idJs + '\', \'' + t + '\')" title="' + esc(t + ': ' + state + '. Click: automatic → always on → always off.') + '" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full border text-[11px] font-bold ' + cls + '">' + (o !== undefined ? '<i data-lucide="pin" width="10"></i>' : '') + esc(t) + '</button>';
+            return '<button data-edit-only onclick="App.cycleCourseTag(\'' + idJs + '\', \'' + t + '\')" title="' + esc(t + ': ' + state + (manual ? '.' : '. Click: automatic → always on → always off.')) + '" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full border text-[11px] font-bold ' + cls + '">' + (o !== undefined ? '<i data-lucide="pin" width="10"></i>' : '') + esc(t) + '</button>';
         };
         const extras = (Array.isArray(m.extraTags) ? m.extraTags : []).map(t => '<span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full border border-amber-300 bg-amber-50 text-amber-800 text-[11px] font-bold">' + esc(t)
             + '<button data-edit-only onclick="App.removeCourseTag(\'' + idJs + '\', \'' + this.escapeJsArg(t) + '\')" title="Remove this tag" class="ml-0.5 text-amber-600 hover:text-amber-900">×</button></span>').join('');
@@ -342,6 +367,7 @@ Object.assign(window.App, {
                 + esc(t) + '<span class="text-[10px] font-semibold ' + (on ? 'text-white/70' : 'text-slate-400') + '">' + count(t) + '</span></button>';
         }).join('');
         const rule = {
+            'Featured': 'Set by hand only: click Featured on a course page, or "by hand" here to take it off. The newest Featured course is the spotlight (the menu\'s course card); with none, the newest New course is.',
             'Free': 'No price on LearnWorlds.',
             'Popular': 'Top 15% by enrolments in the last 90 days (cut-off now ' + num(feed.popular_cutoff_90d || 0) + ').',
             'Trending': 'Published 90+ days ago, ' + this.CF_TREND_MIN + '+ enrolments in the last 30 days, and at least ' + this.CF_TREND_RATIO + 'x its usual pace (per 30 days over the 90 days before).',
@@ -356,9 +382,10 @@ Object.assign(window.App, {
             'Trending': [['30 days', c => num(c.learners_30d)], ['Usual / 30 days', c => num(Math.round((auto[c.id] || {})._trendBase || 0))], ['Pace', c => { const r = ratio(c); return r === Infinity ? 'new' : r.toFixed(1) + 'x'; }]],
             'Top rated': [['Rating', c => c.average_rating != null ? c.average_rating.toFixed(2) : '—'], ['Ratings', c => num(c.rating_responses)]],
             'New': [['Published', c => esc(c.published_on)], ['Learners', c => num(c.learners)]],
+            'Featured': [['Published', c => esc(c.published_on)], ['90 days', c => num(c.learners_90d)]],
         }[pick] || [['Learners', c => num(c.learners)], ['90 days', c => num(c.learners_90d)]];
         const key = {
-            'Trending': ratio, 'Top rated': c => c.average_rating || 0, 'New': c => c.published_on || '',
+            'Trending': ratio, 'Top rated': c => c.average_rating || 0, 'New': c => c.published_on || '', 'Featured': c => c.published_on || '',
         }[pick] || (c => c.learners_90d);
         const on = feed.courses.filter(c => c.tags.indexOf(pick) >= 0);
         const offByHand = std ? feed.courses.filter(c => c.tags.indexOf(pick) < 0 && auto[c.id] && auto[c.id][pick] && this._cfTagOverride(c.id, pick) === false) : [];
@@ -369,6 +396,7 @@ Object.assign(window.App, {
             const online = struck ? (liveHas ? '<span class="text-amber-700">off at next publish</span>' : '<span class="text-slate-400">off</span>')
                 : liveHas ? '<span class="text-emerald-700">online</span>' : '<span class="text-amber-700">at next publish</span>';
             const how = !std ? '<span class="text-slate-400">by hand</span>'
+                : this.CF_MANUAL_TAGS.indexOf(pick) >= 0 ? '<button data-edit-only onclick="App.cycleCourseTag(\'' + this.escapeJsArg(c.id) + '\', \'' + this.escapeJsArg(pick) + '\')" title="Click to take it off" class="hover:text-gsf-boston hover:underline">by hand ×</button>'
                 : '<button data-edit-only onclick="App.cycleCourseTag(\'' + this.escapeJsArg(c.id) + '\', \'' + this.escapeJsArg(pick) + '\')" title="Click: automatic → always on → always off" class="hover:text-gsf-boston hover:underline">'
                     + (o === undefined ? 'automatic' : o ? '<i data-lucide="pin" width="10" class="inline"></i> always on' : '<i data-lucide="pin" width="10" class="inline"></i> always off') + '</button>'
                     + (o !== undefined ? '<span class="text-slate-400"> (rule: ' + ((auto[c.id] || {})[pick] ? 'on' : 'off') + ')</span>' : '');
@@ -387,12 +415,14 @@ Object.assign(window.App, {
                 + on.slice().sort(sortDesc).map(c => row(c, false)).join('')
                 + (offByHand.length ? '<tr><td colspan="' + (4 + cols.length) + '" class="pt-4 pb-1 px-3 text-[10px] font-bold uppercase tracking-wide text-slate-400">Switched off by hand — the rule says ' + esc(pick) + '</td></tr>' + offByHand.slice().sort(sortDesc).map(c => row(c, true)).join('') : '')
                 + '</tbody></table></div>'
-            : '<p class="text-sm text-slate-400 px-5 py-6">No course has this tag right now.</p>';
+            : '<p class="text-sm text-slate-400 px-5 py-6">' + (this.CF_MANUAL_TAGS.indexOf(pick) >= 0 ? 'No course is featured yet: open a course and click its Featured chip.' : 'No course has this tag right now.') + '</p>';
         return '<div class="bg-white rounded-xl shadow-sm border overflow-hidden mb-8">'
             + '<div class="bg-slate-50 border-b p-5"><div class="flex items-center gap-2"><i data-lucide="tags" width="18" class="text-gsf-boston"></i><h2 class="font-bold text-lg text-gsf-prussian">Tags on surghub.org</h2></div>'
             + '<p class="text-xs text-slate-500 mt-1 max-w-3xl">The tags each public course carries in courses.json at the next publish. Pick a tag to see its courses and the figures behind it; open a course to change its tags.</p>'
             + '<div class="flex flex-wrap gap-2 mt-3">' + pills + '</div>'
-            + '<p class="text-xs text-slate-600 mt-3"><strong>' + esc(pick) + ':</strong> ' + esc(rule) + ' <span class="text-slate-400">' + on.length + ' of ' + feed.courses.length + ' public courses.</span></p></div>'
+            + '<p class="text-xs text-slate-600 mt-3"><strong>' + esc(pick) + ':</strong> ' + esc(rule) + ' <span class="text-slate-400">' + on.length + ' of ' + feed.courses.length + ' public courses.</span></p>'
+            + (() => { const sp = feed.courses.find(c => c.slug === feed.spotlight); return '<p class="text-xs text-slate-600 mt-1"><strong>Spotlight</strong> (one course card, e.g. the menu\'s "New course"): ' + (sp ? esc(sp.title) + ' <span class="text-slate-400">— ' + (sp.tags.indexOf('Featured') >= 0 ? 'the newest Featured course' : 'the newest New course; feature a course to choose it yourself') + '</span>' : '<span class="text-slate-400">none</span>') + '</p>'; })()
+            + '</div>'
             + table + '</div>';
     },
 

@@ -66,7 +66,7 @@ const App = ctx.App;
     check('…not a big course enrolling at its usual pace', !tg('steady').includes('Trending'));
     check('…not a course published in the last 90 days (it is New)', !tg('brandnew').includes('Trending') && tg('brandnew').includes('New'));
     check('…nor one under 40 in 30 days, however fast it grows', !tg('wfsa-a').includes('Trending'));
-    check('tag order: Free, Popular, Trending, Top rated, CME/CPD, New', JSON.stringify(App.CF_TAGS) === JSON.stringify(['Free', 'Popular', 'Trending', 'Top rated', 'CME/CPD', 'New']) && tg('rising').indexOf('Trending') === tg('rising').indexOf('Popular') + 1);
+    check('tag order: Featured, Free, Popular, Trending, Top rated, CME/CPD, New', JSON.stringify(App.CF_TAGS) === JSON.stringify(['Featured', 'Free', 'Popular', 'Trending', 'Top rated', 'CME/CPD', 'New']) && tg('rising').indexOf('Trending') === tg('rising').indexOf('Popular') + 1);
     App._cfNowCache = null; App._cfTagPick = 'Trending'; App.view = 'manage'; App.formatNumber = App.formatNumber || ((n) => String(n));
     const board = App._cfTagBoardHtml();
     check('Directory tag board: a pill per tag with counts, the Trending list with its pace', /Tags on surghub\.org/.test(board) && (board.match(/App\.pickCourseTag\(/g) || []).length >= 6 && /Rising/.test(board) && !/Steady Big/.test(board) && /6\.0x/.test(board), board.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, 300));
@@ -110,15 +110,25 @@ const App = ctx.App;
   check('three times: back to automatic', (await tagsOf('wfsa-a')) === 'Free,Popular' && store.get('surghub_course_meta').byId['wfsa-a'].tags.Popular === undefined);
   await App.cycleCourseTag('wfsa-a', 'CME/CPD');   // the tick box had it off (false): next is automatic (the label says on)
   check('CME/CPD shares the directory tick box: false → automatic (label: on)', (await tagsOf('wfsa-a')) === 'Free,Popular,CME/CPD' && store.get('surghub_course_meta').byId['wfsa-a'].cme === undefined);
-  await App.addCourseTag('wfsa-a', '  Featured  '); await App.addCourseTag('wfsa-a', 'featured'); await App.addCourseTag('wfsa-a', 'new');
-  check('custom tags come after the four, once each; a standard name is not added as custom', (await tagsOf('wfsa-a')) === 'Free,Popular,CME/CPD,featured', await tagsOf('wfsa-a'));
-  await App.removeCourseTag('wfsa-a', 'featured');
+  await App.addCourseTag('wfsa-a', '  Partner Pick  '); await App.addCourseTag('wfsa-a', 'partner pick'); await App.addCourseTag('wfsa-a', 'new'); await App.addCourseTag('wfsa-a', 'featured');
+  check('custom tags come after the standard ones, once each; a standard name is not added as custom', (await tagsOf('wfsa-a')) === 'Free,Popular,CME/CPD,partner pick', await tagsOf('wfsa-a'));
+  // Featured: by hand only, on ⇄ off; the newest Featured course is the spotlight; lists rank each tag
+  await App.cycleCourseTag('wfsa-a', 'Featured');
+  check('Featured: one click on', (await tagsOf('wfsa-a')).startsWith('Featured,') && store.get('surghub_course_meta').byId['wfsa-a'].tags.Featured === true);
+  { App._cfNowCache = null; const F = App.coursesFeedBuild(NOW);
+    check('…it is the spotlight and heads lists.Featured; lists.Popular is ranked by 90-day enrolments', F.spotlight === 'wfsa-a' && JSON.stringify(F.lists.Featured) === '["wfsa-a"]' && F.lists.Popular.every((sl, i, arr) => i === 0 || F.courses.find(c => c.slug === arr[i - 1]).learners_90d >= F.courses.find(c => c.slug === sl).learners_90d) && Object.keys(F.lists).length === 7, JSON.stringify(F.lists)); }
+  await App.cycleCourseTag('wfsa-a', 'Featured');
+  { App._cfNowCache = null; const F = App.coursesFeedBuild(NOW);
+    check('…a second click takes it off (never "always off"); with nothing featured the spotlight is the newest New course', !(await tagsOf('wfsa-a')).includes('Featured') && store.get('surghub_course_meta').byId['wfsa-a'].tags.Featured === undefined && F.spotlight === (F.lists.New[0] || null), F.spotlight); }
+  store.get('surghub_course_meta').byId['wfsa-a'].extraTags.push('featured'); App._cfMeta = null; await App._cfLoad(); App._cfNowCache = null;
+  check('an old custom "featured" tag counts as the standard Featured, once', (await tagsOf('wfsa-a')).split(',').filter(t => /^featured$/i.test(t)).length === 1 && (await tagsOf('wfsa-a')).startsWith('Featured,'), await tagsOf('wfsa-a'));
+  await App.removeCourseTag('wfsa-a', 'featured'); await App.removeCourseTag('wfsa-a', 'partner pick');
   check('…and can be removed', (await tagsOf('wfsa-a')) === 'Free,Popular,CME/CPD');
   // the band on the course page
   App._cfState = App._cfState || {};
   const rec = (id) => App.data.find(d => d.CourseId === id);
   let band = App._cfCourseBandHtml(rec('wfsa-a'));
-  check('the band: public address, published date, the six chips (with state), custom-tag box, 90-day rank and rating', /On surghub\.org/.test(band) && /\/course\/wfsa-a/.test(band) && /type="date"[^>]*value="/.test(band) && (band.match(/App\.cycleCourseTag\('wfsa-a'/g) || []).length === 6 && /in 30 days vs \d+ before/.test(band) && /placeholder="\+ tag"/.test(band) && /enrolments in 90 days \(#\d+ of 15\)/.test(band) && /rating 4\.50 from 40/.test(band));
+  check('the band: public address, published date, the seven chips (with state), custom-tag box, 90-day rank and rating', /On surghub\.org/.test(band) && /\/course\/wfsa-a/.test(band) && /type="date"[^>]*value="/.test(band) && (band.match(/App\.cycleCourseTag\('wfsa-a'/g) || []).length === 7 && /in 30 days vs \d+ before/.test(band) && /placeholder="\+ tag"/.test(band) && /enrolments in 90 days \(#\d+ of 15\)/.test(band) && /rating 4\.50 from 40/.test(band));
   check('…says the change is not online yet, with a Publish button', /not online yet/.test(band) && /App\.publishWebsiteMetrics\(this\)/.test(band));
   check('a course that is not listed says why', /not in the course feed, because it is private/.test(App._cfCourseBandHtml(rec('priv'))) && /because it is excluded from analytics/.test(App._cfCourseBandHtml(rec('exc'))) && /marks it as a template/.test(App._cfCourseBandHtml(rec('tpl'))));
   const ui2 = fs.readFileSync(path.join(ROOT, 'js/ui.js'), 'utf8');
