@@ -973,6 +973,7 @@ Object.assign(window.App, {
                     if (row._courseCreated && prev.CourseCreated !== row._courseCreated) prev.CourseCreated = row._courseCreated;
                     if (_rowIsThisCourse && row._label != null) prev.Label = row._label;
                     if (_rowIsThisCourse && row._price != null) prev.Price = row._price;
+                    if (_rowIsThisCourse && row._image != null) prev.Image = row._image;
                     // Stamp the timestamp on the refreshed row so the directory shows it
                     // as recently synced (matches user expectation that re-running Step 1
                     // produces "fresh" data).
@@ -1007,7 +1008,7 @@ Object.assign(window.App, {
                         CourseCreated: row._courseCreated || null,
                         Access: row._access != null ? row._access : null,
                         Modified: row._modified || null,
-                        Label: row._label != null ? row._label : null, Price: row._price != null ? row._price : null,
+                        Label: row._label != null ? row._label : null, Price: row._price != null ? row._price : null, Image: row._image || null,
                         Rating: 0, Responses: 0, URL: url
                     });
                 }

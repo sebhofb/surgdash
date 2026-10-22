@@ -90,6 +90,15 @@ const App = ctx.App;
     App.data = keepD;
   }
 
+  // ── the card image (Sync Courses stores LearnWorlds' courseImage on the record) ──
+  {
+    const keepD = App.data;
+    App.data = keepD.concat([C({ Course: 'Pictured', CourseId: 'pic', Image: 'https://lwfiles.mycourse.app/globalsurgery-public/abc.png' }), C({ Course: 'Odd Image', CourseId: 'odd', Image: 'javascript:alert(1)' })]);
+    const F = App.coursesFeedBuild(NOW), g = (id) => F.courses.find(c => c.id === id);
+    check('image: the card image URL, or null (never a non-https value)', g('pic').image === 'https://lwfiles.mycourse.app/globalsurgery-public/abc.png' && g('odd').image === null && g('wfsa-a').image === null);
+    App.data = keepD;
+  }
+
   // ── an Arabic survey's questions are read (Oct 2026: it showed 0 responses) ──
   {
     const q = (t, avg, n) => ({ q: t, avg, n, na: 0 });

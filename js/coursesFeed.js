@@ -15,6 +15,8 @@
 //   learners         the LearnWorlds course count (= the agency feed's "Total Learners")
 //   learners_90d     enrolments in the last 90 days (per-learner records), for Popular
 //   certificates     the LearnWorlds course count
+//   image            the course card image (LearnWorlds courseImage, the same file as the course
+//                    page's share image; public, any origin), or null (22 Oct 2026)
 //   ratings          mean score per post-course survey question: satisfaction, objectives,
 //                    relevance ("relevant and engaging"), platform; EN/FR/ES/AR question texts
 //   average_rating   mean of the four, 2 decimals; rating_responses = satisfaction answers
@@ -132,6 +134,12 @@ Object.assign(window.App, {
         const m = this._cfMeta && this._cfMeta.byId[d.CourseId];
         return (m && m.publishedOn) || this._cfDefaultPublished(d);
     },
+    // The card image: the record's (Sync Courses), else the latest raw course pull's; https only.
+    _cfImage(d) {
+        const raw = this._cfRawCourses()[d.CourseId];
+        const u = String(d.Image || (raw && raw.courseImage) || '').trim();
+        return /^https:\/\/[^\s"'<>]+$/.test(u) ? u : null;
+    },
     _cfProviderName(p) {
         p = String(p || '').trim();
         if (!p || /^unknown/i.test(p)) return '';
@@ -165,7 +173,7 @@ Object.assign(window.App, {
             const o = { slug, id: d.CourseId, url: 'https://www.surghub.org/course/' + slug, title: String(d.Course || '').trim(), provider: this._cfProviderName(d.Provider),
                 published_on: this._cfPublished(d), learners: Number(d.Learners) || 0, learners_90d: ds.filter(x => x >= recentFrom).length, learners_30d: ds.filter(x => x >= trendFrom).length,
                 _trendBase: ds.filter(x => x >= trendBaseFrom && x < trendFrom).length * this.CF_TREND_DAYS / this.CF_TREND_BASE_DAYS,
-                certificates: Number(d.Certificates) || 0, rating_responses: r.n, average_rating: r.avg, ratings: r.ratings, _free: price === 0, _cme: this._cfCme(d, true) };
+                certificates: Number(d.Certificates) || 0, image: this._cfImage(d), rating_responses: r.n, average_rating: r.avg, ratings: r.ratings, _free: price === 0, _cme: this._cfCme(d, true) };
             return o;
         });
         // Popular: the top 15% by learners_90d this run (ties at the cut-off included; never a course with none)

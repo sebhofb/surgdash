@@ -419,9 +419,9 @@ window.LearnWorlds = (function () {
             const access = c.access != null ? c.access : null;
             const modified = _normaliseLwDate(c.modified || c.modified_at) || null;
             if (learners != null && certs != null) {
-                // label (e.g. "CME/CPD") and price feed the public course feed (coursesFeed.js)
+                // label (e.g. "CME/CPD"), price and card image feed the public course feed (coursesFeed.js)
                 masterRows.push({ Course: title, Learners: learners, Certificates: certs, _courseId: c.id, _courseCreated: _normaliseLwDate(c.created || c.created_at) || null, _access: access, _modified: modified,
-                    _label: c.label != null ? String(c.label) : null, _price: c.final_price != null ? Number(c.final_price) || 0 : null });
+                    _label: c.label != null ? String(c.label) : null, _price: c.final_price != null ? Number(c.final_price) || 0 : null, _image: c.courseImage ? String(c.courseImage) : null });
             } else {
                 needsDeepFetch.push({ id: c.id, title, learners, certs, access, created: c.created, modified: c.modified, label: c.label, final_price: c.final_price });
             }
@@ -459,7 +459,7 @@ window.LearnWorlds = (function () {
                                 AvgFinishMinutes: result.avgFinishMinutes != null ? result.avgFinishMinutes : null,
                                 _courseId: c.id, _courseCreated: _normaliseLwDate(c.created || c.created_at) || null,
                                 _access: c.access != null ? c.access : null, _modified: _normaliseLwDate(c.modified || c.modified_at) || null,
-                                _label: c.label != null ? String(c.label) : null, _price: c.final_price != null ? Number(c.final_price) || 0 : null
+                                _label: c.label != null ? String(c.label) : null, _price: c.final_price != null ? Number(c.final_price) || 0 : null, _image: c.courseImage ? String(c.courseImage) : null
                             };
                         })
                         .catch(e => {
