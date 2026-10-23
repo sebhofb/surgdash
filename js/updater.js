@@ -204,8 +204,9 @@ Object.assign(window.App, {
     },
 
     // Survey-derived fields are only valid for the survey they came from.
-    _clearSurveyStats(course) {
-        course.URL = '';
+    _clearSurveyStats(course, opts) {
+        if (!(opts && opts.keepUrl)) course.URL = '';
+        this._dropRawSurvey(course.Course);   // the stored responses came from the old survey too
         delete course.Responses;
         delete course.Rating;
         delete course.QuestionStats;
@@ -360,6 +361,20 @@ Object.assign(window.App, {
     // stored Rating is 0 (e.g. the survey's overall question was worded unusually
     // so the live rating-column detector missed it). Prefer an explicit
     // satisfaction/overall-quality question; else the mean of its 1–5 items.
+    // Remove a course's stored raw responses (survey_raw), in memory and on disk.
+    _dropRawSurvey(name) {
+        if (!name) return;
+        if (this._rawSurveyResponses) delete this._rawSurveyResponses[name];
+        if (this._surveyRawMap && this._surveyRawMap !== this._rawSurveyResponses) delete this._surveyRawMap[name];
+        this._cmpSurveyCache = null;   // Compare / Quarterly recount
+        if (typeof Storage === 'undefined' || !Storage.getItem) return;
+        (async () => {
+            try {
+                const raw = await Storage.getItem('surghub_survey_raw');
+                if (raw && raw[name]) { delete raw[name]; await Storage.setItem('surghub_survey_raw', raw); }
+            } catch (e) { __swallowed(e, 'survey.dropRaw'); }
+        })();
+    },
     // A survey cell that is only a date/time ("15 Oct 2026 11:45:49", "2026-10-15 11:45"). The
     // Oct 2026 export added "Started at" beside "Ended at"; the sync read it as a comment, so
     // 40,804 of 115,651 stored comments were timestamps (Seb, 23 Oct 2026).
@@ -1126,6 +1141,7 @@ Object.assign(window.App, {
 
     async executeSurveyLoop() {
         let _ok = 0, _fail = 0, _expired = false;
+        const _failedNames = [], _emptyNames = [];   // named in the closing message
         // Raw anonymised responses accumulate per course (merged into the existing
         // store so partial syncs never wipe other courses' raw data).
         if (this._rawSurveyResponses == null) {
@@ -1160,7 +1176,7 @@ Object.assign(window.App, {
                     if (bytes.length > 1 && bytes[0] === 0x7B /* { */) {
                         const txt = new TextDecoder().decode(bytes.slice(0, 220));
                         if (/session has expired|login again|"code":403/i.test(txt)) { _expired = true; break; }
-                        _fail++; continue;
+                        _fail++; _failedNames.push(course.Course); continue;
                     }
                     const wb = XLSX.read(bytes, { type: 'array' });
                     const json = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "" });
@@ -1384,9 +1400,17 @@ Object.assign(window.App, {
                             this._rawSurveyResponses[course.Course] = { cols: header, data, fetchedAt: new Date().toISOString().slice(0, 10) };
                         } catch (e) { console.warn('[Surveys] raw anonymised capture failed for', course.Course, e.message); }
                         _ok++;
-                    } else { _fail++; }
-                }
-            } catch (err) { console.error(`Survey failed: ${course.Course}`, err); _fail++; }
+                    } else {
+                        // An export with no rows: the survey has no responses yet. Anything stored came
+                        // from an earlier (possibly wrong) link, so it goes (seen live 23 Oct 2026: a course
+                        // kept another course's 85 responses after its link was corrected).
+                        this._clearSurveyStats(course, { keepUrl: true });
+                        course.Responses = 0;
+                        delete this._rawSurveyResponses[course.Course];
+                        _fail++; _emptyNames.push(course.Course);
+                    }
+                } else { _fail++; _failedNames.push(course.Course); }   // HTTP error: kept as it was
+            } catch (err) { console.error(`Survey failed: ${course.Course}`, err); _fail++; _failedNames.push(course.Course); }
         }
         // Persist the raw anonymised responses (lazy-loaded elsewhere via ensureSurveyRawLoaded).
         try { await Storage.setItem('surghub_survey_raw', this._rawSurveyResponses); } catch (e) { console.warn('[Surveys] raw store save failed:', e.message); }
@@ -1434,6 +1458,9 @@ Object.assign(window.App, {
             alert('Survey token expired ⚠\n\nThe access token in the pasted URL has expired. Open Survey Exports, export any assessment, copy the fresh download URL (Cmd+L → Cmd+C), paste it into the Sync Surveys box, and run again.');
         } else {
             let msg = `Sync Surveys Complete ✓\n\n${_ok} course${_ok !== 1 ? 's' : ''} with survey data, ${_fail} with none/failed.`;
+            const _names = (list) => list.slice(0, 12).map(n => '  • ' + n).join('\n') + (list.length > 12 ? '\n  … and ' + (list.length - 12) + ' more' : '');
+            if (_emptyNames.length) msg += `\n\nNo responses yet (the survey export is empty — check the link points at this course's survey):\n` + _names(_emptyNames);
+            if (_failedNames.length) msg += `\n\nCould not be fetched (kept as before):\n` + _names(_failedNames);
             if (_signup) {
                 msg += `\n\nSignup survey auto-fetched ✓\n${this.formatNumber(_signup.nDemo)} learners with gender/organisation type` +
                     (_signup.enrichedG + _signup.enrichedO > 0
