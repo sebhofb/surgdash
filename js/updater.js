@@ -360,6 +360,28 @@ Object.assign(window.App, {
     // stored Rating is 0 (e.g. the survey's overall question was worded unusually
     // so the live rating-column detector missed it). Prefer an explicit
     // satisfaction/overall-quality question; else the mean of its 1–5 items.
+    // A survey cell that is only a date/time ("15 Oct 2026 11:45:49", "2026-10-15 11:45"). The
+    // Oct 2026 export added "Started at" beside "Ended at"; the sync read it as a comment, so
+    // 40,804 of 115,651 stored comments were timestamps (Seb, 23 Oct 2026).
+    _isTimestampText(v) {
+        const t = String(v == null ? '' : v).trim().replace(/[."]+$/, '');
+        return /^\d{1,2}[ /.-](\d{1,2}|[A-Za-zÀ-ÿ]{3,9}\.?)[ /.-]\d{2,4}(,?\s+\d{1,2}:\d{2}(:\d{2})?(\s*[AaPp][Mm])?)?$/.test(t)
+            || /^\d{4}-\d{2}-\d{2}([ T]\d{1,2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?)?$/.test(t);
+    },
+    // Drop timestamp-only comments already stored (see _isTimestampText). Returns entries removed.
+    _stripTimestampFeedback() {
+        let removed = 0;
+        (this.data || []).forEach(d => {
+            if (!d || !d.FeedbackBank) return;
+            let fb; try { fb = JSON.parse(d.FeedbackBank); } catch (e) { return; }
+            if (!Array.isArray(fb)) return;
+            const kept = fb.filter(f => !(f && this._isTimestampText(f.t)));
+            if (kept.length === fb.length) return;
+            removed += fb.length - kept.length;
+            if (kept.length) d.FeedbackBank = JSON.stringify(kept); else delete d.FeedbackBank;
+        });
+        return removed;
+    },
     _ratingFromQuestionStats(qs) {
         if (!Array.isArray(qs)) return 0;
         const valid = qs.filter(q => q && (Number(q.n) >= 3) && (Number(q.avg) > 0));
@@ -1029,6 +1051,8 @@ Object.assign(window.App, {
             if (repairedAfterRebuild) console.log('[CourseSync] post-rebuild zero-repair fixed ' + repairedAfterRebuild + ' course(s).');
             this._rescaleTimelinesToTotals();
             this._backfillRatingsFromQuestionStats();
+            const strippedTimes = this._stripTimestampFeedback();
+            if (strippedTimes) console.log('[CourseSync] removed ' + strippedTimes + ' timestamp-only survey comment(s).');
             const healedSurveys = linkMap.length ? this._dedupeSurveyAssignments(linkMap) : 0;
             if (healedSurveys) console.log('[CourseSync] cleared cross-assigned survey stats on ' + healedSurveys + ' course(s).');
 
@@ -1205,13 +1229,14 @@ Object.assign(window.App, {
                             // Arabic
                             'تعليقات', 'مشكلات تقنية', 'إثارة للاهتمام'
                         ];
-                        const metaCol = /^\s*(id|user|usuario|utilisateur|e-?mail|correo|name|full name|nombre|nom|country|pa[ií]s|pays|profession|profesi|cadre|gender|sex|sexo|genre|organi|institution|date|time|fecha|hora|soumis|submitted|created|timestamp|score|grade|status|course|curso|cours)\b/;
+                        const metaCol = /^\s*(id|user|usuario|utilisateur|respondent|e-?mail|correo|name|full name|nombre|nom|country|pa[ií]s|pays|profession|profesi|cadre|gender|sex|sexo|genre|organi|institution|date|time|fecha|hora|soumis|submitted|started|ended|completed|created|timestamp|score|grade|status|course|curso|cours)\b/;
                         const looksProse = (k) => {
                             let prose = 0, nonEmpty = 0;
                             for (let i = 0; i < json.length; i++) {
                                 const v = String(json[i][k] == null ? '' : json[i][k]).trim();
                                 if (!v || ['nan', 'n/a', 'na', 'none', '-'].indexOf(v.toLowerCase()) !== -1) continue;
                                 nonEmpty++;
+                                if (this._isTimestampText(v)) continue;   // "15 Oct 2026 11:45:49" is a time, not prose
                                 if (v.length > 20 || (v.length > 8 && /\s/.test(v) && !/^[\d.,%\s/+-]+$/.test(v))) prose++;
                             }
                             return nonEmpty >= 3 && (prose / nonEmpty) >= 0.4;
@@ -1306,7 +1331,7 @@ Object.assign(window.App, {
                             }
                             textCols.forEach(tc => {
                                 let text = String(row[tc] || '').trim();
-                                if (text && text.length > 5 && !['nan','n/a','na','none','-','no'].includes(text.toLowerCase())) {
+                                if (text && text.length > 5 && !['nan','n/a','na','none','-','no'].includes(text.toLowerCase()) && !this._isTimestampText(text)) {
                                     let rating = rCol ? window.Pipeline.cleanNum(row[rCol]) : 0;
                                     let sentiment = rating >= 4 ? 'Positive' : rating > 0 && rating < 3 ? 'Critical' : 'Neutral';
                                     // Classify column type: 'additional' for open-ended, 'improve' for improvement-focused, 'general' for others
