@@ -186,6 +186,47 @@ App._cfFeedNow = () => FEED;
     check('comments the AI has not screened: it asks before scoring them, and never picks them unscreened', asked && Object.keys(ai).length === ai2 && !Object.entries(App._tm.byId).some(([id, e]) => e.course === 'airway' && e.show && /brand new/.test((respA[id] || App.tmResponses('airway').find(r => r.id === id) || {}).text || '')));
   }
 
+  // ── review every course ──
+  {
+    const C3 = ['Respondent', 'Country', 'Profession', 'Started at', 'Ended at', 'On a scale from 1 to 5, how would you rate your overall satisfaction with this course?', 'What aspects of this course did you find most interesting?'];
+    const T = ['', 'Suturing videos showed every knot clearly and I now close wounds faster on my ward shifts',
+      'Triage tables helped our small district hospital organise the emergency room during the floods',
+      'The quiz after each module told me exactly where my anatomy knowledge was weak before exams',
+      'Case discussions about burns in children changed how I calculate fluids for my young patients',
+      'Learning about sterile field set-up helped me teach the new nurses in our theatre this month',
+      'Mi equipo aprendió muchísimo sobre la técnica de suturas y ahora las practicamos cada semana',
+      'Old but excellent comment about tourniquet use that taught me to time applications properly',
+      'A fresh comment about tourniquet timing that helped me avoid nerve damage in two patients'];
+    const rowsR = T.slice(1).map((t, i) => [i + 1, 'C' + i, 'nurse', (i === 6 ? '01 Jan 2026' : '1' + i + ' Oct 2026') + ' 10:00:00', (i === 6 ? '01 Jan 2026' : '1' + i + ' Oct 2026') + ' 10:00:00', '5', t]);
+    const raw = store.get('surghub_survey_raw'); raw['Review Course'] = { cols: C3, data: rowsR }; App._rawSurveyResponses = raw; App._tmRespCache = null;
+    App.data.push({ Course: 'Review Course', CourseId: 'rev', Timestamp: '2026-10-26' }); App._tmLatestCache = null;
+    FEED.courses.push({ id: 'rev', slug: 'rev', title: 'Review Course', provider: 'P' });
+    const RR = App.tmResponses('rev'), rid = (k) => RR.find(r => r.text === T[k]).id, H = (k) => App._djb2Hash(T[k]);
+    // shown now: #1 (scored 5: weak), #2 (scored 7), #7 (old, scored 8), #3 (never scored); candidates #4 (9), #5 (8), #6 (Spanish, 10), #8 (new, scored 8)
+    [[1, 1], [2, 2], [7, 3], [3, 4]].forEach(([k, o]) => { App._tm.byId[rid(k)] = { course: 'rev', show: true, order: o }; });
+    Object.assign(App._aiScoreMap, { [H(1)]: { s: 5, q: true, t: [] }, [H(2)]: { s: 7, q: true, t: [] }, [H(7)]: { s: 8, q: true, t: [] }, [H(4)]: { s: 9, q: true, t: [] }, [H(5)]: { s: 8, q: true, t: [] }, [H(6)]: { s: 10, q: true, t: [] }, [H(8)]: { s: 8, q: true, t: [] } });
+    App._tmScoreMissing = async () => true; App.TM_PICK_N = 4;   // the four places are taken: no additions here
+    await App.tmReviewAll(null);
+    const P = App._tmProposals.filter(p => p.course === 'rev'), rep = (k) => P.find(p => p.type === 'replace' && p.old.id === rid(k));
+    check('review: a weak testimonial (AI score under 6) is replaced by the best candidate', rep(1) && rep(1).cand.r.text === T[4], JSON.stringify(P.map(p => [p.type, p.old && p.old.r.text.slice(0, 8), p.cand && p.cand.r.text.slice(0, 8), p.why])));
+    check('…a shown one scoring lower is replaced by a higher one; an old one by an as-good newer one', rep(2) && rep(2).newScore > 7 && rep(7) && rep(7).newScore === 8 && /newer/.test(rep(7).why) && rep(2).cand.r.id !== rep(7).cand.r.id);
+    check('…a testimonial never screened is not replaced on score', !rep(3));
+    check('…only comments in the course page\'s language are proposed', !P.some(p => p.cand && p.cand.r.text === T[6]));
+    check('…and nothing changes until applied', App._tm.byId[rid(1)].show === true && !App._tm.byId[rid(4)]);
+    const i2 = App._tmProposals.indexOf(rep(2));
+    await App.tmKeep(i2);
+    check('"Keep current" protects a testimonial from later reviews', App._tm.byId[rid(2)].keep === true && (await (async () => { await App.tmReviewAll(null); return !App._tmProposals.some(p => p.old && p.old.id === rid(2)); })()));
+    const i1 = App._tmProposals.findIndex(p => p.type === 'replace' && p.old.id === rid(1));
+    await App.tmReject(i1);
+    await App.tmReviewAll(null);
+    check('"Not this one" stops a comment being suggested again', !App._tmProposals.some(p => p.cand && p.cand.r.text === T[4]) && App._tm.byId[rid(4)].rejected === true);
+    const before = App._tm.byId[rid(7)].order;
+    const nApplied = await App.tmApplyProposals(null, null);
+    App.TM_PICK_N = 6;
+    const nw = App._tm.byId[rid(7)].replacedBy;
+    check('"Apply all": the old one off, the new one on in its place, copy-edited', nApplied > 0 && App._tm.byId[rid(7)].show === false && nw && App._tm.byId[nw].show === true && App._tm.byId[nw].order === before && /^(Tidied|Again)/.test(App._tm.byId[nw].text || ''), JSON.stringify(App._tm.byId[rid(7)]));
+  }
+
   // ── the survey sync never touches the choices; publishing carries the file ──
   const upd = fs.readFileSync(path.join(ROOT, 'js/updater.js'), 'utf8'), wm = fs.readFileSync(path.join(ROOT, 'js/websiteMetrics.js'), 'utf8'), pd = fs.readFileSync(path.join(ROOT, 'js/partnerDash.js'), 'utf8'), st = fs.readFileSync(path.join(ROOT, 'js/storage.js'), 'utf8');
   check('Sync Surveys never writes the testimonial choices', !/surghub_testimonials|_tm\.byId/.test(upd));

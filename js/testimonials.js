@@ -71,9 +71,13 @@ Object.assign(window.App, {
     },
     _tmLang(text, fallback) {
         const t = ' ' + String(text || '').toLowerCase() + ' ';
-        if (/[\u0600-\u06ff]/.test(t)) return 'ar';
+        if (/[؀-ۿ]/.test(t)) return 'ar';
         const n = (re) => (t.match(re) || []).length;
-        const s = { en: n(/\b(the|and|is|was|very|of|to|it|this|i|my|for|with)\b/g), fr: n(/\b(le|la|les|des|est|très|une|pour|avec|du|je|j'ai|nous|cours|été)\b/g), es: n(/\b(el|los|las|es|muy|una|para|con|que|del|por|curso|fue|más)\b/g) };
+        const s = {
+            en: n(/\b(the|and|is|was|very|of|to|it|this|i|my|for|with|that|in|we|our|how)\b/g),
+            fr: n(/\b(le|les|des|est|très|une|pour|avec|du|je|j'ai|nous|cours|été|et|sur|mon|aussi|mais|qui|dans|au|aux|cette|ce)\b/g) + 2 * n(/[èêçàùœ]/g),
+            es: n(/\b(el|los|las|es|muy|una|para|con|que|del|por|curso|fue|más|y|sobre|mi|ahora|cada|lo|nos|pero|también|este|esta|como|en)\b/g) + 2 * n(/[ñ¿¡]|ción\b/g),
+        };
         const best = Object.keys(s).sort((a, b) => s[b] - s[a])[0];
         return s[best] >= 2 ? best : (fallback || 'en');
     },
@@ -355,9 +359,16 @@ Object.assign(window.App, {
     },
     _tmAiKey(t) { return this._djb2Hash ? this._djb2Hash(String(t).trim()) : this._tmHash(String(t).trim()); },
     _tmPraiseQ(q) { const l = this._tmQLabel(q); return l === 'Most interesting' || l === 'Other comments'; },
+    // The course page's language: its survey's (a French course's page shows French comments).
+    _tmPageLang(courseId) {
+        const d = this._tmLatest()[courseId], v = d && this._rawSurveyResponses && this._rawSurveyResponses[d.Course];
+        return v && v.cols ? this._tmSurveyLang(v.cols) : 'en';
+    },
     _tmCandidates(courseId) {
+        const lang = this._tmPageLang(courseId);
         const chosen = new Set(Object.keys(this._tm.byId).filter(id => this._tm.byId[id].course === courseId && this._tm.byId[id].show));
-        return this.tmResponses(courseId).filter(r => !chosen.has(r.id) && this._tmPraiseQ(r.q) && r.stars >= 4 && !(this._isJunkFeedback && this._isJunkFeedback(r.text)) && !this._tmHeld(r.text));
+        const no = (id) => !!(this._tm.byId[id] && this._tm.byId[id].rejected);
+        return this.tmResponses(courseId).filter(r => !chosen.has(r.id) && !no(r.id) && r.lang === lang && this._tmPraiseQ(r.q) && r.stars >= 4 && !(this._isJunkFeedback && this._isJunkFeedback(r.text)) && !this._tmHeld(r.text));
     },
     // Score candidates the AI has not seen yet (asks first). Returns false when it could not.
     async _tmScoreMissing(list, btn) {
@@ -440,6 +451,136 @@ Object.assign(window.App, {
         }
     },
 
+    // ── review every course: better or newer comments for what is shown (Seb, 26 Oct 2026) ──
+    // Proposals, applied only by a person: 'add' (a course with fewer than TM_PICK_N), 'replace' (a
+    // comment that scores higher than a shown one, or the same and is newer), 'weak' (a shown one below
+    // the bar — not quotable, AI score under TM_PICK_MIN, under 4 stars, a "less engaging" answer or
+    // personal details — with nothing better to take its place). Testimonials marked keep are never
+    // proposed for replacement; a candidate marked "not this one" (rejected) is never proposed again.
+    _tmShownScore(e, r) {
+        const a = r && (this._aiScoreMap || {})[this._tmAiKey(r.text)];
+        if (!a) return null;   // not screened: never replaced on score
+        return a.q && !(a.t || []).includes('complaint') ? a.s : 0;
+    },
+    _tmWeak(e, r) {
+        if (!r) return 'no longer in the survey export';
+        const a = (this._aiScoreMap || {})[this._tmAiKey(r.text)];
+        if (!a) return '';   // not screened: no verdict
+        if (!a.q || a.s < this.TM_PICK_MIN) return 'AI score ' + a.s + '/10' + (a.q ? '' : ', not quotable');
+        if (r.stars && r.stars < 4) return r.stars + ' stars';
+        if (!this._tmPraiseQ(r.q)) return 'an answer to "' + this._tmQLabel(r.q) + '"';
+        if (this._tmHeld(e.text || r.text)) return 'personal details in the text';
+        return '';
+    },
+    _tmReviewCourse(courseId) {
+        const scores = this._aiScoreMap || {}, resp = {}; this.tmResponses(courseId).forEach(r => { resp[r.id] = r; });
+        const toks = (t) => this._tmTokens(t);
+        const dice = (a, b) => { const bag = {}; b.forEach(w => { bag[w] = (bag[w] || 0) + 1; }); let c = 0; a.forEach(w => { if (bag[w]) { bag[w]--; c++; } }); return 2 * c / ((a.length + b.length) || 1); };
+        let shown = Object.entries(this._tm.byId).filter(([, e]) => e.course === courseId && e.show).map(([id, e]) => ({ id, e, r: resp[id], s: this._tmShownScore(e, resp[id]), weak: this._tmWeak(e, resp[id]) }));
+        const pool = this._tmCandidates(courseId).map(r => ({ r, a: scores[this._tmAiKey(r.text)] }))
+            .filter(x => x.a && x.a.q && x.a.s >= this.TM_PICK_MIN && !(x.a.t || []).includes('complaint'))
+            .sort((x, y) => y.a.s - x.a.s || String(y.r.date).localeCompare(String(x.r.date)));
+        const out = [], used = new Set();
+        const textOf = (x) => toks((x.e && x.e.text) || (x.r && x.r.text) || '');
+        const fits = (c, keepers) => { const t = toks(c.r.text); return !keepers.some(k => dice(t, textOf(k)) >= 0.6); };
+        const next = (keepers, pred) => pool.find(c => !used.has(c.r.id) && fits(c, keepers) && pred(c));
+        // 1. fill empty places
+        while (shown.length + out.filter(p => p.type === 'add').length < this.TM_PICK_N) {
+            const keepers = shown.concat(out.map(p => ({ r: p.cand.r })));
+            const c = next(keepers, () => true); if (!c) break;
+            used.add(c.r.id); out.push({ type: 'add', course: courseId, cand: c, newScore: c.a.s });
+        }
+        // 2. replace the weakest (weak first, then lowest score, then oldest) while something better or as good and newer exists
+        const order = shown.filter(x => !x.e.keep).sort((a, b) => (!!b.weak - !!a.weak) || (a.s == null ? 99 : a.s) - (b.s == null ? 99 : b.s) || String((a.r || {}).date || '').localeCompare(String((b.r || {}).date || '')));
+        for (const w of order) {
+            const keepers = shown.filter(x => x !== w).concat(out.filter(p => p.type === 'add').map(p => ({ r: p.cand.r })));
+            const c = (w.weak || w.s != null) && next(keepers, (c) => !!w.weak || c.a.s > w.s || (c.a.s === w.s && String(c.r.date) > String((w.r || {}).date || '')));
+            if (c) { used.add(c.r.id); out.push({ type: 'replace', course: courseId, cand: c, newScore: c.a.s, old: w, oldScore: w.s, why: w.weak || (c.a.s > w.s ? 'scores higher (' + c.a.s + ' vs ' + w.s + ')' : 'as good (' + c.a.s + ') and newer') }); shown = shown.map(x => x === w ? { id: c.r.id, e: {}, r: c.r, s: c.a.s, weak: '' } : x); }
+            else if (w.weak) out.push({ type: 'weak', course: courseId, old: w, oldScore: w.s, why: w.weak });
+        }
+        return out;
+    },
+    async tmReviewAll(btn) {
+        await this._tmLoad();
+        const feed = this._tmCourseFeed(), ids = feed.courses.map(c => c.id).filter(id => this.tmResponses(id).length);
+        const label = btn && btn.textContent; if (btn) { btn.disabled = true; btn.textContent = 'Reviewing…'; }
+        try {
+            // everything shown and every candidate gets an AI verdict first (asks before calling the API)
+            const shownR = [];
+            ids.forEach(id => { const resp = {}; this.tmResponses(id).forEach(r => { resp[r.id] = r; }); Object.entries(this._tm.byId).forEach(([rid, e]) => { if (e.course === id && e.show && resp[rid]) shownR.push(resp[rid]); }); });
+            await this._tmScoreMissing(shownR.concat(ids.flatMap(id => this._tmCandidates(id))), btn);
+            if (this._getAiScores) await this._getAiScores();
+            this._tmProposals = ids.flatMap(id => this._tmReviewCourse(id));
+            this._tmProposalsAt = new Date().toISOString();
+            const n = (t) => this._tmProposals.filter(p => p.type === t).length;
+            this.showMsg('Review done: ' + n('replace') + ' replacement' + (n('replace') === 1 ? '' : 's') + ', ' + n('add') + ' addition' + (n('add') === 1 ? '' : 's') + ', ' + n('weak') + ' weak testimonial' + (n('weak') === 1 ? '' : 's') + ' without a better one. Nothing changes until you apply them.');
+        } finally { if (btn) { btn.disabled = false; btn.textContent = label; } this._tmCourse = null; this.rerenderDashTab ? this.rerenderDashTab() : this.renderView(); }
+    },
+    // Apply proposals (indexes into _tmProposals; all when omitted). New texts get the testimonial copy-edit.
+    async tmApplyProposals(idx, btn) {
+        await this._tmLoad();
+        const list = this._tmProposals || [], pick = idx && idx.length ? idx.map(i => list[i]).filter(Boolean) : list.filter(p => p.type !== 'weak');
+        if (!pick.length) return 0;
+        const label = btn && btn.textContent; if (btn) { btn.disabled = true; btn.textContent = 'Applying…'; }
+        try {
+            const at = new Date().toISOString(), feed = this._tmCourseFeed(), title = {}; feed.courses.forEach(c => { title[c.id] = c.title; });
+            const fresh = [];
+            pick.forEach(p => {
+                if (p.type === 'weak') { const o = this._tm.byId[p.old.id]; if (o) { o.show = false; o.at = at; o.removed = { at, why: p.why }; } return; }
+                let order;
+                if (p.type === 'replace') { const o = this._tm.byId[p.old.id]; if (o) { order = o.order; o.show = false; o.at = at; o.replacedBy = p.cand.r.id; } }
+                else order = Math.max(0, ...Object.values(this._tm.byId).filter(x => x.course === p.course && x.show).map(x => Number(x.order) || 0)) + 1;
+                const e = this._tm.byId[p.cand.r.id] || (this._tm.byId[p.cand.r.id] = { course: p.course });
+                e.show = true; e.order = order; e.at = at; e.auto = { at, score: p.newScore, review: true }; delete e.text;
+                fresh.push({ r: p.cand.r, course: title[p.course] || '' });
+            });
+            const tidy = await this._tmTidy(fresh, btn);
+            fresh.forEach(x => { if (tidy[x.r.id] && tidy[x.r.id] !== x.r.text) this._tm.byId[x.r.id].text = tidy[x.r.id]; });
+            await this._tmSave();
+            this._tmProposals = list.filter(p => !pick.includes(p));
+            this.showMsg('✓ Applied ' + pick.length + ' change' + (pick.length === 1 ? '' : 's') + '. They go online at the next publish.');
+            return pick.length;
+        } finally { if (btn) { btn.disabled = false; btn.textContent = label; } this.rerenderDashTab ? this.rerenderDashTab() : this.renderView(); }
+    },
+    async tmKeep(i) {   // "keep current": the shown testimonial is never proposed for replacement again
+        await this._tmLoad(); const p = (this._tmProposals || [])[i]; if (!p || !p.old) return;
+        const o = this._tm.byId[p.old.id]; if (o) o.keep = true;
+        this._tmProposals.splice(i, 1); await this._tmSave(); this.rerenderDashTab ? this.rerenderDashTab() : this.renderView();
+    },
+    async tmReject(i) {  // "not this one": the suggested comment is never proposed again
+        await this._tmLoad(); const p = (this._tmProposals || [])[i]; if (!p || !p.cand) return;
+        const e = this._tm.byId[p.cand.r.id] || (this._tm.byId[p.cand.r.id] = { course: p.course }); e.rejected = true; e.show = false;
+        this._tmProposals.splice(i, 1); await this._tmSave(); this.rerenderDashTab ? this.rerenderDashTab() : this.renderView();
+    },
+    async tmUnkeep(id) { await this._tmLoad(); if (this._tm.byId[id]) delete this._tm.byId[id].keep; await this._tmSave(); this.rerenderDashTab ? this.rerenderDashTab() : this.renderView(); },
+    _tmReviewHtml(esc, feed) {
+        const list = this._tmProposals; if (!list) return '';
+        const title = {}; feed.courses.forEach(c => { title[c.id] = c.title; });
+        const n = (t) => list.filter(p => p.type === t).length;
+        if (!list.length) return '<div class="bg-emerald-50 border border-emerald-200 rounded-xl p-4 mb-4 text-sm text-emerald-800">Review complete: nothing left to change. <button onclick="App._tmProposals = null; App.rerenderDashTab()" class="ml-2 underline">close</button></div>';
+        const meta = (r) => esc([r.cadre, r.country].filter(Boolean).join(' · ') || 'SURGhub learner') + ' · ' + esc(r.date) + ' · ' + (r.stars ? r.stars + '★' : '');
+        const box = (cls, label, r, score, text) => '<div class="flex-1 min-w-[240px] border rounded-lg p-3 ' + cls + '"><div class="text-[10px] font-bold uppercase tracking-wide mb-1">' + label + (score != null ? ' · AI ' + score + '/10' : '') + '</div>'
+            + '<p class="text-xs text-slate-700">' + esc(text) + '</p>' + (r ? '<p class="text-[10px] text-slate-400 mt-1">' + meta(r) + '</p>' : '') + '</div>';
+        let lastCourse = '';
+        const rows = list.map((p, i) => {
+            const head = p.course !== lastCourse ? '<div class="text-xs font-bold text-gsf-prussian mt-4 mb-1">' + esc(title[p.course] || p.course) + ' <button onclick="App.tmPickCourse(\'' + this.escapeJsArg(p.course) + '\')" class="ml-1 font-normal text-gsf-boston hover:underline">open</button></div>' : '';
+            lastCourse = p.course;
+            const old = p.old ? box('border-slate-200 bg-white', p.type === 'weak' ? 'Shown now: ' + esc(p.why) : 'Shown now', p.old.r, p.oldScore, (p.old.e && p.old.e.text) || (p.old.r && p.old.r.text) || '(no longer in the survey)') : '';
+            const neu = p.cand ? box('border-emerald-200 bg-emerald-50/50', p.type === 'add' ? 'Add' : 'Replace with · ' + esc(p.why), p.cand.r, p.newScore, p.cand.r.text) : '';
+            const btns = '<div class="flex flex-col gap-1 shrink-0" data-edit-only>'
+                + (p.type === 'weak' ? '<button onclick="App.tmApplyProposals([' + i + '], this)" class="px-3 py-1 text-[11px] font-bold rounded bg-rose-600 text-white">Switch off</button>' : '<button onclick="App.tmApplyProposals([' + i + '], this)" class="px-3 py-1 text-[11px] font-bold rounded bg-gsf-boston text-white">Apply</button>')
+                + (p.old ? '<button onclick="App.tmKeep(' + i + ')" class="px-3 py-1 text-[11px] font-bold rounded border text-slate-600" title="Never propose replacing this testimonial again">Keep current</button>' : '')
+                + (p.cand ? '<button onclick="App.tmReject(' + i + ')" class="px-3 py-1 text-[11px] font-bold rounded border text-slate-500" title="Never suggest this comment again">Not this one</button>' : '') + '</div>';
+            return head + '<div class="flex items-stretch gap-2 flex-wrap mb-2">' + old + (p.old && p.cand ? '<div class="self-center text-slate-300 text-lg">→</div>' : '') + neu + btns + '</div>';
+        }).join('');
+        return '<div class="bg-white rounded-xl shadow-sm border p-5 mb-5"><div class="flex items-center gap-3 flex-wrap"><h3 class="text-base font-bold text-gsf-prussian">Review of every course</h3>'
+            + '<span class="text-xs text-slate-500">' + n('replace') + ' replacements · ' + n('add') + ' additions · ' + n('weak') + ' weak without a better one</span>'
+            + '<button data-edit-only onclick="App.tmApplyProposals(null, this)" class="ml-auto px-4 py-1.5 text-xs font-bold rounded-lg bg-gsf-boston hover:bg-gsf-prussian text-white">Apply all ' + (n('replace') + n('add')) + ' replacements and additions</button>'
+            + '<button onclick="App._tmProposals = null; App.rerenderDashTab()" class="text-xs text-slate-400 hover:text-slate-600">close</button></div>'
+            + '<p class="text-[11px] text-slate-500 mt-1">Replacements score higher on the AI screen (or the same and newer). Weak ones are listed to switch off by hand. "Keep current" protects a testimonial from future reviews; "Not this one" stops a comment being suggested again.</p>'
+            + '<div class="max-h-[560px] overflow-y-auto custom-scrollbar mt-2 pr-1">' + rows + '</div></div>';
+    },
+
     // ── editing (Testimonials tab) ──
     async tmToggle(id, courseId) {
         await this._tmLoad();
@@ -511,10 +652,12 @@ Object.assign(window.App, {
             }).join('');
             const none = courses.filter(x => !x.n).length, empty = courses.filter(x => x.n && !x.shown).length;
             const autoN = Object.values(this._tm.byId).filter(e => e.show && e.auto).length;
-            return head + (empty || autoN ? '<div class="flex items-center gap-3 flex-wrap mb-3">'
+            return head + this._tmReviewHtml(esc, feed) + '<div class="flex items-center gap-3 flex-wrap mb-3">'
+                + '<button data-edit-only onclick="App.tmReviewAll(this)" class="px-4 py-2 bg-gsf-prussian hover:bg-slate-900 text-white text-xs font-bold rounded-lg" title="Compare what every course shows with all its comments, and propose better or newer ones">Review all courses</button>'
+                + (empty || autoN ? ''
                 + (empty ? '<button data-edit-only onclick="App.tmPickBest(null, this)" class="px-4 py-2 bg-gsf-boston hover:bg-gsf-prussian text-white text-xs font-bold rounded-lg">Pick the best ' + this.TM_PICK_N + ' for the ' + empty + ' course' + (empty === 1 ? '' : 's') + ' with none</button>'
-                    + '<span class="text-[11px] text-slate-500 max-w-xl">4–5 star comments screened by the AI (quotable, score ' + this.TM_PICK_MIN + '+), best first, varied countries, with the AI\'s tidied quote as the text. Fewer when there are fewer good ones.</span>' : '')
-                + (autoN ? '<span class="text-[11px] text-violet-700 font-semibold">' + autoN + ' picked automatically — open a course to check them</span><button data-edit-only onclick="App.tmRetidy(null, this)" class="px-3 py-1.5 text-[11px] font-bold rounded-lg border border-violet-200 text-violet-700 hover:bg-violet-50" title="Redo the course-page text of every automatic pick you have not edited, with the testimonial copy-edit rules">Tidy their texts again</button>' : '') + '</div>' : '')
+                    + '<span class="text-[11px] text-slate-500 max-w-xl">4–5 star comments screened by the AI (quotable, score ' + this.TM_PICK_MIN + '+), best first, varied countries, lightly copy-edited. Fewer when there are fewer good ones.</span>' : '')
+                + (autoN ? '<span class="text-[11px] text-violet-700 font-semibold">' + autoN + ' picked automatically — open a course to check them</span><button data-edit-only onclick="App.tmRetidy(null, this)" class="px-3 py-1.5 text-[11px] font-bold rounded-lg border border-violet-200 text-violet-700 hover:bg-violet-50" title="Redo the course-page text of every automatic pick you have not edited, with the testimonial copy-edit rules">Tidy their texts again</button>' : '') : '') + '</div>'
                 + '<div class="bg-white rounded-xl shadow-sm border overflow-hidden"><div class="overflow-x-auto max-h-[640px] overflow-y-auto custom-scrollbar"><table class="w-full text-left border-collapse text-sm">'
                 + '<thead class="sticky top-0 bg-white shadow-sm"><tr class="border-b text-slate-500 text-xs"><th class="py-2 px-3 font-medium">Course</th><th class="py-2 px-3 font-medium">Provider</th><th class="py-2 px-3 font-medium text-center" title="Testimonials switched on for the course page">Shown</th>'
                 + '<th class="py-2 px-3 font-medium text-right" title="Comments received since the course was last marked reviewed">New</th><th class="py-2 px-3 font-medium text-right" title="4–5 stars, ' + this.TM_SUGGEST_WORDS + '+ words, cadre and country known">Suggested</th><th class="py-2 px-3 font-medium text-right">Comments</th></tr></thead><tbody>'
@@ -545,6 +688,7 @@ Object.assign(window.App, {
                 + '<span class="text-[10px] text-slate-400 truncate max-w-[260px]" title="' + esc(r.q) + '">' + esc(this._tmQLabel(r.q)) + '</span>'
                 + (this._tmSuggested(r) && !on ? '<span class="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[10px] font-bold">suggested</span>' : '')
                 + (isNew(r) && !on ? '<span class="px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 text-[10px] font-bold">new</span>' : '')
+                + (on && e.keep ? '<button data-edit-only onclick="App.tmUnkeep(\'' + idJs + '\')" class="px-1.5 py-0.5 rounded bg-sky-50 text-sky-700 text-[10px] font-bold" title="Kept: never proposed for replacement. Click to allow it again">kept ×</button>' : '')
                 + (on && e.auto ? '<span class="px-1.5 py-0.5 rounded bg-violet-50 text-violet-700 text-[10px] font-bold" title="Picked automatically (AI score ' + esc(e.auto.score) + '/10). Editing, moving or switching it clears this mark.">picked automatically</span>' : '')
                 + (held ? '<span class="px-1.5 py-0.5 rounded bg-rose-50 text-rose-600 text-[10px] font-bold" title="The display text contains an email, phone number or learner name: it is not published until edited">held back: personal details</span>' : '')
                 + (!on && e.text && e.text !== r.text ? '<span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-bold" title="Switching it on again brings back your edited text, cadre and country">edits kept</span>' : '')
