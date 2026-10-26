@@ -5,16 +5,17 @@ const vm = require('vm'), fs = require('fs'), path = require('path');
 const ROOT = path.resolve(__dirname, '..');
 let ok = 0, bad = 0; const check = (n, c, d) => { (c ? ok++ : bad++); console.log((c ? 'PASS' : 'FAIL') + ' - ' + n + (d !== undefined ? '  →  ' + String(d).slice(0, 260) : '')); };
 
-const store = new Map(), calls = [];
+const store = new Map(), calls = []; let race = 0;   // race: PATCHes to fail as 'not a fast forward' (another publish landed first)
 const gh = async (req) => {
   calls.push(req);
   const p = req.url.replace(/^https:\/\/api\.github\.com\/repos\/gsf\/reports/, ''), body = req.body ? JSON.parse(req.body) : null, ok_ = (st, j) => ({ statusCode: st, body: JSON.stringify(j) });
-  if (req.method === 'GET' && p === '/git/ref/heads/main') return ok_(200, { object: { sha: 'head1' } });
+  if (req.method === 'GET' && p === '/git/ref/heads/main') return ok_(200, { object: { sha: calls.filter(c => c.method === 'PATCH').length && ctx.__moved ? 'head2' : 'head1' } });
   if (req.method === 'GET' && p === '/git/commits/head1') return ok_(200, { tree: { sha: 'tree0' } });
+  if (req.method === 'GET' && p === '/git/commits/head2') return ok_(200, { tree: { sha: 'tree2' } });
   if (req.method === 'POST' && p === '/git/blobs') return ok_(201, { sha: 'blobM' });
   if (req.method === 'POST' && p === '/git/trees') return ok_(201, { sha: 'treeM' });
   if (req.method === 'POST' && p === '/git/commits') return ok_(201, { sha: 'commitM' });
-  if (req.method === 'PATCH' && p === '/git/refs/heads/main') return ok_(200, {});
+  if (req.method === 'PATCH' && p === '/git/refs/heads/main') { if (race > 0) { race--; ctx.__moved = true; return ok_(422, { message: 'Update is not a fast forward' }); } return ok_(200, {}); }
   return ok_(404, { message: 'Not Found' });
 };
 const ctx = { console: { log() {}, warn() {}, error() {} }, Date, Math, JSON, Object, Array, Number, String, Map, Set, RegExp, Error, Promise, isNaN, isFinite, __swallowed() {}, alert(m) { ctx.__alert = m; },
@@ -118,6 +119,15 @@ const mkD = (sat, app, rating, min) => ({ avgRating: rating, totalMin: min, prov
   const tree = JSON.parse(calls.find(c => c.url.endsWith('/git/trees')).body), commit = JSON.parse(calls.find(c => c.url.endsWith('/git/commits') && c.method === 'POST').body), patch = JSON.parse(calls.find(c => c.method === 'PATCH').body);
   check('publishing now replaces metrics.json alone, on top of the published site', r.ok && tree.base_tree === 'tree0' && tree.tree.length === 1 && tree.tree[0].path === 'metrics.json');
   check('…as one commit after the current one, not a forced rewrite', commit.parents.join() === 'head1' && patch.force === false);
+  // another publish lands while this one is being prepared: start again from the new tip
+  calls.length = 0; race = 1; ctx.__moved = false;
+  const r2 = await App.publishWebsiteMetrics(null);
+  const commits = calls.filter(c => c.url.endsWith('/git/commits') && c.method === 'POST').map(c => JSON.parse(c.body));
+  check('"not a fast forward": rebuilt on the new tip and published (no error)', r2.ok && commits.length === 2 && commits[1].parents.join() === 'head2' && JSON.parse(calls.filter(c => c.url.endsWith('/git/trees')).pop().body).base_tree === 'tree2', JSON.stringify(commits.map(c => c.parents)));
+  check('…reusing the files already uploaded', calls.filter(c => c.url.endsWith('/git/blobs')).length === 1);
+  calls.length = 0; race = 0; ctx.__moved = false;
+  const [p1, p2] = await Promise.all([App.publishWebsiteMetrics(null), App.publishWebsiteMetrics(null)]);
+  check('a second click while one is running does not start a second publish', p1.ok && p2.busy && calls.filter(c => c.method === 'PATCH').length === 1);
   check('the GitHub token only in the Authorization header', calls.every(c => !String(c.body || '').includes('ghp_T') && c.headers.Authorization === 'Bearer ghp_T'));
   check('the Reports tab box shows the six figures, what is online, and the button', /GSF website figures/.test(App._websiteMetricsHtml()) && /reports\.globalsurgeryfoundation\.org\/metrics\.json/.test(App._websiteMetricsHtml()) && /App\.publishWebsiteMetrics\(this\)/.test(App._websiteMetricsHtml()));
 

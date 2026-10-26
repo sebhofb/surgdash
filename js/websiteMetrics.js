@@ -158,6 +158,11 @@ Object.assign(window.App, {
     // On demand: replace metrics.json alone, on top of what is published (one small commit;
     // the next full publish starts the branch afresh, as always).
     async publishWebsiteMetrics(btn) {
+        if (this._wmPublishing) { this.showMsg('A publish is already running — it carries your latest changes.', 'warn'); return { ok: false, busy: true }; }
+        this._wmPublishing = true;
+        try { return await this._publishWebsiteMetrics(btn); } finally { this._wmPublishing = false; }
+    },
+    async _publishWebsiteMetrics(btn) {
         const ready = this._pdReady ? await this._pdReady() : { ok: false, why: 'partner dashboards not loaded' };
         if (!ready.ok) { alert('The reports site is not set up: ' + ready.why + '.'); return { ok: false }; }
         const label = btn && btn.textContent; if (btn) { btn.disabled = true; btn.textContent = 'Publishing…'; }
@@ -167,29 +172,36 @@ Object.assign(window.App, {
             const cf = this.coursesFeedFile ? await this.coursesFeedFile({ progress: (t) => { if (btn) btn.textContent = t; } }) : null;
             const tf = this.testimonialsFeedFile ? await this.testimonialsFeedFile({ feed: cf && cf.feed }) : null;   // testimonials.js
             const s = this._pd, token = await this._pdToken(), branch = s.branch || 'main';
-            const ref = await this._pdGh('GET', '/git/ref/heads/' + branch, null, token);
-            const head = ref.object.sha, commit = await this._pdGh('GET', '/git/commits/' + head, null, token);
-            const blob = await this._pdGh('POST', '/git/blobs', { content: f.content, encoding: 'utf-8' }, token);
-            const entries = [{ path: 'metrics.json', mode: '100644', type: 'blob', sha: blob.sha }];
-            if (cf && cf.content) entries.push({ path: 'courses.json', mode: '100644', type: 'blob', sha: (await this._pdGh('POST', '/git/blobs', { content: cf.content, encoding: 'utf-8' }, token)).sha });
-            if (tf && tf.content) entries.push({ path: 'testimonials.json', mode: '100644', type: 'blob', sha: (await this._pdGh('POST', '/git/blobs', { content: tf.content, encoding: 'utf-8' }, token)).sha });
-            // course card thumbnails (coursesFeed.js): upload only those the site does not have yet
-            if (cf && cf.thumbs && cf.thumbs.length) {
-                let have = new Set();
-                try {
-                    const root = await this._pdGh('GET', '/git/trees/' + commit.tree.sha, null, token);
-                    const td = (root.tree || []).find(e => e.path === 'thumbs' && e.type === 'tree');
-                    if (td) have = new Set(((await this._pdGh('GET', '/git/trees/' + td.sha, null, token)).tree || []).map(e => 'thumbs/' + e.path));
-                } catch (e) { __swallowed(e, 'wm.thumbTree'); }
-                const add = cf.thumbs.filter(t => !have.has(t.path));
-                for (let i = 0; i < add.length; i++) {
-                    if (btn) btn.textContent = 'Course images ' + (i + 1) + '/' + add.length + '…';
-                    entries.push({ path: add[i].path, mode: '100644', type: 'blob', sha: (await this._pdGh('POST', '/git/blobs', { content: add[i].base64, encoding: 'base64' }, token)).sha });
+            // One commit on top of the site as it is now. If the site moves while this is being prepared
+            // (another publish finished first: "422 Update is not a fast forward", 26 Oct 2026), start
+            // again from the new tip; blobs already uploaded are reused.
+            const blobs = {};
+            const up = async (key, content, encoding) => blobs[key] || (blobs[key] = (await this._pdGh('POST', '/git/blobs', { content, encoding }, token)).sha);
+            for (let attempt = 1; ; attempt++) {
+                const ref = await this._pdGh('GET', '/git/ref/heads/' + branch, null, token);
+                const head = ref.object.sha, commit = await this._pdGh('GET', '/git/commits/' + head, null, token);
+                const entries = [{ path: 'metrics.json', mode: '100644', type: 'blob', sha: await up('metrics.json', f.content, 'utf-8') }];
+                if (cf && cf.content) entries.push({ path: 'courses.json', mode: '100644', type: 'blob', sha: await up('courses.json', cf.content, 'utf-8') });
+                if (tf && tf.content) entries.push({ path: 'testimonials.json', mode: '100644', type: 'blob', sha: await up('testimonials.json', tf.content, 'utf-8') });
+                // course card thumbnails (coursesFeed.js): upload only those the site does not have yet
+                if (cf && cf.thumbs && cf.thumbs.length) {
+                    let have = new Set();
+                    try {
+                        const root = await this._pdGh('GET', '/git/trees/' + commit.tree.sha, null, token);
+                        const td = (root.tree || []).find(e => e.path === 'thumbs' && e.type === 'tree');
+                        if (td) have = new Set(((await this._pdGh('GET', '/git/trees/' + td.sha, null, token)).tree || []).map(e => 'thumbs/' + e.path));
+                    } catch (e) { __swallowed(e, 'wm.thumbTree'); }
+                    const add = cf.thumbs.filter(t => !have.has(t.path));
+                    for (let i = 0; i < add.length; i++) {
+                        if (btn) btn.textContent = 'Course images ' + (i + 1) + '/' + add.length + '…';
+                        entries.push({ path: add[i].path, mode: '100644', type: 'blob', sha: await up(add[i].path, add[i].base64, 'base64') });
+                    }
                 }
+                const tree = await this._pdGh('POST', '/git/trees', { base_tree: commit.tree.sha, tree: entries }, token);
+                const c = await this._pdGh('POST', '/git/commits', { message: 'Website metrics ' + new Date().toISOString().slice(0, 10), tree: tree.sha, parents: [head] }, token);
+                try { await this._pdGh('PATCH', '/git/refs/heads/' + branch, { sha: c.sha, force: false }, token); break; }
+                catch (e) { if (e.status !== 422 || attempt >= 3) throw e; if (btn) btn.textContent = 'The site changed meanwhile, trying again…'; }
             }
-            const tree = await this._pdGh('POST', '/git/trees', { base_tree: commit.tree.sha, tree: entries }, token);
-            const c = await this._pdGh('POST', '/git/commits', { message: 'Website metrics ' + new Date().toISOString().slice(0, 10), tree: tree.sha, parents: [head] }, token);
-            await this._pdGh('PATCH', '/git/refs/heads/' + branch, { sha: c.sha, force: false }, token);
             await this._wmPublished(f);
             if (cf && cf.content && this._cfMarkPublished) await this._cfMarkPublished(cf);
             if (tf && tf.content && this._tmMarkPublished) await this._tmMarkPublished(tf);

@@ -58,7 +58,7 @@ const feedOf = () => ({ courses: [{ slug: 'burns', image: LW + 'a.png' }, { slug
 
   // both publish routes carry them
   const wm = fs.readFileSync(path.join(ROOT, 'js/websiteMetrics.js'), 'utf8'), pd = fs.readFileSync(path.join(ROOT, 'js/partnerDash.js'), 'utf8');
-  check('quick publish uploads only the thumbnails the site does not have, as base64 blobs', /const add = cf\.thumbs\.filter\(t => !have\.has\(t\.path\)\)/.test(wm) && /encoding: 'base64'/.test(wm));
+  check('quick publish uploads only the thumbnails the site does not have, as base64 blobs', /const add = cf\.thumbs\.filter\(t => !have\.has\(t\.path\)\)/.test(wm) && /up\(add\[i\]\.path, add\[i\]\.base64, 'base64'\)/.test(wm));
   check('full publish puts every thumbnail into the new site, blobs keep their encoding', /files\.push\(\{ path: t\.path, content: t\.base64, encoding: 'base64' \}\)/.test(pd) && /encoding: f\.encoding \|\| 'utf-8'/.test(pd));
   console.log(`\n${ok}/${ok + bad} passed`); process.exit(bad ? 1 : 0);
 })();
