@@ -1236,6 +1236,9 @@ Object.assign(window.App, {
                         const fbKeywords = [
                             // English
                             'comment', 'feedback', 'improve', 'suggest', 'additional', 'tell us', 'open',
+                            // the standard open questions ("…did you find most interesting?" / "…less engaging?"):
+                            // many answers are one word ("Videos"), which hid the whole column (26 Oct 2026)
+                            'interesting', 'engaging',
                             'anything else', 'other', 'technical', 'problem', 'difficult',
                             // Spanish
                             'comentario', 'sugerencia', 'mejores aspectos', 'peores aspectos', 'problemas técnicos', 'problemas tecnicos',
@@ -1360,7 +1363,7 @@ Object.assign(window.App, {
                                     )
                                         ? 'additional'
                                         : (
-                                            lk.includes('improve') || lk.includes('suggest') || lk.includes('change') || lk.includes('better') ||
+                                            lk.includes('improve') || lk.includes('suggest') || lk.includes('change') || lk.includes('better') || lk.includes('less engaging') ||
                                             lk.includes('peores aspectos') || lk.includes('moins intéressants') || lk.includes('moins interessants') ||
                                             lk.includes('amélioré') || lk.includes('ameliore') ||
                                             lk.includes('الأقل إثارة') || lk.includes('تحسين')

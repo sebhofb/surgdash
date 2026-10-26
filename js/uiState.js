@@ -28,7 +28,7 @@ Object.assign(window.App, {
         'joinersPeriodDays',
         'instThreshold', 'instMonths', 'instShowPersonal', 'instViewMode',
         'cmpPreset', 'cmpAStart', 'cmpAEnd', 'cmpBStart', 'cmpBEnd', 'cmpCohortMode', 'cmpCohortDomain',
-        'qtrMode', 'qtrRange', '_forumSort', '_cfTagPick',
+        'qtrMode', 'qtrRange', '_forumSort', '_cfTagPick', '_tmCourse',
         'anomalyCollapsed',
         '_jrnSort', '_jrnAsc', '_jrnBy', '_jrnMin', '_jrnCourse', '_jrnPathMin', '_jrnChainLen', '_jrnChainSort',
     ],

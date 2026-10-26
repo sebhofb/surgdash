@@ -129,6 +129,7 @@ Object.assign(window.App, {
         if (dt === 'journeys') return this._dashJourneysHtml(snapData, audSnap);
         if (dt === 'forum' && this._dashForumHtml) return this._dashForumHtml();
         if (dt === 'quarterly' && this._dashQuarterlyHtml) return this._dashQuarterlyHtml();
+        if (dt === 'testimonials' && this._dashTestimonialsHtml) return this._dashTestimonialsHtml();
         // 'health' lives on the Data Sync page and 'lookup' in the Directory since 11 Sep 2026
         // (see _dashTabKey) — anything else is the overview.
         return this._dashOverviewHtml(snapData, audSnap, kpiCards);
@@ -3997,6 +3998,7 @@ Object.assign(window.App, {
                 ['compare', 'Compare', 'git-compare', 'Compare periods'],
                 ['journeys', 'Journeys', 'route', 'Learner journeys'],
                 ['forum', 'Forum', 'messages-square', 'Forum activity — posts in the course discussion spaces'],
+                ['testimonials', 'Testimonials', 'quote', 'Testimonials — the learner comments surghub.org course pages show'],
             ];
             const dashPill = ([k, l, ic, full, editOnly]) => `<button ${editOnly ? 'data-edit-only ' : ''}title="${this.escapeHtml(full || l)}" onclick="App._dashTab='${k}'; App.renderView()" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold whitespace-nowrap transition-colors ${dt === k ? 'bg-gsf-prussian text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100'}"><i data-lucide="${ic}" width="14"></i> ${l}</button>`;
             const dashPills = dashPillDefs.map(dashPill).join('');

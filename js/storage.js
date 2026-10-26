@@ -48,6 +48,8 @@
             'surghub_completion':   path.join('surghub', 'completion.json'),
             'surghub_accounts':     path.join('surghub', 'accounts.json'),
             'surghub_selected_testimonials': path.join('surghub', 'selected_testimonials.json'),
+            // Which survey comments surghub.org course pages show (js/testimonials.js): curation the team shares.
+            'surghub_testimonials': path.join('surghub', 'testimonials.json'),
             'surghub_milestones':   path.join('surghub', 'milestones.json'),
             'surghub_improvement_ai': path.join('surghub', 'improvement_ai.json'),
             // Courses run as closed cohorts (in-country workshops). A curation decision the
@@ -116,6 +118,7 @@
         if (key === 'surgdash_course_wakeups') return path.join('settings', 'course_wakeups.json');
         if (key === 'surgdash_course_slugs') return path.join('settings', 'course_slugs.json');
         if (key === 'surgdash_courses_feed') return path.join('settings', 'courses_feed.json');
+        if (key === 'surgdash_testimonials_feed') return path.join('settings', 'testimonials_feed.json');
         if (key === 'surgdash_provider_map')     return path.join('settings', 'provider_map.json');
         if (key === 'surgdash_course_links')     return path.join('settings', 'course_links.json');
         if (key === 'surghub_local_mtime')   return path.join('settings', 'surghub_local_mtime.json');
@@ -146,6 +149,7 @@
                 'signup_survey_url': 'surghub_signup_survey_url',
                 'social': 'surghub_social', 'completion': 'surghub_completion', 'accounts': 'surghub_accounts',
                 'selected_testimonials': 'surghub_selected_testimonials',
+                'testimonials': 'surghub_testimonials',
                 'milestones': 'surghub_milestones',
                 'improvement_ai': 'surghub_improvement_ai',
                 'private_courses': 'surghub_private_courses',

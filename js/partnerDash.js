@@ -433,13 +433,19 @@ Object.assign(window.App, {
             try { cf = await this.coursesFeedFile({ syncOk: opts.syncOk, progress: opts.progress }); if (cf.content) { files.push({ path: 'courses.json', content: cf.content }); (cf.thumbs || []).forEach(t => files.push({ path: t.path, content: t.base64, encoding: 'base64' })); } }
             catch (e) { failed.push('Course feed: ' + String((e && e.message) || e)); }
         }
+        // The testimonials surghub.org course pages show (testimonials.js).
+        let tf = null;
+        if (this.testimonialsFeedFile) {
+            try { tf = await this.testimonialsFeedFile({ feed: cf && cf.feed }); if (tf.content) files.push({ path: 'testimonials.json', content: tf.content }); }
+            catch (e) { failed.push('Testimonials: ' + String((e && e.message) || e)); }
+        }
         const host = (String(s.baseUrl || '').match(/^https?:\/\/([^/]+)/) || [])[1] || '';
         files.push({ path: 'index.html', content: this._pdLandingHtml() });
         files.push({ path: '404.html', content: this._pdLandingHtml() });
         files.push({ path: 'robots.txt', content: 'User-agent: *\nDisallow: /\n' });
         files.push({ path: '.nojekyll', content: '' });
         if (host && !/\.github\.io$/i.test(host)) files.push({ path: 'CNAME', content: host + '\n' });
-        return { files, built, failed, wm, cf };
+        return { files, built, failed, wm, cf, tf };
     },
 
     // GitHub API call; a dropped connection, a 5xx or GitHub's own "timed out" is tried
@@ -476,7 +482,7 @@ Object.assign(window.App, {
         if (!ready.ok) { if (!opts.silent) alert('Partner dashboards are not ready: ' + ready.why + '.'); return { ok: false, note: 'skipped — ' + ready.why }; }
         const s = this._pd, token = await this._pdToken(), branch = s.branch || 'main';
         try {
-            const { files, built, failed, wm, cf } = await this._pdBuildFiles(opts);
+            const { files, built, failed, wm, cf, tf } = await this._pdBuildFiles(opts);
             if (!built.length) throw new Error('no report could be built' + (failed.length ? ' (' + failed.join('; ') + ')' : ''));
             if (opts.progress) opts.progress('Partner dashboards: uploading ' + built.length + ' report' + (built.length === 1 ? '' : 's') + '…');
             const blob = (f) => this._pdGh('POST', '/git/blobs', { content: f.content, encoding: f.encoding || 'utf-8' }, token);
@@ -507,6 +513,7 @@ Object.assign(window.App, {
             built.forEach(p => { s.providers[p].published = { at: now, slug: s.providers[p].slug }; });
             if (wm && wm.content && this._wmPublished) await this._wmPublished(wm);
             if (cf && cf.content && this._cfMarkPublished) await this._cfMarkPublished(cf);
+            if (tf && tf.content && this._tmMarkPublished) await this._tmMarkPublished(tf);
             s.teamPublished = { at: now };
             const note = built.length + ' report' + (built.length === 1 ? '' : 's') + ' published' + (failed.length ? ', ' + failed.length + ' failed: ' + failed.join('; ') : '');
             s.lastPublish = { at: now, ok: !failed.length, note };

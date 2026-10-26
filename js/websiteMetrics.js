@@ -165,12 +165,14 @@ Object.assign(window.App, {
             const f = await this.websiteMetricsFile({});
             if (!f.content) throw new Error('nothing to publish yet: ' + f.why);
             const cf = this.coursesFeedFile ? await this.coursesFeedFile({ progress: (t) => { if (btn) btn.textContent = t; } }) : null;
+            const tf = this.testimonialsFeedFile ? await this.testimonialsFeedFile({ feed: cf && cf.feed }) : null;   // testimonials.js
             const s = this._pd, token = await this._pdToken(), branch = s.branch || 'main';
             const ref = await this._pdGh('GET', '/git/ref/heads/' + branch, null, token);
             const head = ref.object.sha, commit = await this._pdGh('GET', '/git/commits/' + head, null, token);
             const blob = await this._pdGh('POST', '/git/blobs', { content: f.content, encoding: 'utf-8' }, token);
             const entries = [{ path: 'metrics.json', mode: '100644', type: 'blob', sha: blob.sha }];
             if (cf && cf.content) entries.push({ path: 'courses.json', mode: '100644', type: 'blob', sha: (await this._pdGh('POST', '/git/blobs', { content: cf.content, encoding: 'utf-8' }, token)).sha });
+            if (tf && tf.content) entries.push({ path: 'testimonials.json', mode: '100644', type: 'blob', sha: (await this._pdGh('POST', '/git/blobs', { content: tf.content, encoding: 'utf-8' }, token)).sha });
             // course card thumbnails (coursesFeed.js): upload only those the site does not have yet
             if (cf && cf.thumbs && cf.thumbs.length) {
                 let have = new Set();
@@ -190,6 +192,7 @@ Object.assign(window.App, {
             await this._pdGh('PATCH', '/git/refs/heads/' + branch, { sha: c.sha, force: false }, token);
             await this._wmPublished(f);
             if (cf && cf.content && this._cfMarkPublished) await this._cfMarkPublished(cf);
+            if (tf && tf.content && this._tmMarkPublished) await this._tmMarkPublished(tf);
             const cfNote = cf ? (cf.fresh ? ' Course feed: ' + cf.count + ' courses.' : ' Course feed kept as it was: ' + cf.why + '.') : '';
             this.showMsg(f.fresh && (!cf || cf.fresh) ? '✓ Website figures published.' + cfNote + ' The websites show them within about 10 minutes.' : '⚠ ' + (f.fresh ? '' : 'Kept the last figures: ' + f.why + '.') + cfNote, f.fresh && (!cf || cf.fresh) ? false : 'warn');
             return { ok: true, fresh: f.fresh };

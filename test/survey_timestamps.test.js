@@ -24,6 +24,10 @@ check('nor Respondent, Country or Profession', !['Respondent', 'Country', 'Profe
 // a date column under some other heading still is not prose
 const r2 = detect.call(U, ['User', 'Ended at', 'Submitted on (local)', 'Comments'], json.map(x => ({ User: x.Respondent, 'Ended at': x['Ended at'], 'Submitted on (local)': x['Started at'], Comments: 'A long and useful comment about the course' })));
 check('any column of timestamps, whatever its heading, is not read as comments', !r2.textCols.includes('Submitted on (local)') && r2.textCols.includes('Comments'), JSON.stringify(r2.textCols));
+// the standard open questions are comments even when most answers are one word (26 Oct 2026)
+const shortCols = ['User', 'Ended at', 'What aspects of this course did you find most interesting?', 'What aspects of this course did you find less engaging? How could we make the course better for you?'];
+const r3 = detect.call(U, shortCols, ['Videos', 'All', 'Everything', 'Burns', 'The case discussions were very practical'].map((t, i) => ({ User: String(i), 'Ended at': '1' + i + ' Oct 2026 10:00:00', [shortCols[2]]: t, [shortCols[3]]: i ? 'None' : 'More videos' })));
+check('"most interesting" / "less engaging" are comment questions however short the answers', r3.textCols.includes(shortCols[2]) && r3.textCols.includes(shortCols[3]), JSON.stringify(r3.textCols));
 // the timestamp test itself
 const T = (t) => U._isTimestampText(t);
 check('timestamps in the forms seen', ['15 Oct 2026 11:45:49.', '15 Oct 2026 11:45:49', '2026-10-15 11:45', '2026-10-15T11:45:49Z', '15/10/2026', '5 oct. 2026 9:05'].every(T));
