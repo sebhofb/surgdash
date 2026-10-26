@@ -298,6 +298,14 @@ Object.assign(window.App, {
         e.at = new Date().toISOString();
         await this._tmSave(); this.rerenderDashTab ? this.rerenderDashTab() : this.renderView();
     },
+    // Off the "Switched off" list and back into the plain comment list. The entry
+    // stays (with any edited text), so switching it on again still brings that back.
+    async tmForget(id) {
+        await this._tmLoad();
+        const e = this._tm.byId[id]; if (!e || e.show) return;
+        delete e.show; e.at = new Date().toISOString();
+        await this._tmSave(); this.rerenderDashTab ? this.rerenderDashTab() : this.renderView();
+    },
     async tmMarkReviewed(courseId) { await this._tmLoad(); this._tm.reviewed[courseId] = new Date().toISOString(); await this._tmSave(); this.rerenderDashTab ? this.rerenderDashTab() : this.renderView(); },
     tmPickCourse(courseId) { this._tmCourse = courseId || null; this._tmShowN = this.TM_PAGE; this.rerenderDashTab ? this.rerenderDashTab() : this.renderView(); },
     tmSetFilter(k, v) { this._tmFilter = Object.assign({}, this._tmFilter || {}, { [k]: v }); this._tmShowN = this.TM_PAGE; this.rerenderDashTab ? this.rerenderDashTab() : this.renderView(); },
@@ -320,14 +328,15 @@ Object.assign(window.App, {
             const shown = Object.values(this._tm.byId).filter(e => e.course === c.id && e.show).length;
             const isNew = (r) => !rev || String(r.date) > rev.slice(0, 10);
             const chosen = new Set(Object.keys(this._tm.byId).filter(id => this._tm.byId[id].course === c.id && this._tm.byId[id].show));
-            return { c, n: resp.length, shown, waiting: resp.filter(r => isNew(r) && !chosen.has(r.id)).length, suggested: resp.filter(r => !chosen.has(r.id) && this._tmSuggested(r)).length };
+            const off = Object.values(this._tm.byId).filter(e => e.course === c.id && e.show === false).length;
+            return { c, n: resp.length, shown, off, waiting: resp.filter(r => isNew(r) && !chosen.has(r.id)).length, suggested: resp.filter(r => !chosen.has(r.id) && this._tmSuggested(r)).length };
         });
         if (!this._tmCourse || !feed.courses.some(c => c.id === this._tmCourse)) {
             const rows = courses.filter(x => x.n).sort((a, b) => (a.shown >= 3) - (b.shown >= 3) || a.shown - b.shown || b.waiting - a.waiting || a.c.title.localeCompare(b.c.title)).map(x => {
                 const tone = !x.shown ? 'text-rose-600 bg-rose-50 border-rose-200' : x.shown < 3 ? 'text-amber-700 bg-amber-50 border-amber-200' : 'text-emerald-700 bg-emerald-50 border-emerald-200';
                 return '<tr class="border-b border-slate-100 hover:bg-slate-50 cursor-pointer" onclick="App.tmPickCourse(\'' + this.escapeJsArg(x.c.id) + '\')">'
                     + '<td class="py-2 px-3 text-xs font-bold text-gsf-prussian">' + esc(x.c.title) + '</td><td class="py-2 px-3 text-xs text-slate-500 truncate max-w-[200px]">' + esc(x.c.provider) + '</td>'
-                    + '<td class="py-2 px-3 text-center"><span class="inline-block min-w-[28px] px-2 py-0.5 rounded-full border text-[11px] font-bold ' + tone + '">' + x.shown + '</span></td>'
+                    + '<td class="py-2 px-3 text-center"><span class="inline-block min-w-[28px] px-2 py-0.5 rounded-full border text-[11px] font-bold ' + tone + '">' + x.shown + '</span>' + (x.off ? '<span class="block text-[10px] text-slate-400 mt-0.5" title="Switched off: open the course to put them back">' + x.off + ' off</span>' : '') + '</td>'
                     + '<td class="py-2 px-3 text-right text-xs ' + (x.waiting ? 'font-bold text-amber-700' : 'text-slate-400') + '">' + this.formatNumber(x.waiting) + '</td>'
                     + '<td class="py-2 px-3 text-right text-xs text-slate-600">' + this.formatNumber(x.suggested) + '</td><td class="py-2 px-3 text-right text-xs text-slate-400">' + this.formatNumber(x.n) + '</td></tr>';
             }).join('');
@@ -343,7 +352,12 @@ Object.assign(window.App, {
         const ent = (id) => this._tm.byId[id] || {};
         const shownList = all.filter(r => ent(r.id).show).sort((a, b) => (Number(ent(a.id).order) || 9999) - (Number(ent(b.id).order) || 9999));
         const isNew = (r) => !rev || String(r.date) > rev.slice(0, 10);
-        let rest = all.filter(r => !ent(r.id).show);
+        // Comments that were on the page and were switched off keep their own list,
+        // most recent first: otherwise they sink into hundreds of comments, filtered
+        // and paged, and are hard to find again. show === false only ever comes
+        // from switching one off (tmForget clears it).
+        const offList = all.filter(r => ent(r.id).show === false).sort((a, b) => String(ent(b.id).at || '').localeCompare(String(ent(a.id).at || '')));
+        let rest = all.filter(r => !ent(r.id).show && ent(r.id).show !== false);
         if (fl.fresh) rest = rest.filter(isNew);
         if (fl.stars === '5') rest = rest.filter(r => r.stars === 5); else if (fl.stars === '4') rest = rest.filter(r => r.stars >= 4); else if (fl.stars === 'low') rest = rest.filter(r => r.stars && r.stars <= 3);
         if (fl.lang) rest = rest.filter(r => r.lang === fl.lang);
@@ -358,6 +372,7 @@ Object.assign(window.App, {
                 + (this._tmSuggested(r) && !on ? '<span class="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[10px] font-bold">suggested</span>' : '')
                 + (isNew(r) && !on ? '<span class="px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 text-[10px] font-bold">new</span>' : '')
                 + (held ? '<span class="px-1.5 py-0.5 rounded bg-rose-50 text-rose-600 text-[10px] font-bold" title="The display text contains an email, phone number or learner name: it is not published until edited">held back: personal details</span>' : '')
+                + (!on && e.text && e.text !== r.text ? '<span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-bold" title="Switching it on again brings back your edited text, cadre and country">edits kept</span>' : '')
                 + '<span class="ml-auto">' + esc(r.date) + '</span>'
                 + (on ? '<span class="inline-flex items-center gap-0.5 ml-2" data-edit-only><button onclick="App.tmMove(\'' + idJs + '\', -1)" ' + (i === 0 ? 'disabled ' : '') + 'class="px-1.5 py-0.5 border rounded text-slate-500 hover:text-gsf-boston disabled:opacity-30" title="Move up">▲</button><button onclick="App.tmMove(\'' + idJs + '\', 1)" ' + (i === n - 1 ? 'disabled ' : '') + 'class="px-1.5 py-0.5 border rounded text-slate-500 hover:text-gsf-boston disabled:opacity-30" title="Move down">▼</button><span class="ml-1 font-bold text-gsf-prussian">#' + (i + 1) + '</span></span>' : '')
                 + '<label class="inline-flex items-center gap-1.5 ml-2 cursor-pointer font-bold ' + (on ? 'text-gsf-boston' : 'text-slate-500') + '" data-edit-only><input type="checkbox" ' + (on ? 'checked ' : '') + 'onchange="App.tmToggle(\'' + idJs + '\', \'' + cidJs + '\')"> Show on SURGhub</label></div>'
@@ -378,6 +393,9 @@ Object.assign(window.App, {
             + '<button data-edit-only onclick="App.tmMarkReviewed(\'' + cidJs + '\')" class="ml-auto px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-200 hover:border-gsf-boston text-gsf-prussian" title="Everything received until now stops counting as new">Mark reviewed</button></div>'
             + '<div class="bg-white rounded-xl shadow-sm border p-5 mb-5"><h4 class="text-sm font-bold text-gsf-prussian mb-3">On the course page (' + shownList.length + ')</h4>'
             + (shownList.length ? shownList.map((r, i) => card(r, i, shownList.length)).join('') : '<p class="text-sm text-slate-400">None yet: switch comments on below.</p>') + '</div>'
+            + (offList.length ? '<div class="bg-white rounded-xl shadow-sm border border-dashed p-5 mb-5"><h4 class="text-sm font-bold text-gsf-prussian">Switched off (' + offList.length + ')</h4>'
+                + '<p class="text-xs text-slate-500 mt-0.5 mb-3">Were on the course page. Tick one to put it back; your edits come back with it. "Forget" moves it into the comments below.</p>'
+                + offList.map(r => card(r, 0, 0).replace(/<\/div>$/, '<div class="mt-2 text-right" data-edit-only><button onclick="App.tmForget(\'' + this.escapeJsArg(r.id) + '\')" class="text-[11px] text-slate-400 hover:text-gsf-boston hover:underline">Forget</button></div></div>')).join('') + '</div>' : '')
             + '<div class="bg-white rounded-xl shadow-sm border p-5"><div class="flex items-center gap-2 flex-wrap mb-3"><h4 class="text-sm font-bold text-gsf-prussian mr-2">Comments (' + rest.length + ')</h4>'
             + '<label class="inline-flex items-center gap-1 text-xs text-slate-600"><input type="checkbox" ' + (fl.fresh ? 'checked ' : '') + 'onchange="App.tmSetFilter(\'fresh\', this.checked)"> New since last review</label>'
             + '<label class="inline-flex items-center gap-1 text-xs text-slate-600 ml-2"><input type="checkbox" ' + (fl.suggested ? 'checked ' : '') + 'onchange="App.tmSetFilter(\'suggested\', this.checked)"> Suggested only</label>'

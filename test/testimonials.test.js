@@ -102,6 +102,23 @@ App._cfFeedNow = () => FEED;
   const page = App._dashTestimonialsHtml();
   check('…and a course: switches, order arrows, editable text, filters', /Show on SURGhub/.test(page) && /App\.tmMove\(/.test(page) && /tmSetField\('[^']+', 'burns', 'text'/.test(page) && /New since last review/.test(page) && /Mark reviewed/.test(page));
 
+  // ── switched off: kept in its own list so it is easy to put back ──
+  const offSection = (html) => html.includes('Switched off') ? html.slice(html.indexOf('Switched off'), html.indexOf('Comments (')) : '';
+  await App.tmSetField(pid, 'burns', 'text', 'Edited for the page');
+  await App.tmToggle(pid, 'burns');
+  const off = App._dashTestimonialsHtml(), offPart = off.slice(off.indexOf('Switched off'), off.indexOf('Comments ('));
+  check('a comment switched off gets its own "Switched off" list…', /Switched off \(\d+\)/.test(off) && offPart.includes("tmToggle('" + pid + "'") && /edits kept/.test(offPart) && /App\.tmForget\(/.test(offPart));
+  check('…and is not lost among the other comments', !off.slice(off.indexOf('Comments (')).includes("tmToggle('" + pid + "'"));
+  await App.tmToggle(pid, 'burns');
+  const back = App._dashTestimonialsHtml();
+  check('ticking it again puts it back with the edited text', App._tm.byId[pid].show === true && App.testimonialsFeedBuild(FEED).courses['burns-public'].some(x => x.id === pid && x.text === 'Edited for the page') && !offSection(back).includes("tmToggle('" + pid + "'"));
+  App._tmCourse = null;
+  check('the course overview says how many are switched off', /\d+ off<\/span>/.test(App._dashTestimonialsHtml()));
+  App._tmCourse = 'burns';
+  await App.tmToggle(pid, 'burns'); await App.tmForget(pid);
+  const forgot = App._dashTestimonialsHtml();
+  check('"Forget" moves it back into the comments, edits still stored', !offSection(forgot).includes("tmToggle('" + pid + "'") && forgot.slice(forgot.indexOf('Comments (')).includes("tmToggle('" + pid + "'") && App._tm.byId[pid].text === 'Edited for the page');
+
   // ── the survey sync never touches the choices; publishing carries the file ──
   const upd = fs.readFileSync(path.join(ROOT, 'js/updater.js'), 'utf8'), wm = fs.readFileSync(path.join(ROOT, 'js/websiteMetrics.js'), 'utf8'), pd = fs.readFileSync(path.join(ROOT, 'js/partnerDash.js'), 'utf8'), st = fs.readFileSync(path.join(ROOT, 'js/storage.js'), 'utf8');
   check('Sync Surveys never writes the testimonial choices', !/surghub_testimonials|_tm\.byId/.test(upd));
