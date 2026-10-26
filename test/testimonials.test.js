@@ -129,6 +129,56 @@ App._cfFeedNow = () => FEED;
   const forgot = App._dashTestimonialsHtml();
   check('"Forget" moves it back into the comments, edits still stored', !offSection(forgot).includes("tmToggle('" + pid + "'") && forgot.slice(forgot.indexOf('Comments (')).includes("tmToggle('" + pid + "'") && App._tm.byId[pid].text === 'Edited for the page');
 
+  // ── picking the best automatically ──
+  {
+    const C2 = ['Respondent', 'Country', 'Profession', 'Started at', 'Ended at', 'On a scale from 1 to 5, how would you rate your overall satisfaction with this course?',
+      'What aspects of this course did you find most interesting?', 'What aspects of this course did you find less engaging? How could we make the course better for you?'];
+    const TEXTS = ['', 'The difficult airway trolley checks changed how our team prepares every single morning',
+      'Paediatric dosing tables were clear and I now use them at the bedside with confidence',
+      'Video laryngoscopy practice cases gave me courage for my first emergency intubation',
+      'Extubation planning steps helped our recovery nurses spot danger earlier than before',
+      'Learning about oxygen supply failures prepared our rural hospital for real outages',
+      'Rapid sequence induction drugs finally make sense to me after these short lectures',
+      'Setting up awake fibreoptic intubation was explained better than in any textbook I own',
+      'Cricothyroidotomy drills with simple materials are something we now teach juniors monthly',
+      'Aspiration prevention advice was useful although I knew most of it already from training'];
+    const txt = (i) => TEXTS[i];
+    const rows = [];
+    for (let i = 1; i <= 9; i++) rows.push([i, i <= 3 ? 'Kenya' : 'Country' + i, 'nurse', '0' + i + ' Oct 2026 10:00:00', '0' + i + ' Oct 2026 10:00:00', '5', txt(i), 'More videos about difficult airway cases would make it better for us']);
+    rows.push([10, 'Ghana', 'nurse', '10 Oct 2026 10:00:00', '10 Oct 2026 10:00:00', '2', 'Low rated but long and lovely comment about the airway course and its videos', '']);
+    rows.push([11, 'Togo', 'nurse', '11 Oct 2026 10:00:00', '11 Oct 2026 10:00:00', '5', txt(1).replace('every single morning', 'every morning'), '']);   // near-duplicate of #1
+    const raw = store.get('surghub_survey_raw'); raw['Airway Course'] = { cols: C2, data: rows }; App._rawSurveyResponses = raw; App._tmRespCache = null;
+    App.data.push({ Course: 'Airway Course', CourseId: 'airway', Timestamp: '2026-10-26' });
+    App._tmLatestCache = null;
+    FEED.courses.push({ id: 'airway', slug: 'airway', title: 'Airway Course', provider: 'P' });
+    App._djb2Hash = (str) => { let h = 5381; for (let i = 0; i < str.length; i++) h = (((h << 5) + h) + str.charCodeAt(i)) | 0; return (h >>> 0).toString(36); };
+    App._isJunkFeedback = (t) => String(t).length < 25;
+    const ai = {};
+    for (let i = 1; i <= 9; i++) ai[App._djb2Hash(txt(i))] = { s: i === 9 ? 4 : 10 - i % 3, q: true, t: ['knowledge-gain'], l: 'en', c: i === 2 ? 'Tidied: the airway module was useful.' : '' };
+    ai[App._djb2Hash(txt(1).replace('every single morning', 'every morning'))] = { s: 10, q: true, t: [], l: 'en', c: '' };
+    ai[App._djb2Hash('More videos about difficult airway cases would make it better for us')] = { s: 9, q: true, t: ['suggestion'], l: 'en', c: '' };
+    App._aiScoreMap = ai; App._getAiScores = async () => App._aiScoreMap; App._claudeScoreBatch = async () => []; App.showMsg = (m) => { App.__msg = m; };
+    const res = await App.tmPickBest(['airway'], null);
+    const picked = Object.entries(App._tm.byId).filter(([, e]) => e.course === 'airway' && e.show).sort((a, b) => a[1].order - b[1].order);
+    const respA = {}; App.tmResponses('airway').forEach(r => { respA[r.id] = r; });
+    const pt = picked.map(([id]) => respA[id]);
+    check('picks at most 6, all AI-screened (quotable, score 6+), 4–5 stars, from the "most interesting" question', res.picked === 6 && pt.every(r => r.stars >= 4 && /most interesting/.test(r.q)), pt.map(r => r.text.slice(0, 12)).join(' | '));
+    check('never a low-rated comment, a "less engaging" answer, one the AI scored under 6, or a near-duplicate', !pt.some(r => /Low rated|More videos/.test(r.text) || r.text === txt(9)) && pt.filter(r => /difficult airway trolley/.test(r.text)).length <= 1);
+    check('countries are spread: one from Kenya until the others are used', pt.slice(0, 6).filter(r => r.country === 'Kenya').length <= 2 && pt[0].country !== pt[1].country);
+    const e2 = picked.find(([id]) => respA[id].text === txt(2));
+    check('the AI\'s tidied quote becomes the display text; picks are marked automatic', (!e2 || e2[1].text === 'Tidied: the airway module was useful.') && picked.every(([, e]) => e.auto && e.auto.score >= 6));
+    await App.tmSetField(picked[0][0], 'airway', 'text', 'Edited by a person');
+    check('editing one clears its "picked automatically" mark', !App._tm.byId[picked[0][0]].auto);
+    await App.tmToggle(picked[5][0], 'airway');
+    const again = await App.tmPickBest(['airway'], null);
+    check('on a course with some shown, it only fills up to 6', again.picked <= 1 && Object.values(App._tm.byId).filter(e => e.course === 'airway' && e.show).length <= 6);
+    const ai2 = Object.keys(ai).length; App._getAnthropicKey = async () => 'k'; let asked = false; ctx.confirm = () => { asked = true; return false; };
+    raw['Airway Course'].data.push([12, 'Mali', 'nurse', '12 Oct 2026 10:00:00', '12 Oct 2026 10:00:00', '5', 'A brand new comment nobody has screened yet about the airway course videos', '']); App._tmRespCache = null;
+    Object.values(App._tm.byId).forEach(e => { if (e.course === 'airway') e.show = false; });
+    await App.tmPickBest(['airway'], null);
+    check('comments the AI has not screened: it asks before scoring them, and never picks them unscreened', asked && Object.keys(ai).length === ai2 && !Object.entries(App._tm.byId).some(([id, e]) => e.course === 'airway' && e.show && /brand new/.test((respA[id] || App.tmResponses('airway').find(r => r.id === id) || {}).text || '')));
+  }
+
   // ── the survey sync never touches the choices; publishing carries the file ──
   const upd = fs.readFileSync(path.join(ROOT, 'js/updater.js'), 'utf8'), wm = fs.readFileSync(path.join(ROOT, 'js/websiteMetrics.js'), 'utf8'), pd = fs.readFileSync(path.join(ROOT, 'js/partnerDash.js'), 'utf8'), st = fs.readFileSync(path.join(ROOT, 'js/storage.js'), 'utf8');
   check('Sync Surveys never writes the testimonial choices', !/surghub_testimonials|_tm\.byId/.test(upd));

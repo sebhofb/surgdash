@@ -131,7 +131,8 @@ Object.assign(window.App, {
     },
     _tmQLabel(q) {
         const t = String(q || '');
-        return /most interesting|plus intéressant|más interesante|الأكثر/i.test(t) ? 'Most interesting' : /less engaging|moins intéressant|menos interesante|الأقل/i.test(t) ? 'Less engaging' : /technical|technique|técnic|تقنية/i.test(t) ? 'Technical issues' : /additional|other comment|autres commentaires|comentario|تعليقات/i.test(t) ? 'Other comments' : t.slice(0, 40);
+        return /less engaging|least useful|could be improved|moins intéressant|menos interesante|peores aspectos|الأقل/i.test(t) ? 'Less engaging'
+            : /most interesting|most useful|like most|plus intéressant|más interesante|mejores aspectos|الأكثر/i.test(t) ? 'Most interesting' : /technical|technique|técnic|تقنية/i.test(t) ? 'Technical issues' : /additional|other comment|autres commentaires|comentario|تعليقات/i.test(t) ? 'Other comments' : t.slice(0, 40);
     },
     _tmSuggested(r) { return r.stars >= 4 && r.words >= this.TM_SUGGEST_WORDS && !!r.cadre && !!r.country; },
 
@@ -289,11 +290,103 @@ Object.assign(window.App, {
         return this._tmLiveJson;
     },
 
+    // ── picking the best automatically (Seb, 26 Oct 2026) ──
+    // For a course with no (or few) testimonials: up to TM_PICK_N comments, screened by the same Claude
+    // scoring the Feedback tab uses (surghub_feedback_ai, keyed by djb2 of the text). A pick must be from
+    // a praise question ("most interesting" / other comments — never "less engaging" or technical
+    // issues), rated 4–5 stars, not junk, pass the privacy scrub, and be marked quotable with an AI score
+    // of TM_PICK_MIN or more. Best first; near-duplicates skipped; one per country first, then the rest.
+    // The AI's cleaned quote becomes the display text. Fewer good ones → fewer picks. Picks carry `auto`
+    // (shown as "picked automatically" until someone edits or reorders them).
+    TM_PICK_N: 6, TM_PICK_MIN: 6,
+    _tmAiKey(t) { return this._djb2Hash ? this._djb2Hash(String(t).trim()) : this._tmHash(String(t).trim()); },
+    _tmPraiseQ(q) { const l = this._tmQLabel(q); return l === 'Most interesting' || l === 'Other comments'; },
+    _tmCandidates(courseId) {
+        const chosen = new Set(Object.keys(this._tm.byId).filter(id => this._tm.byId[id].course === courseId && this._tm.byId[id].show));
+        return this.tmResponses(courseId).filter(r => !chosen.has(r.id) && this._tmPraiseQ(r.q) && r.stars >= 4 && !(this._isJunkFeedback && this._isJunkFeedback(r.text)) && !this._tmHeld(r.text));
+    },
+    // Score candidates the AI has not seen yet (asks first). Returns false when it could not.
+    async _tmScoreMissing(list, btn) {
+        if (!this._getAiScores || !this._claudeScoreBatch) return false;
+        const scores = await this._getAiScores(), todo = [], seen = new Set();
+        list.forEach(r => { const h = this._tmAiKey(r.text); if (!scores[h] && !seen.has(h)) { seen.add(h); todo.push({ h, t: r.text.trim() }); } });
+        if (!todo.length) return true;
+        const apiKey = this._getAnthropicKey ? await this._getAnthropicKey() : null;
+        if (!apiKey) { alert('To screen comments the AI has not scored yet, SURGdash needs the Anthropic API key (Feedback tab → Score with AI). Picking from the comments already scored.'); return false; }
+        if (!confirm(todo.length + ' candidate comments have not been screened by the AI yet.\n\nScore them now with Claude (' + Math.ceil(todo.length / 30) + ' requests, a few cents) so they can be picked?\n\nCancel picks from the comments already scored.')) return false;
+        for (let i = 0; i < todo.length; i += 30) {
+            const batch = todo.slice(i, i + 30);
+            if (btn) btn.textContent = 'Screening comments ' + Math.min(i + 30, todo.length) + '/' + todo.length + '…';
+            try {
+                const results = await this._claudeScoreBatch(apiKey, batch.map(b => b.t));
+                results.forEach(r => {
+                    const item = batch[r.i]; if (!item) return;
+                    const sc = Math.max(0, Math.min(10, Number(r.score) || 0)), themes = Array.isArray(r.themes) ? r.themes.slice(0, 4) : [];
+                    scores[item.h] = { s: sc, q: !!r.quotable && sc > 0, t: themes, l: String(r.language || ''), c: (r.quotable || themes.includes('suggestion') || themes.includes('complaint')) ? String(r.quote || '').trim() : '' };
+                });
+                await Storage.setItem('surghub_feedback_ai', scores);
+            } catch (e) { __swallowed(e, 'tm.score'); if (/Invalid Anthropic API key/.test(e.message)) { alert(e.message); return false; } }
+        }
+        this._aiScoreMap = scores;
+        return true;
+    },
+    // Pick for one course; returns how many were added.
+    _tmPickCourse(courseId) {
+        const scores = this._aiScoreMap || {}, shown = Object.values(this._tm.byId).filter(e => e.course === courseId && e.show);
+        const slots = this.TM_PICK_N - shown.length;
+        if (slots <= 0) return 0;
+        const good = this._tmCandidates(courseId).map(r => ({ r, a: scores[this._tmAiKey(r.text)] }))
+            .filter(x => x.a && x.a.q && x.a.s >= this.TM_PICK_MIN && !(x.a.t || []).includes('complaint'))
+            .sort((x, y) => y.a.s - x.a.s || (!!(y.r.cadre && y.r.country) - !!(x.r.cadre && x.r.country)) || String(y.r.date).localeCompare(String(x.r.date)));
+        const toks = (t) => this._tmTokens(t);
+        const dice = (a, b) => { const bag = {}; b.forEach(w => { bag[w] = (bag[w] || 0) + 1; }); let c = 0; a.forEach(w => { if (bag[w]) { bag[w]--; c++; } }); return 2 * c / ((a.length + b.length) || 1); };
+        const taken = shown.map(e => toks(e.text || '')), countries = new Set(shown.map(e => e.country).filter(Boolean)), picks = [];
+        for (const pass of [1, 2]) {
+            for (const x of good) {
+                if (picks.length >= slots) break;
+                if (picks.includes(x)) continue;
+                const disp = x.a.c && !this._tmHeld(x.a.c) ? x.a.c : x.r.text, t = toks(disp);
+                if (taken.some(o => dice(t, o) >= 0.6)) continue;
+                if (pass === 1 && x.r.country && countries.has(x.r.country)) continue;
+                picks.push(x); taken.push(t); if (x.r.country) countries.add(x.r.country);
+                x.disp = disp;
+            }
+        }
+        let order = Math.max(0, ...shown.map(e => Number(e.order) || 0));
+        const at = new Date().toISOString();
+        picks.forEach(x => {
+            const e = this._tm.byId[x.r.id] || (this._tm.byId[x.r.id] = { course: courseId });
+            e.show = true; e.order = ++order; e.at = at; e.auto = { at, score: x.a.s };
+            if (x.disp !== x.r.text) e.text = x.disp; else delete e.text;
+        });
+        return picks.length;
+    },
+    // courseIds: the courses to fill (default: every public course with comments and none shown).
+    async tmPickBest(courseIds, btn) {
+        await this._tmLoad();
+        const feed = this._tmCourseFeed();
+        const ids = courseIds && courseIds.length ? courseIds : feed.courses.filter(c => !Object.values(this._tm.byId).some(e => e.course === c.id && e.show) && this.tmResponses(c.id).length).map(c => c.id);
+        if (!ids.length) { this.showMsg('Every course with comments already has testimonials.'); return { picked: 0, courses: 0 }; }
+        const label = btn && btn.textContent; if (btn) { btn.disabled = true; btn.textContent = 'Picking…'; }
+        try {
+            await this._tmScoreMissing(ids.flatMap(id => this._tmCandidates(id)), btn);
+            if (this._getAiScores) await this._getAiScores();
+            const res = ids.map(id => ({ id, n: this._tmPickCourse(id) }));
+            await this._tmSave();
+            const picked = res.reduce((t, x) => t + x.n, 0), full = res.filter(x => x.n >= this.TM_PICK_N).length, few = res.filter(x => x.n && x.n < this.TM_PICK_N).length, none = res.filter(x => !x.n).length;
+            this.showMsg('✓ Picked ' + picked + ' testimonial' + (picked === 1 ? '' : 's') + ' for ' + (ids.length - none) + ' course' + (ids.length - none === 1 ? '' : 's') + (few ? ' (' + few + ' with fewer than ' + this.TM_PICK_N + ': not enough good comments)' : '') + (none ? '; ' + none + ' had no comment good enough' : '') + '. Marked "picked automatically" — they go online at the next publish.', none || few ? 'warn' : false);
+            return { picked, courses: ids.length, full, few, none, res };
+        } finally {
+            if (btn) { btn.disabled = false; btn.textContent = label; }
+            this.rerenderDashTab ? this.rerenderDashTab() : this.renderView();
+        }
+    },
+
     // ── editing (Testimonials tab) ──
     async tmToggle(id, courseId) {
         await this._tmLoad();
         const e = this._tm.byId[id] || (this._tm.byId[id] = { course: courseId });
-        e.show = !e.show; e.at = new Date().toISOString();
+        e.show = !e.show; e.at = new Date().toISOString(); delete e.auto;
         if (e.show && !e.order) e.order = Math.max(0, ...Object.values(this._tm.byId).filter(x => x.course === e.course && x.show && x !== e).map(x => Number(x.order) || 0)) + 1;
         await this._tmSave(); this.rerenderDashTab ? this.rerenderDashTab() : this.renderView();
     },
@@ -305,6 +398,7 @@ Object.assign(window.App, {
         if (j < 0 || j >= list.length) return;
         [list[i], list[j]] = [list[j], list[i]];
         list.forEach(([, x], k) => { x.order = k + 1; });
+        delete e.auto;
         await this._tmSave(); this.rerenderDashTab ? this.rerenderDashTab() : this.renderView();
     },
     async tmSetField(id, courseId, field, value) {
@@ -312,7 +406,7 @@ Object.assign(window.App, {
         const e = this._tm.byId[id] || (this._tm.byId[id] = { course: courseId });
         const v = String(value == null ? '' : value).replace(/\s+/g, ' ').trim();
         if (v) e[field] = field === 'stars' ? Number(v) : v; else delete e[field];
-        e.at = new Date().toISOString();
+        e.at = new Date().toISOString(); delete e.auto;
         await this._tmSave(); this.rerenderDashTab ? this.rerenderDashTab() : this.renderView();
     },
     // Off the "Switched off" list and back into the plain comment list. The entry
@@ -352,13 +446,18 @@ Object.assign(window.App, {
             const rows = courses.filter(x => x.n).sort((a, b) => (a.shown >= 3) - (b.shown >= 3) || a.shown - b.shown || b.waiting - a.waiting || a.c.title.localeCompare(b.c.title)).map(x => {
                 const tone = !x.shown ? 'text-rose-600 bg-rose-50 border-rose-200' : x.shown < 3 ? 'text-amber-700 bg-amber-50 border-amber-200' : 'text-emerald-700 bg-emerald-50 border-emerald-200';
                 return '<tr class="border-b border-slate-100 hover:bg-slate-50 cursor-pointer" onclick="App.tmPickCourse(\'' + this.escapeJsArg(x.c.id) + '\')">'
-                    + '<td class="py-2 px-3 text-xs font-bold text-gsf-prussian">' + esc(x.c.title) + '</td><td class="py-2 px-3 text-xs text-slate-500 truncate max-w-[200px]">' + esc(x.c.provider) + '</td>'
+                    + '<td class="py-2 px-3 text-xs font-bold text-gsf-prussian">' + esc(x.c.title) + (Object.values(this._tm.byId).some(e => e.course === x.c.id && e.show && e.auto) ? ' <span class="ml-1 px-1.5 py-0.5 rounded bg-violet-50 text-violet-700 text-[9px] font-bold uppercase">auto-picked</span>' : '') + '</td><td class="py-2 px-3 text-xs text-slate-500 truncate max-w-[200px]">' + esc(x.c.provider) + '</td>'
                     + '<td class="py-2 px-3 text-center"><span class="inline-block min-w-[28px] px-2 py-0.5 rounded-full border text-[11px] font-bold ' + tone + '">' + x.shown + '</span>' + (x.off ? '<span class="block text-[10px] text-slate-400 mt-0.5" title="Switched off: open the course to put them back">' + x.off + ' off</span>' : '') + '</td>'
                     + '<td class="py-2 px-3 text-right text-xs ' + (x.waiting ? 'font-bold text-amber-700' : 'text-slate-400') + '">' + this.formatNumber(x.waiting) + '</td>'
                     + '<td class="py-2 px-3 text-right text-xs text-slate-600">' + this.formatNumber(x.suggested) + '</td><td class="py-2 px-3 text-right text-xs text-slate-400">' + this.formatNumber(x.n) + '</td></tr>';
             }).join('');
-            const none = courses.filter(x => !x.n).length;
-            return head + '<div class="bg-white rounded-xl shadow-sm border overflow-hidden"><div class="overflow-x-auto max-h-[640px] overflow-y-auto custom-scrollbar"><table class="w-full text-left border-collapse text-sm">'
+            const none = courses.filter(x => !x.n).length, empty = courses.filter(x => x.n && !x.shown).length;
+            const autoN = Object.values(this._tm.byId).filter(e => e.show && e.auto).length;
+            return head + (empty || autoN ? '<div class="flex items-center gap-3 flex-wrap mb-3">'
+                + (empty ? '<button data-edit-only onclick="App.tmPickBest(null, this)" class="px-4 py-2 bg-gsf-boston hover:bg-gsf-prussian text-white text-xs font-bold rounded-lg">Pick the best ' + this.TM_PICK_N + ' for the ' + empty + ' course' + (empty === 1 ? '' : 's') + ' with none</button>'
+                    + '<span class="text-[11px] text-slate-500 max-w-xl">4–5 star comments screened by the AI (quotable, score ' + this.TM_PICK_MIN + '+), best first, varied countries, with the AI\'s tidied quote as the text. Fewer when there are fewer good ones.</span>' : '')
+                + (autoN ? '<span class="text-[11px] text-violet-700 font-semibold">' + autoN + ' picked automatically — open a course to check them</span>' : '') + '</div>' : '')
+                + '<div class="bg-white rounded-xl shadow-sm border overflow-hidden"><div class="overflow-x-auto max-h-[640px] overflow-y-auto custom-scrollbar"><table class="w-full text-left border-collapse text-sm">'
                 + '<thead class="sticky top-0 bg-white shadow-sm"><tr class="border-b text-slate-500 text-xs"><th class="py-2 px-3 font-medium">Course</th><th class="py-2 px-3 font-medium">Provider</th><th class="py-2 px-3 font-medium text-center" title="Testimonials switched on for the course page">Shown</th>'
                 + '<th class="py-2 px-3 font-medium text-right" title="Comments received since the course was last marked reviewed">New</th><th class="py-2 px-3 font-medium text-right" title="4–5 stars, ' + this.TM_SUGGEST_WORDS + '+ words, cadre and country known">Suggested</th><th class="py-2 px-3 font-medium text-right">Comments</th></tr></thead><tbody>'
                 + rows + '</tbody></table></div>' + (none ? '<p class="text-[11px] text-slate-400 px-4 py-2 border-t">' + none + ' public course' + (none === 1 ? '' : 's') + ' with no written comments yet are not listed.</p>' : '') + '</div>';
@@ -388,6 +487,7 @@ Object.assign(window.App, {
                 + '<span class="text-[10px] text-slate-400 truncate max-w-[260px]" title="' + esc(r.q) + '">' + esc(this._tmQLabel(r.q)) + '</span>'
                 + (this._tmSuggested(r) && !on ? '<span class="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[10px] font-bold">suggested</span>' : '')
                 + (isNew(r) && !on ? '<span class="px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 text-[10px] font-bold">new</span>' : '')
+                + (on && e.auto ? '<span class="px-1.5 py-0.5 rounded bg-violet-50 text-violet-700 text-[10px] font-bold" title="Picked automatically (AI score ' + esc(e.auto.score) + '/10). Editing, moving or switching it clears this mark.">picked automatically</span>' : '')
                 + (held ? '<span class="px-1.5 py-0.5 rounded bg-rose-50 text-rose-600 text-[10px] font-bold" title="The display text contains an email, phone number or learner name: it is not published until edited">held back: personal details</span>' : '')
                 + (!on && e.text && e.text !== r.text ? '<span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-bold" title="Switching it on again brings back your edited text, cadre and country">edits kept</span>' : '')
                 + '<span class="ml-auto">' + esc(r.date) + '</span>'
@@ -407,7 +507,8 @@ Object.assign(window.App, {
         const x = courses.find(y => y.c.id === cid) || { waiting: 0 };
         return head + '<div class="mb-4 flex items-center gap-3 flex-wrap"><button onclick="App.tmPickCourse(null)" class="text-xs font-bold text-gsf-boston hover:underline">← All courses</button>'
             + '<h3 class="text-lg font-bold text-gsf-prussian">' + esc(c.title) + '</h3><span class="text-xs text-slate-400">' + esc(c.provider) + ' · ' + this.formatNumber(all.length) + ' comments · ' + x.waiting + ' new since ' + (rev ? 'review on ' + esc(rev.slice(0, 10)) : 'never reviewed') + '</span>'
-            + '<button data-edit-only onclick="App.tmMarkReviewed(\'' + cidJs + '\')" class="ml-auto px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-200 hover:border-gsf-boston text-gsf-prussian" title="Everything received until now stops counting as new">Mark reviewed</button></div>'
+            + (shownList.length < this.TM_PICK_N ? '<button data-edit-only onclick="App.tmPickBest([\'' + cidJs + '\'], this)" class="ml-auto px-3 py-1.5 text-xs font-bold rounded-lg bg-gsf-boston hover:bg-gsf-prussian text-white" title="Add the best AI-screened comments, up to ' + this.TM_PICK_N + ' in all">Pick the best' + (shownList.length ? ' to fill up to ' + this.TM_PICK_N : ' ' + this.TM_PICK_N) + '</button>' : '')
+            + '<button data-edit-only onclick="App.tmMarkReviewed(\'' + cidJs + '\')" class="' + (shownList.length < this.TM_PICK_N ? '' : 'ml-auto ') + ' px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-200 hover:border-gsf-boston text-gsf-prussian" title="Everything received until now stops counting as new">Mark reviewed</button></div>'
             + '<div class="bg-white rounded-xl shadow-sm border p-5 mb-5"><h4 class="text-sm font-bold text-gsf-prussian mb-3">On the course page (' + shownList.length + ')</h4>'
             + (shownList.length ? shownList.map((r, i) => card(r, i, shownList.length)).join('') : '<p class="text-sm text-slate-400">None yet: switch comments on below.</p>') + '</div>'
             + (offList.length ? '<div class="bg-white rounded-xl shadow-sm border border-dashed p-5 mb-5"><h4 class="text-sm font-bold text-gsf-prussian">Switched off (' + offList.length + ')</h4>'
