@@ -168,6 +168,8 @@
                 output_config: { format: { type: 'json_schema', schema } },
                 messages: [{ role: 'user', content: userContent }]
             };
+            // Claude Opus 5.5 / Sonnet 5.5 always think (max_tokens covers thinking + answer); effort sets how much.
+            if (opts.effort) body.output_config.effort = opts.effort;
             let attempt = 0;
             while (true) {
                 const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -193,7 +195,8 @@
                     if (res.status === 401) throw new Error('Invalid Anthropic API key. Update it via "Set API key".');
                     throw new Error('Claude API error: ' + msg);
                 }
-                const textBlock = (json.content || []).find(b => b.type === 'text');
+                if (json.stop_reason === 'max_tokens') throw new Error('Claude ran out of room for its answer (max_tokens).');
+                const textBlock = (json.content || []).find(b => b.type === 'text');   // after any thinking blocks
                 let parsed;
                 try { parsed = JSON.parse(textBlock ? textBlock.text : ''); } catch (e) { throw new Error('Claude returned unparseable output.'); }
                 this._aiUsage.in += (json.usage && json.usage.input_tokens) || 0;

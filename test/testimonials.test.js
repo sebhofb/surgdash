@@ -28,6 +28,7 @@ ctx.App = { data: [{ Course: 'Burns Course', CourseId: 'burns', Timestamp: '2026
 vm.createContext(ctx);
 for (const f of ['js/countryMap.js', 'js/scrub.js', 'js/testimonials.js', 'js/testimonialLabels.js']) vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, { filename: f });
 const App = ctx.App;
+const realJudge = App._tmJudgeMissing; App._tmJudgeMissing = async () => false;   // the testimonial check has its own block below
 const FEED = { courses: [{ id: 'burns', slug: 'burns-public', title: 'Burns Course', provider: 'P' }, { id: 'other', slug: 'other-course', title: 'Other Course', provider: 'P' }] };
 App._cfFeedNow = () => FEED;
 
@@ -275,6 +276,39 @@ App._cfFeedNow = () => FEED;
     check('…every remaining text rebuilt from the original (as written when unchanged), reported with examples, and run once', rv.edits.edited + rv.edits.original > 0 && rv.examples.every(x => x.original && x.old !== undefined && x.new) && !!App._tm.fixes['2026-10-26'] && store.has('surgdash_testimonials_rework') && !/Apply the review/.test((App._tmCourse = null, App._dashTestimonialsHtml())));
     App.TM_REVIEW_20261026 = save;
     check('the shipped review list: 19 to switch off and 3 labels, by response id', save.off.length === 19 && save.labels.length === 3 && save.off.every(x => /^t[a-z0-9]+$/.test(x.id) && x.why));
+  }
+
+  // ── the testimonial check: a verdict per course + comment, on a stronger model ──
+  {
+    const JC = ['Respondent', 'Country', 'Profession', 'Started at', 'Ended at', 'On a scale from 1 to 5, how would you rate your overall satisfaction with this course?', 'What aspects of this course did you find most interesting?'];
+    const JT = ['Very well laid out module.', 'Su contenido.', 'The mechanisms of antiepileptic drugs and how NSAIDs inhibit COX enzymes were explained in great depth with clear diagrams.', 'Learning to debride a burn wound safely changed how our ward manages new admissions every week.'];
+    const raw = store.get('surghub_survey_raw'); raw['Wound Course'] = { cols: JC, data: JT.map((t, i) => [i + 1, 'Kenya', 'nurse', '0' + (i + 1) + ' Oct 2026 10:00:00', '0' + (i + 1) + ' Oct 2026 10:00:00', '5', t]) };
+    App._rawSurveyResponses = raw; App._tmRespCache = null; App.data.push({ Course: 'Wound Course', CourseId: 'wound', Timestamp: '2026-10-26' }); App._tmLatestCache = null; FEED.courses.push({ id: 'wound', slug: 'wound', title: 'Wound Course', provider: 'P' });
+    App.TM_PICK_N = 6;
+    const W = App.tmResponses('wound'), wid = (k) => W.find(r => r.text === JT[k]).id;
+    App._tm.byId[wid(1)] = { course: 'wound', show: true, order: 1 }; App._tm.byId[wid(2)] = { course: 'wound', show: true, order: 2 };
+    const verdicts = { [JT[0]]: ['use', 'good', 3], [JT[1]]: ['no', 'fragment', 1], [JT[2]]: ['no', 'off_topic', 4], [JT[3]]: ['use', 'good', 5] };
+    const calls = []; App._getAnthropicKey = async () => 'k'; ctx.confirm = () => true;
+    App._claudeJSON = async (key, system, user, schema, max, opts) => { const items = JSON.parse(user); calls.push({ system, items, opts, max }); const v = (c) => verdicts[c] || ['weak', 'generic', 2]; return { results: items.map((x, i) => ({ i, verdict: v(x.comment)[0], reason: v(x.comment)[1], strength: v(x.comment)[2] })) }; };
+    App._tmJudgeMissing = realJudge; App._tmJudge = {};
+    await App.tmReviewAll(null);
+    const wItems = calls.flatMap(c => c.items).filter(x => x.course === 'Wound Course');
+    check('the check is asked with the course title, the question and the comment, on Opus 5.5 at low effort, with room for thinking', wItems.length === 4 && wItems.every(x => /most interesting/.test(x.question) && x.comment) && calls[0].opts.model === 'claude-opus-5-5' && calls[0].opts.effort === 'low' && calls[0].max >= 16000 && /work as testimonials on that course/.test(calls[0].system), JSON.stringify(calls[0] && calls[0].opts));
+    check('…it knows a fragment, an off-topic comment, and that short can be good', App._tmQ('wound', W.find(r => r.text === JT[1])).weak === App.TM_REASON.fragment && App._tmQ('wound', W.find(r => r.text === JT[2])).no && App._tmQ('wound', W.find(r => r.text === JT[0])).ok);
+    const P = App._tmProposals.filter(p => p.course === 'wound');
+    check('review: the off-topic and the fragment are replaced by the check\'s testimonials, strongest first', P.filter(p => p.type === 'replace').length === 2 && P.find(p => p.type === 'replace').cand.r.text === JT[3] && P.some(p => p.type === 'replace' && p.cand.r.text === JT[0]), JSON.stringify(P.map(p => [p.type, p.old && p.old.r.text.slice(0, 10), p.cand && p.cand.r.text.slice(0, 10), p.why])));
+    check('…the reasons read as verdicts', P.every(p => p.type !== 'replace' || /fragment|not about this course/.test(p.why)));
+    const n0 = calls.length; await App.tmReviewAll(null);
+    check('each comment is checked once and remembered', calls.length === n0 && store.has('surghub_testimonial_ai'));
+    // with nothing better left, a "not a testimonial" is listed to switch off, all at once
+    App._tm.byId[wid(0)] = { course: 'wound', show: true, order: 3 }; App._tm.byId[wid(3)] = { course: 'wound', show: true, order: 4 };
+    await App.tmReviewAll(null);
+    const noP = App._tmProposals.filter(p => p.course === 'wound' && p.type === 'weak' && p.no);
+    App._tmCourse = null; App._dashTab = 'testimonials';
+    check('…otherwise "not a testimonial" ones are listed to switch off, with one button for all of them', noP.length === 2 && /that are not testimonials/.test(App._dashTestimonialsHtml()));
+    App._tmCourse = 'wound';
+    check('cards show the check\'s verdict; a filter keeps only its testimonials', /testimonial 5\/5/.test(App._dashTestimonialsHtml()) && /not a testimonial: a fragment/.test(App._dashTestimonialsHtml()) && /Testimonials only \(check\)/.test(App._dashTestimonialsHtml()));
+    App._tmJudgeMissing = async () => false;
   }
 
   // ── the survey sync never touches the choices; publishing carries the file ──

@@ -32,6 +32,7 @@ Object.assign(window.App, {
         'nurse-anaesthetist': 'Nurse Anaesthetist', 'clinical-officer': 'Clinical Officer', 'obstetrician': 'Obstetrician', 'gynaecologist': 'Gynaecologist' },
 
     async _tmLoad() {
+        await this._tmJudgeLoad();
         if (!this._tm) {
             let v = null; try { v = await Storage.getItem(this.TM_KEY); } catch (e) { __swallowed(e, 'tm.load'); }
             this._tm = Object.assign({ v: 1, byId: {}, reviewed: {} }, (v && typeof v === 'object') ? v : {});
@@ -321,10 +322,77 @@ Object.assign(window.App, {
     // The AI's cleaned quote becomes the display text. Fewer good ones → fewer picks. Picks carry `auto`
     // (shown as "picked automatically" until someone edits or reorders them).
     TM_PICK_N: 6, TM_PICK_MIN: 6,
+    // ── the testimonial check (Seb, 26 Oct 2026) ──
+    // The report scorer (surghub_feedback_ai) never sees the course, so a fluent comment about drugs on
+    // the wound course scored 9 "quotable", and its impact-story scale kept short good comments ("Very well
+    // laid out module.") under the bar. This check asks the question that matters here — would this work
+    // on THIS course's page? — with the course title, the question and the comment, on a stronger model.
+    // Cached per course + comment in surghub_testimonial_ai: { v: 'use'|'weak'|'no', r: reason, s: 1–5 }.
+    TM_JUDGE_MODEL: 'claude-opus-5-5', TM_JUDGE_EFFORT: 'low',
+    TM_JUDGE_COST: 0.0012,   // USD per comment on Opus 5.5 at low effort (estimate shown before a run)
+    TM_REASON: { good: 'a good testimonial', generic: 'generic praise', fragment: 'a fragment that only makes sense next to the question', off_topic: 'not about this course',
+        notes: 'course notes or a list of steps, not an experience', personal: 'personal details (patient, health, names, under 18)', complaint: 'a complaint or request', unclear: 'unclear', machine: 'reads machine-written, not about this course' },
+    TM_JUDGE_PROMPT: 'You decide whether learner comments from end-of-course surveys work as testimonials on that course\'s public page on SURGhub, the United Nations Global Surgery Learning Hub (free online surgical training, mostly for clinicians in low- and middle-income countries). A testimonial is shown on its own, in quotation marks, under the learner\'s profession and country, on the page of the course named. Readers have not seen the survey question.\n\n'
+        + 'For each item (course title, survey question, comment) return:\n'
+        + '- verdict: "use" (works as a testimonial on this course\'s page), "weak" (acceptable but bland or vague), or "no" (should not be shown).\n'
+        + '- reason: "good"; "generic" (praise that could be about any course); "fragment" (only makes sense next to the question, e.g. "Its content.", "UG pictures with instructions.", "The videos"); "off_topic" (about another course or subject than this course); "notes" (reads like course notes, a summary of the content or a list of steps rather than the learner\'s experience or view); "personal" (the learner\'s own or a patient\'s health, names or other personal details, or shows the learner is under 18); "complaint" (criticism or a request); "unclear" (garbled or meaning unclear); "machine" (reads like generated text not grounded in this course).\n'
+        + '- strength 1-5: how much it would encourage a clinician considering this course (5 = specific and credible about what they learned or how they use it; 3 = clear, positive and complete but general; 1 = says almost nothing).\n\n'
+        + 'Short is fine when it is a complete, meaningful statement: "Very well laid out module." is use, strength 3; "Excellent course." is weak, generic. A comment that praises the course but describes topics this course does not cover is no, off_topic. Judge each comment in its own language, and do not mark down clear non-native phrasing or small spelling mistakes (they are corrected before display).',
+    TM_JUDGE_SCHEMA: { type: 'object', properties: { results: { type: 'array', items: { type: 'object', properties: { i: { type: 'integer' },
+        verdict: { type: 'string', enum: ['use', 'weak', 'no'] }, reason: { type: 'string', enum: ['good', 'generic', 'fragment', 'off_topic', 'notes', 'personal', 'complaint', 'unclear', 'machine'] }, strength: { type: 'integer' } },
+        required: ['i', 'verdict', 'reason', 'strength'], additionalProperties: false } } }, required: ['results'], additionalProperties: false },
+    async _tmJudgeLoad() { if (!this._tmJudge) { let v = null; try { v = await Storage.getItem('surghub_testimonial_ai'); } catch (e) { v = null; } this._tmJudge = (v && typeof v === 'object') ? v : {}; } return this._tmJudge; },
+    _tmJudgeKey(courseId, text) { return courseId + '|' + this._tmAiKey(text); },
+    _tmVerdict(courseId, r) { return r && this._tmJudge ? this._tmJudge[this._tmJudgeKey(courseId, r.text)] || null : null; },
+    // Judge the comments that have no verdict yet. items: [{ courseId, course (title), r }]. Asks first.
+    async _tmJudgeMissing(items, btn) {
+        await this._tmJudgeLoad();
+        const seen = new Set(), todo = items.filter(x => { const k = this._tmJudgeKey(x.courseId, x.r.text); if (this._tmJudge[k] || seen.has(k)) return false; seen.add(k); return true; });
+        if (!todo.length) return true;
+        const apiKey = this._getAnthropicKey ? await this._getAnthropicKey() : null;
+        if (!apiKey || !this._claudeJSON) { alert('The testimonial check needs the Anthropic API key (Feedback tab → Score with AI). Using the older report scores instead.'); return false; }
+        if (!confirm('Check ' + todo.length.toLocaleString() + ' comments with the testimonial check (' + this.TM_JUDGE_MODEL + '): does each work on its course\'s page, or is it a fragment, off-topic, notes, personal…?\\n\\nAbout ' + Math.ceil(todo.length / 30) + ' requests, roughly $' + Math.max(1, Math.round(todo.length * this.TM_JUDGE_COST)) + '. Each comment is checked once and remembered.')) return false;
+        let done = 0, failed = 0;
+        for (let i = 0; i < todo.length; i += 30) {
+            const batch = todo.slice(i, i + 30);
+            if (btn) btn.textContent = 'Checking comments ' + Math.min(i + 30, todo.length).toLocaleString() + '/' + todo.length.toLocaleString() + '…';
+            try {
+                const res = await this._claudeJSON(apiKey, this.TM_JUDGE_PROMPT, JSON.stringify(batch.map((x, k) => ({ i: k, course: x.course, question: x.r.q, comment: x.r.text }))), this.TM_JUDGE_SCHEMA, 16000, { model: this.TM_JUDGE_MODEL, effort: this.TM_JUDGE_EFFORT });
+                (res && res.results || []).forEach(r => { const x = batch[r.i]; if (x && ['use', 'weak', 'no'].includes(r.verdict)) { this._tmJudge[this._tmJudgeKey(x.courseId, x.r.text)] = { v: r.verdict, r: r.reason, s: Math.max(1, Math.min(5, Number(r.strength) || 1)), at: new Date().toISOString().slice(0, 10) }; done++; } });
+                if ((i / 30) % 5 === 4) { try { await Storage.setItem('surghub_testimonial_ai', this._tmJudge); } catch (e) { __swallowed(e, 'tm.judgeSave'); } }
+            } catch (e) { __swallowed(e, 'tm.judge'); failed++; if (/Invalid Anthropic API key/.test(e.message) || failed >= 3) { alert('The testimonial check stopped: ' + e.message + '\\n\\nWhat was checked is kept; run it again to continue.'); break; } }
+        }
+        try { await Storage.setItem('surghub_testimonial_ai', this._tmJudge); } catch (e) { __swallowed(e, 'tm.judgeSave'); }
+        return done > 0;
+    },
+    // What to send to the check: everything shown, and candidates the report scorer did not rule out (0–2: bare thanks, junk).
+    _tmJudgeItems(courseIds) {
+        const feed = this._tmCourseFeed(), title = {}; feed.courses.forEach(c => { title[c.id] = c.title; });
+        const scores = this._aiScoreMap || {}, out = [];
+        courseIds.forEach(id => {
+            const resp = {}; this.tmResponses(id).forEach(r => { resp[r.id] = r; });
+            Object.entries(this._tm.byId).forEach(([rid, e]) => { if (e.course === id && e.show && resp[rid]) out.push({ courseId: id, course: title[id] || '', r: resp[rid] }); });
+            this._tmCandidates(id).forEach(r => { const a = scores[this._tmAiKey(r.text)]; if (!a || a.s >= 3) out.push({ courseId: id, course: title[id] || '', r }); });
+        });
+        return out;
+    },
+    // One quality view for picking and reviewing: the testimonial check where it has run, else the report score.
+    // ok = may be picked; rank (0–10) orders them; weak = a reason to take a shown one off; label for the screen.
+    _tmQ(courseId, r) {
+        const j = this._tmVerdict(courseId, r);
+        if (j) return { judged: true, ok: j.v === 'use', no: j.v === 'no', rank: j.v === 'use' ? j.s * 2 : j.v === 'weak' ? Math.min(j.s, 1) : 0,
+            label: j.v === 'use' ? 'testimonial ' + j.s + '/5' : j.v === 'weak' ? 'weak: ' + (this.TM_REASON[j.r] || j.r) : 'not a testimonial: ' + (this.TM_REASON[j.r] || j.r),
+            weak: j.v === 'no' ? (this.TM_REASON[j.r] || j.r) : '' };
+        const a = r && (this._aiScoreMap || {})[this._tmAiKey(r.text)];
+        if (!a) return { judged: false, ok: false, no: false, rank: null, label: 'not checked', weak: '' };
+        const ok = !!(a.q && a.s >= this.TM_PICK_MIN && !(a.t || []).includes('complaint'));
+        return { judged: false, ok, no: false, rank: a.q && !(a.t || []).includes('complaint') ? a.s : 0, label: 'report score ' + a.s + '/10', weak: ok ? '' : 'report score ' + a.s + '/10' + (a.q ? '' : ', not quotable') };
+    },
+
     // The text shown on the course page: a light copy-edit made for this purpose (not the report
     // scorer's cached quote, which cut too much: "The structured decision-making algorithms for flap
     // selection…" said nothing on its own, and an em-dash rewrite read as fake — Seb, 26 Oct 2026).
-    TM_TIDY_MODEL: 'claude-opus-4-8',
+    TM_TIDY_MODEL: 'claude-opus-5-5',
     // The editing rule (Seb, 26 Oct 2026, after the review of the first rewrites: they had started to
     // sound alike — "I found the sections…", "Overall, the course was…"). Also shown as help by the text box.
     TM_EDIT_RULE: ['Correct spelling, typos, capitals, spacing and punctuation; add a full stop if missing.',
@@ -363,7 +431,7 @@ Object.assign(window.App, {
             const batch = items.slice(i, i + 12);
             if (btn) btn.textContent = 'Tidying texts ' + Math.min(i + 12, items.length) + '/' + items.length + '…';
             try {
-                const res = await this._claudeJSON(apiKey, this.TM_TIDY_PROMPT, JSON.stringify(batch.map((x, k) => ({ i: k, course: x.course, question: x.r.q, comment: x.r.text }))), this.TM_TIDY_SCHEMA, 8000, { model: this.TM_TIDY_MODEL });
+                const res = await this._claudeJSON(apiKey, this.TM_TIDY_PROMPT, JSON.stringify(batch.map((x, k) => ({ i: k, course: x.course, question: x.r.q, comment: x.r.text }))), this.TM_TIDY_SCHEMA, 16000, { model: this.TM_TIDY_MODEL, effort: 'low' });
                 (res && res.results || []).forEach(r => {
                     const x = batch[r.i]; if (!x) return;
                     if (r.drop) { out[x.r.id] = { drop: true, reason: String(r.reason || 'nothing useful left once personal details are removed') }; return; }
@@ -443,9 +511,8 @@ Object.assign(window.App, {
         const scores = this._aiScoreMap || {}, shown = Object.values(this._tm.byId).filter(e => e.course === courseId && e.show);
         const slots = this.TM_PICK_N - shown.length;
         if (slots <= 0) return 0;
-        const good = this._tmCandidates(courseId).map(r => ({ r, a: scores[this._tmAiKey(r.text)] }))
-            .filter(x => x.a && x.a.q && x.a.s >= this.TM_PICK_MIN && !(x.a.t || []).includes('complaint'))
-            .sort((x, y) => y.a.s - x.a.s || (!!(y.r.cadre && y.r.country) - !!(x.r.cadre && x.r.country)) || String(y.r.date).localeCompare(String(x.r.date)));
+        const good = this._tmCandidates(courseId).map(r => ({ r, q: this._tmQ(courseId, r) })).filter(x => x.q.ok)
+            .sort((x, y) => y.q.rank - x.q.rank || (!!(y.r.cadre && y.r.country) - !!(x.r.cadre && x.r.country)) || String(y.r.date).localeCompare(String(x.r.date)));
         const toks = (t) => this._tmTokens(t);
         const dice = (a, b) => { const bag = {}; b.forEach(w => { bag[w] = (bag[w] || 0) + 1; }); let c = 0; a.forEach(w => { if (bag[w]) { bag[w]--; c++; } }); return 2 * c / ((a.length + b.length) || 1); };
         const taken = shown.map(e => toks(e.text || '')), countries = new Set(shown.map(e => e.country).filter(Boolean)), picks = [];
@@ -464,7 +531,7 @@ Object.assign(window.App, {
         const at = new Date().toISOString();
         picks.forEach(x => {
             const e = this._tm.byId[x.r.id] || (this._tm.byId[x.r.id] = { course: courseId });
-            e.show = true; e.order = ++order; e.at = at; e.auto = { at, score: x.a.s };
+            e.show = true; e.order = ++order; e.at = at; e.auto = { at, score: x.q.rank, label: x.q.label };
             delete e.text;   // tidied by tmPickBest (TM_TIDY_PROMPT); the original until then
         });
         return picks;
@@ -479,6 +546,7 @@ Object.assign(window.App, {
         try {
             await this._tmScoreMissing(ids.flatMap(id => this._tmCandidates(id)), btn);
             if (this._getAiScores) await this._getAiScores();
+            await this._tmJudgeMissing(this._tmJudgeItems(ids), btn);
             const title = {}; feed.courses.forEach(c => { title[c.id] = c.title; });
             const res = ids.map(id => { const p = this._tmPickCourse(id); return { id, n: p.length, picks: p }; });
             const all = res.flatMap(x => x.picks.map(p => ({ r: p.r, course: title[x.id] || '' })));
@@ -500,16 +568,12 @@ Object.assign(window.App, {
     // the bar — not quotable, AI score under TM_PICK_MIN, under 4 stars, a "less engaging" answer or
     // personal details — with nothing better to take its place). Testimonials marked keep are never
     // proposed for replacement; a candidate marked "not this one" (rejected) is never proposed again.
-    _tmShownScore(e, r) {
-        const a = r && (this._aiScoreMap || {})[this._tmAiKey(r.text)];
-        if (!a) return null;   // not screened: never replaced on score
-        return a.q && !(a.t || []).includes('complaint') ? a.s : 0;
-    },
+    _tmShownScore(e, r) { return r ? this._tmQ(e.course, r).rank : null; },   // null: not checked, never replaced on score
     _tmWeak(e, r) {
         if (!r) return 'no longer in the survey export';
-        const a = (this._aiScoreMap || {})[this._tmAiKey(r.text)];
-        if (!a) return '';   // not screened: no verdict
-        if (!a.q || a.s < this.TM_PICK_MIN) return 'AI score ' + a.s + '/10' + (a.q ? '' : ', not quotable');
+        const q = this._tmQ(e.course, r);
+        if (q.rank == null) return '';   // not checked: no verdict
+        if (q.weak) return q.weak;
         if (r.stars && r.stars < 4) return r.stars + ' stars';
         if (!this._tmPraiseQ(r.q)) return 'an answer to "' + this._tmQLabel(r.q) + '"';
         if (this._tmHeld(e.text || r.text)) return 'personal details in the text';
@@ -520,27 +584,29 @@ Object.assign(window.App, {
         const toks = (t) => this._tmTokens(t);
         const dice = (a, b) => { const bag = {}; b.forEach(w => { bag[w] = (bag[w] || 0) + 1; }); let c = 0; a.forEach(w => { if (bag[w]) { bag[w]--; c++; } }); return 2 * c / ((a.length + b.length) || 1); };
         let shown = Object.entries(this._tm.byId).filter(([, e]) => e.course === courseId && e.show).map(([id, e]) => ({ id, e, r: resp[id], s: this._tmShownScore(e, resp[id]), weak: this._tmWeak(e, resp[id]) }));
-        const pool = this._tmCandidates(courseId).map(r => ({ r, a: scores[this._tmAiKey(r.text)] }))
-            .filter(x => x.a && x.a.q && x.a.s >= this.TM_PICK_MIN && !(x.a.t || []).includes('complaint'))
-            .sort((x, y) => y.a.s - x.a.s || String(y.r.date).localeCompare(String(x.r.date)));
+        const pool = this._tmCandidates(courseId).map(r => { const q = this._tmQ(courseId, r); return { r, q, a: { s: q.rank } }; }).filter(x => x.q.ok)
+            .sort((x, y) => y.q.rank - x.q.rank || String(y.r.date).localeCompare(String(x.r.date)));
         const out = [], used = new Set();
         const textOf = (x) => toks((x.e && x.e.text) || (x.r && x.r.text) || '');
         const fits = (c, keepers) => { const t = toks(c.r.text); return !keepers.some(k => dice(t, textOf(k)) >= 0.6); };
         const next = (keepers, pred) => pool.find(c => !used.has(c.r.id) && fits(c, keepers) && pred(c));
-        // 1. fill empty places
+        // 1. weak ones first (not a testimonial, below the bar): replaced by the best candidates, so applying
+        //    everything never leaves them live while fresh ones are only added beside them
+        // 2. then empty places; 3. then the rest, lowest first, by something better (or as good and newer)
+        const order = shown.filter(x => !x.e.keep).sort((a, b) => (!!b.weak - !!a.weak) || (a.s == null ? 99 : a.s) - (b.s == null ? 99 : b.s) || String((a.r || {}).date || '').localeCompare(String((b.r || {}).date || '')));
+        const replaceOne = (w) => {
+            const keepers = shown.filter(x => x !== w).concat(out.filter(p => p.type === 'add').map(p => ({ r: p.cand.r })));
+            const c = (w.weak || w.s != null) && next(keepers, (c) => !!w.weak || c.a.s > w.s || (c.a.s === w.s && String(c.r.date) > String((w.r || {}).date || '')));
+            if (c) { used.add(c.r.id); out.push({ type: 'replace', course: courseId, cand: c, newScore: c.a.s, old: w, oldScore: w.s, why: w.weak || (c.a.s > w.s ? 'better (' + c.q.label + ' against ' + (w.r ? this._tmQ(courseId, w.r).label : '?') + ')' : 'as good (' + c.q.label + ') and newer') }); shown = shown.map(x => x === w ? { id: c.r.id, e: {}, r: c.r, s: c.a.s, weak: '' } : x); }
+            else if (w.weak) out.push({ type: 'weak', course: courseId, old: w, oldScore: w.s, why: w.weak, no: !!(w.r && this._tmQ(courseId, w.r).no) });
+        };
+        order.filter(w => w.weak).forEach(replaceOne);
         while (shown.length + out.filter(p => p.type === 'add').length < this.TM_PICK_N) {
-            const keepers = shown.concat(out.map(p => ({ r: p.cand.r })));
+            const keepers = shown.concat(out.filter(p => p.cand).map(p => ({ r: p.cand.r })));
             const c = next(keepers, () => true); if (!c) break;
             used.add(c.r.id); out.push({ type: 'add', course: courseId, cand: c, newScore: c.a.s });
         }
-        // 2. replace the weakest (weak first, then lowest score, then oldest) while something better or as good and newer exists
-        const order = shown.filter(x => !x.e.keep).sort((a, b) => (!!b.weak - !!a.weak) || (a.s == null ? 99 : a.s) - (b.s == null ? 99 : b.s) || String((a.r || {}).date || '').localeCompare(String((b.r || {}).date || '')));
-        for (const w of order) {
-            const keepers = shown.filter(x => x !== w).concat(out.filter(p => p.type === 'add').map(p => ({ r: p.cand.r })));
-            const c = (w.weak || w.s != null) && next(keepers, (c) => !!w.weak || c.a.s > w.s || (c.a.s === w.s && String(c.r.date) > String((w.r || {}).date || '')));
-            if (c) { used.add(c.r.id); out.push({ type: 'replace', course: courseId, cand: c, newScore: c.a.s, old: w, oldScore: w.s, why: w.weak || (c.a.s > w.s ? 'scores higher (' + c.a.s + ' vs ' + w.s + ')' : 'as good (' + c.a.s + ') and newer') }); shown = shown.map(x => x === w ? { id: c.r.id, e: {}, r: c.r, s: c.a.s, weak: '' } : x); }
-            else if (w.weak) out.push({ type: 'weak', course: courseId, old: w, oldScore: w.s, why: w.weak });
-        }
+        order.filter(w => !w.weak).forEach(replaceOne);
         return out;
     },
     async tmReviewAll(btn) {
@@ -553,6 +619,7 @@ Object.assign(window.App, {
             ids.forEach(id => { const resp = {}; this.tmResponses(id).forEach(r => { resp[r.id] = r; }); Object.entries(this._tm.byId).forEach(([rid, e]) => { if (e.course === id && e.show && resp[rid]) shownR.push(resp[rid]); }); });
             await this._tmScoreMissing(shownR.concat(ids.flatMap(id => this._tmCandidates(id))), btn);
             if (this._getAiScores) await this._getAiScores();
+            await this._tmJudgeMissing(this._tmJudgeItems(ids), btn);
             this._tmProposals = ids.flatMap(id => this._tmReviewCourse(id));
             this._tmProposalsAt = new Date().toISOString();
             const n = (t) => this._tmProposals.filter(p => p.type === t).length;
@@ -602,14 +669,14 @@ Object.assign(window.App, {
         const n = (t) => list.filter(p => p.type === t).length;
         if (!list.length) return '<div class="bg-emerald-50 border border-emerald-200 rounded-xl p-4 mb-4 text-sm text-emerald-800">Review complete: nothing left to change. <button onclick="App._tmProposals = null; App.rerenderDashTab()" class="ml-2 underline">close</button></div>';
         const meta = (r) => esc([r.cadre, r.country].filter(Boolean).join(' · ') || 'SURGhub learner') + ' · ' + esc(r.date) + ' · ' + (r.stars ? r.stars + '★' : '');
-        const box = (cls, label, r, score, text) => '<div class="flex-1 min-w-[240px] border rounded-lg p-3 ' + cls + '"><div class="text-[10px] font-bold uppercase tracking-wide mb-1">' + label + (score != null ? ' · AI ' + score + '/10' : '') + '</div>'
+        const box = (cls, label, r, score, text) => '<div class="flex-1 min-w-[240px] border rounded-lg p-3 ' + cls + '"><div class="text-[10px] font-bold uppercase tracking-wide mb-1">' + label + (score ? ' · ' + esc(score) : '') + '</div>'
             + '<p class="text-xs text-slate-700">' + esc(text) + '</p>' + (r ? '<p class="text-[10px] text-slate-400 mt-1">' + meta(r) + '</p>' : '') + '</div>';
         let lastCourse = '';
         const rows = list.map((p, i) => {
             const head = p.course !== lastCourse ? '<div class="text-xs font-bold text-gsf-prussian mt-4 mb-1">' + esc(title[p.course] || p.course) + ' <button onclick="App.tmPickCourse(\'' + this.escapeJsArg(p.course) + '\')" class="ml-1 font-normal text-gsf-boston hover:underline">open</button></div>' : '';
             lastCourse = p.course;
-            const old = p.old ? box('border-slate-200 bg-white', p.type === 'weak' ? 'Shown now: ' + esc(p.why) : 'Shown now', p.old.r, p.oldScore, (p.old.e && p.old.e.text) || (p.old.r && p.old.r.text) || '(no longer in the survey)') : '';
-            const neu = p.cand ? box('border-emerald-200 bg-emerald-50/50', p.type === 'add' ? 'Add' : 'Replace with · ' + esc(p.why), p.cand.r, p.newScore, p.cand.r.text) : '';
+            const old = p.old ? box('border-slate-200 bg-white', p.type === 'weak' ? 'Shown now: ' + esc(p.why) : 'Shown now', p.old.r, p.old.r ? this._tmQ(p.course, p.old.r).label : '', (p.old.e && p.old.e.text) || (p.old.r && p.old.r.text) || '(no longer in the survey)') : '';
+            const neu = p.cand ? box('border-emerald-200 bg-emerald-50/50', p.type === 'add' ? 'Add' : 'Replace with · ' + esc(p.why), p.cand.r, p.cand.q ? p.cand.q.label : '', p.cand.r.text) : '';
             const btns = '<div class="flex flex-col gap-1 shrink-0" data-edit-only>'
                 + (p.type === 'weak' ? '<button onclick="App.tmApplyProposals([' + i + '], this)" class="px-3 py-1 text-[11px] font-bold rounded bg-rose-600 text-white">Switch off</button>' : '<button onclick="App.tmApplyProposals([' + i + '], this)" class="px-3 py-1 text-[11px] font-bold rounded bg-gsf-boston text-white">Apply</button>')
                 + (p.old ? '<button onclick="App.tmKeep(' + i + ')" class="px-3 py-1 text-[11px] font-bold rounded border text-slate-600" title="Never propose replacing this testimonial again">Keep current</button>' : '')
@@ -618,7 +685,8 @@ Object.assign(window.App, {
         }).join('');
         return '<div class="bg-white rounded-xl shadow-sm border p-5 mb-5"><div class="flex items-center gap-3 flex-wrap"><h3 class="text-base font-bold text-gsf-prussian">Review of every course</h3>'
             + '<span class="text-xs text-slate-500">' + n('replace') + ' replacements · ' + n('add') + ' additions · ' + n('weak') + ' weak without a better one</span>'
-            + '<button data-edit-only onclick="App.tmApplyProposals(null, this)" class="ml-auto px-4 py-1.5 text-xs font-bold rounded-lg bg-gsf-boston hover:bg-gsf-prussian text-white">Apply all ' + (n('replace') + n('add')) + ' replacements and additions</button>'
+            + (list.some(p => p.type === 'weak' && p.no) ? '<button data-edit-only onclick="App.tmApplyProposals(App._tmProposals.map((p, i) => p.type === \'weak\' && p.no ? i : -1).filter(i => i >= 0), this)" class="ml-auto px-4 py-1.5 text-xs font-bold rounded-lg bg-rose-600 hover:bg-rose-700 text-white" title="Switch off every shown testimonial the check marks as not a testimonial (fragment, not about this course, notes, personal…), with nothing better to replace it">Switch off ' + list.filter(p => p.type === 'weak' && p.no).length + ' that are not testimonials</button>' : '')
+            + '<button data-edit-only onclick="App.tmApplyProposals(null, this)" class="' + (list.some(p => p.type === 'weak' && p.no) ? '' : 'ml-auto ') + ' px-4 py-1.5 text-xs font-bold rounded-lg bg-gsf-boston hover:bg-gsf-prussian text-white">Apply all ' + (n('replace') + n('add')) + ' replacements and additions</button>'
             + '<button onclick="App._tmProposals = null; App.rerenderDashTab()" class="text-xs text-slate-400 hover:text-slate-600">close</button></div>'
             + '<p class="text-[11px] text-slate-500 mt-1">Replacements score higher on the AI screen (or the same and newer). Weak ones are listed to switch off by hand. "Keep current" protects a testimonial from future reviews; "Not this one" stops a comment being suggested again.</p>'
             + '<div class="max-h-[560px] overflow-y-auto custom-scrollbar mt-2 pr-1">' + rows + '</div></div>';
@@ -818,6 +886,7 @@ Object.assign(window.App, {
         if (fl.stars === '5') rest = rest.filter(r => r.stars === 5); else if (fl.stars === '4') rest = rest.filter(r => r.stars >= 4); else if (fl.stars === 'low') rest = rest.filter(r => r.stars && r.stars <= 3);
         if (fl.lang) rest = rest.filter(r => r.lang === fl.lang);
         if (fl.suggested) rest = rest.filter(r => this._tmSuggested(r));
+        if (fl.checked) rest = rest.filter(r => this._tmQ(cid, r).ok).sort((a, b) => this._tmQ(cid, b).rank - this._tmQ(cid, a).rank);
         const stars = (n) => n ? '<span class="text-amber-500 tracking-tight">' + '★'.repeat(n) + '<span class="text-slate-200">' + '★'.repeat(5 - n) + '</span></span>' : '<span class="text-slate-300 text-[10px]">no rating</span>';
         const pageLang = this._tmPageLang(cid), titleOf = {}; feed.courses.forEach(x => { titleOf[x.id] = x.title; });
         const dupBy = {};
@@ -831,6 +900,7 @@ Object.assign(window.App, {
                 + '<span class="text-[10px] text-slate-400 truncate max-w-[260px]" title="' + esc(r.q) + '">' + esc(this._tmQLabel(r.q)) + '</span>'
                 + (this._tmSuggested(r) && !on ? '<span class="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[10px] font-bold">suggested</span>' : '')
                 + (isNew(r) && !on ? '<span class="px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 text-[10px] font-bold">new</span>' : '')
+                + (() => { const q = this._tmQ(cid, r); if (!q.judged) return ''; const tone = q.ok ? 'bg-emerald-50 text-emerald-700' : q.no ? 'bg-rose-50 text-rose-600' : 'bg-slate-100 text-slate-500'; return '<span class="px-1.5 py-0.5 rounded text-[10px] font-bold ' + tone + '" title="The testimonial check (' + esc(this.TM_JUDGE_MODEL) + '): would this work on this course\'s page?">' + esc(q.label) + '</span>'; })()
                 + (on && e.keep ? '<button data-edit-only onclick="App.tmUnkeep(\'' + idJs + '\')" class="px-1.5 py-0.5 rounded bg-sky-50 text-sky-700 text-[10px] font-bold" title="Kept: never proposed for replacement. Click to allow it again">kept ×</button>' : '')
                 + (on && e.auto ? '<span class="px-1.5 py-0.5 rounded bg-violet-50 text-violet-700 text-[10px] font-bold" title="Picked automatically (AI score ' + esc(e.auto.score) + '/10). Editing, moving or switching it clears this mark.">picked automatically</span>' : '')
                 + (on && r.lang !== pageLang ? '<span class="px-1.5 py-0.5 rounded bg-rose-50 text-rose-600 text-[10px] font-bold" title="Only comments written in the course page\'s language are published">not in ' + esc(pageLang.toUpperCase()) + ': not published</span>' : '')
@@ -866,6 +936,7 @@ Object.assign(window.App, {
             + '<div class="bg-white rounded-xl shadow-sm border p-5"><div class="flex items-center gap-2 flex-wrap mb-3"><h4 class="text-sm font-bold text-gsf-prussian mr-2">Comments (' + rest.length + ')</h4>'
             + '<label class="inline-flex items-center gap-1 text-xs text-slate-600"><input type="checkbox" ' + (fl.fresh ? 'checked ' : '') + 'onchange="App.tmSetFilter(\'fresh\', this.checked)"> New since last review</label>'
             + '<label class="inline-flex items-center gap-1 text-xs text-slate-600 ml-2"><input type="checkbox" ' + (fl.suggested ? 'checked ' : '') + 'onchange="App.tmSetFilter(\'suggested\', this.checked)"> Suggested only</label>'
+            + '<label class="inline-flex items-center gap-1 text-xs text-slate-600 ml-2" title="Only comments the testimonial check says work on this page, strongest first"><input type="checkbox" ' + (fl.checked ? 'checked ' : '') + 'onchange="App.tmSetFilter(\'checked\', this.checked)"> Testimonials only (check)</label>'
             + sel('stars', [['', 'All stars'], ['5', '5 stars'], ['4', '4–5 stars'], ['low', '1–3 stars']]) + sel('lang', [['', 'All languages']].concat(langs.map(l => [l, l.toUpperCase()]))) + '</div>'
             + rest.slice(0, max).map(r => card(r, 0, 0)).join('')
             + (rest.length > max ? '<button onclick="App.tmMore()" class="w-full py-2 text-xs font-bold text-gsf-boston hover:underline">Show ' + Math.min(this.TM_PAGE, rest.length - max) + ' more of ' + (rest.length - max) + '</button>' : '')
