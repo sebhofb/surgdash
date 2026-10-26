@@ -13,6 +13,9 @@
 //                  export), cadre / country / stars (only where set by hand or seeded from the page
 //                  as it was), seed: {from, position}, at }
 //   reviewed     { courseId: ISO time of the last "Mark reviewed" } → "new since last review"
+// Also one small file per public course, testimonials/<slug>.json = { course, testimonials: […] } (an empty
+// list when none are chosen, so a page never meets a 404), without timestamps so it only changes when that
+// course's choices do — a course page loads ~1 KB instead of the whole file (Seb, 26 Oct 2026).
 // Published per course (courses.json slugs as keys), only switched-on comments that still exist,
 // in display order: { id, text, cadre, country, stars, lang } — no names, emails, user ids or dates;
 // cadre / country left out when unknown (the site then shows "SURGhub learner"). A display text the
@@ -256,7 +259,21 @@ Object.assign(window.App, {
         const f = this.testimonialsFeedBuild(opts.feed), st = this._tmState || {}, prev = (st.last && st.last.count) || 0;
         const why = !f._stats.testimonials && prev ? 'no testimonials switched on (the last file had ' + prev + ')' : '';
         const content = !why ? JSON.stringify(f, null, 2) + '\n' : (st.last && st.last.content) || null;
-        return { content, fresh: !why, why, count: f._stats.testimonials, courses: f._stats.courses, stats: f._stats };
+        return { content, fresh: !why, why, count: f._stats.testimonials, courses: f._stats.courses, stats: f._stats, perCourse: this._tmPerCourseFiles(content, opts.feed) };
+    },
+    // testimonials/<slug>.json for every public course, from the file being published.
+    _tmPerCourseFiles(content, feed) {
+        let all = {}; try { all = (JSON.parse(content || '{}').courses) || {}; } catch (e) { all = {}; }
+        const slugs = new Set(this._tmCourseFeed(feed).courses.map(c => c.slug).concat(Object.keys(all)));
+        return [...slugs].filter(sl => /^[a-z0-9][a-z0-9-]*$/i.test(sl)).sort()
+            .map(sl => ({ path: 'testimonials/' + sl + '.json', content: JSON.stringify({ course: sl, testimonials: all[sl] || [] }, null, 1) + '\n' }));
+    },
+    // Git's id for a file's content (sha1 of "blob <bytes>\0<content>"), to upload only what changed.
+    async _gitBlobSha(text) {
+        const body = new TextEncoder().encode(text), head = new TextEncoder().encode('blob ' + body.length + '\0');
+        const all = new Uint8Array(head.length + body.length); all.set(head); all.set(body, head.length);
+        const h = new Uint8Array(await crypto.subtle.digest('SHA-1', all));
+        return Array.from(h).map(b => b.toString(16).padStart(2, '0')).join('');
     },
     async _tmMarkPublished(f) {
         const st = this._tmState || {};

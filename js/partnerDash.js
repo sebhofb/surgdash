@@ -436,7 +436,7 @@ Object.assign(window.App, {
         // The testimonials surghub.org course pages show (testimonials.js).
         let tf = null;
         if (this.testimonialsFeedFile) {
-            try { tf = await this.testimonialsFeedFile({ feed: cf && cf.feed }); if (tf.content) files.push({ path: 'testimonials.json', content: tf.content }); }
+            try { tf = await this.testimonialsFeedFile({ feed: cf && cf.feed }); if (tf.content) { files.push({ path: 'testimonials.json', content: tf.content }); (tf.perCourse || []).forEach(x => files.push(x)); } }
             catch (e) { failed.push('Testimonials: ' + String((e && e.message) || e)); }
         }
         const host = (String(s.baseUrl || '').match(/^https?:\/\/([^/]+)/) || [])[1] || '';

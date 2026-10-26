@@ -19,7 +19,7 @@ store.set('surghub_survey_raw', {
   ] },
   'Other Course': { cols: COLS, data: [row(1, 'Chad', 'nurse', '05 Oct 2026 10:00:00', '5', 'Excellent and clear lectures on airway management', '')] },
 });
-const ctx = { console: { log() {}, warn() {}, error() {} }, Math, JSON, Object, Array, Number, String, Map, Set, RegExp, Error, Promise, isNaN, escape, unescape, decodeURIComponent, __swallowed() {},
+const ctx = { console: { log() {}, warn() {}, error() {} }, TextEncoder, crypto: globalThis.crypto, Uint8Array, Math, JSON, Object, Array, Number, String, Map, Set, RegExp, Error, Promise, isNaN, escape, unescape, decodeURIComponent, __swallowed() {},
   Date: class extends Date { constructor(...a) { super(...(a.length ? a : [Date.UTC(2026, 9, 26, 9)])); } },
   Storage: { async getItem(k) { return store.has(k) ? JSON.parse(JSON.stringify(store.get(k))) : null; }, async setItem(k, v) { store.set(k, JSON.parse(JSON.stringify(v))); } } };
 ctx.window = ctx;
@@ -88,6 +88,16 @@ App._cfFeedNow = () => FEED;
   const raw = store.get('surghub_survey_raw'); raw['Burns Course'].data.shift(); App._rawSurveyResponses = raw; App._tmRespCache = null;
   F = App.testimonialsFeedBuild(FEED);
   check('a chosen comment no longer in the survey is skipped (and counted), its choice kept', F._stats.missing === 1 && !!App._tm.byId[id1] && App._tm.byId[id1].show);
+  // one small file per course page, for every public course
+  const tfile = await App.testimonialsFeedFile({ feed: FEED });
+  const pc = Object.fromEntries(tfile.perCourse.map(x => [x.path, JSON.parse(x.content)]));
+  check('one small file per public course: testimonials/<slug>.json with its testimonials in order', Object.keys(pc).join() === 'testimonials/burns-public.json,testimonials/other-course.json' && JSON.stringify(pc['testimonials/burns-public.json'].testimonials) === JSON.stringify(JSON.parse(tfile.content).courses['burns-public']), Object.keys(pc).join());
+  check('…an empty list for a course with none (never a 404), and no timestamps (unchanged courses are not re-uploaded)', pc['testimonials/other-course.json'].testimonials.length === 0 && !/as_of|updated_at/.test(tfile.perCourse.map(x => x.content).join('')));
+  check('the change check uses git\'s own content id', await App._gitBlobSha('hello\n') === 'ce013625030ba8dba906f756967f9e9ca394464a');
+  const wmSrc = fs.readFileSync(path.join(ROOT, 'js/websiteMetrics.js'), 'utf8');
+  check('quick publish uploads only per-course files that changed and removes those of courses no longer public', /have\[x\.path\] === await this\._gitBlobSha\(x\.content\)\) continue/.test(wmSrc) && /sha: null/.test(wmSrc));
+  check('full publish includes them all', /\(tf\.perCourse \|\| \[\]\)\.forEach\(x => files\.push\(x\)\)/.test(fs.readFileSync(path.join(ROOT, 'js/partnerDash.js'), 'utf8')));
+
   // never an empty file over a non-empty one
   App._tmState = { last: { count: 4, content: '{"courses":{"x":[1]}}' } };
   Object.values(App._tm.byId).forEach(x => { x.show = false; });

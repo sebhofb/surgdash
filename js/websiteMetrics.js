@@ -183,6 +183,22 @@ Object.assign(window.App, {
                 const entries = [{ path: 'metrics.json', mode: '100644', type: 'blob', sha: await up('metrics.json', f.content, 'utf-8') }];
                 if (cf && cf.content) entries.push({ path: 'courses.json', mode: '100644', type: 'blob', sha: await up('courses.json', cf.content, 'utf-8') });
                 if (tf && tf.content) entries.push({ path: 'testimonials.json', mode: '100644', type: 'blob', sha: await up('testimonials.json', tf.content, 'utf-8') });
+                // one small testimonials file per course page: upload only those that changed, drop the
+                // files of courses no longer public
+                if (tf && tf.content && tf.perCourse && tf.perCourse.length) {
+                    let have = {};
+                    try {
+                        const root = await this._pdGh('GET', '/git/trees/' + commit.tree.sha, null, token);
+                        const td = (root.tree || []).find(e => e.path === 'testimonials' && e.type === 'tree');
+                        if (td) ((await this._pdGh('GET', '/git/trees/' + td.sha, null, token)).tree || []).forEach(e => { have['testimonials/' + e.path] = e.sha; });
+                    } catch (e) { __swallowed(e, 'wm.tmTree'); }
+                    const want = new Set(tf.perCourse.map(x => x.path));
+                    for (const x of tf.perCourse) {
+                        if (have[x.path] && have[x.path] === await this._gitBlobSha(x.content)) continue;
+                        entries.push({ path: x.path, mode: '100644', type: 'blob', sha: await up(x.path, x.content, 'utf-8') });
+                    }
+                    Object.keys(have).forEach(p => { if (!want.has(p) && /\.json$/.test(p)) entries.push({ path: p, mode: '100644', type: 'blob', sha: null }); });
+                }
                 // course card thumbnails (coursesFeed.js): upload only those the site does not have yet
                 if (cf && cf.thumbs && cf.thumbs.length) {
                     let have = new Set();
