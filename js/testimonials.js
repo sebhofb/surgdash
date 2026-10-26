@@ -233,19 +233,21 @@ Object.assign(window.App, {
     _tmHeld(text) { return !!(this.scrubPersonal && this.scrubPersonal(text) !== text); },
     testimonialsFeedBuild(feed, now) {
         const t = now || new Date(), out = { as_of: t.toISOString().slice(0, 10), updated_at: t.toISOString(), courses: {} };
-        const stats = { courses: 0, testimonials: 0, missing: 0, held: 0 };
+        const stats = { courses: 0, testimonials: 0, missing: 0, held: 0, otherLang: 0 };
         const byCourse = {};
         Object.keys((this._tm && this._tm.byId) || {}).forEach(id => { const e = this._tm.byId[id]; if (e && e.show) (byCourse[e.course] = byCourse[e.course] || []).push([id, e]); });
         this._tmCourseFeed(feed).courses.forEach(c => {
             const chosen = byCourse[c.id]; if (!chosen) return;
             const resp = {}; this.tmResponses(c.id).forEach(r => { resp[r.id] = r; });
+            const lang = this._tmPageLang(c.id);
             const items = chosen.map(([id, e]) => {
                 const r = resp[id];
                 if (!r) { stats.missing++; return null; }
+                if (r.lang !== lang) { stats.otherLang++; return null; }   // only comments written in the page's language
                 const text = String(e.text || r.text).trim();
                 if (!text || this._tmHeld(text)) { stats.held++; return null; }
                 const o = { id, text };
-                const cadre = e.cadre != null ? e.cadre : r.cadre, country = e.country != null ? e.country : r.country, stars = e.stars || r.stars;
+                const lb = this._tmLabels(e, r, lang), cadre = lb.cadre, country = lb.country, stars = e.stars || r.stars;
                 if (cadre) o.cadre = cadre;
                 if (country) o.country = country;
                 if (stars) o.stars = stars;
@@ -256,6 +258,22 @@ Object.assign(window.App, {
         });
         Object.defineProperty(out, '_stats', { value: stats, enumerable: false });
         return out;
+    },
+    // Cadre and country as the page in `lang` shows them (testimonialLabels.js); '' set by hand = none.
+    _tmLabels(e, r, lang) {
+        const c = e.cadre != null ? e.cadre : r.cadre, k = e.country != null ? e.country : r.country;
+        return { cadre: this.tmCadreLabel ? this.tmCadreLabel(c, lang) : c, country: this.tmCountryLabel ? this.tmCountryLabel(k, lang) : k };
+    },
+    // Display texts switched on for more than one course: [{ text, where: [{ id, course }] }].
+    tmDuplicates() {
+        const by = {};
+        Object.entries((this._tm && this._tm.byId) || {}).forEach(([id, e]) => {
+            if (!e.show) return;
+            const r = this.tmResponses(e.course).find(x => x.id === id);
+            const t = this._tmNorm(e.text || (r && r.text) || ''); if (!t) return;
+            (by[t] = by[t] || []).push({ id, course: e.course, text: e.text || (r && r.text) });
+        });
+        return Object.values(by).filter(l => new Set(l.map(x => x.course)).size > 1).map(l => ({ text: l[0].text, where: l }));
     },
     // The file to publish. Never an empty file over a non-empty one (keeps the last instead).
     async testimonialsFeedFile(opts) {
@@ -307,21 +325,36 @@ Object.assign(window.App, {
     // scorer's cached quote, which cut too much: "The structured decision-making algorithms for flap
     // selection…" said nothing on its own, and an em-dash rewrite read as fake — Seb, 26 Oct 2026).
     TM_TIDY_MODEL: 'claude-opus-4-8',
-    TM_TIDY_PROMPT: 'You copy-edit learner comments that will be shown as testimonials on the public page of a SURGhub course (SURGhub is the United Nations Global Surgery Learning Hub: free online surgical training, mostly for clinicians in low- and middle-income countries). Each testimonial appears on its own under the learner\'s profession and country. The reader has NOT seen the survey question, and the page already shows the course title.\n\n'
-        + 'For each item you get the course title, the survey question and the learner\'s answer. Return a quote that:\n'
-        + '1. Sounds like the learner, not like marketing. Keep their own words, sentence structure and voice. Copy-edit only: fix spelling, typos, capital letters, obvious grammar slips and missing full stops. Do not swap their words for synonyms, add adjectives or claims, or polish the style.\n'
-        + '2. Stands on its own as a complete thought. Keep the subject and the learner\'s framing ("I found…", "I really liked…", "The course…"). Never return a fragment or a bare noun phrase. If the answer only makes sense with the question (e.g. "The case videos"), add the fewest words needed to make it a sentence, taken from the question (e.g. "I found the case videos most interesting.").\n'
-        + '3. Keeps the context that makes it meaningful: what the learner valued AND why or what it led to. When shortening, drop whole sentences or clauses that repeat or add little; never strip a sentence down to its objects.\n'
-        + '4. Length: keep it under about 50 words. A short original stays short. Do not merge sentences.\n'
-        + '5. Punctuation: no em dashes or en dashes, no semicolons the learner did not use, no ellipses, no quotation marks. Use full stops and commas.\n'
-        + '6. Same language as the original (never translate). Keep the learner\'s spelling variant (British or American) apart from typos.\n'
-        + '7. If it cannot stand alone without rewriting it, return the original with only typos fixed.\n\n'
-        + 'Examples of what NOT to do:\n'
-        + '- Original: "I found the most interesting aspects to be the structured decision-making algorithms for flap selection, especially how reconstruction choices vary depending on defect size and location. …" Bad: "The structured decision-making algorithms for flap selection and how reconstruction choices vary by defect size and location." (a fragment that says nothing on its own). Good: "I found the structured decision-making algorithms for flap selection most interesting, especially how reconstruction choices vary depending on defect size and location."\n'
-        + '- Original: "Every aspect of the course was presented in a clear, simple, and easy-to-understand manner. The content was well structured, informative, and highly relevant to clinical practice. …" Bad: "The course was presented in a clear, simple, easy-to-understand manner—well structured, informative, and highly relevant to clinical practice." (merged with an em dash; reads as rewritten). Good: "Every aspect of the course was presented in a clear, simple, and easy-to-understand manner. The content was well structured, informative, and highly relevant to clinical practice."\n'
-        + '- Original: "I really liked the templates and care the organizers took to help us build a low resource endotrianer; also I wouldn\'t have imagined I could use a bed sheet to simulate the small bowel and mesentery. …" Bad: "The templates and care to help us build a low-resource endotrainer; …" (lost "I really liked" and the sense). Good: "I really liked the templates and care the organizers took to help us build a low-resource endotrainer. I wouldn\'t have imagined I could use a bed sheet to simulate the small bowel and mesentery."',
-    TM_TIDY_SCHEMA: { type: 'object', properties: { results: { type: 'array', items: { type: 'object', properties: { i: { type: 'integer' }, quote: { type: 'string' } }, required: ['i', 'quote'], additionalProperties: false } } }, required: ['results'], additionalProperties: false },
-    // Tidy texts for the course page: items [{ r (response), course (title) }] → { id: quote } (quietly {} without a key).
+    // The editing rule (Seb, 26 Oct 2026, after the review of the first rewrites: they had started to
+    // sound alike — "I found the sections…", "Overall, the course was…"). Also shown as help by the text box.
+    TM_EDIT_RULE: ['Correct spelling, typos, capitals, spacing and punctuation; add a full stop if missing.',
+        'Change words only where the meaning would otherwise be unclear, and as little as possible.',
+        'Shorten by cutting whole sentences or clauses, never by rewording (60 words at most).',
+        'Keep the learner\'s own words, word order, tone and grammar, informal or non-native phrasing included.',
+        'Add no phrases ("I found…", "most interesting", "Overall,"), merge no ideas, never translate.',
+        'Remove names, other people\'s details, personal health details and anything showing the learner is under 18; switch it off if nothing useful is left.',
+        'No em dashes (a comma or full stop instead) and no quote marks (the site adds its own).',
+        'A comment that needs no changes is shown exactly as written.'],
+    TM_TIDY_PROMPT: 'You lightly edit learner comments for display as testimonials on the public page of a SURGhub course (SURGhub is the United Nations Global Surgery Learning Hub: free online surgical training, mostly for clinicians in low- and middle-income countries). Each item gives the course title, the survey question and the learner\'s original comment. Return the display text, following these rules exactly:\n'
+        + '- Correct spelling, typos, capitalisation, spacing and punctuation. Add a full stop at the end if it is missing.\n'
+        + '- Change words only where the meaning would otherwise be unclear. Keep any such change as small as possible.\n'
+        + '- Shorten a long comment by cutting whole sentences or clauses, never by rewording. Aim for 60 words at most.\n'
+        + '- Keep the learner\'s own words, word order, tone and grammar, including informal or non-native phrasing that is still clear. Do not polish it.\n'
+        + '- Do not add phrases (such as "I found…", "most interesting", "Overall,"), do not merge ideas, and do not translate: keep the comment in the language it was written in.\n'
+        + '- Remove learner names, other people\'s personal details, personal health details and anything showing the learner is under 18. If that leaves nothing useful, set drop to true and say why in reason.\n'
+        + '- No em dashes or en dashes: use a comma or a full stop. No quotation marks around the text and no stray quote marks.\n'
+        + '- If the comment needs no changes, return it exactly as written.\n'
+        + 'Otherwise leave drop false and reason empty.',
+    TM_TIDY_SCHEMA: { type: 'object', properties: { results: { type: 'array', items: { type: 'object', properties: { i: { type: 'integer' }, text: { type: 'string' }, drop: { type: 'boolean' }, reason: { type: 'string' } }, required: ['i', 'text', 'drop', 'reason'], additionalProperties: false } } }, required: ['results'], additionalProperties: false },
+    // What the model returns, made safe: dashes → comma, outer and stray quote marks out, a final full stop.
+    _tmCleanEdit(t) {
+        let q = String(t || '').replace(/\s*[—–]\s*/g, ', ').replace(/,\s*,/g, ',').trim();
+        q = q.replace(/^["“”«»]+|["“”«»]+$/g, '').replace(/(^|\s)["“”](?=\s|$)/g, '$1').trim();
+        if (q && !/[.!?…؟)]$/.test(q)) q += '.';
+        return q;
+    },
+    // Edit texts for the course page: items [{ r (response), course (title) }] → { id: { text } | { drop, reason } }
+    // (quietly {} without a key).
     async _tmTidy(items, btn) {
         if (!items.length || !this._claudeJSON || !this._getAnthropicKey) return {};
         const apiKey = await this._getAnthropicKey(); if (!apiKey) return {};
@@ -330,20 +363,29 @@ Object.assign(window.App, {
             const batch = items.slice(i, i + 12);
             if (btn) btn.textContent = 'Tidying texts ' + Math.min(i + 12, items.length) + '/' + items.length + '…';
             try {
-                const res = await this._claudeJSON(apiKey, this.TM_TIDY_PROMPT, JSON.stringify(batch.map((x, k) => ({ i: k, course: x.course, question: x.r.q, answer: x.r.text }))), this.TM_TIDY_SCHEMA, 6000, { model: this.TM_TIDY_MODEL });
+                const res = await this._claudeJSON(apiKey, this.TM_TIDY_PROMPT, JSON.stringify(batch.map((x, k) => ({ i: k, course: x.course, question: x.r.q, comment: x.r.text }))), this.TM_TIDY_SCHEMA, 8000, { model: this.TM_TIDY_MODEL });
                 (res && res.results || []).forEach(r => {
-                    const x = batch[r.i]; let q = String(r.quote || '').trim().replace(/\s*[—–]\s*/g, ', ').replace(/^["“”]+|["“”]+$/g, '').trim();
-                    if (x && q && !this._tmHeld(q)) out[x.r.id] = q;
+                    const x = batch[r.i]; if (!x) return;
+                    if (r.drop) { out[x.r.id] = { drop: true, reason: String(r.reason || 'nothing useful left once personal details are removed') }; return; }
+                    const q = this._tmCleanEdit(r.text);
+                    if (q && !this._tmHeld(q)) out[x.r.id] = { text: q };
                 });
             } catch (e) { __swallowed(e, 'tm.tidy'); if (/Invalid Anthropic API key/.test(e.message)) break; }
         }
         return out;
     },
-    // Re-tidy the display text of the given picks (default: every automatic pick not edited since).
+    _tmApplyEdit(id, r, res) {
+        const e = this._tm.byId[id]; if (!e || !res) return '';
+        if (res.drop) { e.show = false; e.removed = { at: new Date().toISOString(), why: 'personal details: ' + res.reason }; return 'dropped'; }
+        if (res.text === String(r.text).trim()) { delete e.text; return 'original'; }
+        e.text = res.text; return 'edited';
+    },
+    // Re-edit the display text of the given testimonials (default: every one switched on) with TM_TIDY_PROMPT.
     async tmRetidy(ids, btn) {
         await this._tmLoad();
         const feed = this._tmCourseFeed(), title = {}; feed.courses.forEach(c => { title[c.id] = c.title; });
-        const want = ids && ids.length ? ids : Object.keys(this._tm.byId).filter(id => this._tm.byId[id].show && this._tm.byId[id].auto);
+        const want = ids && ids.length ? ids : Object.keys(this._tm.byId).filter(id => this._tm.byId[id].show);
+        if (!(ids && ids.length) && !confirm('Re-edit the course-page text of all ' + want.length + ' testimonials switched on, from the learners\' original comments, with the light-editing rule?\n\n' + Math.ceil(want.length / 12) + ' requests to Claude. Texts edited by hand are redone too.')) return 0;
         const items = [];
         want.forEach(id => { const e = this._tm.byId[id]; const r = e && this.tmResponses(e.course).find(x => x.id === id); if (r) items.push({ r, course: title[e.course] || '' }); });
         if (!items.length) return 0;
@@ -351,9 +393,10 @@ Object.assign(window.App, {
         try {
             const q = await this._tmTidy(items, btn);
             if (!Object.keys(q).length) { alert('Could not tidy the texts (no Anthropic API key, or the request failed).'); return 0; }
-            items.forEach(x => { const e = this._tm.byId[x.r.id]; if (q[x.r.id] && q[x.r.id] !== x.r.text) e.text = q[x.r.id]; else delete e.text; e.at = new Date().toISOString(); });
+            const n = { edited: 0, original: 0, dropped: 0 };
+            items.forEach(x => { const k = this._tmApplyEdit(x.r.id, x.r, q[x.r.id]); if (k) { n[k]++; this._tm.byId[x.r.id].at = new Date().toISOString(); } });
             await this._tmSave();
-            this.showMsg('✓ Tidied ' + Object.keys(q).length + ' text' + (Object.keys(q).length === 1 ? '' : 's') + '.');
+            this.showMsg('✓ ' + n.edited + ' lightly edited, ' + n.original + ' shown as written' + (n.dropped ? ', ' + n.dropped + ' switched off (personal details)' : '') + '.', n.dropped ? 'warn' : false);
             return Object.keys(q).length;
         } finally { if (btn) { btn.disabled = false; btn.textContent = label; } this.rerenderDashTab ? this.rerenderDashTab() : this.renderView(); }
     },
@@ -440,7 +483,7 @@ Object.assign(window.App, {
             const res = ids.map(id => { const p = this._tmPickCourse(id); return { id, n: p.length, picks: p }; });
             const all = res.flatMap(x => x.picks.map(p => ({ r: p.r, course: title[x.id] || '' })));
             const tidy = await this._tmTidy(all, btn);
-            all.forEach(x => { const e = this._tm.byId[x.r.id]; if (tidy[x.r.id] && tidy[x.r.id] !== x.r.text) e.text = tidy[x.r.id]; });
+            all.forEach(x => this._tmApplyEdit(x.r.id, x.r, tidy[x.r.id]));
             await this._tmSave();
             const picked = res.reduce((t, x) => t + x.n, 0), full = res.filter(x => x.n >= this.TM_PICK_N).length, few = res.filter(x => x.n && x.n < this.TM_PICK_N).length, none = res.filter(x => !x.n).length;
             this.showMsg('✓ Picked ' + picked + ' testimonial' + (picked === 1 ? '' : 's') + ' for ' + (ids.length - none) + ' course' + (ids.length - none === 1 ? '' : 's') + (few ? ' (' + few + ' with fewer than ' + this.TM_PICK_N + ': not enough good comments)' : '') + (none ? '; ' + none + ' had no comment good enough' : '') + '. Marked "picked automatically" — they go online at the next publish.', none || few ? 'warn' : false);
@@ -535,7 +578,7 @@ Object.assign(window.App, {
                 fresh.push({ r: p.cand.r, course: title[p.course] || '' });
             });
             const tidy = await this._tmTidy(fresh, btn);
-            fresh.forEach(x => { if (tidy[x.r.id] && tidy[x.r.id] !== x.r.text) this._tm.byId[x.r.id].text = tidy[x.r.id]; });
+            fresh.forEach(x => this._tmApplyEdit(x.r.id, x.r, tidy[x.r.id]));
             await this._tmSave();
             this._tmProposals = list.filter(p => !pick.includes(p));
             this.showMsg('✓ Applied ' + pick.length + ' change' + (pick.length === 1 ? '' : 's') + '. They go online at the next publish.');
@@ -581,6 +624,96 @@ Object.assign(window.App, {
             + '<div class="max-h-[560px] overflow-y-auto custom-scrollbar mt-2 pr-1">' + rows + '</div></div>';
     },
 
+    // ── the review of 26 Oct 2026, applied once (Seb) ──
+    // Only testimonials already switched on change; nothing new is switched on. The listed ones were
+    // resolved from the published per-course files of 26 Oct 2026 to their response ids (positions move,
+    // ids do not). None had been filed under the wrong course: each original is in that course's own
+    // survey export (one learner pasted the same burns text into three surveys).
+    TM_REVIEW_20261026: {"off": [
+        {"id": "trmfbi81jqjugb", "at": "difficult-airway-algorithm-2023#1", "why": "about health systems and policy, not airways"}, 
+        {"id": "t7ribgcrb4pjx", "at": "tecsalud-basic-burn-management#2", "why": "about clinical trials, not burns"}, 
+        {"id": "t9mpgyx1ii3voa", "at": "tecsalud-basic-burn-management#5", "why": "about hypertension and clinical research, not burns"}, 
+        {"id": "t1d1gnlj1odt7jm", "at": "tecsalud-basic-principles-wound-management#1", "why": "about drugs, not wounds"}, 
+        {"id": "t17e5wwe1evkjo1", "at": "tecsalud-basic-principles-wound-management#2", "why": "about triage, not wounds"}, 
+        {"id": "ta9m0x513v65gy", "at": "lumbar-plexus-block#4", "why": "about emergency airway and resuscitation"}, 
+        {"id": "tz4aa3o5o3w0v", "at": "epidemiology-fundamentals-patient-safety#6", "why": "about burn prevention and fire safety (the same learner sent it to Essential Burn Care and Obstetric Trauma too)"}, 
+        {"id": "t1g2rpfoyjk0h1", "at": "understanding-capnography#4", "why": "about medication error prevention"}, 
+        {"id": "t1ib6qj61yao5h", "at": "colon-cancer-surgery#6", "why": "about CEI in surgical research"}, 
+        {"id": "tn84uv062qh8p", "at": "complex-lower-extremity-trauma-pelvic-fractures#4", "why": "about SBAR and team huddles"}, 
+        {"id": "t145j1bjhg84ae", "at": "central-venous-access-devices#6", "why": "about staff coordination"}, 
+        {"id": "t2hq8tif85ie5", "at": "burn-sepsis#6", "why": "generic (industry application, group discussion)"}, 
+        {"id": "tj27k6j5kn5ao", "at": "burn-sepsis#5", "why": "the same generic text the learner also sent to Acetabular Fractures: not written for burn sepsis"}, 
+        {"id": "twchdk010bl9w1", "at": "complex-lower-extremity-trauma-acetabular-fractures#2", "why": "the same text as burn-sepsis #5"}, 
+        {"id": "t1kppgqe1cko1ml", "at": "local-anaesthetic-systemic-toxicity#3", "why": "the learner’s own experience as a patient"}, 
+        {"id": "ti2qavf17tmi82", "at": "local-anaesthetic-systemic-toxicity#5", "why": "the learner’s own experience as a patient"}, 
+        {"id": "t1vs9bg5ezs73w", "at": "resurge-cleft-lip-palate#2", "why": "the learner is a high school student"}, 
+        {"id": "tdzcgd01qxqhjx", "at": "tranexamic-acid#3", "why": "reads like course notes and calls TXA an anticoagulant"}, 
+        {"id": "tdlocaqr02o8l", "at": "emergency-checklists-anesthesia-practice#7", "why": "a list of steps, not a testimonial"}], "labels": [
+        {"id": "tx2s8dp1htbzya", "at": "managing-a-high-voltage-burn-in-a-low-resource-setting#4", "field": "cadre", "why": "writes “as a physiotherapist”; the survey says Anaesthesiologist"}, 
+        {"id": "tp8gb289jk8lb", "at": "understanding-capnography#1", "field": "cadre", "why": "writes “paramedic science student”; the survey says Anaesthesiologist"}, 
+        {"id": "t1usktsq1d0sbzv", "at": "chest-wall-reconstruction#4", "field": "country", "why": "writes “my country Ukraine”; the survey says Poland"}]},
+    async tmApplyReview20261026(btn) {
+        await this._tmLoad();
+        if (this._getAiScores) await this._getAiScores();
+        const FIX = this.TM_REVIEW_20261026, at = new Date().toISOString(), feed = this._tmCourseFeed();
+        const title = {}, slugOf = {}; feed.courses.forEach(c => { title[c.id] = c.title; slugOf[c.id] = c.slug; });
+        const shownN = Object.values(this._tm.byId).filter(e => e.show).length;
+        if (!confirm('Apply the review of 26 Oct 2026 to the ' + shownN + ' testimonials switched on?\n\n• switch off the ' + FIX.off.length + ' listed (wrong topic, personal, generic)\n• fix ' + FIX.labels.length + ' cadre/country labels\n• switch off comments not written in the page\'s language; keep a duplicated text on one course only\n• rebuild every display text from the learner\'s original comment with the light-editing rule (' + Math.ceil(shownN / 12) + ' requests to Claude)\n\nNothing new is switched on. Cadres and countries are shown in each page\'s language from now on.')) return null;
+        const label = btn && btn.textContent; if (btn) btn.disabled = true;
+        try {
+            const resp = (id, e) => this.tmResponses(e.course).find(x => x.id === id);
+            const built = this.testimonialsFeedBuild(feed), pos = {};
+            Object.entries(built.courses).forEach(([slug, l]) => l.forEach((x, i) => { pos[x.id] = slug + ' #' + (i + 1); }));
+            const shownText = (id, e) => { const r = resp(id, e); return e.text || (r && r.text) || ''; };
+            const rep = { at, off: [], labels: [], lang: [], dups: [], dropped: [], edits: { edited: 0, original: 0, failed: 0 }, examples: [], fewer: [], labelsShown: 0 };
+            const off = (id, why, list) => { const e = this._tm.byId[id]; if (!e || !e.show) return; list.push({ at: pos[id] || slugOf[e.course], course: title[e.course] || e.course, why, text: shownText(id, e) }); e.show = false; e.removed = { at, why }; };
+            // 1. the listed ones
+            FIX.off.forEach(f => off(f.id, f.why, rep.off));
+            // 2. labels the learner's own words contradict, and the survey does not support
+            FIX.labels.forEach(f => { const e = this._tm.byId[f.id]; if (!e) return; const r = resp(f.id, e); const was = r ? this._tmLabels(e, r, this._tmPageLang(e.course))[f.field] : ''; e[f.field] = ''; rep.labels.push({ at: pos[f.id] || f.at, course: title[e.course], field: f.field, from: was, to: '(none)', why: f.why }); });
+            // 3. only comments written in the page's language
+            Object.entries(this._tm.byId).forEach(([id, e]) => { if (!e.show) return; const r = resp(id, e), L = this._tmPageLang(e.course); if (r && r.lang !== L) off(id, 'written in ' + r.lang.toUpperCase() + ', the page is ' + L.toUpperCase(), rep.lang); });
+            // 4. a text on one course only: kept where the course has fewest testimonials
+            const count = (c) => Object.values(this._tm.byId).filter(x => x.course === c && x.show).length;
+            this.tmDuplicates().forEach(d => {
+                const keep = d.where.slice().sort((a, b) => count(a.course) - count(b.course) || String(title[a.course]).localeCompare(String(title[b.course])))[0];
+                d.where.filter(w => w !== keep).forEach(w => off(w.id, 'the same text is kept on ' + (title[keep.course] || keep.course), rep.dups));
+            });
+            // 5. every display text rebuilt from the original
+            const items = [];
+            Object.entries(this._tm.byId).forEach(([id, e]) => { if (!e.show) return; const r = resp(id, e); if (r) items.push({ r, course: title[e.course] || '', old: shownText(id, e), courseId: e.course }); });
+            const res = await this._tmTidy(items, btn);
+            items.forEach(x => {
+                const k = this._tmApplyEdit(x.r.id, x.r, res[x.r.id]);
+                if (!k) { rep.edits.failed++; return; }
+                if (k === 'dropped') { rep.dropped.push({ at: pos[x.r.id], course: x.course, why: this._tm.byId[x.r.id].removed.why, text: x.old }); return; }
+                rep.edits[k]++;
+                const now = this._tm.byId[x.r.id].text || x.r.text;
+                if (now !== x.old) rep.examples.push({ course: x.course, at: pos[x.r.id], original: x.r.text, old: x.old, new: now });
+                delete this._tm.byId[x.r.id].auto;
+            });
+            // 6. labels now shown in each page's language (counted for the report)
+            Object.entries(this._tm.byId).forEach(([id, e]) => { if (!e.show) return; const r = resp(id, e); if (!r) return; const L = this._tmPageLang(e.course), lb = this._tmLabels(e, r, L);
+                const raw = [e.cadre != null ? e.cadre : r.cadre, e.country != null ? e.country : r.country]; if (raw[0] !== lb.cadre || raw[1] !== lb.country) rep.labelsShown++; });
+            // 7. courses left with fewer than 3, and the good candidates waiting for each
+            const scores = this._aiScoreMap || {};
+            feed.courses.forEach(c => { const n = count(c.id); if (n >= 3 || !this.tmResponses(c.id).length) return;
+                const cand = this._tmCandidates(c.id), waiting = cand.filter(r => { const a = scores[this._tmAiKey(r.text)]; return a && a.q && a.s >= this.TM_PICK_MIN && !(a.t || []).includes('complaint'); }).length;
+                rep.fewer.push({ course: c.title, slug: c.slug, shown: n, waiting, unscreened: cand.filter(r => !scores[this._tmAiKey(r.text)]).length, comments: this.tmResponses(c.id).length }); });
+            rep.shownAfter = Object.values(this._tm.byId).filter(e => e.show).length;
+            this._tm.fixes = Object.assign({}, this._tm.fixes, { '2026-10-26': at });
+            await this._tmSave();
+            try { await Storage.setItem('surgdash_testimonials_rework', rep, { internal: true }); } catch (e) { __swallowed(e, 'tm.reworkReport'); }
+            this._tmLastRework = rep;
+            const msg = 'Review applied.\n\n' + (rep.edits.edited + rep.edits.original) + ' display texts rebuilt: ' + rep.edits.edited + ' lightly edited, ' + rep.edits.original + ' shown exactly as written' + (rep.edits.failed ? ', ' + rep.edits.failed + ' not reached (run "Re-edit all texts" again)' : '') + '.\n'
+                + (rep.off.length + rep.lang.length + rep.dups.length + rep.dropped.length) + ' switched off (' + rep.off.length + ' listed, ' + rep.lang.length + ' other language, ' + rep.dups.length + ' duplicate, ' + rep.dropped.length + ' personal details).\n'
+                + rep.labels.length + ' labels fixed; cadre/country now in each page\'s language (' + rep.labelsShown + ' shown differently).\n'
+                + rep.fewer.length + ' courses have fewer than 3 testimonials.\n\n' + rep.shownAfter + ' testimonials switched on.\n\nPublish now?';
+            if (confirm(msg) && this.publishWebsiteMetrics) await this.publishWebsiteMetrics(null);
+            return rep;
+        } finally { if (btn) { btn.disabled = false; btn.textContent = label; } this.rerenderDashTab ? this.rerenderDashTab() : this.renderView(); }
+    },
+
     // ── editing (Testimonials tab) ──
     async tmToggle(id, courseId) {
         await this._tmLoad();
@@ -604,7 +737,9 @@ Object.assign(window.App, {
         await this._tmLoad();
         const e = this._tm.byId[id] || (this._tm.byId[id] = { course: courseId });
         const v = String(value == null ? '' : value).replace(/\s+/g, ' ').trim();
-        if (v) e[field] = field === 'stars' ? Number(v) : v; else delete e[field];
+        if (v) e[field] = field === 'stars' ? Number(v) : v;
+        else if (field === 'cadre' || field === 'country') e[field] = '';   // emptied: none shown ("SURGhub learner")
+        else delete e[field];
         e.at = new Date().toISOString(); delete e.auto;
         await this._tmSave(); this.rerenderDashTab ? this.rerenderDashTab() : this.renderView();
     },
@@ -652,12 +787,16 @@ Object.assign(window.App, {
             }).join('');
             const none = courses.filter(x => !x.n).length, empty = courses.filter(x => x.n && !x.shown).length;
             const autoN = Object.values(this._tm.byId).filter(e => e.show && e.auto).length;
-            return head + this._tmReviewHtml(esc, feed) + '<div class="flex items-center gap-3 flex-wrap mb-3">'
+            const dups = this.tmDuplicates(), titleOf = {}; feed.courses.forEach(x => { titleOf[x.id] = x.title; });
+            return head + (!(this._tm.fixes && this._tm.fixes['2026-10-26']) ? '<div class="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4 flex items-center gap-3 flex-wrap" data-edit-only><span class="text-sm text-amber-900"><strong>The review of 26 Oct 2026 is ready to apply:</strong> ' + this.TM_REVIEW_20261026.off.length + ' testimonials to switch off, ' + this.TM_REVIEW_20261026.labels.length + ' labels, one language per page, duplicates, and every text rebuilt from the original with the light-editing rule. Nothing new is switched on.</span><button onclick="App.tmApplyReview20261026(this)" class="ml-auto px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg">Apply the review</button></div>' : '')
+                + (dups.length ? '<div class="bg-rose-50 border border-rose-200 rounded-xl p-3 mb-4 text-xs text-rose-800"><strong>' + dups.length + ' text' + (dups.length === 1 ? ' is' : 's are') + ' switched on for more than one course</strong> — keep each on one course: ' + dups.map(d => '“' + esc(String(d.text).slice(0, 60)) + '” on ' + d.where.map(w => '<button onclick="App.tmPickCourse(\'' + this.escapeJsArg(w.course) + '\')" class="underline">' + esc(titleOf[w.course] || w.course) + '</button>').join(' and ')).join('; ') + '</div>' : '')
+                + this._tmReviewHtml(esc, feed) + '<div class="flex items-center gap-3 flex-wrap mb-3">'
+                + '<button data-edit-only onclick="App.tmRetidy(null, this)" class="px-4 py-2 border border-slate-300 hover:border-gsf-boston text-gsf-prussian text-xs font-bold rounded-lg" title="Rebuild every switched-on display text from the learner\'s original comment with the light-editing rule">Re-edit all texts</button>'
                 + '<button data-edit-only onclick="App.tmReviewAll(this)" class="px-4 py-2 bg-gsf-prussian hover:bg-slate-900 text-white text-xs font-bold rounded-lg" title="Compare what every course shows with all its comments, and propose better or newer ones">Review all courses</button>'
                 + (empty || autoN ? ''
                 + (empty ? '<button data-edit-only onclick="App.tmPickBest(null, this)" class="px-4 py-2 bg-gsf-boston hover:bg-gsf-prussian text-white text-xs font-bold rounded-lg">Pick the best ' + this.TM_PICK_N + ' for the ' + empty + ' course' + (empty === 1 ? '' : 's') + ' with none</button>'
                     + '<span class="text-[11px] text-slate-500 max-w-xl">4–5 star comments screened by the AI (quotable, score ' + this.TM_PICK_MIN + '+), best first, varied countries, lightly copy-edited. Fewer when there are fewer good ones.</span>' : '')
-                + (autoN ? '<span class="text-[11px] text-violet-700 font-semibold">' + autoN + ' picked automatically — open a course to check them</span><button data-edit-only onclick="App.tmRetidy(null, this)" class="px-3 py-1.5 text-[11px] font-bold rounded-lg border border-violet-200 text-violet-700 hover:bg-violet-50" title="Redo the course-page text of every automatic pick you have not edited, with the testimonial copy-edit rules">Tidy their texts again</button>' : '') : '') + '</div>'
+                + (autoN ? '<span class="text-[11px] text-violet-700 font-semibold">' + autoN + ' picked automatically — open a course to check them</span>' : '') : '') + '</div>'
                 + '<div class="bg-white rounded-xl shadow-sm border overflow-hidden"><div class="overflow-x-auto max-h-[640px] overflow-y-auto custom-scrollbar"><table class="w-full text-left border-collapse text-sm">'
                 + '<thead class="sticky top-0 bg-white shadow-sm"><tr class="border-b text-slate-500 text-xs"><th class="py-2 px-3 font-medium">Course</th><th class="py-2 px-3 font-medium">Provider</th><th class="py-2 px-3 font-medium text-center" title="Testimonials switched on for the course page">Shown</th>'
                 + '<th class="py-2 px-3 font-medium text-right" title="Comments received since the course was last marked reviewed">New</th><th class="py-2 px-3 font-medium text-right" title="4–5 stars, ' + this.TM_SUGGEST_WORDS + '+ words, cadre and country known">Suggested</th><th class="py-2 px-3 font-medium text-right">Comments</th></tr></thead><tbody>'
@@ -680,9 +819,13 @@ Object.assign(window.App, {
         if (fl.lang) rest = rest.filter(r => r.lang === fl.lang);
         if (fl.suggested) rest = rest.filter(r => this._tmSuggested(r));
         const stars = (n) => n ? '<span class="text-amber-500 tracking-tight">' + '★'.repeat(n) + '<span class="text-slate-200">' + '★'.repeat(5 - n) + '</span></span>' : '<span class="text-slate-300 text-[10px]">no rating</span>';
+        const pageLang = this._tmPageLang(cid), titleOf = {}; feed.courses.forEach(x => { titleOf[x.id] = x.title; });
+        const dupBy = {};
+        this.tmDuplicates().forEach(d => { const others = d.where.filter(w => w.course !== cid); if (d.where.some(w => w.course === cid) && others.length) dupBy[this._tmNorm(d.text)] = others.map(w => titleOf[w.course] || w.course).join(', '); });
         const card = (r, i, n) => {
             const e = ent(r.id), on = !!e.show, idJs = this.escapeJsArg(r.id), disp = e.text || r.text, held = on && this._tmHeld(disp);
-            const meta = [e.cadre != null ? e.cadre : r.cadre, e.country != null ? e.country : r.country].filter(Boolean).join(' · ') || 'SURGhub learner';
+            const lb = this._tmLabels(e, r, pageLang), meta = [lb.cadre, lb.country].filter(Boolean).join(' · ') || 'SURGhub learner';
+            const dupOn = on ? dupBy[this._tmNorm(disp)] : null;
             return '<div class="border rounded-xl p-4 mb-3 ' + (on ? 'border-gsf-boston bg-sky-50/40' : 'border-slate-200 bg-white') + '">'
                 + '<div class="flex items-center gap-2 flex-wrap text-[11px] text-slate-500">' + stars(r.stars) + '<span class="font-semibold text-slate-700">' + esc(meta) + '</span><span class="uppercase text-[10px] font-bold text-slate-400">' + esc(r.lang) + '</span>'
                 + '<span class="text-[10px] text-slate-400 truncate max-w-[260px]" title="' + esc(r.q) + '">' + esc(this._tmQLabel(r.q)) + '</span>'
@@ -690,13 +833,16 @@ Object.assign(window.App, {
                 + (isNew(r) && !on ? '<span class="px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 text-[10px] font-bold">new</span>' : '')
                 + (on && e.keep ? '<button data-edit-only onclick="App.tmUnkeep(\'' + idJs + '\')" class="px-1.5 py-0.5 rounded bg-sky-50 text-sky-700 text-[10px] font-bold" title="Kept: never proposed for replacement. Click to allow it again">kept ×</button>' : '')
                 + (on && e.auto ? '<span class="px-1.5 py-0.5 rounded bg-violet-50 text-violet-700 text-[10px] font-bold" title="Picked automatically (AI score ' + esc(e.auto.score) + '/10). Editing, moving or switching it clears this mark.">picked automatically</span>' : '')
+                + (on && r.lang !== pageLang ? '<span class="px-1.5 py-0.5 rounded bg-rose-50 text-rose-600 text-[10px] font-bold" title="Only comments written in the course page\'s language are published">not in ' + esc(pageLang.toUpperCase()) + ': not published</span>' : '')
+                + (dupOn ? '<span class="px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 text-[10px] font-bold" title="The same text is switched on for another course too">also on ' + esc(dupOn) + '</span>' : '')
                 + (held ? '<span class="px-1.5 py-0.5 rounded bg-rose-50 text-rose-600 text-[10px] font-bold" title="The display text contains an email, phone number or learner name: it is not published until edited">held back: personal details</span>' : '')
                 + (!on && e.text && e.text !== r.text ? '<span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-bold" title="Switching it on again brings back your edited text, cadre and country">edits kept</span>' : '')
                 + '<span class="ml-auto">' + esc(r.date) + '</span>'
                 + (on ? '<span class="inline-flex items-center gap-0.5 ml-2" data-edit-only><button onclick="App.tmMove(\'' + idJs + '\', -1)" ' + (i === 0 ? 'disabled ' : '') + 'class="px-1.5 py-0.5 border rounded text-slate-500 hover:text-gsf-boston disabled:opacity-30" title="Move up">▲</button><button onclick="App.tmMove(\'' + idJs + '\', 1)" ' + (i === n - 1 ? 'disabled ' : '') + 'class="px-1.5 py-0.5 border rounded text-slate-500 hover:text-gsf-boston disabled:opacity-30" title="Move down">▼</button><span class="ml-1 font-bold text-gsf-prussian">#' + (i + 1) + '</span></span>' : '')
                 + '<label class="inline-flex items-center gap-1.5 ml-2 cursor-pointer font-bold ' + (on ? 'text-gsf-boston' : 'text-slate-500') + '" data-edit-only><input type="checkbox" ' + (on ? 'checked ' : '') + 'onchange="App.tmToggle(\'' + idJs + '\', \'' + cidJs + '\')"> Show on SURGhub</label></div>'
                 + '<p class="text-sm text-slate-700 mt-2 whitespace-pre-line">' + esc(r.text) + '</p>'
-                + (on ? '<div class="mt-3" data-edit-only><label class="text-[10px] font-bold uppercase tracking-wide text-slate-400">Text on the course page' + (e.text && e.text !== r.text ? ' · edited' : '') + '</label>'
+                + (on ? '<div class="mt-3" data-edit-only><label class="text-[10px] font-bold uppercase tracking-wide text-slate-400">Text on the course page' + (e.text && e.text !== r.text ? ' · edited' : ' · as written') + '</label>'
+                    + '<details class="inline-block ml-2 text-[10px] text-slate-500"><summary class="cursor-pointer text-gsf-boston">editing rule</summary><ul class="list-disc ml-4 mt-1 mb-1 space-y-0.5 max-w-3xl">' + this.TM_EDIT_RULE.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul></details>'
                     + '<textarea rows="2" onchange="App.tmSetField(\'' + idJs + '\', \'' + cidJs + '\', \'text\', this.value)" class="w-full mt-1 text-sm border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-gsf-boston/30">' + esc(disp) + '</textarea>'
                     + '<div class="flex gap-3 mt-1 text-[11px] text-slate-500 flex-wrap"><span>Cadre <input value="' + esc(e.cadre != null ? e.cadre : r.cadre) + '" placeholder="SURGhub learner" onchange="App.tmSetField(\'' + idJs + '\', \'' + cidJs + '\', \'cadre\', this.value)" class="border rounded px-1.5 py-0.5 w-44"></span>'
                     + '<span>Country <input value="' + esc(e.country != null ? e.country : r.country) + '" onchange="App.tmSetField(\'' + idJs + '\', \'' + cidJs + '\', \'country\', this.value)" class="border rounded px-1.5 py-0.5 w-36"></span>'

@@ -1101,6 +1101,7 @@ window.App = {
                 'course_slugs.json',
                 'courses_feed.json',
                 'testimonials_feed.json',
+                'testimonials_rework.json',
                 'learnworlds_school_domain.json',
                 'provider_map.json',
                 'course_links.json',

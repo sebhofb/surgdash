@@ -119,6 +119,7 @@
         if (key === 'surgdash_course_slugs') return path.join('settings', 'course_slugs.json');
         if (key === 'surgdash_courses_feed') return path.join('settings', 'courses_feed.json');
         if (key === 'surgdash_testimonials_feed') return path.join('settings', 'testimonials_feed.json');
+        if (key === 'surgdash_testimonials_rework') return path.join('settings', 'testimonials_rework.json');
         if (key === 'surgdash_provider_map')     return path.join('settings', 'provider_map.json');
         if (key === 'surgdash_course_links')     return path.join('settings', 'course_links.json');
         if (key === 'surghub_local_mtime')   return path.join('settings', 'surghub_local_mtime.json');

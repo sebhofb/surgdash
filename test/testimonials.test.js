@@ -22,11 +22,11 @@ store.set('surghub_survey_raw', {
 const ctx = { console: { log() {}, warn() {}, error() {} }, TextEncoder, crypto: globalThis.crypto, Uint8Array, Math, JSON, Object, Array, Number, String, Map, Set, RegExp, Error, Promise, isNaN, escape, unescape, decodeURIComponent, __swallowed() {},
   Date: class extends Date { constructor(...a) { super(...(a.length ? a : [Date.UTC(2026, 9, 26, 9)])); } },
   Storage: { async getItem(k) { return store.has(k) ? JSON.parse(JSON.stringify(store.get(k))) : null; }, async setItem(k, v) { store.set(k, JSON.parse(JSON.stringify(v))); } } };
-ctx.window = ctx;
+ctx.window = ctx; ctx.Intl = Intl;
 ctx.App = { data: [{ Course: 'Burns Course', CourseId: 'burns', Timestamp: '2026-10-26' }, { Course: 'Other Course', CourseId: 'other', Timestamp: '2026-10-26' }],
   escapeHtml: (t) => String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])), escapeJsArg: (t) => String(t).replace(/'/g, "\\'"), formatNumber: (n) => String(n), renderView() {}, rerenderDashTab() {} };
 vm.createContext(ctx);
-for (const f of ['js/countryMap.js', 'js/scrub.js', 'js/testimonials.js']) vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, { filename: f });
+for (const f of ['js/countryMap.js', 'js/scrub.js', 'js/testimonials.js', 'js/testimonialLabels.js']) vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, { filename: f });
 const App = ctx.App;
 const FEED = { courses: [{ id: 'burns', slug: 'burns-public', title: 'Burns Course', provider: 'P' }, { id: 'other', slug: 'other-course', title: 'Other Course', provider: 'P' }] };
 App._cfFeedNow = () => FEED;
@@ -160,7 +160,7 @@ App._cfFeedNow = () => FEED;
     App._aiScoreMap = ai; App._getAiScores = async () => App._aiScoreMap; App._claudeScoreBatch = async () => []; App.showMsg = (m) => { App.__msg = m; };
     const tidyCalls = [];
     App._getAnthropicKey = async () => 'k';
-    App._claudeJSON = async (key, system, user, schema, max, opts) => { tidyCalls.push({ system, items: JSON.parse(user), model: opts && opts.model }); return { results: JSON.parse(user).map((x, i) => ({ i, quote: 'Tidied ' + x.answer.slice(0, 20) + ' — kept in my words.' })) }; };
+    App._claudeJSON = async (key, system, user, schema, max, opts) => { tidyCalls.push({ system, items: JSON.parse(user), model: opts && opts.model }); return { results: JSON.parse(user).map((x, i) => ({ i, text: 'Tidied ' + x.comment.slice(0, 20) + ' — kept in my words', drop: false, reason: '' })) }; };
     const res = await App.tmPickBest(['airway'], null);
     const picked = Object.entries(App._tm.byId).filter(([, e]) => e.course === 'airway' && e.show).sort((a, b) => a[1].order - b[1].order);
     const respA = {}; App.tmResponses('airway').forEach(r => { respA[r.id] = r; });
@@ -168,10 +168,11 @@ App._cfFeedNow = () => FEED;
     check('picks at most 6, all AI-screened (quotable, score 6+), 4–5 stars, from the "most interesting" question', res.picked === 6 && pt.every(r => r.stars >= 4 && /most interesting/.test(r.q)), pt.map(r => r.text.slice(0, 12)).join(' | '));
     check('never a low-rated comment, a "less engaging" answer, one the AI scored under 6, or a near-duplicate', !pt.some(r => /Low rated|More videos/.test(r.text) || r.text === txt(9)) && pt.filter(r => /difficult airway trolley/.test(r.text)).length <= 1);
     check('countries are spread: one from Kenya until the others are used', pt.slice(0, 6).filter(r => r.country === 'Kenya').length <= 2 && pt[0].country !== pt[1].country);
-    check('the course-page text comes from the testimonial copy-edit (with course, question and answer), never the report scorer\'s cached quote', tidyCalls.length === 1 && tidyCalls[0].items.every(x => x.course === 'Airway Course' && /most interesting/.test(x.question) && x.answer) && picked.every(([, e]) => /^Tidied /.test(e.text) && !/Tidied: the airway/.test(e.text)) && picked.every(([, e]) => e.auto && e.auto.score >= 6), JSON.stringify(picked.map(([, e]) => e.text)));
+    check('the course-page text comes from the testimonial copy-edit (with course, question and answer), never the report scorer\'s cached quote', tidyCalls.length === 1 && tidyCalls[0].items.every(x => x.course === 'Airway Course' && /most interesting/.test(x.question) && x.comment) && picked.every(([, e]) => /^Tidied /.test(e.text) && !/Tidied: the airway/.test(e.text)) && picked.every(([, e]) => e.auto && e.auto.score >= 6), JSON.stringify(picked.map(([, e]) => e.text)));
     check('…with no em or en dashes (replaced by a comma)', picked.every(([, e]) => !/[—–]/.test(e.text) && /, kept in my words\.$/.test(e.text)));
-    check('the instruction: learner\'s own words, complete on its own, keeps the context, no dashes, same language', /Copy-edit only/.test(App.TM_TIDY_PROMPT) && /Never return a fragment/.test(App.TM_TIDY_PROMPT) && /what the learner valued AND why/.test(App.TM_TIDY_PROMPT) && /no em dashes or en dashes/.test(App.TM_TIDY_PROMPT) && /never translate/.test(App.TM_TIDY_PROMPT) && tidyCalls[0].model === App.TM_TIDY_MODEL);
-    App._claudeJSON = async (key, system, user) => ({ results: JSON.parse(user).map((x, i) => ({ i, quote: 'Again: ' + x.answer.slice(0, 12) + '.' })) });
+    check('the light-editing rule (26 Oct 2026): fix only, cut never reword, own words, no added phrases, no translation, personal details out, no dashes, unchanged = as written', /Correct spelling, typos, capitalisation, spacing and punctuation/.test(App.TM_TIDY_PROMPT) && /cutting whole sentences or clauses, never by rewording/.test(App.TM_TIDY_PROMPT) && /60 words/.test(App.TM_TIDY_PROMPT) && /own words, word order, tone and grammar/.test(App.TM_TIDY_PROMPT) && /Do not add phrases/.test(App.TM_TIDY_PROMPT) && /do not translate/.test(App.TM_TIDY_PROMPT) && /under 18/.test(App.TM_TIDY_PROMPT) && /No em dashes/.test(App.TM_TIDY_PROMPT) && /needs no changes, return it exactly as written/.test(App.TM_TIDY_PROMPT) && tidyCalls[0].model === App.TM_TIDY_MODEL && App.TM_EDIT_RULE.length >= 7);
+    App._claudeJSON = async (key, system, user) => ({ results: JSON.parse(user).map((x, i) => ({ i, text: 'Again: ' + x.comment.slice(0, 12) + '.', drop: false, reason: '' })) });
+    ctx.confirm = () => true;
     const nRe = await App.tmRetidy(null, null);
     check('"Tidy their texts again" redoes every automatic pick', nRe === picked.length && Object.values(App._tm.byId).filter(e => e.course === 'airway' && e.show).every(e => /^Again: /.test(e.text)));
     await App.tmSetField(picked[0][0], 'airway', 'text', 'Edited by a person');
@@ -225,6 +226,55 @@ App._cfFeedNow = () => FEED;
     App.TM_PICK_N = 6;
     const nw = App._tm.byId[rid(7)].replacedBy;
     check('"Apply all": the old one off, the new one on in its place, copy-edited', nApplied > 0 && App._tm.byId[rid(7)].show === false && nw && App._tm.byId[nw].show === true && App._tm.byId[nw].order === before && /^(Tidied|Again)/.test(App._tm.byId[nw].text || ''), JSON.stringify(App._tm.byId[rid(7)]));
+  }
+
+  // ── 26 Oct 2026: light editing, labels in the page language, one language, duplicates, the one-off review ──
+  {
+    check('edits are made safe: dashes become commas, quote marks go, a full stop is added', App._tmCleanEdit('"Great course — very clear"') === 'Great course, very clear.' && App._tmCleanEdit('Muy bueno el curso') === 'Muy bueno el curso.' && App._tmCleanEdit('Is it?') === 'Is it?');
+    App._tm.byId.tA = { course: 'burns', show: true, text: 'old rewrite' };
+    check('a comment that needs no change is shown exactly as written; personal details switch it off', App._tmApplyEdit('tA', { text: 'As written.' }, { text: 'As written.' }) === 'original' && App._tm.byId.tA.text === undefined
+      && App._tmApplyEdit('tA', { text: 'x' }, { drop: true, reason: 'names a patient' }) === 'dropped' && App._tm.byId.tA.show === false && /names a patient/.test(App._tm.byId.tA.removed.why));
+    delete App._tm.byId.tA;
+    check('cadres in the page language, from any spelling; not-cadres mapped; unknown left out on other-language pages', App.tmCadreLabel('Infirmière', 'en') === 'Nurse' && App.tmCadreLabel('Nurse', 'fr') === 'Infirmier(ère)' && App.tmCadreLabel('nurse', 'es') === 'Enfermero(a)' && App.tmCadreLabel('Anaesthesiologist', 'ar') === 'طبيب(ة) تخدير'
+      && App.tmCadreLabel('Undergraduate Specialist Surgeon', 'en') === 'Medical Student' && App.tmCadreLabel('Odontología', 'es') === 'Odontólogo(a)' && App.tmCadreLabel('Undergraduate Gynaecologist', 'en') === 'Medical Student'
+      && App.tmCadreLabel('Sales Representative', 'en') === 'Sales Representative' && App.tmCadreLabel('Sales Representative', 'fr') === '' && App.tmCadreLabel('SURGhub Learner', 'en') === '');
+    check('countries: short common names in the page language', App.tmCountryLabel('Tanzania, United Republic of', 'en') === 'Tanzania' && App.tmCountryLabel('Chad', 'fr') === 'Tchad' && App.tmCountryLabel('Tchad', 'en') === 'Chad' && App.tmCountryLabel('Ivory Coast', 'fr') === "Côte d'Ivoire" && App.tmCountryLabel("Côte d'Ivoire", 'en') === "Côte d'Ivoire"
+      && App.tmCountryLabel('République Démocratique du Congo', 'en') === 'DR Congo' && App.tmCountryLabel('Mexico', 'es') === 'México' && App.tmCountryLabel('Occupied Palestinian Territory', 'en') === 'Palestine' && App.tmCountryLabel('Myanmar', 'en') === 'Myanmar' && App.tmCountryLabel('Trinidad and Tobago', 'en') === 'Trinidad and Tobago',
+      [App.tmCountryLabel('Tanzania, United Republic of', 'en'), App.tmCountryLabel('République Démocratique du Congo', 'en'), App.tmCountryLabel('Myanmar', 'en'), App.tmCountryLabel('Trinidad and Tobago', 'en')].join(' | '));
+    // a French course page: labels in French, an English comment not published
+    const FC = ['Respondent', 'Country', 'Profession', 'Started at', 'Ended at', 'Sur une échelle de 1 à 5, quel est votre niveau de satisfaction concernant ce cours ?', 'Quels aspects du cours avez-vous trouvé les plus intéressants ?'];
+    const raw = store.get('surghub_survey_raw'); raw['Cours FR'] = { cols: FC, data: [[1, 'Chad', 'nurse', '01 Oct 2026 10:00:00', '01 Oct 2026 10:00:00', '5', "J'ai beaucoup aimé les vidéos sur les brûlures et les cas cliniques du Tchad."], [2, 'Kenya', 'surgeon', '02 Oct 2026 10:00:00', '02 Oct 2026 10:00:00', '5', 'The videos on burns were very good and clear for my work.']] };
+    App._rawSurveyResponses = raw; App._tmRespCache = null; App.data.push({ Course: 'Cours FR', CourseId: 'fr1', Timestamp: '2026-10-26' }); App._tmLatestCache = null; FEED.courses.push({ id: 'fr1', slug: 'cours-fr', title: 'Cours FR', provider: 'P' });
+    App.tmResponses('fr1').forEach((r, i) => { App._tm.byId[r.id] = { course: 'fr1', show: true, order: i + 1 }; });
+    const F = App.testimonialsFeedBuild(FEED);
+    check('a French page: cadre and country in French; an English comment is not published', F.courses['cours-fr'].length === 1 && F.courses['cours-fr'][0].cadre === 'Infirmier(ère)' && F.courses['cours-fr'][0].country === 'Tchad' && F._stats.otherLang === 1, JSON.stringify(F.courses['cours-fr']));
+    // an emptied cadre box means none
+    const fid = App.tmResponses('fr1').find(r => r.lang === 'fr').id;
+    await App.tmSetField(fid, 'fr1', 'cadre', '');
+    check('emptying the cadre box shows none (not the survey value again)', App._tm.byId[fid].cadre === '' && !App.testimonialsFeedBuild(FEED).courses['cours-fr'][0].cadre);
+    // duplicates
+    const r1 = App.tmResponses('burns')[0];
+    App._tm.byId[r1.id] = Object.assign(App._tm.byId[r1.id] || { course: 'burns' }, { show: true, text: 'Same words on two courses.' });
+    App._tm.byId[fid].text = 'Same words on two courses.';
+    const D = App.tmDuplicates();
+    check('the duplicate check finds a text switched on for two courses', D.length === 1 && new Set(D[0].where.map(w => w.course)).size === 2);
+    App._tmCourse = null; App._dashTab = 'testimonials';
+    check('…and the page warns about it', /switched on for more than one course/.test(App._dashTestimonialsHtml()));
+    App._tmCourse = 'fr1';
+    const pg = App._dashTestimonialsHtml();
+    check('the editing rule is shown by the text box; cards flag other-language and duplicated texts', /editing rule/.test(pg) && /never by rewording/.test(pg) && /not in FR: not published/.test(pg) && /also on /.test(pg));
+    // the one-off review: listed ids off, labels emptied, other language off, duplicates kept once, texts rebuilt
+    const save = App.TM_REVIEW_20261026, bid = App.tmResponses('burns').find(r => r.id !== r1.id && r.text !== 'Same words on two courses.');
+    App._tm.byId[bid.id] = Object.assign(App._tm.byId[bid.id] || { course: 'burns' }, { show: true });
+    App.TM_REVIEW_20261026 = { off: [{ id: bid.id, at: 'x', why: 'about another course' }], labels: [{ id: fid, at: 'y', field: 'country', why: 'writes another country' }] };
+    App._tm.fixes = {};
+    App._tmTidy = async (items) => Object.fromEntries(items.map(x => [x.r.id, x.r.text.length > 60 ? { text: 'Cut to the clause that matters.' } : { text: x.r.text.trim() }]));
+    const seq = [true, false]; ctx.confirm = () => seq.shift();
+    const rv = await App.tmApplyReview20261026(null);
+    check('review: the listed one off (with the reason), a label emptied, the English comment on the French page off, one copy of the duplicate kept', rv && App._tm.byId[bid.id].show === false && /another course/.test(App._tm.byId[bid.id].removed.why) && App._tm.byId[fid].country === '' && rv.lang.length === 1 && rv.dups.length === 1, JSON.stringify(rv && { off: rv.off.length, lang: rv.lang.length, dups: rv.dups.length }));
+    check('…every remaining text rebuilt from the original (as written when unchanged), reported with examples, and run once', rv.edits.edited + rv.edits.original > 0 && rv.examples.every(x => x.original && x.old !== undefined && x.new) && !!App._tm.fixes['2026-10-26'] && store.has('surgdash_testimonials_rework') && !/Apply the review/.test((App._tmCourse = null, App._dashTestimonialsHtml())));
+    App.TM_REVIEW_20261026 = save;
+    check('the shipped review list: 19 to switch off and 3 labels, by response id', save.off.length === 19 && save.labels.length === 3 && save.off.every(x => /^t[a-z0-9]+$/.test(x.id) && x.why));
   }
 
   // ── the survey sync never touches the choices; publishing carries the file ──
