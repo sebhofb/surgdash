@@ -299,6 +299,60 @@ Object.assign(window.App, {
     // The AI's cleaned quote becomes the display text. Fewer good ones → fewer picks. Picks carry `auto`
     // (shown as "picked automatically" until someone edits or reorders them).
     TM_PICK_N: 6, TM_PICK_MIN: 6,
+    // The text shown on the course page: a light copy-edit made for this purpose (not the report
+    // scorer's cached quote, which cut too much: "The structured decision-making algorithms for flap
+    // selection…" said nothing on its own, and an em-dash rewrite read as fake — Seb, 26 Oct 2026).
+    TM_TIDY_MODEL: 'claude-opus-4-8',
+    TM_TIDY_PROMPT: 'You copy-edit learner comments that will be shown as testimonials on the public page of a SURGhub course (SURGhub is the United Nations Global Surgery Learning Hub: free online surgical training, mostly for clinicians in low- and middle-income countries). Each testimonial appears on its own under the learner\'s profession and country. The reader has NOT seen the survey question, and the page already shows the course title.\n\n'
+        + 'For each item you get the course title, the survey question and the learner\'s answer. Return a quote that:\n'
+        + '1. Sounds like the learner, not like marketing. Keep their own words, sentence structure and voice. Copy-edit only: fix spelling, typos, capital letters, obvious grammar slips and missing full stops. Do not swap their words for synonyms, add adjectives or claims, or polish the style.\n'
+        + '2. Stands on its own as a complete thought. Keep the subject and the learner\'s framing ("I found…", "I really liked…", "The course…"). Never return a fragment or a bare noun phrase. If the answer only makes sense with the question (e.g. "The case videos"), add the fewest words needed to make it a sentence, taken from the question (e.g. "I found the case videos most interesting.").\n'
+        + '3. Keeps the context that makes it meaningful: what the learner valued AND why or what it led to. When shortening, drop whole sentences or clauses that repeat or add little; never strip a sentence down to its objects.\n'
+        + '4. Length: keep it under about 50 words. A short original stays short. Do not merge sentences.\n'
+        + '5. Punctuation: no em dashes or en dashes, no semicolons the learner did not use, no ellipses, no quotation marks. Use full stops and commas.\n'
+        + '6. Same language as the original (never translate). Keep the learner\'s spelling variant (British or American) apart from typos.\n'
+        + '7. If it cannot stand alone without rewriting it, return the original with only typos fixed.\n\n'
+        + 'Examples of what NOT to do:\n'
+        + '- Original: "I found the most interesting aspects to be the structured decision-making algorithms for flap selection, especially how reconstruction choices vary depending on defect size and location. …" Bad: "The structured decision-making algorithms for flap selection and how reconstruction choices vary by defect size and location." (a fragment that says nothing on its own). Good: "I found the structured decision-making algorithms for flap selection most interesting, especially how reconstruction choices vary depending on defect size and location."\n'
+        + '- Original: "Every aspect of the course was presented in a clear, simple, and easy-to-understand manner. The content was well structured, informative, and highly relevant to clinical practice. …" Bad: "The course was presented in a clear, simple, easy-to-understand manner—well structured, informative, and highly relevant to clinical practice." (merged with an em dash; reads as rewritten). Good: "Every aspect of the course was presented in a clear, simple, and easy-to-understand manner. The content was well structured, informative, and highly relevant to clinical practice."\n'
+        + '- Original: "I really liked the templates and care the organizers took to help us build a low resource endotrianer; also I wouldn\'t have imagined I could use a bed sheet to simulate the small bowel and mesentery. …" Bad: "The templates and care to help us build a low-resource endotrainer; …" (lost "I really liked" and the sense). Good: "I really liked the templates and care the organizers took to help us build a low-resource endotrainer. I wouldn\'t have imagined I could use a bed sheet to simulate the small bowel and mesentery."',
+    TM_TIDY_SCHEMA: { type: 'object', properties: { results: { type: 'array', items: { type: 'object', properties: { i: { type: 'integer' }, quote: { type: 'string' } }, required: ['i', 'quote'], additionalProperties: false } } }, required: ['results'], additionalProperties: false },
+    // Tidy texts for the course page: items [{ r (response), course (title) }] → { id: quote } (quietly {} without a key).
+    async _tmTidy(items, btn) {
+        if (!items.length || !this._claudeJSON || !this._getAnthropicKey) return {};
+        const apiKey = await this._getAnthropicKey(); if (!apiKey) return {};
+        const out = {};
+        for (let i = 0; i < items.length; i += 12) {
+            const batch = items.slice(i, i + 12);
+            if (btn) btn.textContent = 'Tidying texts ' + Math.min(i + 12, items.length) + '/' + items.length + '…';
+            try {
+                const res = await this._claudeJSON(apiKey, this.TM_TIDY_PROMPT, JSON.stringify(batch.map((x, k) => ({ i: k, course: x.course, question: x.r.q, answer: x.r.text }))), this.TM_TIDY_SCHEMA, 6000, { model: this.TM_TIDY_MODEL });
+                (res && res.results || []).forEach(r => {
+                    const x = batch[r.i]; let q = String(r.quote || '').trim().replace(/\s*[—–]\s*/g, ', ').replace(/^["“”]+|["“”]+$/g, '').trim();
+                    if (x && q && !this._tmHeld(q)) out[x.r.id] = q;
+                });
+            } catch (e) { __swallowed(e, 'tm.tidy'); if (/Invalid Anthropic API key/.test(e.message)) break; }
+        }
+        return out;
+    },
+    // Re-tidy the display text of the given picks (default: every automatic pick not edited since).
+    async tmRetidy(ids, btn) {
+        await this._tmLoad();
+        const feed = this._tmCourseFeed(), title = {}; feed.courses.forEach(c => { title[c.id] = c.title; });
+        const want = ids && ids.length ? ids : Object.keys(this._tm.byId).filter(id => this._tm.byId[id].show && this._tm.byId[id].auto);
+        const items = [];
+        want.forEach(id => { const e = this._tm.byId[id]; const r = e && this.tmResponses(e.course).find(x => x.id === id); if (r) items.push({ r, course: title[e.course] || '' }); });
+        if (!items.length) return 0;
+        const label = btn && btn.textContent; if (btn) btn.disabled = true;
+        try {
+            const q = await this._tmTidy(items, btn);
+            if (!Object.keys(q).length) { alert('Could not tidy the texts (no Anthropic API key, or the request failed).'); return 0; }
+            items.forEach(x => { const e = this._tm.byId[x.r.id]; if (q[x.r.id] && q[x.r.id] !== x.r.text) e.text = q[x.r.id]; else delete e.text; e.at = new Date().toISOString(); });
+            await this._tmSave();
+            this.showMsg('✓ Tidied ' + Object.keys(q).length + ' text' + (Object.keys(q).length === 1 ? '' : 's') + '.');
+            return Object.keys(q).length;
+        } finally { if (btn) { btn.disabled = false; btn.textContent = label; } this.rerenderDashTab ? this.rerenderDashTab() : this.renderView(); }
+    },
     _tmAiKey(t) { return this._djb2Hash ? this._djb2Hash(String(t).trim()) : this._tmHash(String(t).trim()); },
     _tmPraiseQ(q) { const l = this._tmQLabel(q); return l === 'Most interesting' || l === 'Other comments'; },
     _tmCandidates(courseId) {
@@ -345,7 +399,7 @@ Object.assign(window.App, {
             for (const x of good) {
                 if (picks.length >= slots) break;
                 if (picks.includes(x)) continue;
-                const disp = x.a.c && !this._tmHeld(x.a.c) ? x.a.c : x.r.text, t = toks(disp);
+                const disp = x.r.text, t = toks(disp);
                 if (taken.some(o => dice(t, o) >= 0.6)) continue;
                 if (pass === 1 && x.r.country && countries.has(x.r.country)) continue;
                 picks.push(x); taken.push(t); if (x.r.country) countries.add(x.r.country);
@@ -357,9 +411,9 @@ Object.assign(window.App, {
         picks.forEach(x => {
             const e = this._tm.byId[x.r.id] || (this._tm.byId[x.r.id] = { course: courseId });
             e.show = true; e.order = ++order; e.at = at; e.auto = { at, score: x.a.s };
-            if (x.disp !== x.r.text) e.text = x.disp; else delete e.text;
+            delete e.text;   // tidied by tmPickBest (TM_TIDY_PROMPT); the original until then
         });
-        return picks.length;
+        return picks;
     },
     // courseIds: the courses to fill (default: every public course with comments and none shown).
     async tmPickBest(courseIds, btn) {
@@ -371,11 +425,15 @@ Object.assign(window.App, {
         try {
             await this._tmScoreMissing(ids.flatMap(id => this._tmCandidates(id)), btn);
             if (this._getAiScores) await this._getAiScores();
-            const res = ids.map(id => ({ id, n: this._tmPickCourse(id) }));
+            const title = {}; feed.courses.forEach(c => { title[c.id] = c.title; });
+            const res = ids.map(id => { const p = this._tmPickCourse(id); return { id, n: p.length, picks: p }; });
+            const all = res.flatMap(x => x.picks.map(p => ({ r: p.r, course: title[x.id] || '' })));
+            const tidy = await this._tmTidy(all, btn);
+            all.forEach(x => { const e = this._tm.byId[x.r.id]; if (tidy[x.r.id] && tidy[x.r.id] !== x.r.text) e.text = tidy[x.r.id]; });
             await this._tmSave();
             const picked = res.reduce((t, x) => t + x.n, 0), full = res.filter(x => x.n >= this.TM_PICK_N).length, few = res.filter(x => x.n && x.n < this.TM_PICK_N).length, none = res.filter(x => !x.n).length;
             this.showMsg('✓ Picked ' + picked + ' testimonial' + (picked === 1 ? '' : 's') + ' for ' + (ids.length - none) + ' course' + (ids.length - none === 1 ? '' : 's') + (few ? ' (' + few + ' with fewer than ' + this.TM_PICK_N + ': not enough good comments)' : '') + (none ? '; ' + none + ' had no comment good enough' : '') + '. Marked "picked automatically" — they go online at the next publish.', none || few ? 'warn' : false);
-            return { picked, courses: ids.length, full, few, none, res };
+            return { picked, courses: ids.length, full, few, none, res: res.map(x => ({ id: x.id, n: x.n })) };
         } finally {
             if (btn) { btn.disabled = false; btn.textContent = label; }
             this.rerenderDashTab ? this.rerenderDashTab() : this.renderView();
@@ -456,7 +514,7 @@ Object.assign(window.App, {
             return head + (empty || autoN ? '<div class="flex items-center gap-3 flex-wrap mb-3">'
                 + (empty ? '<button data-edit-only onclick="App.tmPickBest(null, this)" class="px-4 py-2 bg-gsf-boston hover:bg-gsf-prussian text-white text-xs font-bold rounded-lg">Pick the best ' + this.TM_PICK_N + ' for the ' + empty + ' course' + (empty === 1 ? '' : 's') + ' with none</button>'
                     + '<span class="text-[11px] text-slate-500 max-w-xl">4–5 star comments screened by the AI (quotable, score ' + this.TM_PICK_MIN + '+), best first, varied countries, with the AI\'s tidied quote as the text. Fewer when there are fewer good ones.</span>' : '')
-                + (autoN ? '<span class="text-[11px] text-violet-700 font-semibold">' + autoN + ' picked automatically — open a course to check them</span>' : '') + '</div>' : '')
+                + (autoN ? '<span class="text-[11px] text-violet-700 font-semibold">' + autoN + ' picked automatically — open a course to check them</span><button data-edit-only onclick="App.tmRetidy(null, this)" class="px-3 py-1.5 text-[11px] font-bold rounded-lg border border-violet-200 text-violet-700 hover:bg-violet-50" title="Redo the course-page text of every automatic pick you have not edited, with the testimonial copy-edit rules">Tidy their texts again</button>' : '') + '</div>' : '')
                 + '<div class="bg-white rounded-xl shadow-sm border overflow-hidden"><div class="overflow-x-auto max-h-[640px] overflow-y-auto custom-scrollbar"><table class="w-full text-left border-collapse text-sm">'
                 + '<thead class="sticky top-0 bg-white shadow-sm"><tr class="border-b text-slate-500 text-xs"><th class="py-2 px-3 font-medium">Course</th><th class="py-2 px-3 font-medium">Provider</th><th class="py-2 px-3 font-medium text-center" title="Testimonials switched on for the course page">Shown</th>'
                 + '<th class="py-2 px-3 font-medium text-right" title="Comments received since the course was last marked reviewed">New</th><th class="py-2 px-3 font-medium text-right" title="4–5 stars, ' + this.TM_SUGGEST_WORDS + '+ words, cadre and country known">Suggested</th><th class="py-2 px-3 font-medium text-right">Comments</th></tr></thead><tbody>'
@@ -498,7 +556,8 @@ Object.assign(window.App, {
                     + '<textarea rows="2" onchange="App.tmSetField(\'' + idJs + '\', \'' + cidJs + '\', \'text\', this.value)" class="w-full mt-1 text-sm border rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-gsf-boston/30">' + esc(disp) + '</textarea>'
                     + '<div class="flex gap-3 mt-1 text-[11px] text-slate-500 flex-wrap"><span>Cadre <input value="' + esc(e.cadre != null ? e.cadre : r.cadre) + '" placeholder="SURGhub learner" onchange="App.tmSetField(\'' + idJs + '\', \'' + cidJs + '\', \'cadre\', this.value)" class="border rounded px-1.5 py-0.5 w-44"></span>'
                     + '<span>Country <input value="' + esc(e.country != null ? e.country : r.country) + '" onchange="App.tmSetField(\'' + idJs + '\', \'' + cidJs + '\', \'country\', this.value)" class="border rounded px-1.5 py-0.5 w-36"></span>'
-                    + (e.text && e.text !== r.text ? '<button onclick="App.tmSetField(\'' + idJs + '\', \'' + cidJs + '\', \'text\', \'\')" class="underline hover:text-gsf-boston">back to the original</button>' : '') + '</div></div>' : '')
+                    + (e.text && e.text !== r.text ? '<button onclick="App.tmSetField(\'' + idJs + '\', \'' + cidJs + '\', \'text\', \'\')" class="underline hover:text-gsf-boston">back to the original</button>' : '')
+                    + '<button onclick="App.tmRetidy([\'' + idJs + '\'], this)" class="underline hover:text-gsf-boston" title="A light copy-edit by Claude: typos fixed, kept in the learner\'s words, complete on its own">tidy with AI</button></div></div>' : '')
                 + '</div>';
         };
         const sel = (k, opts) => '<select onchange="App.tmSetFilter(\'' + k + '\', this.value)" class="text-xs border rounded-lg px-2 py-1.5">' + opts.map(([v, l]) => '<option value="' + v + '"' + ((fl[k] || '') === v ? ' selected' : '') + '>' + l + '</option>').join('') + '</select>';
