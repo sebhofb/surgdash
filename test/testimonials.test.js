@@ -26,7 +26,7 @@ ctx.window = ctx; ctx.Intl = Intl;
 ctx.App = { data: [{ Course: 'Burns Course', CourseId: 'burns', Timestamp: '2026-10-26' }, { Course: 'Other Course', CourseId: 'other', Timestamp: '2026-10-26' }],
   escapeHtml: (t) => String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])), escapeJsArg: (t) => String(t).replace(/'/g, "\\'"), formatNumber: (n) => String(n), renderView() {}, rerenderDashTab() {} };
 vm.createContext(ctx);
-for (const f of ['js/countryMap.js', 'js/scrub.js', 'js/testimonials.js', 'js/testimonialLabels.js']) vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, { filename: f });
+for (const f of ['js/countryMap.js', 'js/scrub.js', 'js/testimonials.js', 'js/testimonialLabels.js', 'js/testimonialsWorkbench.js']) vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, { filename: f });
 const App = ctx.App;
 const realJudge = App._tmJudgeMissing; App._tmJudgeMissing = async () => false;   // the testimonial check has its own block below
 const FEED = { courses: [{ id: 'burns', slug: 'burns-public', title: 'Burns Course', provider: 'P' }, { id: 'other', slug: 'other-course', title: 'Other Course', provider: 'P' }] };
@@ -106,7 +106,7 @@ App._cfFeedNow = () => FEED;
   check('nothing switched on → the last published file is kept', !ff.fresh && ff.content === '{"courses":{"x":[1]}}' && /no testimonials/.test(ff.why));
 
   // ── the tab renders ──
-  App._tm.byId[id1].show = true; App._tm.byId[pid].show = true; App._tmCourse = null; App._dashTab = 'testimonials';
+  App._tm.byId[id1].show = true; App._tm.byId[pid].show = true; App._tmCourse = null; App._dashTab = 'testimonials'; App._tmSection = 'courses';
   const overview = App._dashTestimonialsHtml();
   check('the tab: an overview of courses with shown / new / suggested', /Testimonials on surghub\.org/.test(overview) && /App\.tmPickCourse\('burns'\)/.test(overview));
   App._tmCourse = 'burns';
@@ -208,6 +208,7 @@ App._cfFeedNow = () => FEED;
     [[1, 1], [2, 2], [7, 3], [3, 4]].forEach(([k, o]) => { App._tm.byId[rid(k)] = { course: 'rev', show: true, order: o }; });
     Object.assign(App._aiScoreMap, { [H(1)]: { s: 5, q: true, t: [] }, [H(2)]: { s: 7, q: true, t: [] }, [H(7)]: { s: 8, q: true, t: [] }, [H(4)]: { s: 9, q: true, t: [] }, [H(5)]: { s: 8, q: true, t: [] }, [H(6)]: { s: 10, q: true, t: [] }, [H(8)]: { s: 8, q: true, t: [] } });
     App._tmScoreMissing = async () => true; App.TM_PICK_N = 4;   // the four places are taken: no additions here
+    App._tm.settings = { upgrade: 'newer' };   // this block tests "as good and newer" (a setting since 27 Oct 2026)
     await App.tmReviewAll(null);
     const P = App._tmProposals.filter(p => p.course === 'rev'), rep = (k) => P.find(p => p.type === 'replace' && p.old.id === rid(k));
     check('review: a weak testimonial (AI score under 6) is replaced by the best candidate', rep(1) && rep(1).cand.r.text === T[4], JSON.stringify(P.map(p => [p.type, p.old && p.old.r.text.slice(0, 8), p.cand && p.cand.r.text.slice(0, 8), p.why])));
@@ -224,7 +225,7 @@ App._cfFeedNow = () => FEED;
     check('"Not this one" stops a comment being suggested again', !App._tmProposals.some(p => p.cand && p.cand.r.text === T[4]) && App._tm.byId[rid(4)].rejected === true);
     const before = App._tm.byId[rid(7)].order;
     const nApplied = await App.tmApplyProposals(null, null);
-    App.TM_PICK_N = 6;
+    App.TM_PICK_N = 6; App._tm.settings = {};
     const nw = App._tm.byId[rid(7)].replacedBy;
     check('"Apply all": the old one off, the new one on in its place, copy-edited', nApplied > 0 && App._tm.byId[rid(7)].show === false && nw && App._tm.byId[nw].show === true && App._tm.byId[nw].order === before && /^(Tidied|Again)/.test(App._tm.byId[nw].text || ''), JSON.stringify(App._tm.byId[rid(7)]));
   }
@@ -259,8 +260,10 @@ App._cfFeedNow = () => FEED;
     App._tm.byId[fid].text = 'Same words on two courses.';
     const D = App.tmDuplicates();
     check('the duplicate check finds a text switched on for two courses', D.length === 1 && new Set(D[0].where.map(w => w.course)).size === 2);
-    App._tmCourse = null; App._dashTab = 'testimonials';
-    check('…and the page warns about it', /switched on for more than one course/.test(App._dashTestimonialsHtml()));
+    App._tmCourse = null; App._dashTab = 'testimonials'; App._tmSection = 'courses';
+    App._tmSection = 'published';
+    check('…and the Published list flags it', /the same text on another course/.test(App._dashTestimonialsHtml()));
+    App._tmSection = 'courses';
     App._tmCourse = 'fr1';
     const pg = App._dashTestimonialsHtml();
     check('the editing rule is shown by the text box; cards flag other-language and duplicated texts', /editing rule/.test(pg) && /never by rewording/.test(pg) && /not in FR: not published/.test(pg) && /also on /.test(pg));
@@ -289,7 +292,7 @@ App._cfFeedNow = () => FEED;
     App._tm.byId[wid(1)] = { course: 'wound', show: true, order: 1 }; App._tm.byId[wid(2)] = { course: 'wound', show: true, order: 2 };
     const verdicts = { [JT[0]]: ['use', 'good', 3], [JT[1]]: ['no', 'fragment', 1], [JT[2]]: ['no', 'off_topic', 4], [JT[3]]: ['use', 'good', 5] };
     const calls = []; App._getAnthropicKey = async () => 'k'; ctx.confirm = () => true;
-    App._claudeJSON = async (key, system, user, schema, max, opts) => { const items = JSON.parse(user); calls.push({ system, items, opts, max }); const v = (c) => verdicts[c] || ['weak', 'generic', 2]; return { results: items.map((x, i) => ({ i, verdict: v(x.comment)[0], reason: v(x.comment)[1], strength: v(x.comment)[2] })) }; };
+    App._claudeJSON = async (key, system, user, schema, max, opts) => { const items = JSON.parse(user); calls.push({ system, items, opts, max }); const v = (c) => verdicts[c] || ['weak', 'generic', 2]; return { results: items.map((x, i) => ({ i, verdict: v(x.comment)[0], reason: v(x.comment)[1], strength: v(x.comment)[2], specific: v(x.comment)[2] >= 4, self_role: '' })) }; };
     App._tmJudgeMissing = realJudge; App._tmJudge = {};
     await App.tmReviewAll(null);
     const wItems = calls.flatMap(c => c.items).filter(x => x.course === 'Wound Course');
@@ -304,11 +307,103 @@ App._cfFeedNow = () => FEED;
     App._tm.byId[wid(0)] = { course: 'wound', show: true, order: 3 }; App._tm.byId[wid(3)] = { course: 'wound', show: true, order: 4 };
     await App.tmReviewAll(null);
     const noP = App._tmProposals.filter(p => p.course === 'wound' && p.type === 'weak' && p.no);
-    App._tmCourse = null; App._dashTab = 'testimonials';
-    check('…otherwise "not a testimonial" ones are listed to switch off, with one button for all of them', noP.length === 2 && /that are not testimonials/.test(App._dashTestimonialsHtml()));
+    App._tmCourse = null; App._dashTab = 'testimonials'; App._tmSection = 'courses';
+    App._tmSection = 'find';
+    check('…otherwise "not a testimonial" ones are listed to switch off, under "Problems on the site" with one button for all of them', noP.length === 2 && /Problems on the site/.test(App._dashTestimonialsHtml()) && /tmAcceptGroup\('problems'/.test(App._dashTestimonialsHtml()));
+    App._tmSection = 'courses';
     App._tmCourse = 'wound';
     check('cards show the check\'s verdict; a filter keeps only its testimonials', /testimonial 5\/5/.test(App._dashTestimonialsHtml()) && /not a testimonial: a fragment/.test(App._dashTestimonialsHtml()) && /Testimonials only \(check\)/.test(App._dashTestimonialsHtml()));
     App._tmJudgeMissing = async () => false;
+  }
+
+  // ── the workbench (27 Oct 2026): settings, shuffling, selection rules, swap + undo, dismiss, Excel ──
+  {
+    App._tmJudgeMissing = async () => false; App._tm.settings = {};
+    check('settings: defaults; a saved value wins; the default instruction is stored as "default"', App.tmSetting('target') === 6 && App.tmSetting('upgrade') === 'clear' && App.tmSetting('shuffle') === 'off'
+      && (await App.tmSetSetting('target', '5'), App._tmTarget() === 5) && (await App.tmSetSetting('judgePrompt', App.TM_JUDGE_PROMPT), App._tm.settings.judgePrompt === ''));
+    const v1 = App._tmJudgeVersion(); await App.tmSetSetting('judgePrompt', 'A different instruction'); const v2 = App._tmJudgeVersion(); await App.tmSetSetting('judgePrompt', '');
+    check('…a changed instruction makes earlier verdicts stale (a new version), reset brings the old one back', v1 !== v2 && App._tmJudgeVersion() === v1);
+    check('the check v2 asks for specific and self_role; the editing rule cuts suggestions and side remarks', App.TM_JUDGE_SCHEMA.properties.results.items.required.includes('specific') && App.TM_JUDGE_SCHEMA.properties.results.items.required.includes('self_role') && /clinical_claim/.test(App.TM_JUDGE_PROMPT)
+      && /Keep only the parts that say what the learner valued, learned or will use/.test(App.TM_TIDY_PROMPT) && App.TM_EDIT_RULE.some(x => /cut suggestions/.test(x)));
+    // shuffling
+    const items = [1, 2, 3, 4, 5, 6, 7, 8].map(i => ({ id: 't' + i, text: 'x' + i }));
+    App._tm.settings = { shuffle: 'order' };
+    const d1 = App._tmArrange('c1', items, new Date(Date.UTC(2026, 9, 27))), d1b = App._tmArrange('c1', items, new Date(Date.UTC(2026, 9, 27, 23))), d2 = App._tmArrange('c1', items, new Date(Date.UTC(2026, 9, 28)));
+    check('shuffle "order": the same order all day, a different one the next day, nothing dropped', JSON.stringify(d1) === JSON.stringify(d1b) && JSON.stringify(d1) !== JSON.stringify(d2) && d1.length === 8);
+    App._tm.settings = { shuffle: 'rotate', target: 6 };
+    const w1 = App._tmArrange('c1', items, new Date(Date.UTC(2026, 9, 27))), w1b = App._tmArrange('c1', items, new Date(Date.UTC(2026, 9, 29))), w2 = App._tmArrange('c1', items, new Date(Date.UTC(2026, 10, 4)));
+    const ids = (l) => l.map(x => x.id).sort().join();
+    check('shuffle "rotate": 6 of the 8 switched on, the same 6 all week, another 6 the next week', w1.length === 6 && ids(w1) === ids(w1b) && ids(w1) !== ids(w2));
+    App._tm.settings = {};
+    check('shuffle "off": the order as set', JSON.stringify(App._tmArrange('c1', items, new Date())) === JSON.stringify(items));
+    // selection rules on a course
+    const RC = ['Respondent', 'Country', 'Profession', 'Started at', 'Ended at', 'On a scale from 1 to 5, how would you rate your overall satisfaction with this course?', 'What aspects of this course did you find most interesting?', 'Do you have additional comments?'];
+    const raw = store.get('surghub_survey_raw');
+    raw['Rules Course'] = { cols: RC, data: [
+      [1, 'Peru', 'nurse', '01 Oct 2026 10:00:00', '01 Oct 2026 10:00:00', '5', 'The suturing videos on vertical mattress stitches made the technique clear for my ward.', 'As a physiotherapist I will use the splinting advice with my burn patients every day.'],
+      [2, 'Chad', 'surgeon', '02 Oct 2026 10:00:00', '02 Oct 2026 10:00:00', '5', 'Informative, well structured and relevant to practice.', ''],
+      [3, 'Iraq', 'doctor', '03 Oct 2026 10:00:00', '03 Oct 2026 10:00:00', '5', 'Very good course, clear and useful for everyone working in hospitals.', ''],
+      [4, 'Fiji', 'nurse', '04 Oct 2026 10:00:00', '04 Oct 2026 10:00:00', '5', 'Debridement steps for pressure sores were shown on real patients and I now teach them to students.', ''] ] };
+    App._rawSurveyResponses = raw; App._tmRespCache = null; App.data.push({ Course: 'Rules Course', CourseId: 'rules', Timestamp: '2026-10-26' }); App._tmLatestCache = null; FEED.courses.push({ id: 'rules', slug: 'rules', title: 'Rules Course', provider: 'P' });
+    const RR = App.tmResponses('rules'), rr = (start) => RR.find(r => r.text.startsWith(start));
+    const pv = App._tmJudgeVersion();
+    const J = (r, v, s, sp, role) => { App._tmJudge[App._tmJudgeKey('rules', r.text)] = { v, r: v === 'use' ? 'good' : 'generic', s, sp, role: role || '', pv }; };
+    J(rr('The suturing'), 'use', 5, true); J(rr('As a physio'), 'use', 4, true, 'physiotherapist'); J(rr('Informative'), 'use', 3, false); J(rr('Very good course'), 'use', 3, false); J(rr('Debridement'), 'use', 5, true);
+    [rr('The suturing'), rr('As a physio'), rr('Informative'), rr('Very good course')].forEach((r, i) => { App._tm.byId[r.id] = { course: 'rules', show: true, order: i + 1 }; });
+    const rel = App._tmRelational();
+    check('rules: the same learner twice on a course is flagged (the stronger one stays)', rel[rr('As a physio').id] === 'the same learner twice on this course' && !rel[rr('The suturing').id]);
+    check('…and a second generic comment', /second generic/.test(rel[rr('Informative').id] || rel[rr('Very good course').id] || ''));
+    check('labels agree with the text: "as a physiotherapist" shows Physiotherapist, not the survey\'s Nurse', App._tmLabels(App._tm.byId[rr('As a physio').id], rr('As a physio'), 'en').cadre === 'Physiotherapist');
+    // one learner on many courses (linked through the feedback list's email, kept in memory as a hash)
+    {
+      const raw2 = store.get('surghub_survey_raw'), ids5 = [];
+      for (let k = 1; k <= 5; k++) {
+        const name = 'Learner Course ' + k, text = 'Course ' + k + ' taught me a distinct technique number ' + k + ' that I use daily in theatre.';
+        raw2[name] = { cols: RC, data: [[1, 'Yemen', 'nurse', '0' + k + ' Oct 2026 10:00:00', '0' + k + ' Oct 2026 10:00:00', '5', text, '']] };
+        App.data.push({ Course: name, CourseId: 'lc' + k, Timestamp: '2026-10-26', FeedbackBank: JSON.stringify([{ t: text, e: 'same.learner@example.org', d: '2026-10-0' + k }]) });
+        FEED.courses.push({ id: 'lc' + k, slug: 'lc' + k, title: name, provider: 'P' });
+      }
+      App._rawSurveyResponses = raw2; App._tmRespCache = null; App._tmLatestCache = null;
+      for (let k = 1; k <= 5; k++) { const r = App.tmResponses('lc' + k)[0]; ids5.push(r.id); App._tm.byId[r.id] = { course: 'lc' + k, show: true, order: 1 }; App._tmJudge[App._tmJudgeKey('lc' + k, r.text)] = { v: 'use', r: 'good', s: k === 5 ? 2 : 4, sp: true, role: '', pv }; }
+      const rel5 = App._tmRelational();
+      const flagged = ids5.filter(id => /this learner is on 5 courses/.test(rel5[id] || ''));
+      check('one learner on 5 courses: kept on 3 (the strongest), the other 2 flagged; the email is never stored', flagged.length === 2 && flagged.includes(ids5[4]) && !JSON.stringify(App._tm).includes('example.org'), JSON.stringify(flagged));
+      for (let k = 1; k <= 5; k++) { delete App._tm.byId[ids5[k - 1]]; FEED.courses.pop(); }
+      App._tmRelational();
+    }
+
+    // Published: search attributes, problems filter, swap with undo
+    App._tmSection = 'published'; App._tmPubF = { show: 'problems' }; App._tmState = {};
+    const pub = App._dashTestimonialsHtml();
+    check('Published lists what is live, searchable, filtered to problems, with Swap / Off and an Excel download', /data-tms="rules course/.test(pub) && /the same learner twice on this course/.test(pub) && /tmOpenSwap\(/.test(pub) && /tmSwitchOff\(/.test(pub) && /Download Excel/.test(pub) && /data-tmg/.test(pub));
+    App._tmPubF = {};
+    const alt = App._tmAlternatives(rr('Informative').id);
+    check('swap alternatives: checked ones only, never a learner already on the page or a second generic', alt.good.length === 1 && alt.good[0].r.text.startsWith('Debridement'), JSON.stringify(alt.good.map(a => a.r.text.slice(0, 12))));
+    App._tmTidy = async (list) => Object.fromEntries(list.map(x => [x.r.id, { text: x.r.text }]));
+    const ordBefore = App._tm.byId[rr('Informative').id].order;
+    await App.tmSwap(rr('Informative').id, rr('Debridement').id, null);
+    check('swap: the new one takes the same place, the old one goes off', App._tm.byId[rr('Debridement').id].show === true && App._tm.byId[rr('Debridement').id].order === ordBefore && App._tm.byId[rr('Informative').id].show === false);
+    await App.tmUndo();
+    check('…and Undo puts it back exactly', App._tm.byId[rr('Informative').id].show === true && !(App._tm.byId[rr('Debridement').id] && App._tm.byId[rr('Debridement').id].show));
+    await App.tmSwitchOff(rr('Very good course').id); await App.tmUndo();
+    check('switching off can be undone too', App._tm.byId[rr('Very good course').id].show === true);
+    // Find better: groups and dismissals
+    App._tmSection = 'find'; App._tmScoreMissing = async () => true;
+    await App.tmReviewAll(null);
+    const pi = App._tmProposals.findIndex(p => p.course === 'rules');
+    check('Find better: suggestions in groups (problems, gaps, upgrades), each with Accept and Dismiss', pi >= 0 && /Accept all/.test(App._dashTestimonialsHtml()) && /tmDismiss\(/.test(App._dashTestimonialsHtml()) && !!App._tm.lastScan);
+    const dkey = App._tmProposals[pi];
+    await App.tmDismiss(pi);
+    await App.tmReviewAll(null);
+    check('…a dismissed suggestion does not come back', !App._tmProposals.some(p => p.course === dkey.course && p.type === dkey.type && (p.old && dkey.old ? p.old.id === dkey.old.id : true) && (p.cand && dkey.cand ? p.cand.r.id === dkey.cand.r.id : !p.cand)));
+    // Excel
+    let saved = null; const wrote = {};
+    ctx.XLSX = { utils: { book_new: () => ({ s: [] }), json_to_sheet: (rows) => ({ rows }), book_append_sheet: (wb, ws, name) => { wb.s.push([name, ws.rows]); } }, write: (wb) => { saved = wb; return new Uint8Array([1]); } };
+    ctx.electronAPI = { invoke: async (ch, name) => (ch === 'pick-save-path' ? '/tmp/' + name : null), fs: { writeFileSync: (p, d) => { wrote[p] = d; } } };
+    await App.tmExportXlsx(null);
+    const sh = saved && saved.s.find(x => x[0] === 'Testimonials');
+    check('Excel: one row per live testimonial (text shown, original, labels, check, problems, status) and a courses sheet', sh && sh[1].length === App._tmPublishedRows().length && ['Text on the page', 'Original comment', 'Cadre', 'Country', 'Check: verdict', 'Problems', 'Status'].every(k => k in sh[1][0]) && saved.s.some(x => x[0] === 'Courses') && Object.keys(wrote)[0].startsWith('/tmp/surghub-testimonials-'));
+    App._tmSection = 'courses';
   }
 
   // ── the survey sync never touches the choices; publishing carries the file ──
