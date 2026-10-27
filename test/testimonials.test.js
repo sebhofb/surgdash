@@ -319,6 +319,21 @@ App._cfFeedNow = () => FEED;
     }
     const n0 = calls.length; await App.tmReviewAll(null);
     check('each comment is checked once and remembered', calls.length === n0 && store.has('surghub_testimonial_ai'));
+    {
+      // a new instruction: only what is on the page and what was good enough to suggest is checked again
+      const saved = JSON.parse(JSON.stringify(App._tmJudge)), set0 = App._tm.settings; App._tm.settings = {};   // suggest 4/5 or better
+      Object.values(App._tmJudge).forEach(j => { j.pv = 'old'; });
+      const asked = []; const realC = App._claudeJSON; App._claudeJSON = async (k, sy, u, sc, m, o) => { asked.push(...JSON.parse(u).map(x => x.comment)); return realC(k, sy, u, sc, m, o); };
+      let msg = ''; ctx.confirm = (m) => { msg = m; return true; };
+      await App._tmJudgeMissing(App._tmJudgeItems(['wound']), null);
+      App._claudeJSON = realC; ctx.confirm = () => true;
+      check('a new instruction re-checks only testimonials on the page and comments good enough to suggest; earlier rejections are kept, not paid for again',
+        asked.includes(JT[1]) && asked.includes(JT[2]) && asked.includes(JT[3]) && !asked.includes(JT[0]) && /earlier rejections and low ratings are kept/.test(msg), JSON.stringify(asked.map(t => t.slice(0, 12))));
+      Object.values(App._tmJudge).forEach(j => { j.pv = 'old'; });
+      App._tmRel = App._tmRelational();
+      check('…and an older verdict alone never makes a suggestion', !App._tmReviewCourse('wound').some(p => p.cand && p.cand.q.judged));
+      App._tmJudge = saved; App._tm.settings = set0;
+    }
     // with nothing better left, a "not a testimonial" is listed to switch off, all at once
     App._tm.byId[wid(0)] = { course: 'wound', show: true, order: 3 }; App._tm.byId[wid(3)] = { course: 'wound', show: true, order: 4 };
     await App.tmReviewAll(null);

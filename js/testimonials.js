@@ -376,6 +376,7 @@ Object.assign(window.App, {
         const rule = this._tmTidyPrompt(), lines = rule.split('\n').filter(l => /^- /.test(l));
         return this._tmJudgePrompt() + '\n' + (lines.length ? lines.join('\n') : rule);
     },
+    _tmSuggestMin() { return Number(this.tmSetting ? this.tmSetting('suggestMin') : 4) || 4; },
     _tmJudgeModel() { return (this.tmSetting && this.tmSetting('judgeModel')) || this.TM_JUDGE_MODEL; },
     _tmJudgeVersion() {   // asked for every comment on screen: hashed again only when the model or an instruction changes
         const m = this._tmJudgeModel(), a = this._tmJudgePrompt(), b = this._tmTidyPrompt(), c = this._tmJvFor;
@@ -389,12 +390,24 @@ Object.assign(window.App, {
     async _tmJudgeMissing(items, btn) {
         await this._tmJudgeLoad();
         const pv = this._tmJudgeVersion();
-        const seen = new Set(), todo = items.filter(x => { const k = this._tmJudgeKey(x.courseId, x.r.text), j = this._tmJudge[k]; if ((j && j.pv === pv) || seen.has(k)) return false; seen.add(k); return true; });
+        // An older verdict is checked again only where the answer can change what happens: testimonials on
+        // the page, and comments it rated good enough to suggest. Its rejections and low ratings are kept:
+        // every new instruction so far has been stricter (Seb, 27 Oct 2026: no paying twice for the same no).
+        const least = this._tmSuggestMin(), seen = new Set();
+        let kept = 0;
+        const todo = items.filter(x => {
+            const k = this._tmJudgeKey(x.courseId, x.r.text), j = this._tmJudge[k];
+            if (seen.has(k)) return false; seen.add(k);
+            if (!j) return true;
+            if (j.pv === pv) return false;
+            if (x.shown || (j.v === 'use' && j.s >= least)) return true;
+            kept++; return false;
+        });
         const stale = todo.filter(x => this._tmJudge[this._tmJudgeKey(x.courseId, x.r.text)]).length;
         if (!todo.length) return true;
         const apiKey = this._getAnthropicKey ? await this._getAnthropicKey() : null;
         if (!apiKey || !this._claudeJSON) { alert('The testimonial check needs the Anthropic API key (Feedback tab → Score with AI). Using the older report scores instead.'); return false; }
-        if (!confirm('Check ' + todo.length.toLocaleString() + ' comments with the testimonial check (' + this._tmJudgeModel() + ')' + (stale ? ', ' + stale.toLocaleString() + ' of them checked before with an older instruction' : '') + ': does each work on its course\'s page, or is it a fragment, off-topic, notes, personal…?\\n\\nAbout ' + Math.ceil(todo.length / this.TM_JUDGE_BATCH) + ' requests, roughly $' + Math.max(1, Math.round(todo.length * this.TM_JUDGE_COST)) + '. Each comment is checked once and remembered.')) return false;
+        if (!confirm('Check ' + todo.length.toLocaleString() + ' comments with the testimonial check (' + this._tmJudgeModel() + ')' + (stale ? ', ' + stale.toLocaleString() + ' of them checked before with an older instruction (on the page, or good enough to suggest)' : '') + (kept ? '. ' + kept.toLocaleString() + ' earlier rejections and low ratings are kept, not paid for again' : '') + ': does each work on its course\'s page, or is it a fragment, off-topic, notes, personal…?\n\nAbout ' + Math.ceil(todo.length / this.TM_JUDGE_BATCH) + ' requests, roughly $' + Math.max(1, Math.round(todo.length * this.TM_JUDGE_COST)) + '. Each comment is checked once and remembered.')) return false;
         let done = 0, failed = 0;
         const B = this.TM_JUDGE_BATCH;
         for (let i = 0; i < todo.length; i += B) {
@@ -405,7 +418,7 @@ Object.assign(window.App, {
                 (res && res.results || []).forEach(r => { const x = batch[r.i]; if (x && ['use', 'weak', 'no'].includes(r.verdict)) { const t = r.verdict === 'no' ? '' : this._tmCleanEdit(r.text), v = t ? r.verdict : 'no';   // nothing left once edited: no
                     this._tmJudge[this._tmJudgeKey(x.courseId, x.r.text)] = { v, r: v === r.verdict ? r.reason : 'suggestion', s: Math.max(1, Math.min(5, Number(r.strength) || 1)), sp: !!r.specific, role: String(r.self_role || '').trim(), t, pv, at: new Date().toISOString().slice(0, 10) }; done++; } });
                 if ((i / B) % 5 === 4) { try { await Storage.setItem('surghub_testimonial_ai', this._tmJudge); } catch (e) { __swallowed(e, 'tm.judgeSave'); } }
-            } catch (e) { __swallowed(e, 'tm.judge'); failed++; if (/Invalid Anthropic API key/.test(e.message) || failed >= 3) { alert('The testimonial check stopped: ' + e.message + '\\n\\nWhat was checked is kept; run it again to continue.'); break; } }
+            } catch (e) { __swallowed(e, 'tm.judge'); failed++; if (/Invalid Anthropic API key/.test(e.message) || failed >= 3) { alert('The testimonial check stopped: ' + e.message + '\n\nWhat was checked is kept; run it again to continue.'); break; } }
         }
         try { await Storage.setItem('surghub_testimonial_ai', this._tmJudge); } catch (e) { __swallowed(e, 'tm.judgeSave'); }
         return done > 0;
@@ -416,7 +429,7 @@ Object.assign(window.App, {
         const scores = this._aiScoreMap || {}, out = [];
         courseIds.forEach(id => {
             const resp = {}; this.tmResponses(id).forEach(r => { resp[r.id] = r; });
-            Object.entries(this._tm.byId).forEach(([rid, e]) => { if (e.course === id && e.show && resp[rid]) out.push({ courseId: id, course: title[id] || '', r: resp[rid] }); });
+            Object.entries(this._tm.byId).forEach(([rid, e]) => { if (e.course === id && e.show && resp[rid]) out.push({ courseId: id, course: title[id] || '', r: resp[rid], shown: true }); });
             this._tmCandidates(id).forEach(r => { const a = scores[this._tmAiKey(r.text)]; if (!a || a.s >= 3) out.push({ courseId: id, course: title[id] || '', r }); });
         });
         return out;
@@ -711,8 +724,10 @@ Object.assign(window.App, {
         const toks = (t) => this._tmTokens(t);
         const dice = (a, b) => { const bag = {}; b.forEach(w => { bag[w] = (bag[w] || 0) + 1; }); let c = 0; a.forEach(w => { if (bag[w]) { bag[w]--; c++; } }); return 2 * c / ((a.length + b.length) || 1); };
         let shown = Object.entries(this._tm.byId).filter(([, e]) => e.course === courseId && e.show).map(([id, e]) => ({ id, e, r: resp[id], s: this._tmShownScore(e, resp[id]), weak: this._tmWeak(e, resp[id]) }));
-        const least = Number(this.tmSetting ? this.tmSetting('suggestMin') : 4) || 4;   // checked comments rated lower are never suggested
-        const pool = this._tmCandidates(courseId).map(r => { const q = this._tmQ(courseId, r); return { r, q, a: { s: q.rank } }; }).filter(x => x.q.ok && (!x.q.judged || x.q.s >= least) && !this._tmSiteCapped(x.r))
+        // checked comments: only with the current instruction (they carry the page text) and rated at least
+        // suggestMin; an older verdict is never enough. Unchecked ones fall back to the report score (no API key).
+        const least = this._tmSuggestMin();
+        const pool = this._tmCandidates(courseId).map(r => { const q = this._tmQ(courseId, r); return { r, q, a: { s: q.rank } }; }).filter(x => x.q.ok && (!x.q.judged || (x.q.text && x.q.s >= least)) && !this._tmSiteCapped(x.r))
             .sort((x, y) => y.q.rank - x.q.rank || (this._tmGeneric(courseId, x.r) - this._tmGeneric(courseId, y.r)) || String(y.r.date).localeCompare(String(x.r.date)));
         const out = [], used = new Set();
         const textOf = (x) => toks((x.e && x.e.text) || (x.r && x.r.text) || '');
