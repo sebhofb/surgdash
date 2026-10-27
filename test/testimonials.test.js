@@ -290,17 +290,33 @@ App._cfFeedNow = () => FEED;
     App.TM_PICK_N = 6;
     const W = App.tmResponses('wound'), wid = (k) => W.find(r => r.text === JT[k]).id;
     App._tm.byId[wid(1)] = { course: 'wound', show: true, order: 1 }; App._tm.byId[wid(2)] = { course: 'wound', show: true, order: 2 };
-    const verdicts = { [JT[0]]: ['use', 'good', 3], [JT[1]]: ['no', 'fragment', 1], [JT[2]]: ['no', 'off_topic', 4], [JT[3]]: ['use', 'good', 5] };
+    const verdicts = { [JT[0]]: ['use', 'good', 3], [JT[1]]: ['no', 'fragment', 1], [JT[2]]: ['no', 'off_topic', 4], [JT[3]]: ['use', 'good', 5, 'Learning to debride a burn wound safely changed how our ward manages new admissions.'] };
     const calls = []; App._getAnthropicKey = async () => 'k'; ctx.confirm = () => true;
-    App._claudeJSON = async (key, system, user, schema, max, opts) => { const items = JSON.parse(user); calls.push({ system, items, opts, max }); const v = (c) => verdicts[c] || ['weak', 'generic', 2]; return { results: items.map((x, i) => ({ i, verdict: v(x.comment)[0], reason: v(x.comment)[1], strength: v(x.comment)[2], specific: v(x.comment)[2] >= 4, self_role: '' })) }; };
+    App._claudeJSON = async (key, system, user, schema, max, opts) => { const items = JSON.parse(user); calls.push({ system, items, opts, max }); const v = (c) => verdicts[c] || ['weak', 'generic', 2]; return { results: items.map((x, i) => ({ i, text: v(x.comment)[0] === 'no' ? '' : (v(x.comment)[3] || x.comment), verdict: v(x.comment)[0], reason: v(x.comment)[1], strength: v(x.comment)[2], specific: v(x.comment)[2] >= 4, self_role: '' })) }; };
     App._tmJudgeMissing = realJudge; App._tmJudge = {};
+    App._tm.settings = {};
     await App.tmReviewAll(null);
+    {
+      const P4 = App._tmProposals.filter(p => p.course === 'wound');
+      check('the check v3 makes the display text first and judges that; a topic phrase is a fragment', /make the display text/.test(calls[0].system) && /Comparison between different Surgical methods/.test(App.TM_JUDGE_PROMPT) && /Cut words that only answer the survey question/.test(calls[0].system) && App.TM_JUDGE_SCHEMA.properties.results.items.required.includes('text'));
+      check('by default only comments rated 4/5 or better are suggested: the 5/5 replaces one, the clear but general 3/5 is not offered', P4.filter(p => p.type === 'replace').length === 1 && P4.find(p => p.type === 'replace').cand.r.text === JT[3] && !P4.some(p => p.cand && p.cand.r.text === JT[0]), JSON.stringify(P4.map(p => [p.type, p.cand && p.cand.r.text.slice(0, 10)])));
+    }
+    App._tm.settings = { suggestMin: 3 }; App._tmRel = App._tmRelational(); App._tmProposals = ['wound'].flatMap(id => App._tmReviewCourse(id));
     const wItems = calls.flatMap(c => c.items).filter(x => x.course === 'Wound Course');
-    check('the check is asked with the course title, the question and the comment, on Opus 5.5 at low effort, with room for thinking', wItems.length === 4 && wItems.every(x => /most interesting/.test(x.question) && x.comment) && calls[0].opts.model === 'claude-opus-5-5' && calls[0].opts.effort === 'low' && calls[0].max >= 16000 && /work as testimonials on that course/.test(calls[0].system), JSON.stringify(calls[0] && calls[0].opts));
+    check('the check is asked with the course title, the question and the comment, on Opus 5.5 at low effort, with room for thinking', wItems.length === 4 && wItems.every(x => /most interesting/.test(x.question) && x.comment) && calls[0].opts.model === 'claude-opus-5-5' && calls[0].opts.effort === 'low' && calls[0].max >= 16000 && /testimonials on that course/.test(calls[0].system), JSON.stringify(calls[0] && calls[0].opts));
     check('…it knows a fragment, an off-topic comment, and that short can be good', App._tmQ('wound', W.find(r => r.text === JT[1])).weak === App.TM_REASON.fragment && App._tmQ('wound', W.find(r => r.text === JT[2])).no && App._tmQ('wound', W.find(r => r.text === JT[0])).ok);
     const P = App._tmProposals.filter(p => p.course === 'wound');
     check('review: the off-topic and the fragment are replaced by the check\'s testimonials, strongest first', P.filter(p => p.type === 'replace').length === 2 && P.find(p => p.type === 'replace').cand.r.text === JT[3] && P.some(p => p.type === 'replace' && p.cand.r.text === JT[0]), JSON.stringify(P.map(p => [p.type, p.old && p.old.r.text.slice(0, 10), p.cand && p.cand.r.text.slice(0, 10), p.why])));
     check('…the reasons read as verdicts', P.every(p => p.type !== 'replace' || /fragment|not about this course/.test(p.why)));
+    {
+      App._tmSection = 'find'; const html = App._dashTestimonialsHtml();
+      check('Find better shows the text that would go online (the check\'s), marked as edited from the original', html.includes('changed how our ward manages new admissions.”') && /edited from the original/.test(html));
+      const snap = JSON.stringify(App._tm.byId), nCalls = calls.length, i5 = App._tmProposals.findIndex(p => p.cand && p.cand.r.text === JT[3]);
+      await App.tmApplyProposals([i5], null);
+      check('accepting puts the check\'s text online as is, with no second call to Claude', App._tm.byId[wid(3)].show && App._tm.byId[wid(3)].text === 'Learning to debride a burn wound safely changed how our ward manages new admissions.' && calls.length === nCalls);
+      App._tm.byId = JSON.parse(snap); App._tmProposals = P.slice();
+      check('"clearly better" means two strength points: a 4/5 on the page is never upgraded, a 3/5 only by a 5/5', App.tmSetting('upgrade') === 'clear' && /c\.a\.s >= w\.s \+ 4/.test(App._tmReviewCourse.toString()));
+    }
     const n0 = calls.length; await App.tmReviewAll(null);
     check('each comment is checked once and remembered', calls.length === n0 && store.has('surghub_testimonial_ai'));
     // with nothing better left, a "not a testimonial" is listed to switch off, all at once

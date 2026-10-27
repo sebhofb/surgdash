@@ -10,18 +10,18 @@
 //   Settings     target and minimum per course, upgrades, shuffling, the check's model and both
 //                instructions (editable, with reset). Kept with the testimonials (synced).
 Object.assign(window.App, {
-    TM_SETTINGS_DEFAULT: { target: 6, min: 4, upgrade: 'clear', shuffle: 'off', judgeModel: '', judgePrompt: '', editPrompt: '' },
-    TM_MODELS: [['claude-opus-5-5', 'Claude Opus 5.5 (best judgement, ~$10 for everything)'], ['claude-sonnet-5-5', 'Claude Sonnet 5.5 (half the cost)']],
+    TM_SETTINGS_DEFAULT: { target: 6, min: 4, suggestMin: 4, upgrade: 'clear', shuffle: 'off', judgeModel: '', judgePrompt: '', editPrompt: '' },
+    TM_MODELS: [['claude-opus-5-5', 'Claude Opus 5.5 (best judgement, about $17 to check everything)'], ['claude-sonnet-5-5', 'Claude Sonnet 5.5 (half the cost)']],
     tmSetting(k) { const s = (this._tm && this._tm.settings) || {}; return s[k] != null && s[k] !== '' ? s[k] : this.TM_SETTINGS_DEFAULT[k]; },
     async tmSetSetting(k, v) {
         await this._tmLoad();
-        const num = k === 'target' || k === 'min';
+        const num = k === 'target' || k === 'min' || k === 'suggestMin';
         let val = num ? Math.max(1, Math.min(12, Math.round(Number(v) || 0))) : String(v == null ? '' : v);
         if (k === 'judgePrompt' && val.trim() === this.TM_JUDGE_PROMPT.trim()) val = '';
         if (k === 'editPrompt' && val.trim() === this.TM_TIDY_PROMPT.trim()) val = '';
         this._tm.settings = Object.assign({}, this._tm.settings, { [k]: val });
         await this._tmSave();
-        this.showMsg('✓ Saved.' + (k === 'judgePrompt' || k === 'judgeModel' ? ' The next scan checks every comment again with the new ' + (k === 'judgeModel' ? 'model' : 'instruction') + '.' : ''));
+        this.showMsg('✓ Saved.' + (k === 'judgePrompt' || k === 'judgeModel' || k === 'editPrompt' ? ' The next scan checks every comment again with the new ' + (k === 'judgeModel' ? 'model' : 'instruction') + '.' : ''));
         this._tmRerender();
     },
     _tmRerender() { this.rerenderDashTab ? this.rerenderDashTab() : this.renderView(); },
@@ -115,8 +115,7 @@ Object.assign(window.App, {
         e.show = true; e.order = old.order; e.at = at; e.auto = { at, swap: true, label: q.label }; delete e.text; delete e.removed;
         old.show = false; old.at = at; old.removed = { at, why: 'swapped for another' }; old.replacedBy = newId; delete old.auto;
         const title = (this._tmCourseFeed().courses.find(c => c.id === old.course) || {}).title || '';
-        const tidy = await this._tmTidy([{ r, course: title }]);
-        this._tmApplyEdit(newId, r, tidy[newId]);
+        if (!this._tmUseCheckText(newId, r, old.course)) { const tidy = await this._tmTidy([{ r, course: title }]); this._tmApplyEdit(newId, r, tidy[newId]); }
         this._tmSwapFor = null;
         await this._tmSave(); this.showMsg('✓ Swapped. It goes online at the next publish.'); this._tmRerender();
     },
@@ -249,7 +248,7 @@ Object.assign(window.App, {
     _tmSwapPanelHtml(esc, x) {
         const alt = this._tmAlternatives(x.id), idJs = this.escapeJsArg(x.id), lang = x.lang;
         const item = (a) => { const lb = this._tmLabels({}, a.r, lang), meta = [lb.cadre, lb.country].filter(Boolean).join(', ') || 'SURGhub learner';
-            return '<div data-tma="' + esc(this._tmNorm(a.r.text)) + '" class="flex items-start gap-3 py-2 border-b border-slate-100 last:border-0"><div class="flex-1"><p class="text-sm text-slate-700">' + esc(a.r.text) + '</p><p class="text-[10px] text-slate-400 mt-0.5">' + esc(meta) + ' · ' + esc(a.r.date) + ' · ' + esc(a.q.label) + '</p></div>'
+            return '<div data-tma="' + esc(this._tmNorm(a.r.text)) + '" class="flex items-start gap-3 py-2 border-b border-slate-100 last:border-0"><div class="flex-1"><p class="text-sm text-slate-700"' + (a.q.text && a.q.text !== String(a.r.text).trim() ? ' title="As written: ' + esc(a.r.text) + '"' : '') + '>' + esc(a.q.text || a.r.text) + '</p><p class="text-[10px] text-slate-400 mt-0.5">' + esc(meta) + ' · ' + esc(a.r.date) + ' · ' + esc(a.q.label) + '</p></div>'
                 + '<button data-edit-only onclick="App.tmSwap(\'' + idJs + '\', \'' + this.escapeJsArg(a.r.id) + '\', this)" class="shrink-0 px-3 py-1 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white">Use this</button></div>'; };
         return '<div class="mt-3 ml-8 border border-sky-200 bg-sky-50/40 rounded-xl p-3"><p class="text-[11px] font-bold uppercase tracking-wide text-slate-500 mb-1">Best alternatives on this course (one per learner, not near-identical, at most one generic)</p>'
             + (alt.good.length ? alt.good.slice(0, 5).map(item).join('') : '<p class="text-xs text-slate-500 py-2">' + (alt.rest.some(a => a.q.judged) ? 'No checked alternative passes the bar on this course. Search all its comments below, or switch this one off.' : 'This course\'s comments have not been checked yet (Find better → Scan now). All of them are listed below, best rated first.') + '</p>')
@@ -263,7 +262,7 @@ Object.assign(window.App, {
         const fresh = feed.courses.reduce((n, c) => n + this.tmResponses(c.id).filter(r => !since || String(r.date) > since).length, 0);
         const head = '<div class="bg-white rounded-xl border shadow-sm p-4 mb-4 flex items-center gap-3 flex-wrap"><div class="text-sm text-slate-600">' + (last ? 'Last scan ' + esc(last.slice(0, 10)) + ' · <strong>' + this.formatNumber(fresh) + '</strong> comments received since' : 'Not scanned yet') + '</div>'
             + '<button data-edit-only onclick="App.tmReviewAll(this)" class="ml-auto px-4 py-2 bg-gsf-prussian hover:bg-slate-900 text-white text-xs font-bold rounded-lg" title="Check new comments (and any checked with an older instruction), then suggest changes">Scan now</button></div>'
-            + '<p class="text-xs text-slate-500 mb-4 max-w-4xl">The scan checks comments it has not seen (it asks before calling Claude), then suggests: <strong>problems</strong> to fix (not a testimonial, the same learner twice, a second generic comment, one learner on too many courses), <strong>courses below the target</strong> of ' + this._tmTarget() + ', and <strong>upgrades</strong> (' + ({ clear: 'only clearly better: one strength point higher', problems: 'none: only problems and gaps', newer: 'better, or as good and newer' }[this.tmSetting('upgrade')]) + '; change in Settings). Dismissed suggestions do not come back.</p>';
+            + '<p class="text-xs text-slate-500 mb-4 max-w-4xl">The scan checks comments it has not seen (it asks before calling Claude), then suggests: <strong>problems</strong> to fix (not a testimonial, the same learner twice, a second generic comment, one learner on too many courses), <strong>courses below the target</strong> of ' + this._tmTarget() + ', and <strong>upgrades</strong> (' + ({ clear: 'only clearly better: two strength points higher, so a 4/5 or 5/5 is never swapped', problems: 'none: only problems and gaps', newer: 'better, or as good and newer' }[this.tmSetting('upgrade')]) + '; change in Settings). Only comments the check rates ' + this.tmSetting('suggestMin') + '/5 or better are suggested, shown exactly as they would go online. Dismissed suggestions do not come back.</p>';
         const list = this._tmProposals;
         if (!list) return head + '<p class="text-sm text-slate-400 p-4">Press Scan now to see suggestions.</p>';
         if (!list.length) return head + '<div class="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-sm text-emerald-800">Nothing to change. Every course is at its target or has no better comments waiting.</div>';
@@ -273,7 +272,7 @@ Object.assign(window.App, {
             const oldT = p.old ? ((p.old.e && p.old.e.text) || (p.old.r && p.old.r.text) || '') : '';
             return '<div class="flex items-stretch gap-2 flex-wrap py-2 border-b border-slate-100 last:border-0"><div class="w-full text-[11px] font-bold text-gsf-prussian">' + esc(title[p.course] || p.course) + (p.why ? ' <span class="font-normal text-slate-500">· ' + esc(p.why) + '</span>' : '') + '</div>'
                 + (p.old ? '<div class="flex-1 min-w-[220px] border rounded-lg p-2 bg-white"><div class="text-[10px] uppercase font-bold text-slate-400">On the page now</div><p class="text-xs text-slate-700">“' + esc(oldT) + '”</p>' + (p.old.r ? '<p class="text-[10px] text-slate-400">' + esc(lbl(p.old.r, p.course)) + ' · ' + esc(this._tmQ(p.course, p.old.r).label) + '</p>' : '') + '</div>' : '')
-                + (p.cand ? (p.old ? '<div class="self-center text-slate-300">→</div>' : '') + '<div class="flex-1 min-w-[220px] border border-emerald-200 rounded-lg p-2 bg-emerald-50/40"><div class="text-[10px] uppercase font-bold text-emerald-700">' + (p.type === 'add' ? 'Add' : 'Instead') + '</div><p class="text-xs text-slate-700">“' + esc(p.cand.r.text) + '”</p><p class="text-[10px] text-slate-400">' + esc(lbl(p.cand.r, p.course)) + ' · ' + esc(p.cand.q.label) + '</p></div>' : '')
+                + (p.cand ? (p.old ? '<div class="self-center text-slate-300">→</div>' : '') + '<div class="flex-1 min-w-[220px] border border-emerald-200 rounded-lg p-2 bg-emerald-50/40"><div class="text-[10px] uppercase font-bold text-emerald-700">' + (p.type === 'add' ? 'Add' : 'Instead') + '</div><p class="text-xs text-slate-700">“' + esc(p.cand.q.text || p.cand.r.text) + '”</p><p class="text-[10px] text-slate-400">' + esc(lbl(p.cand.r, p.course)) + ' · ' + esc(p.cand.q.label) + (p.cand.q.text && p.cand.q.text !== String(p.cand.r.text).trim() ? ' · <span title="' + esc(p.cand.r.text) + '" class="underline decoration-dotted cursor-help">edited from the original</span>' : '') + '</p></div>' : '')
                 + '<div class="flex flex-col gap-1 shrink-0" data-edit-only><button onclick="App.tmAcceptOne(' + i + ', this)" class="px-3 py-1 text-[11px] font-bold rounded ' + (p.type === 'weak' ? 'bg-rose-600' : 'bg-gsf-boston') + ' text-white">' + (p.type === 'weak' ? 'Switch off' : 'Accept') + '</button>'
                 + '<button onclick="App.tmDismiss(' + i + ')" class="px-3 py-1 text-[11px] font-bold rounded border text-slate-500" title="Do not suggest this again">Dismiss</button></div></div>';
         };
@@ -300,7 +299,8 @@ Object.assign(window.App, {
         return '<div class="bg-white rounded-xl border shadow-sm p-5">'
             + row('Target per course', num('target'), 'How many testimonials a course page aims for. "Find better" fills courses up to this.')
             + row('Minimum', num('min'), 'Courses with fewer are marked red on the Published list.')
-            + row('Upgrades', sel('upgrade', [['clear', 'Only clearly better (one strength point higher)'], ['problems', 'None: only problems and gaps'], ['newer', 'Better, or as good and newer']]), 'How eager "Find better" is to suggest swapping a testimonial that is fine.')
+            + row('Suggest comments rated', sel('suggestMin', [['5', '5/5 only'], ['4', '4/5 or better'], ['3', '3/5 or better (also clear but general ones)']]), 'Find better never suggests a comment the check rates lower. A course below its target stays below rather than get a poor one.')
+            + row('Upgrades', sel('upgrade', [['clear', 'Only clearly better (two strength points higher)'], ['problems', 'None: only problems and gaps'], ['newer', 'Better, or as good and newer']]), 'How eager "Find better" is to suggest swapping a testimonial that is fine.')
             + row('Shuffle on the site', sel('shuffle', [['off', 'Off: the order you set'], ['order', 'Shuffle the order every day'], ['rotate', 'Rotate weekly from all switched on (when more than the target)']]), 'With rotation, switch on more good testimonials than the target (say 10 for 6): each week the page shows a different 6, in a fresh order each day. Only switched-on testimonials are ever shown.')
             + row('The check\'s model', sel('judgeModel', [['', 'Default: Claude Opus 5.5']].concat(this.TM_MODELS.slice(1))), 'A different model makes earlier verdicts stale: the next scan checks every comment again (asks first, shows the cost).')
             + row('The check\'s instruction', prompt('judgePrompt', this.TM_JUDGE_PROMPT), 'What Claude is asked about each comment. Keep the list of verdicts and reasons; the app reads them.')
