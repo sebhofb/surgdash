@@ -773,9 +773,16 @@ Object.assign(window.App, {
                 }
             }
         }
-        alert(lines.join('\n'));
-        // Auto-run the provenance firewall now that all receipts are fresh.
-        this.autoVerifyAfterSync();
+        // The provenance firewall first (all receipts are fresh), so the summary can offer to publish
+        // the new website figures only when every step worked and the numbers reproduce (Seb, 30 Oct 2026).
+        await this.autoVerifyAfterSync();
+        const failed = done.some(s => !s.ok), unverified = !!this._verifyAlert;
+        const site = this.publishWebsiteMetrics && this._pdReady ? await this._pdReady() : { ok: false };
+        if (site.ok && !failed && !unverified) {
+            if (confirm(lines.join('\n') + '\n\nPublish the new figures to the website now?\n(the GSF website figures, the course feed and testimonials; online within about 10 minutes)')) await this.publishWebsiteMetrics(null);
+        } else {
+            alert(lines.join('\n') + (site.ok ? '\n\nThe new figures were not offered for publishing: ' + (failed ? 'a step failed' : 'some numbers do not reproduce from the receipts (Data health)') + '. Publish them from "GSF website figures" once they are right.' : ''));
+        }
     },
 
     // Pull Course Foundation directly from the LearnWorlds API. Produces the

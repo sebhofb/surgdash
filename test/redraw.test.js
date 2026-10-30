@@ -96,6 +96,27 @@ App._dashCompareHtml = () => '<div>COMPARE</div>'; App._dashLookupHtml = () => '
   App.syncEnrolmentsFromApi = async () => { calls.push(['enr', App._apiSyncInFlight, true]); App._enrMeta = { run: { done: false } }; return { mode: 'full', resumed: true, done: 120 }; };
   await App.runFullSync();
   check('an interrupted pass is resumed and a pause is reported with the resume hint', calls.map(c => c[0]).join(',') === 'courses,demo,amb,enr' && /⏸ Enrolments & progress \(full, resumed\): 120 accounts refreshed — paused; card 2/.test(alerts[0]), alerts[0] && alerts[0].split('\n').filter(l => /Enrol/.test(l)).join(' | '));
+  // the summary offers to publish the new website figures (Seb, 30 Oct 2026)
+  {
+    const asked = [], published = []; ctx.confirm = (m) => { asked.push(m); return true; };
+    App._enrLoadMeta = async () => ({}); App._pdReady = async () => ({ ok: true }); App._verifyAlert = null;
+    App.publishWebsiteMetrics = async (b) => { published.push(b); return { ok: true }; };
+    alerts.length = 0; await App.runFullSync();
+    const last = asked[asked.length - 1] || '';
+    check('when every step worked and the numbers reproduce, the summary asks to publish the website figures, and OK publishes', /Sync Everything — Complete/.test(last) && /Publish the new figures to the website now\?/.test(last) && published.length === 1 && alerts.length === 0, last.slice(-160));
+    ctx.confirm = (m) => { asked.push(m); return !/Publish the new figures/.test(m); }; published.length = 0;
+    await App.runFullSync();
+    check('…Cancel publishes nothing', published.length === 0);
+    ctx.confirm = () => true; alerts.length = 0;
+    const realDemo = App.syncDemographicsFromApi; App.syncDemographicsFromApi = async () => { throw new Error('HTTP 500'); };
+    await App.runFullSync();
+    App.syncDemographicsFromApi = realDemo;
+    check('a failed step: no publish question, the summary says why', published.length === 0 && alerts.length === 1 && /✗ Demographics/.test(alerts[0]) && /not offered for publishing: a step failed/.test(alerts[0]));
+    alerts.length = 0; App.autoVerifyAfterSync = async () => { App._verifyAlert = { failing: ['Learners'] }; };
+    await App.runFullSync();
+    check('numbers that do not reproduce from the receipts: no publish question either', published.length === 0 && alerts.length === 1 && /do not reproduce from the receipts/.test(alerts[0]));
+    App.autoVerifyAfterSync = () => {}; App._verifyAlert = null; delete App._pdReady; delete App.publishWebsiteMetrics;
+  }
   const upd = fs.readFileSync(path.join(ROOT, 'js/updater.js'), 'utf8');
   check('confirm text lists the enrolment step and drops the old "NOT refreshed" warning', /3\. Enrolments & progress — ' \+ enrolNote/.test(upd) && !/NOT refreshed by this sync/.test(upd));
   console.log(`\n${ok}/${ok + bad} passed`); process.exit(bad ? 1 : 0);
