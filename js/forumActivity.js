@@ -275,7 +275,8 @@ Object.assign(window.App, {
         const esc = (t) => this.escapeHtml(String(t == null ? '' : t)), fmt = (n) => this.formatNumber(n);
         const refresh = '<button data-edit-only onclick="App.syncForumActivityWithProgress()" class="flex items-center gap-1.5 px-3 py-1.5 border rounded-lg text-xs font-bold text-slate-600 hover:text-gsf-boston hover:bg-slate-50"><i data-lucide="refresh-cw" width="13"></i> Refresh forum data</button>';
         const o = this.forumOverview();
-        if (!o) return '<div class="bg-white p-6 rounded-xl shadow-sm border"><h3 class="text-lg font-bold text-gsf-prussian mb-1">Forum activity</h3><p class="text-sm text-slate-400 mb-3">No forum data yet. It is read from the course discussion spaces (Data Sync &rarr; 7 &middot; Forum activity).</p>' + refresh + '</div>';
+        const quotes = this._fqSectionHtml ? '<div class="mt-6">' + this._fqSectionHtml() + '</div>' : '';
+        if (!o) return '<div class="bg-white p-6 rounded-xl shadow-sm border"><h3 class="text-lg font-bold text-gsf-prussian mb-1">Forum activity</h3><p class="text-sm text-slate-400 mb-3">No forum data yet. It is read from the course discussion spaces (Data Sync &rarr; 7 &middot; Forum activity).</p>' + refresh + '</div>' + quotes;
         const chg = o.prevQPosts ? Math.round((o.lastQPosts / o.prevQPosts - 1) * 100) : null;
         const card = (label, value, sub, color) => '<div class="bg-white rounded-xl border shadow-sm p-4"><div class="text-[10px] font-bold uppercase tracking-wide" style="color:' + color + '">' + label + '</div><div class="text-2xl font-black text-gsf-prussian mt-1 tabular-nums">' + value + '</div><div class="text-[11px] text-slate-400 mt-0.5">' + sub + '</div></div>';
         const t = o.totals;
@@ -305,7 +306,7 @@ Object.assign(window.App, {
         return '<div class="flex items-center justify-between gap-3 flex-wrap mb-4"><p class="text-sm text-slate-500 max-w-3xl">Posts in the discussion spaces beside each course, read ' + esc(this._forumWhen()) + '. Replies under a post are not counted: the platform does not report them. "People" is per course, so it is not added up across courses. Spaces beside courses with no enrolled learners count as general areas; a space linked to several courses (a course and its template) counts once, for the live course.</p>' + refresh + '</div>'
             + cards
             + '<div class="bg-white rounded-xl border shadow-sm p-5 mb-6"><h3 class="font-bold text-gsf-prussian mb-1">Posts per month</h3><p class="text-[11px] text-slate-400 mb-2">All discussion spaces linked to a course. The current month is partial.</p><div id="chart_forum_platform" style="width:100%;height:320px"></div></div>'
-            + table + provs;
+            + quotes + table + provs;
     },
     _drawForumCharts() {
         const o = this.forumOverview();
