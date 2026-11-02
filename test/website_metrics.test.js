@@ -43,7 +43,7 @@ ctx.App = { hideLowLearners: true, hidePrivateCourses: true, view: 'sh-reports',
 };
 vm.createContext(ctx);
 for (const f of ['js/partnerDash.js', 'js/websiteMetrics.js']) vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, { filename: f });
-const App = ctx.App;
+const App = ctx.App; App.WM_RACE_MS = 0;   // no waiting between publish retries here
 App._pdReady = async () => ({ ok: true }); App._pdToken = async () => 'ghp_T';
 ctx.countryToISO = (c) => ({ India: 'IN', 'United Arab Emirates': 'AE', 'United States': 'US' }[c] || '');
 // The SURGhub overall report's data (reports.js _assembleReportData), as far as the extras use it.
@@ -125,6 +125,13 @@ const mkD = (sat, app, rating, min) => ({ avgRating: rating, totalMin: min, prov
   const commits = calls.filter(c => c.url.endsWith('/git/commits') && c.method === 'POST').map(c => JSON.parse(c.body));
   check('"not a fast forward": rebuilt on the new tip and published (no error)', r2.ok && commits.length === 2 && commits[1].parents.join() === 'head2' && JSON.parse(calls.filter(c => c.url.endsWith('/git/trees')).pop().body).base_tree === 'tree2', JSON.stringify(commits.map(c => c.parents)));
   check('…reusing the files already uploaded', calls.filter(c => c.url.endsWith('/git/blobs')).length === 1);
+  check('every GitHub read asks GitHub itself, never a cached copy (a cached tip made all three retries fail)', calls.filter(c => c.method === 'GET').every(c => c.headers['Cache-Control'] === 'no-cache' && c.headers.Pragma === 'no-cache') && calls.filter(c => c.method !== 'GET').every(c => !c.headers['Cache-Control']));
+  calls.length = 0; race = 3; ctx.__moved = false;
+  const r3 = await App.publishWebsiteMetrics(null);
+  check('three races in a row still publish on the fourth try', r3.ok && calls.filter(c => c.method === 'PATCH').length === 4, calls.filter(c => c.method === 'PATCH').length);
+  calls.length = 0; race = 9; ctx.__moved = false; ctx.__alert = '';
+  const r4 = await App.publishWebsiteMetrics(null);
+  check('…and a site that keeps moving ends in a clear error, not a loop', !r4.ok && calls.filter(c => c.method === 'PATCH').length === 4 && /not a fast forward/.test(ctx.__alert)); race = 0;
   calls.length = 0; race = 0; ctx.__moved = false;
   const [p1, p2] = await Promise.all([App.publishWebsiteMetrics(null), App.publishWebsiteMetrics(null)]);
   check('a second click while one is running does not start a second publish', p1.ok && p2.busy && calls.filter(c => c.method === 'PATCH').length === 1);

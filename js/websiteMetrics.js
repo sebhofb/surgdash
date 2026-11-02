@@ -216,7 +216,12 @@ Object.assign(window.App, {
                 const tree = await this._pdGh('POST', '/git/trees', { base_tree: commit.tree.sha, tree: entries }, token);
                 const c = await this._pdGh('POST', '/git/commits', { message: 'Website metrics ' + new Date().toISOString().slice(0, 10), tree: tree.sha, parents: [head] }, token);
                 try { await this._pdGh('PATCH', '/git/refs/heads/' + branch, { sha: c.sha, force: false }, token); break; }
-                catch (e) { if (e.status !== 422 || attempt >= 3) throw e; if (btn) btn.textContent = 'The site changed meanwhile, trying again…'; }
+                catch (e) {
+                    if (e.status !== 422 || attempt >= 4) throw e;
+                    if (btn) btn.textContent = 'The site changed meanwhile, trying again…';
+                    const wait = (this.WM_RACE_MS != null ? this.WM_RACE_MS : 2000) * attempt;   // let the other publish settle
+                    if (wait > 0) await new Promise(r => setTimeout(r, wait));
+                }
             }
             await this._wmPublished(f);
             if (cf && cf.content && this._cfMarkPublished) await this._cfMarkPublished(cf);

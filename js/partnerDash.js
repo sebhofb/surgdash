@@ -462,9 +462,13 @@ Object.assign(window.App, {
     },
     async _pdGhOnce(method, path, body, token) {
         const s = this._pd;
+        const headers = { 'Authorization': 'Bearer ' + token, 'Accept': 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'SURGdash', 'Content-Type': 'application/json' };
+        // GitHub lets a GET be cached for 60 s (max-age=60) and Electron's network stack honours it, so
+        // re-reading the branch tip after "not a fast forward" got the old tip back, three times over
+        // (Seb, 2 Nov 2026). Always ask GitHub itself.
+        if (method === 'GET') { headers['Cache-Control'] = 'no-cache'; headers['Pragma'] = 'no-cache'; }
         const res = await electronAPI.invoke('http-request', {
-            url: 'https://api.github.com/repos/' + s.repo + path, method,
-            headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'SURGdash', 'Content-Type': 'application/json' },
+            url: 'https://api.github.com/repos/' + s.repo + path, method, headers,
             body: body ? JSON.stringify(body) : undefined, timeoutMs: 120000,
         });
         let json = null; try { json = res && res.body ? JSON.parse(res.body) : null; } catch (e) { json = null; }
