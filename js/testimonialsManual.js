@@ -2,12 +2,13 @@
 //
 // What learners tell the team by email, on a call or at an event, put on a course page next to
 // the survey comments. Stored with the testimonial choices (`surghub_testimonials`, synced):
-//   _tm.manual[id] = { course, text, role, affiliation, country, note, date, lang, added, edited? }
+//   _tm.manual[id] = { course, text, role, affiliation, country, note, date, lang, stars?, added, edited? }
 //   _tm.byId[id]   = the usual choice (show, order), with keep: true so Find better never replaces it.
 // tmResponses() lists them first, as responses with manual: true, so the Published list, the course
 // editor, on/off, ordering and publishing treat them like any other testimonial. The testimonial
 // check never runs on them (no cost); the label is published as typed: "role, affiliation" and the
-// country. The note (where it came from) is internal: it is never published.
+// country. The note (where it came from) is internal: it is never published. Stars only when the
+// learner gave a rating themselves (Seb, 2 Nov 2026): none by default, never one made up.
 Object.assign(window.App, {
     TM_MANUAL_Q: 'Added by hand',
 
@@ -17,14 +18,15 @@ Object.assign(window.App, {
         Object.keys(m).forEach(id => {
             const x = m[id]; if (!x || x.course !== courseId) return;
             const text = String(x.text || '').trim();
-            out.push({ id, courseId, text, q: this.TM_MANUAL_Q, date: x.date || '', stars: 0, cadre: x.role || '', country: x.country || '', affiliation: x.affiliation || '', note: x.note || '',
+            out.push({ id, courseId, text, q: this.TM_MANUAL_Q, date: x.date || '', stars: this._tmManualStars(x.stars), cadre: x.role || '', country: x.country || '', affiliation: x.affiliation || '', note: x.note || '',
                 lang: x.lang || this._tmPageLang(courseId), words: text.split(/\s+/).filter(Boolean).length, row: 'm:' + id, manual: true });
         });
         return out.sort((a, b) => String(b.date).localeCompare(String(a.date)));
     },
+    _tmManualStars(v) { const n = Math.round(Number(v) || 0); return n >= 1 && n <= 5 ? n : 0; },
     tmManualCount() { return Object.keys((this._tm && this._tm.manual) || {}).length; },
 
-    // Add (id empty) or edit one. vals: { course (id), text, role, affiliation, country, note, date, show, lang }.
+    // Add (id empty) or edit one. vals: { course (id), text, role, affiliation, country, note, date, stars, show, lang }.
     async tmSaveManual(vals, id) {
         await this._tmLoad();
         const t = (v) => String(v == null ? '' : v).replace(/\s+/g, ' ').trim();
@@ -35,11 +37,12 @@ Object.assign(window.App, {
         const prev = m[nid] || {};
         m[nid] = { course: vals.course, text, role: t(vals.role), affiliation: t(vals.affiliation), country: t(vals.country), note: String(vals.note == null ? '' : vals.note).trim(),
             date: t(vals.date) || now.slice(0, 10), lang: vals.lang || this._tmPageLang(vals.course), added: prev.added || now };
+        const stars = this._tmManualStars(vals.stars); if (stars) m[nid].stars = stars;
         if (prev.added) m[nid].edited = now;
         const order = Object.values(this._tm.byId).filter(e => e.course === vals.course && e.show).reduce((a, e) => Math.max(a, Number(e.order) || 0), 0) + 1;
         const e = this._tm.byId[nid] || (this._tm.byId[nid] = { course: vals.course, order });
         if (e.course !== vals.course) { e.course = vals.course; e.order = order; }
-        delete e.text; delete e.cadre; delete e.country; delete e.auto;   // the entry itself holds the words and labels
+        delete e.text; delete e.cadre; delete e.country; delete e.stars; delete e.auto;   // the entry itself holds the words and labels
         e.keep = true; e.show = vals.show !== false; e.at = now;
         await this._tmSave();
         return nid;
@@ -87,8 +90,10 @@ Object.assign(window.App, {
             + label('Affiliation', 'optional, shown after the role') + '<input data-f="affiliation" placeholder="e.g. Kenyatta National Hospital" style="' + box + '">'
             + '<div data-preview style="font-size:11px;color:#64748b;margin-top:6px"></div>'
             + label('Where it came from', 'internal, never published') + '<textarea data-f="note" rows="2" placeholder="e.g. Email to the SURGhub inbox, 12 Oct 2026; permission to quote given" style="' + box + ';resize:vertical"></textarea>'
-            + '<div style="display:flex;gap:12px;align-items:end">'
+            + '<div style="display:flex;gap:12px;align-items:end;flex-wrap:wrap">'
             + '<div>' + label('Received') + '<input data-f="date" type="date" style="' + box + ';width:170px"></div>'
+            + '<div>' + label('Rating they gave', 'only if they gave one') + '<select data-f="stars" style="' + box + ';width:190px"><option value="0">None (no stars shown)</option>'
+            + [5, 4, 3, 2, 1].map(n => '<option value="' + n + '">' + '★'.repeat(n) + ' ' + n + ' out of 5</option>').join('') + '</select></div>'
             + '<label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#334155;padding-bottom:9px"><input data-f="show" type="checkbox"> Show it on the course page</label></div>'
             + '<div data-warn style="margin-top:12px"></div>'
             + '<div style="display:flex;justify-content:space-between;gap:10px;margin-top:18px">'
@@ -103,6 +108,7 @@ Object.assign(window.App, {
         f('affiliation').value = x ? x.affiliation || '' : '';
         f('note').value = x ? x.note || '' : '';
         f('date').value = x ? x.date || '' : new Date().toISOString().slice(0, 10);
+        f('stars').value = String(x ? this._tmManualStars(x.stars) : 0);
         f('show').checked = x ? e.show !== false : true;
         const idOf = (title) => { const c = courses.find(k => k.title === String(title).trim()); return c ? c.id : ''; };
         const refresh = () => {
@@ -125,7 +131,7 @@ Object.assign(window.App, {
             if (!text) { alert('Write the testimonial.'); f('text').focus(); return; }
             let lang = this._tmPageLang(course);
             if (this.tmManualWarnings(course, text).some(m => m.k === 'lang') && !confirm('This course\'s page is in another language than this testimonial.\n\nOK: show it on the page anyway.\nCancel: keep it, but leave it off the page.')) lang = this._tmLang(text, lang);
-            const nid = await this.tmSaveManual({ course, text, role: f('role').value, affiliation: f('affiliation').value, country: f('country').value, note: f('note').value, date: f('date').value, show: f('show').checked, lang }, id);
+            const nid = await this.tmSaveManual({ course, text, role: f('role').value, affiliation: f('affiliation').value, country: f('country').value, note: f('note').value, date: f('date').value, stars: f('stars').value, show: f('show').checked, lang }, id);
             if (!nid) return;
             close();
             this.showMsg((x ? 'Testimonial saved' : 'Testimonial added to ' + (titleOf[course] || 'the course')) + (f('show').checked ? '. It goes online with the next publish.' : ', switched off.'));

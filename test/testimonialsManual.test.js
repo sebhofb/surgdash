@@ -45,6 +45,14 @@ App._cfFeedNow = () => FEED;
   const it2 = App.testimonialsFeedBuild(FEED).courses['burns-public'].find(x => x.id === id2);
   check('without a role or country it shows nothing there (the page says SURGhub learner)', it2 && !it2.cadre && !it2.country, JSON.stringify(it2));
   check('the date received defaults to today', store.get('surghub_testimonials').manual[id2].date === '2026-11-02');
+  check('no rating given: no stars stored or published (never one made up)', !('stars' in store.get('surghub_testimonials').manual[id2]) && !('stars' in it2) && !('stars' in item));
+  const id3 = await App.tmSaveManual({ course: 'burns', text: 'I would give this course five stars: it changed how our unit manages burns.', stars: '5', show: true });
+  const it3 = App.testimonialsFeedBuild(FEED).courses['burns-public'].find(x => x.id === id3);
+  check('a rating the learner gave is stored and published', store.get('surghub_testimonials').manual[id3].stars === 5 && it3 && it3.stars === 5 && App.tmResponses('burns').find(x => x.id === id3).stars === 5, JSON.stringify(it3));
+  await App.tmSaveManual({ course: 'burns', text: 'I would give this course five stars: it changed how our unit manages burns.', stars: '0', show: true }, id3);
+  check('setting it back to None removes the stars', !('stars' in store.get('surghub_testimonials').manual[id3]) && !('stars' in App.testimonialsFeedBuild(FEED).courses['burns-public'].find(x => x.id === id3)));
+  check('only 1 to 5 counts as a rating', App._tmManualStars('7') === 0 && App._tmManualStars('') === 0 && App._tmManualStars(4) === 4);
+  await App.tmDeleteManual(id3);
 
   // ── never checked, never replaced ──
   const q = App._tmQ('burns', r);
