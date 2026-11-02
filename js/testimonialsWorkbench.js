@@ -46,7 +46,7 @@ Object.assign(window.App, {
     // ── what is live ──
     _tmLiveMap() {
         const txt = this._tmState && this._tmState.last && this._tmState.last.content;
-        if (this._tmLiveMapSrc === txt) return this._tmLiveMapCache;
+        if (this._tmLiveMapCache && this._tmLiveMapSrc === txt) return this._tmLiveMapCache;   // nothing published yet: build an empty map
         const m = {}; try { Object.values(JSON.parse(txt || '{}').courses || {}).forEach(l => l.forEach(x => { m[x.id] = x.text; })); } catch (e) { /* none */ }
         this._tmLiveMapSrc = txt; this._tmLiveMapCache = m; return m;
     },
@@ -211,7 +211,8 @@ Object.assign(window.App, {
         else if (f.show === 'short') rows = rows.filter(x => x.words <= 5);
         else if (f.show === 'long') rows = rows.filter(x => x.words > 60);
         else if (f.show === 'auto') rows = rows.filter(x => x.e.auto);
-        else if (f.show === 'unchecked') rows = rows.filter(x => !x.q.judged);
+        else if (f.show === 'unchecked') rows = rows.filter(x => !x.q.judged && !(x.r && x.r.manual));
+        else if (f.show === 'manual') rows = rows.filter(x => x.r && x.r.manual);
         const counts = { problems: allRows.filter(x => x.flags.length).length };
         const sel = (k, opts) => '<select onchange="App.tmPubFilter(\'' + k + '\', this.value)" class="text-xs border rounded-lg px-2 py-1.5">' + opts.map(([v, l]) => '<option value="' + v + '"' + ((f[k] || '') === v ? ' selected' : '') + '>' + esc(l) + '</option>').join('') + '</select>';
         const stars = (n) => n ? '<span class="text-amber-500 text-[11px]">' + '★'.repeat(n) + '</span>' : '';
@@ -225,12 +226,13 @@ Object.assign(window.App, {
                 + list.map(x => {
                     const idJs = this.escapeJsArg(x.id), meta = [x.lb.cadre, x.lb.country].filter(Boolean).join(', ') || 'SURGhub learner';
                     const tone = x.q.ok ? 'bg-emerald-50 text-emerald-700' : x.q.no ? 'bg-rose-50 text-rose-600' : 'bg-slate-100 text-slate-500';
-                    const search = this._tmNorm([c.title, x.text, x.lb.cadre, x.lb.country].join(' '));
+                    const search = this._tmNorm([c.title, x.text, x.lb.cadre, x.lb.country, x.r && x.r.note].join(' '));
                     let row = '<div data-tms="' + esc(search) + '" class="px-4 py-2.5 border-b border-slate-100 last:border-0 ' + (x.flags.length ? 'bg-rose-50/30' : '') + '"><div class="flex items-start gap-3">'
                         + '<span class="text-xs font-bold text-slate-400 w-5 pt-0.5">' + x.pos + '</span><div class="flex-1 min-w-0">'
                         + '<p class="text-sm text-slate-800" title="' + esc(x.r && x.r.text !== x.text ? 'Original: ' + x.r.text : 'Shown as written') + '">“' + esc(x.text) + '”</p>'
                         + '<p class="text-[11px] text-slate-500 mt-0.5 flex items-center gap-2 flex-wrap">' + esc(meta) + ' ' + stars(x.r && x.r.stars) + '<span class="px-1.5 py-0.5 rounded text-[10px] font-bold ' + tone + '">' + esc(x.q.label) + '</span>'
-                        + (x.live !== 'live' ? '<span class="text-amber-700">' + esc(x.live) + '</span>' : '') + x.flags.map(fl => '<span class="px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 text-[10px] font-bold">' + esc(fl) + '</span>').join('') + '</p></div>'
+                        + (x.live !== 'live' ? '<span class="text-amber-700">' + esc(x.live) + '</span>' : '') + x.flags.map(fl => '<span class="px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 text-[10px] font-bold">' + esc(fl) + '</span>').join('') + '</p>'
+                        + (x.r && x.r.manual ? '<p class="text-[11px] text-slate-400 mt-0.5 italic">' + esc((x.r.date ? 'Received ' + x.r.date : 'Added by hand') + (x.r.note ? ' · ' + x.r.note : '')) + ' <button data-edit-only onclick="App.tmOpenManual(null, \'' + idJs + '\')" class="not-italic font-bold text-gsf-boston hover:underline ml-1">Edit</button></p>' : '') + '</div>'
                         + '<div class="flex items-center gap-1 shrink-0" data-edit-only><button onclick="App.tmMoveUndoable(\'' + idJs + '\', -1)" class="px-1.5 py-0.5 border rounded text-slate-500 hover:text-gsf-boston text-xs" title="Move up">▲</button><button onclick="App.tmMoveUndoable(\'' + idJs + '\', 1)" class="px-1.5 py-0.5 border rounded text-slate-500 hover:text-gsf-boston text-xs" title="Move down">▼</button>'
                         + '<button onclick="App.tmOpenSwap(\'' + idJs + '\')" class="px-2.5 py-1 rounded-lg text-xs font-bold ' + (this._tmSwapFor === x.id ? 'bg-gsf-prussian text-white' : 'bg-gsf-boston text-white hover:bg-gsf-prussian') + '">Swap</button>'
                         + '<button onclick="App.tmSwitchOff(\'' + idJs + '\')" class="px-2.5 py-1 rounded-lg text-xs font-bold border text-slate-600 hover:border-rose-400 hover:text-rose-600">Off</button></div></div>';
@@ -239,10 +241,11 @@ Object.assign(window.App, {
                 }).join('') + '</div>';
         }).join('');
         return '<div class="flex items-center gap-2 flex-wrap mb-3"><div class="relative"><input id="tm-search" type="search" value="' + esc(this._tmQuery || '') + '" oninput="App.tmSearch(this.value)" placeholder="Search course, text, cadre, country…" class="pl-3 pr-3 py-2 w-80 border border-slate-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-gsf-boston/30"></div>'
-            + sel('show', [['', 'All testimonials'], ['problems', 'With problems (' + counts.problems + ')'], ['pending', 'Not online yet'], ['short', '5 words or fewer'], ['long', 'Over 60 words'], ['auto', 'Picked or swapped automatically'], ['unchecked', 'Not checked yet']])
+            + sel('show', [['', 'All testimonials'], ['problems', 'With problems (' + counts.problems + ')'], ['pending', 'Not online yet'], ['short', '5 words or fewer'], ['long', 'Over 60 words'], ['auto', 'Picked or swapped automatically'], ['manual', 'Added by hand'], ['unchecked', 'Not checked yet']])
             + sel('lang', [['', 'All languages'], ['en', 'English pages'], ['fr', 'French pages'], ['es', 'Spanish pages'], ['ar', 'Arabic pages']])
             + '<span id="tm-count" class="text-xs text-slate-400">' + rows.length + ' shown</span>'
-            + '<button onclick="App.tmExportXlsx(this)" class="ml-auto px-3 py-2 border border-slate-300 hover:border-gsf-boston text-gsf-prussian text-xs font-bold rounded-lg">Download Excel</button></div>'
+            + '<button data-edit-only onclick="App.tmOpenManual()" class="ml-auto px-3 py-2 bg-gsf-boston hover:bg-gsf-prussian text-white text-xs font-bold rounded-lg" title="Something a learner told you by email, on a call or anywhere else">+ Add a testimonial</button>'
+            + '<button onclick="App.tmExportXlsx(this)" class="px-3 py-2 border border-slate-300 hover:border-gsf-boston text-gsf-prussian text-xs font-bold rounded-lg">Download Excel</button></div>'
             + (groups || '<p class="text-sm text-slate-400 p-6">Nothing matches.</p>');
     },
     _tmSwapPanelHtml(esc, x) {

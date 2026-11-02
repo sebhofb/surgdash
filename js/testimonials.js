@@ -99,8 +99,12 @@ Object.assign(window.App, {
     // One course's written answers, newest first, one per id — read from the anonymised survey
     // export SURGdash keeps (survey_raw: every column verbatim, with the respondent's country and
     // profession and the completion time), so every open question counts, not only the ones the
-    // feedback list picked up.
+    // feedback list picked up. Testimonials added by hand (testimonialsManual.js) come first.
     tmResponses(courseId) {
+        const m = this._tmManualFor ? this._tmManualFor(courseId) : [], s = this._tmSurveyResponses(courseId);
+        return m.length ? m.concat(s) : s;
+    },
+    _tmSurveyResponses(courseId) {
         const d = this._tmLatest()[courseId], raw = this._rawSurveyResponses, v = d && raw && raw[d.Course];
         if (!v || !Array.isArray(v.cols) || !Array.isArray(v.data)) return [];
         this._tmRespCache = this._tmRespCache || {};
@@ -263,6 +267,10 @@ Object.assign(window.App, {
     },
     // Cadre and country as the page in `lang` shows them (testimonialLabels.js); '' set by hand = none.
     _tmLabels(e, r, lang) {
+        if (r && r.manual) {   // as typed: the person who added it wrote the label in the page's language
+            const role = e.cadre != null ? e.cadre : r.cadre, k = e.country != null ? e.country : r.country;
+            return { cadre: [role, r.affiliation].map(x => String(x || '').trim()).filter(Boolean).join(', '), country: (this.tmCountryLabel ? this.tmCountryLabel(k, lang) : '') || String(k || '').trim() };
+        }
         let c = e.cadre != null ? e.cadre : r.cadre;
         const k = e.country != null ? e.country : r.country;
         // "as a physiotherapist…": the label must agree with the text, or be empty (Seb, 27 Oct 2026)
@@ -429,7 +437,7 @@ Object.assign(window.App, {
         const scores = this._aiScoreMap || {}, out = [];
         courseIds.forEach(id => {
             const resp = {}; this.tmResponses(id).forEach(r => { resp[r.id] = r; });
-            Object.entries(this._tm.byId).forEach(([rid, e]) => { if (e.course === id && e.show && resp[rid]) out.push({ courseId: id, course: title[id] || '', r: resp[rid], shown: true }); });
+            Object.entries(this._tm.byId).forEach(([rid, e]) => { if (e.course === id && e.show && resp[rid] && !resp[rid].manual) out.push({ courseId: id, course: title[id] || '', r: resp[rid], shown: true }); });
             this._tmCandidates(id).forEach(r => { const a = scores[this._tmAiKey(r.text)]; if (!a || a.s >= 3) out.push({ courseId: id, course: title[id] || '', r }); });
         });
         return out;
@@ -437,6 +445,7 @@ Object.assign(window.App, {
     // One quality view for picking and reviewing: the testimonial check where it has run, else the report score.
     // ok = may be picked; rank (0–10) orders them; weak = a reason to take a shown one off; label for the screen.
     _tmQ(courseId, r) {
+        if (r && r.manual) return { judged: false, ok: true, no: false, s: 5, text: '', rank: 10, label: 'added by hand', weak: '' };   // chosen by a person: never checked or replaced
         const j = this._tmVerdict(courseId, r);
         if (j) return { judged: true, ok: j.v === 'use', no: j.v === 'no', s: j.v === 'use' ? j.s : 0, text: j.t && j.pv === this._tmJudgeVersion() ? j.t : '', rank: j.v === 'use' ? j.s * 2 : j.v === 'weak' ? Math.min(j.s, 1) : 0,
             label: j.v === 'use' ? 'testimonial ' + j.s + '/5' : j.v === 'weak' ? 'weak: ' + (this.TM_REASON[j.r] || j.r) : 'not a testimonial: ' + (this.TM_REASON[j.r] || j.r),
@@ -713,6 +722,7 @@ Object.assign(window.App, {
         const q = this._tmQ(e.course, r);
         if (q.weak) return q.weak;                                          // the check's own verdict first
         if (this._tmRel && this._tmRel[r.id]) return this._tmRel[r.id];      // then the rules across testimonials
+        if (r.manual) return this._tmHeld(e.text || r.text) ? 'personal details in the text' : '';
         if (q.rank == null) return '';   // not checked: no verdict
         if (r.stars && r.stars < 4) return r.stars + ' stars';
         if (!this._tmPraiseQ(r.q)) return 'an answer to "' + this._tmQLabel(r.q) + '"';
@@ -1069,7 +1079,8 @@ Object.assign(window.App, {
         return head + '<div class="mb-4 flex items-center gap-3 flex-wrap"><button onclick="App.tmPickCourse(null)" class="text-xs font-bold text-gsf-boston hover:underline">← All courses</button>'
             + '<h3 class="text-lg font-bold text-gsf-prussian">' + esc(c.title) + '</h3><span class="text-xs text-slate-400">' + esc(c.provider) + ' · ' + this.formatNumber(all.length) + ' comments · ' + x.waiting + ' new since ' + (rev ? 'review on ' + esc(rev.slice(0, 10)) : 'never reviewed') + '</span>'
             + (shownList.length < this._tmTarget() ? '<button data-edit-only onclick="App.tmPickBest([\'' + cidJs + '\'], this)" class="ml-auto px-3 py-1.5 text-xs font-bold rounded-lg bg-gsf-boston hover:bg-gsf-prussian text-white" title="Add the best AI-screened comments, up to ' + this._tmTarget() + ' in all">Pick the best' + (shownList.length ? ' to fill up to ' + this._tmTarget() : ' ' + this._tmTarget()) + '</button>' : '')
-            + '<button data-edit-only onclick="App.tmMarkReviewed(\'' + cidJs + '\')" class="' + (shownList.length < this._tmTarget() ? '' : 'ml-auto ') + ' px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-200 hover:border-gsf-boston text-gsf-prussian" title="Everything received until now stops counting as new">Mark reviewed</button></div>'
+            + '<button data-edit-only onclick="App.tmOpenManual(\'' + cidJs + '\')" class="' + (shownList.length < this._tmTarget() ? '' : 'ml-auto ') + ' px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-200 hover:border-gsf-boston text-gsf-prussian" title="Something a learner told you by email or elsewhere">+ Add a testimonial</button>'
+            + '<button data-edit-only onclick="App.tmMarkReviewed(\'' + cidJs + '\')" class="px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-200 hover:border-gsf-boston text-gsf-prussian" title="Everything received until now stops counting as new">Mark reviewed</button></div>'
             + '<div class="bg-white rounded-xl shadow-sm border p-5 mb-5"><h4 class="text-sm font-bold text-gsf-prussian mb-3">On the course page (' + shownList.length + ')</h4>'
             + (shownList.length ? shownList.map((r, i) => card(r, i, shownList.length)).join('') : '<p class="text-sm text-slate-400">None yet: switch comments on below.</p>') + '</div>'
             + (offList.length ? '<div class="bg-white rounded-xl shadow-sm border border-dashed p-5 mb-5"><h4 class="text-sm font-bold text-gsf-prussian">Switched off (' + offList.length + ')</h4>'
