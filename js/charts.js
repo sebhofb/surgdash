@@ -254,6 +254,13 @@ window.Charts = {
     // Expand a sparse list of YYYY-MM months into the CONTIGUOUS range from first→last,
     // so a zero-activity month renders as a flat segment instead of vanishing from the
     // axis (which makes a cumulative line jump, e.g. Nov→Jan, and looks like missing data).
+    // A round axis top at or above v (1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8 × a power of ten); 0 for nothing.
+    _niceMax: function(v) {
+        v = Number(v) || 0; if (v <= 0) return 0;
+        const p = Math.pow(10, Math.floor(Math.log10(v)));
+        for (const m of [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]) if (m * p >= v) return m * p;
+        return 10 * p;
+    },
     _fillMonthRange: function(months) {
         const valid = (months || []).filter(m => /^\d{4}-\d{2}$/.test(m)).sort();
         if (valid.length < 2) return months || [];
@@ -630,16 +637,20 @@ window.Charts = {
         // Continuous month axis — a zero-activity month stays as a flat point, not a gap.
         months = this._fillMonthRange(months);
 
+        // Compute cumulative values for the FULL series (the month in progress too) so that trimming
+        // to a window preserves the true cumulative total at each point.
+        let fullCum = {}; let running = 0;
+        months.forEach(m => { running += (Number(monthlyData[m]) || 0); fullCum[m] = running; });
+        // Both scales come from every month, the one in progress included, so ticking "Include <month>"
+        // only adds or removes that month: the other points stay where they are. The axes used to
+        // rescale to the last month shown, and October's point moved when November was ticked (Seb, 2 Nov 2026).
+        const allMonths = months;
+
         // Drop the current incomplete month unless the user has opted to include it
         if (months.length > 0 && this._isPartialMonth(months[months.length - 1]) && !this._shouldIncludePartial()) {
             months = months.slice(0, -1);
         }
         if (months.length === 0) { this.clearChart(elementId, "No complete months yet — toggle 'Include current month' to see partial data."); return; }
-
-        // Compute cumulative values for the FULL series so that trimming to a window
-        // preserves the true cumulative total at each point.
-        let fullCum = {}; let running = 0;
-        months.forEach(m => { running += (Number(monthlyData[m]) || 0); fullCum[m] = running; });
 
         // Apply month-limit window (keep last N months) before building the chart's DataTable
         let visibleMonths = months;
@@ -661,25 +672,29 @@ window.Charts = {
 
         // Determine y-axis min: 0 (honest) or trimmed below first visible cumulative value (dramatic)
         const firstCum = fullCum[visibleMonths[0]] || 0;
-        const lastCum  = fullCum[visibleMonths[visibleMonths.length - 1]] || 0;
+        const lastCum  = fullCum[allMonths[allMonths.length - 1]] || 0;
         let yMin = 0;
         if (trimYAxis && firstCum > 0 && lastCum > firstCum) {
             // Pad ~5% below the first visible cumulative so the line doesn't touch the axis
             const span = lastCum - firstCum;
             yMin = Math.max(0, Math.floor(firstCum - span * 0.05));
         }
+        const firstShown = allMonths.indexOf(visibleMonths[0]);
+        const barMax = allMonths.slice(firstShown).reduce((a, m) => Math.max(a, Math.round(Number(monthlyData[m]) || 0)), 0);
+        const cumMax = this._niceMax(lastCum), monMax = this._niceMax(barMax);
 
         if (showBars) {
             const lineColor = color || GSF_COLORS[0];
             const opts = {
                 colors: [lineColor, lineColor],
-                seriesType: 'line', series: { 0: { type: 'line', lineWidth: 2.5, pointSize: 4, targetAxisIndex: 0, curveType: 'function' }, 1: { type: 'bars', targetAxisIndex: 1, opacity: 0.35 } },
+                // straight segments: a running total never falls, and a smoothed curve bulged above the real points
+                seriesType: 'line', series: { 0: { type: 'line', lineWidth: 2.5, pointSize: 4, targetAxisIndex: 0 }, 1: { type: 'bars', targetAxisIndex: 1, opacity: 0.35 } },
                 chartArea: { left: 55, right: 20, top: 35, bottom: 75, height: '65%' },
                 legend: { position: 'top', textStyle: { fontSize: 11, color: '#64748b' } },
                 hAxis: this.hAxisDefaults(),
                 vAxes: {
-                    0: { textStyle: { color: '#94a3b8', fontSize: 11 }, gridlines: { color: '#f1f5f9', count: 6 }, viewWindow: { min: yMin }, format: 'short', baselineColor: '#e2e8f0' },
-                    1: { textStyle: { color: '#cbd5e1', fontSize: 10 }, gridlines: { color: 'transparent' }, viewWindow: { min: 0 }, format: 'short' }
+                    0: { textStyle: { color: '#94a3b8', fontSize: 11 }, gridlines: { color: '#f1f5f9', count: 6 }, viewWindow: { min: yMin, max: cumMax || undefined }, format: 'short', baselineColor: '#e2e8f0' },
+                    1: { textStyle: { color: '#cbd5e1', fontSize: 10 }, gridlines: { color: 'transparent' }, viewWindow: { min: 0, max: monMax || undefined }, format: 'short' }
                 },
                 bar: { groupWidth: '55%' },
                 backgroundColor: 'transparent',
@@ -691,11 +706,10 @@ window.Charts = {
         } else {
             const opts = {
                 colors: [color || GSF_COLORS[0]],
-                curveType: 'function',
                 chartArea: { left: 55, right: 20, top: 35, bottom: 75, height: '68%' },
                 legend: { position: 'top', textStyle: { fontSize: 11, color: '#64748b' } },
                 hAxis: this.hAxisDefaults(),
-                vAxis: { textStyle: { color: '#94a3b8', fontSize: 11 }, gridlines: { color: '#f1f5f9', count: 6 }, viewWindow: { min: yMin }, format: 'short', baselineColor: '#e2e8f0' },
+                vAxis: { textStyle: { color: '#94a3b8', fontSize: 11 }, gridlines: { color: '#f1f5f9', count: 6 }, viewWindow: { min: yMin, max: cumMax || undefined }, format: 'short', baselineColor: '#e2e8f0' },
                 lineWidth: 2.5, pointSize: 4,
                 backgroundColor: 'transparent',
                 animation: { startup: false, duration: 0 }, focusTarget: 'datum',
