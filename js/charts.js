@@ -383,7 +383,6 @@ window.Charts = {
 
             const comboOpts = {
                 colors: allColors, seriesType: 'line', series: series,
-                curveType: 'function',
                 chartArea: { left: 55, right: 20, top: 35, bottom: 75, height: '65%' },
                 legend: { position: 'top', maxLines: 2, textStyle: { fontSize: 11, color: '#64748b' } },
                 hAxis: this.hAxisDefaults(),
@@ -401,7 +400,6 @@ window.Charts = {
         } else {
             const lineOpts = {
                 colors: visibleColors,
-                curveType: 'function',
                 chartArea: { left: 55, right: 20, top: 35, bottom: 75, height: '68%' },
                 legend: { position: 'top', maxLines: 2, textStyle: { fontSize: 11, color: '#64748b' } },
                 hAxis: this.hAxisDefaults(),
@@ -569,7 +567,7 @@ window.Charts = {
         const fbOpts = {
             colors: showBars ? [GSF_COLORS[3], GSF_COLORS[2]] : [GSF_COLORS[2]],
             seriesType: showBars ? 'bars' : 'line',
-            series: showBars ? { 0: { type: 'bars', targetAxisIndex: 1, opacity: 0.4 }, 1: { type: 'line', targetAxisIndex: 0, lineWidth: 3, pointSize: 5, curveType: 'function' } } : { 0: { type: 'line', lineWidth: 3, pointSize: 5, curveType: 'function' } },
+            series: showBars ? { 0: { type: 'bars', targetAxisIndex: 1, opacity: 0.4 }, 1: { type: 'line', targetAxisIndex: 0, lineWidth: 3, pointSize: 5 } } : { 0: { type: 'line', lineWidth: 3, pointSize: 5 } },
             chartArea: { left: 55, right: 55, top: 35, bottom: 75, height: '65%' },
             legend: { position: 'top', textStyle: { fontSize: 11, color: '#64748b' } },
             hAxis: this.hAxisDefaults(),
@@ -607,7 +605,7 @@ window.Charts = {
             colors: [GSF_COLORS[3], GSF_COLORS[1]],
             seriesType: 'bars',
             series: { 0: { type: 'bars', targetAxisIndex: 0, opacity: 0.55 },
-                      1: { type: 'line', targetAxisIndex: 0, lineWidth: 3, pointSize: 4, curveType: 'function' } },
+                      1: { type: 'line', targetAxisIndex: 0, lineWidth: 3, pointSize: 4 } },
             chartArea: { left: 55, right: 25, top: 35, bottom: 75, height: '65%' },
             legend: { position: 'top', textStyle: { fontSize: 11, color: '#64748b' } },
             hAxis: this.hAxisDefaults(),
@@ -737,8 +735,12 @@ window.Charts = {
         const el = document.getElementById(elementId);
         if (!el) return;
 
-        let allMonths = Object.keys(monthlyBreakdown).sort();
-        if (allMonths.length === 0) { this.clearChart(elementId); return; }
+        // Everything is computed over every month, the one in progress included (fullMonths); that month is
+        // then only left out of what is drawn. So ticking "Include <month>" adds or removes that month and
+        // nothing else: not the top countries, not the scales (Seb, 2 Nov 2026).
+        const fullMonths = Object.keys(monthlyBreakdown).sort();
+        if (fullMonths.length === 0) { this.clearChart(elementId); return; }
+        let allMonths = fullMonths;
 
         // Drop the current incomplete month unless the user has opted to include it
         if (allMonths.length > 0 && this._isPartialMonth(allMonths[allMonths.length - 1]) && !this._shouldIncludePartial()) {
@@ -748,7 +750,7 @@ window.Charts = {
 
         // Calculate totals for all categories (across full timeline — used for selecting top N)
         let totals = {};
-        allMonths.forEach(m => {
+        fullMonths.forEach(m => {
             Object.entries(monthlyBreakdown[m]).forEach(([cat, count]) => {
                 totals[cat] = (totals[cat] || 0) + count;
             });
@@ -771,7 +773,7 @@ window.Charts = {
         const cumulativeUpTo = {};
         let runningCum = {};
         categories.forEach(c => runningCum[c] = 0);
-        allMonths.forEach(m => {
+        fullMonths.forEach(m => {
             categories.forEach(cat => { runningCum[cat] += (monthlyBreakdown[m][cat] || 0); });
             cumulativeUpTo[m] = { ...runningCum };
         });
@@ -783,14 +785,14 @@ window.Charts = {
         const cumAllUpTo = {};
         let runningAll = {};
         allCatsForPct.forEach(c => runningAll[c] = 0);
-        allMonths.forEach(m => {
+        fullMonths.forEach(m => {
             allCatsForPct.forEach(cat => { runningAll[cat] += (monthlyBreakdown[m][cat] || 0); });
             cumAllUpTo[m] = { ...runningAll };
         });
 
         // What each point displays: the running total (default) or the month's own count.
         const displayUpTo = {}, displayAllUpTo = {};
-        allMonths.forEach(m => {
+        fullMonths.forEach(m => {
             if (monthlyView) {
                 const row = {}; categories.forEach(cat => { row[cat] = monthlyBreakdown[m][cat] || 0; }); displayUpTo[m] = row;
                 const all = {}; allCatsForPct.forEach(cat => { all[cat] = monthlyBreakdown[m][cat] || 0; }); displayAllUpTo[m] = all;
@@ -837,12 +839,22 @@ window.Charts = {
             dataTable.addRow(row);
         });
 
+        // The scales: from the first month shown to the last month there is, shown or not.
+        const axisMonths = fullMonths.slice(Math.max(0, fullMonths.indexOf(monthsToShow[0])));
+        let lineMax = 0, barMax = 0;
+        axisMonths.forEach(m => {
+            let sum = 0;
+            categories.forEach(cat => { lineMax = Math.max(lineMax, displayUpTo[m][cat] || 0); sum += (monthlyBreakdown[m][cat] || 0); });
+            barMax = Math.max(barMax, sum);
+        });
+        const lineTop = this._niceMax(Math.round(lineMax)) || undefined, barTop = this._niceMax(Math.round(barMax)) || undefined;
+
         // Drama-mode y-axis trim: start near the minimum cumulative value across all visible
         // categories at the first visible month, padded ~5% below.
         let yMin = 0;
         if (trimYAxis && monthsToShow.length > 0) {
             const firstM = monthsToShow[0];
-            const lastM = monthsToShow[monthsToShow.length - 1];
+            const lastM = axisMonths[axisMonths.length - 1];
             let lowestFirst = Infinity, highestLast = 0;
             categories.forEach(cat => {
                 const fv = displayUpTo[firstM][cat] || 0;
@@ -870,14 +882,14 @@ window.Charts = {
         if (showBars) {
             // ComboChart: lines for cumulative categories, bars for monthly total
             const series = {};
-            categories.forEach((c, i) => { series[i] = { type: 'line', targetAxisIndex: 0, lineWidth: 2.5, pointSize: 0, curveType: 'function' }; });
+            categories.forEach((c, i) => { series[i] = { type: 'line', targetAxisIndex: 0, lineWidth: 2.5, pointSize: 0 }; });
             series[categories.length] = { type: 'bars', targetAxisIndex: 1, opacity: 0.4 };
             const opts = { ...baseOpts,
                 seriesType: 'line',
                 series,
                 vAxes: {
-                    0: { textStyle: { color: '#94a3b8', fontSize: 11 }, gridlines: { color: '#f1f5f9', count: 6 }, viewWindow: { min: yMin }, format: 'short', baselineColor: '#e2e8f0', title: 'Cumulative' },
-                    1: { textStyle: { color: '#cbd5e1', fontSize: 10 }, gridlines: { color: 'transparent' }, viewWindow: { min: 0 }, format: 'short', title: 'Monthly' }
+                    0: { textStyle: { color: '#94a3b8', fontSize: 11 }, gridlines: { color: '#f1f5f9', count: 6 }, viewWindow: { min: yMin, max: lineTop }, format: 'short', baselineColor: '#e2e8f0', title: 'Cumulative' },
+                    1: { textStyle: { color: '#cbd5e1', fontSize: 10 }, gridlines: { color: 'transparent' }, viewWindow: { min: 0, max: barTop }, format: 'short', title: 'Monthly' }
                 },
                 bar: { groupWidth: '55%' }
             };
@@ -885,8 +897,7 @@ window.Charts = {
             this._registerChart(elementId, 'ComboChart', dataTable, opts);
         } else {
             const opts = { ...baseOpts,
-                curveType: 'function',
-                vAxis: { textStyle: { color: '#94a3b8', fontSize: 11 }, gridlines: { color: '#f1f5f9', count: 6 }, viewWindow: { min: yMin }, format: 'short', baselineColor: '#e2e8f0' },
+                vAxis: { textStyle: { color: '#94a3b8', fontSize: 11 }, gridlines: { color: '#f1f5f9', count: 6 }, viewWindow: { min: yMin, max: lineTop }, format: 'short', baselineColor: '#e2e8f0' },
                 lineWidth: 2.5, pointSize: 0
             };
             new google.visualization.LineChart(el).draw(dataTable, opts);

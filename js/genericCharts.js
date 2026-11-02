@@ -180,7 +180,6 @@ window.GenericCharts = {
             legend: 'none',
             chartArea: { left: 40, right: 10, top: 10, bottom: 28, width: '85%', height: '76%' },
             colors: target > 0 ? [color, '#94a3b8'] : [color],
-            curveType: 'function',
             lineWidth: 2.5,
             pointSize: 4,
             series: target > 0 ? {
@@ -223,7 +222,6 @@ window.GenericCharts = {
             chartArea: { left: 60, right: 20, top: 20, bottom: 40, width: '85%', height: '78%' },
             colors: [projectColor || '#4389C8'],
             areaOpacity: 0.15,
-            curveType: 'function',
             lineWidth: 2.5,
             pointSize: 5,
             hAxis: { format: 'MMM yyyy', textStyle: { fontSize: 11, color: '#64748b' }, baselineColor: '#e2e8f0', gridlines: { color: 'transparent' } },

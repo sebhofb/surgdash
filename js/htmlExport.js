@@ -304,7 +304,7 @@ Object.assign(window.App, {
           G.months.forEach(function(p){ var row = [p.m]; ce += p.e; cc += p.c; if (showE) row.push(Math.round(ce)); if (showC) row.push(Math.round(cc)); if (bars && showE) row.push(Math.round(p.e)); if (bars && showC) row.push(Math.round(p.c)); dt.addRow(row); });
           var colors = []; if (showE) colors.push('#1a5276'); if (showC) colors.push('#4389C8');
           var nLines = colors.length, series = {}, i;
-          for (i = 0; i < nLines; i++) series[i] = { type:'line', lineWidth:2.5, pointSize:4, targetAxisIndex:0, curveType:'function' };
+          for (i = 0; i < nLines; i++) series[i] = { type:'line', lineWidth:2.5, pointSize:4, targetAxisIndex:0 };
           var bi = nLines;
           if (bars && showE) { colors.push('#1a5276'); series[bi] = { type:'bars', targetAxisIndex:1, opacity:0.35 }; bi++; }
           if (bars && showC) { colors.push('#4389C8'); series[bi] = { type:'bars', targetAxisIndex:1, opacity:0.35 }; bi++; }
@@ -314,7 +314,7 @@ Object.assign(window.App, {
             vAxes:{0:{textStyle:{color:'#94a3b8',fontSize:11},gridlines:{color:'#f1f5f9'},viewWindow:{min:0},format:'short'},1:{textStyle:{color:'#cbd5e1',fontSize:10},gridlines:{color:'transparent'},viewWindow:{min:0},format:'short'}},
             bar:{groupWidth:'55%'}, tooltip:{textStyle:{fontSize:12}} };
           if (bars) { opts.seriesType = 'line'; opts.series = series; new google.visualization.ComboChart(el).draw(dt, opts); }
-          else { opts.curveType = 'function'; opts.lineWidth = 2.5; opts.pointSize = 4; new google.visualization.LineChart(el).draw(dt, opts); }
+          else { opts.lineWidth = 2.5; opts.pointSize = 4; new google.visualization.LineChart(el).draw(dt, opts); }
         }
         // ── Feedback chart (avg rating line + optional survey-volume bars) ──
         function drawFeedback(){
@@ -326,7 +326,7 @@ Object.assign(window.App, {
           dt.addColumn('number','Average Rating');
           F.months.forEach(function(p){ var row = [p.m]; if (bars) row.push(p.vol); row.push(p.cnt > 0 ? (p.sum / p.cnt) : null); dt.addRow(row); });
           var opts = { colors: bars ? ['#85c1e9','#D03734'] : ['#D03734'], backgroundColor:'transparent', seriesType: bars ? 'bars' : 'line',
-            series: bars ? {0:{type:'bars',targetAxisIndex:1,opacity:0.4},1:{type:'line',targetAxisIndex:0,lineWidth:3,pointSize:5,curveType:'function'}} : {0:{type:'line',lineWidth:3,pointSize:5,curveType:'function'}},
+            series: bars ? {0:{type:'bars',targetAxisIndex:1,opacity:0.4},1:{type:'line',targetAxisIndex:0,lineWidth:3,pointSize:5}} : {0:{type:'line',lineWidth:3,pointSize:5}},
             chartArea:{left:55,right:55,top:35,bottom:80}, legend:{position:'top',textStyle:{fontSize:11,color:'#64748b'}},
             hAxis:{slantedText:true,slantedTextAngle:45,textStyle:{color:'#94a3b8',fontSize:11}},
             vAxes:{0:{title:'Avg Rating',textStyle:{color:'#94a3b8',fontSize:11},viewWindow:{min:0,max:5.5},gridlines:{color:'#f1f5f9',count:6}},1:{title:'Volume',textStyle:{color:'#cbd5e1',fontSize:10},viewWindow:{min:0},gridlines:{color:'transparent'}}},

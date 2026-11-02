@@ -38,5 +38,19 @@ const trim = draw(false, true, { trimYAxis: true }), trimOn = draw(true, true, {
 check('the trimmed (zoomed) view keeps its floor, and still does not move', trim.opts.vAxes[0].viewWindow.min > 0 && JSON.stringify(trim.opts.vAxes[0].viewWindow) === JSON.stringify(trimOn.opts.vAxes[0].viewWindow));
 check('round axis tops', C._niceMax(3945) === 4000 && C._niceMax(5640) === 6000 && C._niceMax(14745) === 15000 && C._niceMax(101) === 120 && C._niceMax(0) === 0);
 
+// ── the per-country / per-profession chart (drawBreakdownTimeline) ──
+const byCountry = { '2026-08': { India: 300, UAE: 50, Peru: 10 }, '2026-09': { India: 200, UAE: 40, Peru: 5 }, '2026-10': { India: 250, UAE: 30, Peru: 5 }, '2026-11': { India: 10, UAE: 2, Peru: 400 } };
+const bd = (partial, bars, topN, opts) => { ctx.App.includePartialMonth = partial; drawn.length = 0; C.drawBreakdownTimeline('b', byCountry, topN || 5, null, bars, (opts || {}).limit || 'all', !!(opts || {}).trim, 'cumulative'); return drawn[0]; };
+const bOff = bd(false, true), bOn = bd(true, true);
+check('countries: the month in progress is only added or removed', bOff.dt.rows.length === 3 && bOn.dt.rows.length === 4);
+check('countries: October\'s running totals are the same either way', JSON.stringify(bOff.dt.rows[2]) === JSON.stringify(bOn.dt.rows[2]) && bOn.dt.rows[2][1] === 750, JSON.stringify(bOn.dt.rows[2]).slice(0, 120));
+check('countries: neither scale moves', JSON.stringify(bOff.opts.vAxes) === JSON.stringify(bOn.opts.vAxes) && bOn.opts.vAxes[0].viewWindow.max === 800 && bOn.opts.vAxes[1].viewWindow.max === 500, JSON.stringify([bOff.opts.vAxes[0].viewWindow, bOn.opts.vAxes[0].viewWindow, bOff.opts.vAxes[1].viewWindow]));
+const top2off = bd(false, false, 2), top2on = bd(true, false, 2);
+check('countries: the top countries do not change with the toggle', JSON.stringify(top2off.dt.cols) === JSON.stringify(top2on.dt.cols), JSON.stringify([top2off.dt.cols, top2on.dt.cols]));
+check('countries: lines are straight, with or without bars', !bOn.opts.curveType && Object.values(bOn.opts.series).every(x => !x.curveType) && !top2on.opts.curveType && JSON.stringify(top2off.opts.vAxis.viewWindow) === JSON.stringify(top2on.opts.vAxis.viewWindow));
+const tOff = bd(false, false, 5, { trim: true }), tOn = bd(true, false, 5, { trim: true });
+check('countries: the zoomed (trimmed) view does not move either', JSON.stringify(tOff.opts.vAxis.viewWindow) === JSON.stringify(tOn.opts.vAxis.viewWindow));
+check('no chart in the app or its exports smooths its lines (a smoothed running total dips and bulges)', ['charts.js', 'genericCharts.js', 'genericViews.js', 'htmlExport.js', 'reports.js', 'engagementPhase2.js'].every(f => !/curveType/.test(fs.readFileSync(path.join(ROOT, 'js', f), 'utf8'))));
+
 console.log('\n' + ok + '/' + (ok + bad) + ' passed');
 process.exit(bad ? 1 : 0);

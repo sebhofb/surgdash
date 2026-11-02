@@ -355,11 +355,9 @@ Object.assign(window.App, {
                 viewWindow: { min: 0 }, format: 'short', baselineColor: '#e2e8f0'
             },
             series: {
-                0: { color: '#1a5276', lineWidth: 2.5, pointSize: 0, curveType: 'function' },        // Historical
-                1: { color: '#4389C8', lineWidth: 2,   pointSize: 0, lineDashStyle: [6, 4],
-                     curveType: 'function' },                                                          // Linear (dashed)
-                2: { color: '#E28743', lineWidth: 2,   pointSize: 0, lineDashStyle: [3, 3],
-                     curveType: 'function' },                                                          // Compound (dotted)
+                0: { color: '#1a5276', lineWidth: 2.5, pointSize: 0 },        // Historical
+                1: { color: '#4389C8', lineWidth: 2,   pointSize: 0, lineDashStyle: [6, 4] },   // Linear (dashed)
+                2: { color: '#E28743', lineWidth: 2,   pointSize: 0, lineDashStyle: [3, 3] },   // Compound (dotted)
             },
             interpolateNulls: false,
             focusTarget: 'datum',

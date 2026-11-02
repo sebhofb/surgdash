@@ -971,7 +971,7 @@ function drawCharts() {
   var months = Object.keys(tl).sort();
   // Shared chart styling
   var lineOpts = {
-    lineWidth:2, curveType:'function', pointSize:0,
+    lineWidth:2, pointSize:0,
     chartArea:{width:'88%',height:'72%',top:24,bottom:48},
     legend:{position:'top',textStyle:{fontSize:10,color:'#475569'}},
     hAxis:{textStyle:{fontSize:8,color:'#94a3b8'},slantedText:true,slantedTextAngle:45,gridlines:{color:'transparent'},baselineColor:'#e2e8f0'},
@@ -1020,8 +1020,8 @@ function drawCharts() {
         series:{
           0:{type:'bars',targetAxisIndex:1},
           1:{type:'bars',targetAxisIndex:1},
-          2:{type:'line',targetAxisIndex:0,lineWidth:2,pointSize:3,curveType:'function'},
-          3:{type:'line',targetAxisIndex:0,lineWidth:2,pointSize:3,curveType:'function'}
+          2:{type:'line',targetAxisIndex:0,lineWidth:2,pointSize:3},
+          3:{type:'line',targetAxisIndex:0,lineWidth:2,pointSize:3}
         },
         vAxes:{
           0:{title:'',viewWindow:{min:0},textStyle:{fontSize:9,color:'#94a3b8'},gridlines:{color:'#f1f5f9',count:5},minorGridlines:{count:0},baselineColor:'#e2e8f0',format:'#,###'},
@@ -1046,7 +1046,7 @@ function drawCharts() {
     });
     new google.visualization.ComboChart(document.getElementById('chart_feedback')).draw(dt2, Object.assign({}, comboOpts, {
       colors:['#91B5D9','#D03734'], seriesType:'bars',
-      series:{0:{type:'bars',targetAxisIndex:1},1:{type:'line',targetAxisIndex:0,lineWidth:2,pointSize:4,curveType:'function'}},
+      series:{0:{type:'bars',targetAxisIndex:1},1:{type:'line',targetAxisIndex:0,lineWidth:2,pointSize:4}},
       vAxes:{
         0:{title:'',viewWindow:{min:0,max:5},textStyle:{fontSize:9,color:'#94a3b8'},gridlines:{color:'#f1f5f9',count:6},minorGridlines:{count:0},baselineColor:'#e2e8f0'},
         1:{title:'',viewWindow:{min:0},textStyle:{fontSize:9,color:'#94a3b8'},gridlines:{color:'transparent'},minorGridlines:{count:0},baselineColor:'#e2e8f0'}
@@ -1085,8 +1085,8 @@ function drawCharts() {
         series:{
           0:{type:'bars',targetAxisIndex:1},
           1:{type:'bars',targetAxisIndex:1},
-          2:{type:'line',targetAxisIndex:0,lineWidth:2,pointSize:2,curveType:'function'},
-          3:{type:'line',targetAxisIndex:0,lineWidth:2,pointSize:2,curveType:'function'}
+          2:{type:'line',targetAxisIndex:0,lineWidth:2,pointSize:2},
+          3:{type:'line',targetAxisIndex:0,lineWidth:2,pointSize:2}
         },
         vAxes:{
           0:{title:'',viewWindow:{min:0},textStyle:{fontSize:9,color:'#94a3b8'},gridlines:{color:'#f1f5f9',count:5},minorGridlines:{count:0},baselineColor:'#e2e8f0',format:'#,###'},
@@ -1119,7 +1119,7 @@ function drawCharts() {
     });
     new google.visualization.ComboChart(el).draw(dt4, Object.assign({}, comboOpts, {
       colors:['#91B5D9','#D03734'], seriesType:'bars',
-      series:{0:{type:'bars',targetAxisIndex:1},1:{type:'line',targetAxisIndex:0,lineWidth:2,pointSize:3,curveType:'function'}},
+      series:{0:{type:'bars',targetAxisIndex:1},1:{type:'line',targetAxisIndex:0,lineWidth:2,pointSize:3}},
       chartArea:{width:'85%',height:'62%',top:18,bottom:42},
       legend:{position:'top',textStyle:{fontSize:9,color:'#475569'}},
       vAxes:{

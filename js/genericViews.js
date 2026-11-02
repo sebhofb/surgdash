@@ -947,7 +947,6 @@ window.GenericViews = {
             const qOpts = {
                 height: 160,
                 legend: (hasTargets || hasBaseline) ? { position: 'top', alignment: 'end', textStyle: { fontSize: 10, color: '#64748b' } } : 'none',
-                curveType: 'function',
                 colors,
                 chartArea: { left: 42, top: (hasTargets || hasBaseline) ? 26 : 12, right: 12, bottom: 28, width: '85%', height: '74%' },
                 hAxis: { textStyle: { fontSize: 10, color: '#64748b' }, baselineColor: '#e2e8f0', gridlines: { color: 'transparent' }, maxAlternation: 1, showTextEvery: 1 },
