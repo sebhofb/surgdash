@@ -126,6 +126,15 @@ Object.assign(window.App, {
                 awards: ((D.courseAwardMap || {})[c.Course] || []).slice().sort((a, b) => a.rank - b.rank).map(a => sentence(a.label) + (a.rank === 1 ? ' of ' : ': number ' + a.rank + ' of ') + fmt(a.total) + ' courses'),
             };
         });
+        // Learner stories from the blog that mention one of these courses (js/learnerStories.js). Public
+        // stories told with the learner's consent, so the name stays; never passed through scrubPersonal.
+        if (this._lsLoad) { try { await this._lsLoad(); } catch (e) { __swallowed(e, 'pr.stories'); } }
+        const courseIdx = {}; (D.coursesSorted || []).filter(c => c && c.Course).forEach((c, i) => { if (c.CourseId) courseIdx[c.CourseId] = i; });
+        const stories = (this.lsList ? this.lsList(Object.keys(courseIdx)) : []).map(st => {
+            const on = (st.courses || []).filter(id => courseIdx[id] != null).map(id => courseIdx[id]);
+            on.forEach(i => { if (courses[i]) (courses[i].stories = courses[i].stories || []).push(st.id); });
+            return { id: st.id, t: st.title, n: st.name, r: st.role, w: [st.city, st.country].filter(Boolean).join(', '), s: st.summary, q: st.quote, u: /^https:\/\//.test(st.url || '') ? st.url : '', i: /^https:\/\//.test(st.image || '') ? st.image : '', c: on };
+        });
         const awards = (D.providerAwards || []).slice().sort((a, b) => a.rank - b.rank).map(a => sentence(a.label) + (a.rank === 1 ? ' of ' : ': number ' + a.rank + ' of ') + fmt(a.total) + ' providers on SURGhub');
         const firsts = (D.providerCountryAwards || []).filter(c => c.rank === 1).map(c => c.country);
 
@@ -138,7 +147,7 @@ Object.assign(window.App, {
             questions: this._prQuestions(D.surveyQRows),
             summary: (D.fbSummaries && D.fbSummaries['@provider:' + providerName] && D.fbSummaries['@provider:' + providerName].s) || '',
             quotes: allQuotes.filter(q => q.t.length >= 25).slice(0, 6),
-            courses, awards, firsts,
+            courses, awards, firsts, stories,
         };
         const json = JSON.stringify(DATA).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
 
@@ -170,7 +179,7 @@ ${sec('sec-growth', '', 'Growth', 'Enrolments and certificates over time', '<p c
 ${sec('sec-map', 'band', 'Reach', 'Where your learners are', '<p class="intro" id="map-intro"></p><div class="card map-card"><div id="map"></div><div id="toplist"></div></div>')}
 ${sec('sec-impact', 'dark', 'Learning impact', 'What the learning changes', '<p class="intro">From the survey at the end of each course: the share of learners answering 4 or 5 on a scale of 1 to 5. Choose a figure for the question behind it.</p><div class="stats" id="impact"></div>')}
 ${sec('sec-survey', '', 'Survey insights', 'How learners rate the courses', '<p class="intro" id="survey-intro"></p><div class="big2" id="survey-big"></div><div class="card"><div id="questions"></div></div>')}
-${sec('sec-voices', 'band warm', 'Learner voices', 'What learners say', '<div id="voices"></div>')}
+${sec('sec-voices', 'band warm', 'Learner voices', 'What learners say', '<div id="voices"></div><div id="stories"></div>')}
 ${sec('sec-courses', '', 'Courses', 'Course by course', '<p class="intro">Choose a column to sort; choose a course to see its own page.</p><div class="card table-card"><div class="table-scroll"><table class="ctable" id="ctable"></table></div></div>')}
 
 <!--SH-DOWNLOADS-->
@@ -278,6 +287,15 @@ section.dark .stat-v{color:var(--gold)}section.dark .stat-s{color:rgba(255,255,2
 .quote{margin:0;background:#fff;border-radius:12px;padding:28px}
 .quote blockquote{margin:0;font-family:Georgia,"Times New Roman",serif;font-size:17px;line-height:1.65;color:var(--navy)}
 .quote blockquote:before{content:"\\201C";display:block;font-family:Georgia,serif;font-size:56px;line-height:.6;color:var(--orange);margin-bottom:10px}
+.stories h3{font-size:22px;margin:56px 0 6px}.stories>p{color:var(--muted);margin:0 0 24px}
+.story-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:24px}
+.story{display:flex;flex-direction:column;background:#fff;border-radius:12px;overflow:hidden;color:var(--navy);text-decoration:none;border:1px solid var(--line)}
+a.story:hover{text-decoration:none;box-shadow:0 12px 28px rgba(0,47,76,.12)}a.story:hover .story-go{text-decoration:underline}
+.story-img{aspect-ratio:16/9;background:var(--tint) center/cover no-repeat}
+.story-in{padding:22px 24px 24px;display:flex;flex-direction:column;flex:1}
+.story-t{font-weight:700;font-size:19px;line-height:1.3}.story-who{margin-top:6px;font-size:14px;color:var(--muted)}
+.story-s{margin:12px 0 0;font-size:15px;line-height:1.55}.story-q{margin:14px 0 0;font-family:Georgia,"Times New Roman",serif;font-size:16px;line-height:1.55;color:var(--navy)}.story-q:before{content:"\\201C"}.story-q:after{content:"\\201D"}
+.story-c{margin-top:14px;font-size:13px;color:var(--muted)}.story-c b{color:var(--navy)}.story-go{margin-top:auto;padding-top:16px;font-weight:700;color:var(--blue);font-size:15px}
 .quote figcaption{margin-top:16px;font-size:14px}.quote figcaption b{display:block}.quote figcaption span{display:block;color:var(--muted);margin-top:2px}
 .table-card{padding:8px 0 0}.table-scroll{overflow-x:auto}
 .ctable{width:100%;border-collapse:collapse;font-size:14px;min-width:760px}
@@ -437,6 +455,11 @@ function voices(summary,list,note){var h="";
 document.addEventListener("click",function(ev){var b=ev.target.closest?ev.target.closest("[data-more]"):null;if(!b)return;
   if(b.getAttribute("data-more")==="summary"){var sp=b.previousElementSibling;sp.hidden=false;b.remove()}
   else{var box=b.parentNode.previousElementSibling,hid=box.querySelector("div[hidden]");if(hid)hid.hidden=false;b.parentNode.remove()}});
+// learner stories from the blog: a card each, opening the full story
+function storyCards(list,showCourses){return '<div class="story-grid">'+list.map(function(s){var who=[s.n,s.r,s.w].filter(Boolean).join(", ");var cs=showCourses&&s.c.length?'<div class="story-c">About <b>'+s.c.map(function(i){return esc(D.courses[i].name)}).join("</b>, <b>")+'</b></div>':"";
+  var inner=(s.i?'<div class="story-img" style="background-image:url(\\''+esc(s.i)+'\\')"></div>':"")+'<div class="story-in"><div class="story-t">'+esc(s.t)+'</div>'+(who?'<div class="story-who">'+esc(who)+'</div>':"")+(s.s?'<p class="story-s">'+esc(s.s)+'</p>':"")+(s.q?'<p class="story-q">'+esc(s.q)+'</p>':"")+cs+(s.u?'<span class="story-go">Read the story &rarr;</span>':"")+'</div>';
+  return s.u?'<a class="story" href="'+esc(s.u)+'" target="_blank" rel="noopener noreferrer">'+inner+'</a>':'<div class="story">'+inner+'</div>'}).join("")+'</div>'}
+function storiesBlock(list,showCourses,lead){return list&&list.length?'<div class="stories"><h3>Learner stories</h3><p>'+lead+'</p>'+storyCards(list,showCourses)+'</div>':""}
 function quotes(list){return (list||[]).map(function(q){return '<figure class="quote"><blockquote>'+esc(q.t)+'</blockquote><figcaption><b>'+esc(q.w)+'</b>'+(q.c?'<span>'+esc(q.c)+'</span>':'')+'</figcaption></figure>'}).join("")}
 function surveyInfo(x,what){return {e:"Learning impact",b:'<p>From the survey learners fill in at the end of each course. They were asked '+what+', on a scale of 1 to 5; this is the share who answered 4 or 5.</p>'+fact("Learners who answered this question",fmt(x.n))+fact("Answered 4 or 5",fmt(Math.round(x.n*x.pct/100))+" ("+x.pct+"%)")+'<p class="note">Only learners who finish the survey are counted, so the share describes those who answered, not every learner.</p>'}}
 function timeInfo(min,time,enrol){return {e:"Learning impact",t:"Learning time",b:'<p>The time learners spent in the course pages, as SURGhub records it, added up across every learner. It counts time with a course open, not time spent studying away from SURGhub.</p>'+fact("In total",esc(time))+(perHead(min,enrol)?fact("On average per enrolment",perHead(min,enrol)):"")}}
@@ -489,7 +512,9 @@ growth($("growth"),D.monthly);
 if(D.countries.length){$("map-intro").textContent="Learners from "+fmt(D.countries.length)+" countries took your courses. Point at a circle to see the number; the ten largest are listed.";worldMap($("map"),D.countries);$("toplist").innerHTML='<h3>The ten largest</h3>'+bars(D.countries,T.known)+'<p class="note">Country is known for '+fmt(T.known)+' of '+fmt(T.enrol)+' enrolments; shares are of those.</p>'}else $("sec-map").hidden=true;
 var I=impactStats(D.impact);if(I)$("impact").innerHTML=I;else $("sec-impact").hidden=true;
 if(D.questions.length){$("survey-intro").textContent="Every question with at least three answers, across "+fmt(T.resp)+" survey responses. The bar shows the average out of 5; the last column the share answering 4 or 5.";$("questions").innerHTML=questions(D.questions);$("survey-big").innerHTML=bigSurvey(T.rating,T.resp,D.questions)}else $("sec-survey").hidden=true;
-if(D.summary||D.quotes.length)$("voices").innerHTML=voices(D.summary,D.quotes,"A summary of the written answers in the end-of-course surveys.");else $("sec-voices").hidden=true;
+if(D.summary||D.quotes.length)$("voices").innerHTML=voices(D.summary,D.quotes,"A summary of the written answers in the end-of-course surveys.");
+$("stories").innerHTML=storiesBlock(D.stories,true,"Stories published on the SURGhub blog by learners who took your courses.");
+if(!D.summary&&!D.quotes.length&&!D.stories.length)$("sec-voices").hidden=true;
 
 // ── the course table: sortable, each row opens the course page ──
 var cols=[{k:"name",t:"Course"},{k:"enrol",t:"Enrolments"},{k:"cert",t:"Certificates"},{k:"rate",t:"Cert. rate"},{k:"rating",t:"Rating"},{k:"resp",t:"Responses"},{k:"spark",t:"Last 12 months"}];
@@ -514,7 +539,7 @@ function coursePage(c){
    +(rc.length?'<section><div class="wrap"><p class="eyebrow">Ratings</p><h2>Average rating by month</h2><p class="intro">From the end-of-course survey; the bar height is the number of ratings that month. Point at a bar for the figures.</p><div class="card"><div id="cratings" class="chart"></div></div></div></section>':"")
    +(c.countries.length?'<section><div class="wrap"><p class="eyebrow">Reach</p><h2>Where this course\\'s learners are</h2><div class="card"><div class="two"><div>'+bars(c.countries.slice(0,5),c.known)+'</div><div>'+bars(c.countries.slice(5,10),c.known)+'</div></div><p class="note">Country is known for '+fmt(c.known)+' of '+fmt(c.enrol)+' enrolments; shares are of those.</p></div></div></section>':"")
    +(c.questions.length?'<section><div class="wrap"><p class="eyebrow">Survey insights</p><h2>How learners rate this course</h2><div class="big2">'+bigSurvey(c.rating,c.resp,c.questions)+'</div><div class="card">'+questions(c.questions)+'</div></div></section>':"")
-   +((c.summary||c.quotes.length)?'<section><div class="wrap"><p class="eyebrow">Learner voices</p><h2>What learners say</h2>'+voices(c.summary,c.quotes,"A summary of the written answers in this course\\'s survey.")+'</div></section>':"")
+   +((c.summary||c.quotes.length||(c.stories||[]).length)?'<section><div class="wrap"><p class="eyebrow">Learner voices</p><h2>What learners say</h2>'+storiesBlock((c.stories||[]).map(function(id){return D.stories.filter(function(s){return s.id===id})[0]}).filter(Boolean),false,"Stories published on the SURGhub blog by learners who took this course.")+voices(c.summary,c.quotes,"A summary of the written answers in this course\\'s survey.")+'</div></section>':"")
    +'<section style="padding-top:0"><div class="wrap"><a class="back" href="#sec-courses">&larr; All courses</a></div></section>';
   $("course").innerHTML=h;
   growth($("cgrowth"),c.monthly);

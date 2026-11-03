@@ -64,6 +64,8 @@
             // Quotes from the forum posts (js/forumQuotes.js): edited text without names, labels and the
             // ids of posts checked, so the team shares one list and a run only pays for new posts.
             'surghub_forum_quotes': path.join('surghub', 'forum_quotes.json'),
+            // Learner stories from the SURGhub blog tied to the courses they mention (js/learnerStories.js).
+            'surghub_learner_stories': path.join('surghub', 'learner_stories.json'),
             // Course directory fields for the public course feed (coursesFeed.js): CME/CPD and published-on.
             'surghub_course_meta':  path.join('surghub', 'course_meta.json'),
         };
@@ -160,6 +162,7 @@
                 'course_details': 'surghub_course_details',
                 'forum': 'surghub_forum',
                 'forum_quotes': 'surghub_forum_quotes',
+                'learner_stories': 'surghub_learner_stories',
                 'course_meta': 'surghub_course_meta',
                 // Raw feedback-survey responses (updater.js Surveys sync). Its reverse entry
                 // sat in the settings/ map by mistake, so keys() never listed it: it was

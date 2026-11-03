@@ -5536,6 +5536,11 @@ Object.assign(window.App, {
                         <button onclick="App.tmOpenManual()" class="px-4 py-2 bg-gsf-boston text-white font-bold rounded-lg text-sm hover:bg-gsf-prussian transition-colors">+ Add a testimonial</button>
                         <button onclick="App._dashTab='testimonials'; App._tmSection='published'; App._tmPubF = { show: 'manual' }; App.renderView()" class="text-xs font-bold text-gsf-boston hover:underline">See those added by hand</button>
                     </div>
+                    <div data-edit-only class="bg-white rounded-xl shadow-sm border border-slate-200 px-5 py-3 -mt-3 mb-6 flex items-center gap-3 flex-wrap">
+                        <i data-lucide="book-open" class="text-gsf-boston" width="18"></i>
+                        <p class="text-sm text-slate-600 flex-1 min-w-[220px]">Learner stories from the SURGhub blog, tied to the courses they mention, appear on those providers' partner dashboards.</p>
+                        <button onclick="App.lsOpenManager()" class="px-4 py-2 border-2 border-gsf-boston text-gsf-boston font-bold rounded-lg text-sm hover:bg-gsf-tint transition-colors">Learner stories</button>
+                    </div>
                     <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-8">
                         <div class="flex items-start justify-between gap-4 flex-wrap">
                             <div class="min-w-0 flex-1">
