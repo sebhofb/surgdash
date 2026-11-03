@@ -1,5 +1,7 @@
 // GSF Brand Colors — modernised palette with richer tones
-const GSF_COLORS = ['#1a5276', '#3498db', '#e74c3c', '#85c1e9', '#f39c12', '#2471a3', '#48c9b0', '#e57373'];
+// GSF design system chart palette: the primary blues first, then gold and orange (secondary), then the
+// tertiary infographic colours. Neighbouring series differ in lightness, not hue alone.
+const GSF_COLORS = ['#0468b1', '#002f4c', '#91b5d9', '#ff9734', '#ffc145', '#de3a8d', '#7ecc25', '#cf2525'];
 
 // Load Google Charts asynchronously. The gstatic loader is the one dependency we
 // can't vendor (it fetches more scripts at runtime), so guard it: if it didn't load
@@ -234,11 +236,11 @@ window.Charts = {
 
     hAxisDefaults: function() {
         return {
-            textStyle: { color: '#94a3b8', fontSize: 11 },
+            textStyle: { color: '#4a6b82', fontSize: 11 },
             gridlines: { color: 'transparent' },
             slantedText: true,
             slantedTextAngle: 45,
-            baselineColor: '#e2e8f0'
+            baselineColor: '#dee7ef'
         };
     },
 
@@ -384,11 +386,11 @@ window.Charts = {
             const comboOpts = {
                 colors: allColors, seriesType: 'line', series: series,
                 chartArea: { left: 55, right: 20, top: 35, bottom: 75, height: '65%' },
-                legend: { position: 'top', maxLines: 2, textStyle: { fontSize: 11, color: '#64748b' } },
+                legend: { position: 'top', maxLines: 2, textStyle: { fontSize: 11, color: '#4a6b82' } },
                 hAxis: this.hAxisDefaults(),
                 vAxes: {
-                    0: { textStyle: { color: '#94a3b8', fontSize: 11 }, gridlines: { color: '#f1f5f9', count: 6 }, viewWindow: { min: 0 }, format: 'short', baselineColor: '#e2e8f0' },
-                    1: { textStyle: { color: '#cbd5e1', fontSize: 10 }, gridlines: { color: 'transparent' }, viewWindow: { min: 0 }, format: 'short' }
+                    0: { textStyle: { color: '#4a6b82', fontSize: 11 }, gridlines: { color: '#e6f0f8', count: 6 }, viewWindow: { min: 0 }, format: 'short', baselineColor: '#dee7ef' },
+                    1: { textStyle: { color: '#cde1f0', fontSize: 10 }, gridlines: { color: 'transparent' }, viewWindow: { min: 0 }, format: 'short' }
                 },
                 bar: { groupWidth: '55%' },
                 backgroundColor: 'transparent',
@@ -401,9 +403,9 @@ window.Charts = {
             const lineOpts = {
                 colors: visibleColors,
                 chartArea: { left: 55, right: 20, top: 35, bottom: 75, height: '68%' },
-                legend: { position: 'top', maxLines: 2, textStyle: { fontSize: 11, color: '#64748b' } },
+                legend: { position: 'top', maxLines: 2, textStyle: { fontSize: 11, color: '#4a6b82' } },
                 hAxis: this.hAxisDefaults(),
-                vAxis: { textStyle: { color: '#94a3b8', fontSize: 11 }, gridlines: { color: '#f1f5f9', count: 6 }, viewWindow: { min: 0 }, format: 'short', baselineColor: '#e2e8f0' },
+                vAxis: { textStyle: { color: '#4a6b82', fontSize: 11 }, gridlines: { color: '#e6f0f8', count: 6 }, viewWindow: { min: 0 }, format: 'short', baselineColor: '#dee7ef' },
                 lineWidth: 2.5, pointSize: 4,
                 backgroundColor: 'transparent',
                 animation: { startup: false, duration: 0 }, focusTarget: 'datum',
@@ -434,8 +436,8 @@ window.Charts = {
             colors: [color || GSF_COLORS[0]],
             chartArea: { left: 55, right: 15, top: 15, bottom: 90, height: '72%' },
             legend: { position: 'none' },
-            vAxis: { textStyle: { color: '#94a3b8', fontSize: 11 }, gridlines: { color: '#f1f5f9', count: 5 }, viewWindow: { min: 0 }, format: 'short', baselineColor: '#e2e8f0' },
-            hAxis: { textStyle: { color: '#64748b', fontSize: 10 }, slantedText: true, slantedTextAngle: 45 },
+            vAxis: { textStyle: { color: '#4a6b82', fontSize: 11 }, gridlines: { color: '#e6f0f8', count: 5 }, viewWindow: { min: 0 }, format: 'short', baselineColor: '#dee7ef' },
+            hAxis: { textStyle: { color: '#4a6b82', fontSize: 10 }, slantedText: true, slantedTextAngle: 45 },
             animation: { startup: false, duration: 0 },
             bar: { groupWidth: '65%' },
             backgroundColor: 'transparent',
@@ -462,8 +464,8 @@ window.Charts = {
             colors: colors || [GSF_COLORS[0]],
             chartArea: { width: '58%', height: '82%', left: 175, top: 10 },
             legend: { position: 'none' },
-            hAxis: { textStyle: { color: '#94a3b8', fontSize: 11 }, gridlines: { color: '#f1f5f9', count: 5 }, viewWindow: { min: 0 }, format: 'short', baselineColor: '#e2e8f0' },
-            vAxis: { textStyle: { color: '#64748b', fontSize: 11 } },
+            hAxis: { textStyle: { color: '#4a6b82', fontSize: 11 }, gridlines: { color: '#e6f0f8', count: 5 }, viewWindow: { min: 0 }, format: 'short', baselineColor: '#dee7ef' },
+            vAxis: { textStyle: { color: '#4a6b82', fontSize: 11 } },
             animation: { startup: false, duration: 0 },
             bar: { groupWidth: '65%' },
             backgroundColor: 'transparent',
@@ -565,15 +567,15 @@ window.Charts = {
         });
 
         const fbOpts = {
-            colors: showBars ? [GSF_COLORS[3], GSF_COLORS[2]] : [GSF_COLORS[2]],
+            colors: showBars ? [GSF_COLORS[2], GSF_COLORS[0]] : [GSF_COLORS[0]],   // light-blue volume bars, strong-blue rating line
             seriesType: showBars ? 'bars' : 'line',
             series: showBars ? { 0: { type: 'bars', targetAxisIndex: 1, opacity: 0.4 }, 1: { type: 'line', targetAxisIndex: 0, lineWidth: 3, pointSize: 5 } } : { 0: { type: 'line', lineWidth: 3, pointSize: 5 } },
             chartArea: { left: 55, right: 55, top: 35, bottom: 75, height: '65%' },
-            legend: { position: 'top', textStyle: { fontSize: 11, color: '#64748b' } },
+            legend: { position: 'top', textStyle: { fontSize: 11, color: '#4a6b82' } },
             hAxis: this.hAxisDefaults(),
             vAxes: {
-                0: { title: 'Avg Rating', titleTextStyle: { color: '#94a3b8', fontSize: 11, italic: false }, textStyle: { color: '#94a3b8', fontSize: 11 }, viewWindow: { min: 0, max: 5.5 }, gridlines: { color: '#f1f5f9', count: 6 }, baselineColor: '#e2e8f0' },
-                1: { title: 'Volume', titleTextStyle: { color: '#cbd5e1', fontSize: 11, italic: false }, textStyle: { color: '#cbd5e1', fontSize: 10 }, viewWindow: { min: 0 }, gridlines: { color: 'transparent' } }
+                0: { title: 'Avg Rating', titleTextStyle: { color: '#4a6b82', fontSize: 11, italic: false }, textStyle: { color: '#4a6b82', fontSize: 11 }, viewWindow: { min: 0, max: 5.5 }, gridlines: { color: '#e6f0f8', count: 6 }, baselineColor: '#dee7ef' },
+                1: { title: 'Volume', titleTextStyle: { color: '#cde1f0', fontSize: 11, italic: false }, textStyle: { color: '#cde1f0', fontSize: 10 }, viewWindow: { min: 0 }, gridlines: { color: 'transparent' } }
             },
             bar: { groupWidth: '55%' },
             backgroundColor: 'transparent',
@@ -602,16 +604,16 @@ window.Charts = {
         series.forEach(p => dataTable.addRow(withPeople ? [this.formatDate(p.month + '-01'), p.posts, p.people] : [this.formatDate(p.month + '-01'), p.posts]));
 
         const opts = {
-            colors: [GSF_COLORS[3], GSF_COLORS[1]],
+            colors: [GSF_COLORS[2], GSF_COLORS[1]],   // light-blue posts, dark-blue people
             seriesType: 'bars',
             series: { 0: { type: 'bars', targetAxisIndex: 0, opacity: 0.55 },
                       1: { type: 'line', targetAxisIndex: 0, lineWidth: 3, pointSize: 4 } },
             chartArea: { left: 55, right: 25, top: 35, bottom: 75, height: '65%' },
-            legend: { position: 'top', textStyle: { fontSize: 11, color: '#64748b' } },
+            legend: { position: 'top', textStyle: { fontSize: 11, color: '#4a6b82' } },
             hAxis: this.hAxisDefaults(),
-            vAxis: { title: 'Per month', titleTextStyle: { color: '#94a3b8', fontSize: 11, italic: false },
-                     textStyle: { color: '#94a3b8', fontSize: 11 }, viewWindow: { min: 0 }, format: '#,###',
-                     gridlines: { color: '#f1f5f9' } },
+            vAxis: { title: 'Per month', titleTextStyle: { color: '#4a6b82', fontSize: 11, italic: false },
+                     textStyle: { color: '#4a6b82', fontSize: 11 }, viewWindow: { min: 0 }, format: '#,###',
+                     gridlines: { color: '#e6f0f8' } },
             bar: { groupWidth: '60%' },
             backgroundColor: 'transparent',
             animation: { startup: false, duration: 0 },
@@ -688,11 +690,11 @@ window.Charts = {
                 // straight segments: a running total never falls, and a smoothed curve bulged above the real points
                 seriesType: 'line', series: { 0: { type: 'line', lineWidth: 2.5, pointSize: 4, targetAxisIndex: 0 }, 1: { type: 'bars', targetAxisIndex: 1, opacity: 0.35 } },
                 chartArea: { left: 55, right: 20, top: 35, bottom: 75, height: '65%' },
-                legend: { position: 'top', textStyle: { fontSize: 11, color: '#64748b' } },
+                legend: { position: 'top', textStyle: { fontSize: 11, color: '#4a6b82' } },
                 hAxis: this.hAxisDefaults(),
                 vAxes: {
-                    0: { textStyle: { color: '#94a3b8', fontSize: 11 }, gridlines: { color: '#f1f5f9', count: 6 }, viewWindow: { min: yMin, max: cumMax || undefined }, format: 'short', baselineColor: '#e2e8f0' },
-                    1: { textStyle: { color: '#cbd5e1', fontSize: 10 }, gridlines: { color: 'transparent' }, viewWindow: { min: 0, max: monMax || undefined }, format: 'short' }
+                    0: { textStyle: { color: '#4a6b82', fontSize: 11 }, gridlines: { color: '#e6f0f8', count: 6 }, viewWindow: { min: yMin, max: cumMax || undefined }, format: 'short', baselineColor: '#dee7ef' },
+                    1: { textStyle: { color: '#cde1f0', fontSize: 10 }, gridlines: { color: 'transparent' }, viewWindow: { min: 0, max: monMax || undefined }, format: 'short' }
                 },
                 bar: { groupWidth: '55%' },
                 backgroundColor: 'transparent',
@@ -705,9 +707,9 @@ window.Charts = {
             const opts = {
                 colors: [color || GSF_COLORS[0]],
                 chartArea: { left: 55, right: 20, top: 35, bottom: 75, height: '68%' },
-                legend: { position: 'top', textStyle: { fontSize: 11, color: '#64748b' } },
+                legend: { position: 'top', textStyle: { fontSize: 11, color: '#4a6b82' } },
                 hAxis: this.hAxisDefaults(),
-                vAxis: { textStyle: { color: '#94a3b8', fontSize: 11 }, gridlines: { color: '#f1f5f9', count: 6 }, viewWindow: { min: yMin, max: cumMax || undefined }, format: 'short', baselineColor: '#e2e8f0' },
+                vAxis: { textStyle: { color: '#4a6b82', fontSize: 11 }, gridlines: { color: '#e6f0f8', count: 6 }, viewWindow: { min: yMin, max: cumMax || undefined }, format: 'short', baselineColor: '#dee7ef' },
                 lineWidth: 2.5, pointSize: 4,
                 backgroundColor: 'transparent',
                 animation: { startup: false, duration: 0 }, focusTarget: 'datum',
@@ -869,9 +871,9 @@ window.Charts = {
         }
 
         const baseOpts = {
-            colors: GSF_COLORS.slice(0, categories.length).concat(showBars ? ['#94a3b8'] : []),
+            colors: GSF_COLORS.slice(0, categories.length).concat(showBars ? ['#4a6b82'] : []),
             chartArea: { left: 55, right: showBars ? 55 : 20, top: 45, bottom: 75, height: '62%' },
-            legend: { position: 'top', maxLines: 3, textStyle: { fontSize: 10, color: '#64748b' } },
+            legend: { position: 'top', maxLines: 3, textStyle: { fontSize: 10, color: '#4a6b82' } },
             hAxis: this.hAxisDefaults(),
             backgroundColor: 'transparent',
             tooltip: { isHtml: true, trigger: 'focus' },
@@ -888,8 +890,8 @@ window.Charts = {
                 seriesType: 'line',
                 series,
                 vAxes: {
-                    0: { textStyle: { color: '#94a3b8', fontSize: 11 }, gridlines: { color: '#f1f5f9', count: 6 }, viewWindow: { min: yMin, max: lineTop }, format: 'short', baselineColor: '#e2e8f0', title: 'Cumulative' },
-                    1: { textStyle: { color: '#cbd5e1', fontSize: 10 }, gridlines: { color: 'transparent' }, viewWindow: { min: 0, max: barTop }, format: 'short', title: 'Monthly' }
+                    0: { textStyle: { color: '#4a6b82', fontSize: 11 }, gridlines: { color: '#e6f0f8', count: 6 }, viewWindow: { min: yMin, max: lineTop }, format: 'short', baselineColor: '#dee7ef', title: 'Cumulative' },
+                    1: { textStyle: { color: '#cde1f0', fontSize: 10 }, gridlines: { color: 'transparent' }, viewWindow: { min: 0, max: barTop }, format: 'short', title: 'Monthly' }
                 },
                 bar: { groupWidth: '55%' }
             };
@@ -897,7 +899,7 @@ window.Charts = {
             this._registerChart(elementId, 'ComboChart', dataTable, opts);
         } else {
             const opts = { ...baseOpts,
-                vAxis: { textStyle: { color: '#94a3b8', fontSize: 11 }, gridlines: { color: '#f1f5f9', count: 6 }, viewWindow: { min: yMin, max: lineTop }, format: 'short', baselineColor: '#e2e8f0' },
+                vAxis: { textStyle: { color: '#4a6b82', fontSize: 11 }, gridlines: { color: '#e6f0f8', count: 6 }, viewWindow: { min: yMin, max: lineTop }, format: 'short', baselineColor: '#dee7ef' },
                 lineWidth: 2.5, pointSize: 0
             };
             new google.visualization.LineChart(el).draw(dataTable, opts);
@@ -972,11 +974,11 @@ window.Charts = {
         const minVal = Math.min.apply(null, sorted.map(r => r.avg));
         const lo = Math.max(0, Math.floor((minVal - 0.3) * 2) / 2);
         const opts = {
-            colors: ['#D03734'],
+            colors: ['#cf2525'],
             chartArea: { left: 45, right: 15, top: 15, bottom: 90, height: '72%' },
             legend: { position: 'none' },
-            vAxis: { textStyle: { color: '#94a3b8', fontSize: 11 }, gridlines: { color: '#f1f5f9', count: 5 }, viewWindow: { min: lo, max: 5 }, format: '#.0', baselineColor: '#e2e8f0' },
-            hAxis: { textStyle: { color: '#64748b', fontSize: 10 }, slantedText: true, slantedTextAngle: 45 },
+            vAxis: { textStyle: { color: '#4a6b82', fontSize: 11 }, gridlines: { color: '#e6f0f8', count: 5 }, viewWindow: { min: lo, max: 5 }, format: '#.0', baselineColor: '#dee7ef' },
+            hAxis: { textStyle: { color: '#4a6b82', fontSize: 10 }, slantedText: true, slantedTextAngle: 45 },
             animation: { startup: false, duration: 0 },
             bar: { groupWidth: '65%' },
             backgroundColor: 'transparent',
@@ -1106,7 +1108,7 @@ window.Charts = {
                 dt.addRow([(window.countryToISO && window.countryToISO(c)) || c, v, '<div style="padding:8px 12px;font-size:12px"><strong>' + c + '</strong><br>' + v.toLocaleString() + ' learners (' + pct + '%)</div>']);
             });
             new google.visualization.GeoChart(mapEl).draw(dt,
-                { colorAxis: {colors: ['#ebf5fb', '#3498db', '#1a5276'], minValue: 0}, backgroundColor: 'transparent', datalessRegionColor: '#f1f5f9', defaultColor: '#f1f5f9', legend: {textStyle: {fontSize: 11, color: '#64748b'}}, tooltip: {isHtml: true, trigger: 'focus'} }
+                { colorAxis: {colors: ['#e6f0f8', '#0468b1', '#002f4c'], minValue: 0}, backgroundColor: 'transparent', datalessRegionColor: '#e6f0f8', defaultColor: '#e6f0f8', legend: {textStyle: {fontSize: 11, color: '#4a6b82'}}, tooltip: {isHtml: true, trigger: 'focus'} }
             );
         } else {
             this.clearChart('chart_provider_map', 'No country data for this provider.');
@@ -1169,7 +1171,7 @@ window.Charts = {
             dt.addRow([(window.countryToISO && window.countryToISO(c)) || c, v, '<div style="padding:8px 12px;font-size:12px"><strong>' + c + '</strong><br>' + v.toLocaleString() + ' learners (' + pct + '%)</div>']);
         });
         new google.visualization.GeoChart(mapEl).draw(dt,
-            { colorAxis: { colors: ['#ebf5fb', '#3498db', '#1a5276'], minValue: 0 }, backgroundColor: 'transparent', datalessRegionColor: '#f1f5f9', defaultColor: '#f1f5f9', legend: { textStyle: { fontSize: 11, color: '#64748b' } }, tooltip: { isHtml: true, trigger: 'focus' } }
+            { colorAxis: { colors: ['#e6f0f8', '#0468b1', '#002f4c'], minValue: 0 }, backgroundColor: 'transparent', datalessRegionColor: '#e6f0f8', defaultColor: '#e6f0f8', legend: { textStyle: { fontSize: 11, color: '#4a6b82' } }, tooltip: { isHtml: true, trigger: 'focus' } }
         );
     },
 
@@ -1198,7 +1200,7 @@ window.Charts = {
                         dt.addRow([(window.countryToISO && window.countryToISO(c)) || c, v, '<div style="padding:8px 12px;font-size:12px"><strong>' + c + '</strong><br>' + v.toLocaleString() + ' users (' + pct + '%)</div>']);
                     });
                     new google.visualization.GeoChart(mapEl).draw(dt,
-                        { colorAxis: {colors: ['#ebf5fb', '#3498db', '#1a5276'], minValue: 0}, backgroundColor: 'transparent', datalessRegionColor: '#f1f5f9', defaultColor: '#f1f5f9', legend: {textStyle: {fontSize: 11, color: '#64748b'}}, tooltip: {isHtml: true, trigger: 'focus'} }
+                        { colorAxis: {colors: ['#e6f0f8', '#0468b1', '#002f4c'], minValue: 0}, backgroundColor: 'transparent', datalessRegionColor: '#e6f0f8', defaultColor: '#e6f0f8', legend: {textStyle: {fontSize: 11, color: '#4a6b82'}}, tooltip: {isHtml: true, trigger: 'focus'} }
                     );
                 } else { this.clearChart('chart_user_map'); }
             } catch(e) { this.clearChart('chart_user_map'); }
@@ -1282,7 +1284,7 @@ window.Charts = {
         const limit = (window.App && window.App.ambTopLimit) || 15;
         const topN = Object.entries(topData).sort((a, b) => b[1] - a[1]).slice(0, limit);
         const limited = Object.fromEntries(topN);
-        this.drawBarChart('chart_ambassador_bar', limited, 'Ambassador', [ambMetric === 'clicks' ? '#E28743' : GSF_COLORS[0]]);
+        this.drawBarChart('chart_ambassador_bar', limited, 'Ambassador', [ambMetric === 'clicks' ? '#ff9734' : GSF_COLORS[0]]);
 
         // Ambassador timeline: build from ALL promoters, let selector + drawBreakdownTimeline handle display
         if (snap.PromoterTimeline && snap.TopPromoters) {
@@ -1326,10 +1328,10 @@ window.Charts = {
             // lead counts) so points at the median fall to "lower volume" and the
             // lower-volume quadrants actually populate; conversion is ~continuous so >= is fine.
             const hiV = p.leads > medLeads, hiQ = p.conv >= medConv;
-            if (hiV && hiQ) return '#3FB984';   // high volume + high quality (stars)
-            if (hiV && !hiQ) return '#4389C8';  // high volume, lower quality
-            if (!hiV && hiQ) return '#E28743';  // lower volume, high quality (efficient)
-            return '#94A3B8';                   // lower volume, lower quality
+            if (hiV && hiQ) return '#7ecc25';   // high volume + high quality (stars)
+            if (hiV && !hiQ) return '#0468b1';  // high volume, lower quality
+            if (!hiV && hiQ) return '#ff9734';  // lower volume, high quality (efficient)
+            return '#4a6b82';                   // lower volume, lower quality
         };
         const dt = new google.visualization.DataTable();
         dt.addColumn('number', 'Leads');
@@ -1341,8 +1343,8 @@ window.Charts = {
         const opts = {
             height: 380,
             chartArea: { width: '80%', height: '76%', left: 60, top: 15 },
-            hAxis: { title: 'Leads (volume)', textStyle: { color: '#64748b', fontSize: 11 }, titleTextStyle: { color: '#94a3b8', italic: false, fontSize: 11 }, gridlines: { color: '#f1f5f9' }, viewWindow: { min: 0 }, baselineColor: '#e2e8f0' },
-            vAxis: { title: 'Conversion % (quality)', textStyle: { color: '#64748b', fontSize: 11 }, titleTextStyle: { color: '#94a3b8', italic: false, fontSize: 11 }, gridlines: { color: '#f1f5f9' }, viewWindow: { min: 0 }, baselineColor: '#e2e8f0' },
+            hAxis: { title: 'Leads (volume)', textStyle: { color: '#4a6b82', fontSize: 11 }, titleTextStyle: { color: '#4a6b82', italic: false, fontSize: 11 }, gridlines: { color: '#e6f0f8' }, viewWindow: { min: 0 }, baselineColor: '#dee7ef' },
+            vAxis: { title: 'Conversion % (quality)', textStyle: { color: '#4a6b82', fontSize: 11 }, titleTextStyle: { color: '#4a6b82', italic: false, fontSize: 11 }, gridlines: { color: '#e6f0f8' }, viewWindow: { min: 0 }, baselineColor: '#dee7ef' },
             legend: { position: 'none' },
             backgroundColor: 'transparent',
             pointSize: 7,

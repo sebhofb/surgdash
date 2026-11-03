@@ -496,31 +496,31 @@ window.App = {
     },
 
     showMsg(msg, isError = false) {
-        // Non-blocking toast notification
+        // Non-blocking toast in the GSF style: navy for done, gold (dark text) for "look at this",
+        // red for errors. A leading tick, warning sign or sparkle in the text becomes the icon.
         const container = this._toastContainer();
+        const kind = isError === 'warn' ? 'warn' : isError ? 'error' : 'ok';
         const toast = document.createElement('div');
-        toast.style.cssText = `pointer-events:auto;padding:12px 18px;border-radius:10px;font-size:13px;font-weight:500;line-height:1.4;color:#fff;box-shadow:0 4px 20px rgba(0,0,0,0.18);opacity:0;transform:translateY(12px);transition:opacity 0.3s,transform 0.3s;font-family:'Inter',sans-serif;`
-            + (isError === 'warn'
-                ? 'background:linear-gradient(135deg,#f59e0b,#d97706);'      // amber — attention / action available
-                : isError
-                    ? 'background:linear-gradient(135deg,#dc2626,#b91c1c);'  // red — error
-                    : 'background:linear-gradient(135deg,#059669,#047857);'); // green — success
-        toast.textContent = msg;
+        toast.className = 'gsf-toast gsf-toast-' + kind;
+        toast.setAttribute('role', kind === 'error' ? 'alert' : 'status');
+        const text = String(msg == null ? '' : msg).replace(/^[\s✓✔✅⚠️✨☁❌✗✖•·]+/u, '').replace(/\s*[☁✓✔]+\s*$/u, '');
+        toast.innerHTML = '<i data-lucide="' + (kind === 'ok' ? 'check-circle-2' : kind === 'warn' ? 'alert-triangle' : 'alert-octagon') + '" width="18"></i><span></span>';
+        toast.querySelector('span').textContent = text;
         container.appendChild(toast);
-        // Animate in
+        if (window.lucide && lucide.createIcons) { try { lucide.createIcons(); } catch (e) { __swallowed(e, 'toast.icon'); } }
         requestAnimationFrame(() => { toast.style.opacity = '1'; toast.style.transform = 'translateY(0)'; });
-        // Auto-dismiss after 4s
+        // Errors stay a little longer, so there is time to read them
         setTimeout(() => {
             toast.style.opacity = '0';
-            toast.style.transform = 'translateY(12px)';
-            setTimeout(() => toast.remove(), 300);
-        }, 4000);
+            toast.style.transform = 'translateY(8px)';
+            setTimeout(() => toast.remove(), 320);
+        }, kind === 'error' ? 8000 : 4500);
     },
 
     showUndo(msg, undoCallback, timeout = 8000) {
         const container = this._toastContainer();
         const toast = document.createElement('div');
-        toast.style.cssText = 'pointer-events:auto;padding:12px 18px;border-radius:10px;font-size:13px;font-weight:500;line-height:1.4;color:#fff;box-shadow:0 4px 20px rgba(0,0,0,0.18);opacity:0;transform:translateY(12px);transition:opacity 0.3s,transform 0.3s;font-family:\'Inter\',sans-serif;background:linear-gradient(135deg,#334155,#1e293b);display:flex;align-items:center;gap:12px;';
+        toast.className = 'gsf-toast gsf-toast-ok'; toast.style.alignItems = 'center'; toast.style.gap = '12px';
         const textSpan = document.createElement('span');
         textSpan.textContent = msg;
         textSpan.style.flex = '1';

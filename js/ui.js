@@ -2255,7 +2255,7 @@ Object.assign(window.App, {
             const canvas = await html2canvas(el, { scale: 4, backgroundColor: null, useCORS: true });
             const uri = canvas.toDataURL('image/png');
             await electronAPI.invoke('clipboard-write-image', uri);
-            el.style.outline = '2px solid #4389C8';
+            el.style.outline = '2px solid #0468B1';
             setTimeout(() => { el.style.outline = ''; }, 600);
         } catch(e) { console.error('KPI card copy failed:', e); }
     },
@@ -2379,12 +2379,12 @@ Object.assign(window.App, {
         const item = (id, icon, label, distinct, draggable) => {
             const active = id === cur;
             const base = distinct
-                ? `w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-semibold transition-all ${active ? 'bg-white/15 text-white' : 'text-slate-300 hover:bg-white/8 hover:text-white'}`
-                : `w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all ${active ? 'bg-white/15 text-white' : 'text-slate-300 hover:bg-white/5 hover:text-white'}`;
+                ? `w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-bold ${active ? 'bg-gsf-navy-raised text-white' : 'text-white/85 hover:bg-white/10 hover:text-white'}`
+                : `w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm ${active ? 'bg-gsf-navy-raised text-white font-bold' : 'text-white/85 hover:bg-white/10 hover:text-white'}`;
             const dragAttr = draggable ? `draggable="true" data-drag-proj="${id}"` : '';
             return `<button data-proj="${id}" ${dragAttr} onclick="App.switchProject('${id}')" class="${base} ${active ? 'nav-on' : ''}" style="${draggable ? 'cursor:grab' : ''}">
-                ${draggable ? '<i data-lucide="grip-vertical" width="10" class="text-slate-600 shrink-0 opacity-40"></i>' : ''}
-                <i data-lucide="${icon}" width="${distinct ? 16 : 15}" class="${active ? 'text-gsf-polo' : 'text-slate-500'}"></i>
+                ${draggable ? '<i data-lucide="grip-vertical" width="10" class="text-white/30 shrink-0"></i>' : ''}
+                <i data-lucide="${icon}" width="${distinct ? 16 : 15}" class="${active ? 'text-white' : 'text-gsf-polo'}"></i>
                 <span class="truncate flex-1 text-left">${label}</span>
                 <span class="active-dot w-1.5 h-1.5 rounded-full bg-gsf-polo shrink-0 ${active ? 'opacity-100' : 'opacity-0'}"></span>
             </button>`;
@@ -2396,8 +2396,8 @@ Object.assign(window.App, {
         const orgActive = cur === 'org';
         const hubActive = cur === 'surghub';
         html += `<div class="mb-2 px-2">
-            <button data-proj="org" onclick="App.switchProject('org')" class="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-bold transition-all ${orgActive ? 'bg-gradient-to-r from-gsf-polo/30 to-gsf-boston/20 text-white ring-1 ring-gsf-polo/50 shadow-sm shadow-gsf-polo/20' : 'bg-gradient-to-r from-white/8 to-gsf-polo/8 text-slate-200 hover:from-white/12 hover:to-gsf-polo/15 hover:text-white'}">
-                <span class="flex items-center justify-center w-7 h-7 rounded-lg ${orgActive ? 'bg-gsf-polo/40' : 'bg-gsf-polo/15'}"><i data-lucide="building-2" width="14" class="${orgActive ? 'text-white' : 'text-gsf-polo/70'}"></i></span>
+            <button data-proj="org" onclick="App.switchProject('org')" class="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm font-bold ${orgActive ? 'bg-gsf-navy-raised text-white nav-on' : 'bg-white/5 text-white/85 hover:bg-white/10 hover:text-white'}">
+                <span class="flex items-center justify-center w-7 h-7 rounded-md ${orgActive ? 'bg-gsf-boston' : 'bg-white/10'}"><i data-lucide="building-2" width="14" class="${orgActive ? 'text-white' : 'text-gsf-polo'}"></i></span>
                 <span class="flex-1 text-left">Organisation</span>
                 <span class="active-dot w-1.5 h-1.5 rounded-full bg-gsf-polo shrink-0 ${orgActive ? 'opacity-100' : 'opacity-0'}"></span>
             </button>
@@ -2408,7 +2408,7 @@ Object.assign(window.App, {
 
         // ── Projects section ──
         html += `<div>
-            <p class="px-3 pb-1.5 text-[9px] font-bold uppercase tracking-widest"><span class="text-gsf-boston">SURG</span><span class="text-gsf-polo/60">fund Projects</span></p>
+            <p class="px-3 pb-1.5 text-[11px] font-bold uppercase tracking-wider text-gsf-polo">SURGfund projects</p>
             <div id="sidebar-project-list" class="space-y-0.5">`;
         // The sample/demo project only appears in the sidebar when it's blended in
         // (App.includeSample). Keep it visible if it happens to be the current
@@ -2419,28 +2419,26 @@ Object.assign(window.App, {
         } else {
             fieldProjects.forEach(p => {
                 const active = p.id === cur;
-                const pColor = p.color || '#4389C8';
                 const base = active
-                    ? `w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all bg-gradient-to-r from-white/15 to-white/5 text-white ring-1 ring-white/10`
-                    : `w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all text-slate-300 hover:bg-gradient-to-r hover:from-white/8 hover:to-white/3 hover:text-white`;
+                    ? `w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-bold bg-gsf-navy-raised text-white`
+                    : `w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-white/85 hover:bg-white/10 hover:text-white`;
                 const sampleBadge = p.isSample
-                    ? `<span class="text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-400/30 shrink-0" title="Demonstration project — excluded from organisation totals">SAMPLE</span>`
+                    ? `<span class="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-white/10 text-white/85 shrink-0" title="Demonstration project, left out of the organisation totals">Sample</span>`
                     : '';
                 const sampleStyle = p.isSample ? 'opacity:0.85;' : '';
-                html += `<button data-proj="${p.id}" draggable="true" data-drag-proj="${p.id}" onclick="App.switchProject('${p.id}')" class="${base} ${p.isSample ? 'border border-dashed border-purple-400/30' : ''}" style="cursor:grab; ${sampleStyle}">
-                    <i data-lucide="grip-vertical" width="10" class="text-slate-600 shrink-0 opacity-40"></i>
-                    <i data-lucide="${p.icon || 'folder'}" width="15" class="shrink-0" style="color:${pColor}"></i>
+                html += `<button data-proj="${p.id}" draggable="true" data-drag-proj="${p.id}" onclick="App.switchProject('${p.id}')" class="${base} ${active ? 'nav-on' : ''}" style="cursor:grab; ${sampleStyle}">
+                    <i data-lucide="grip-vertical" width="10" class="text-white/30 shrink-0"></i>
+                    <i data-lucide="${p.icon || 'folder'}" width="15" class="shrink-0 ${active ? 'text-white' : 'text-gsf-polo'}"></i>
                     <span class="truncate flex-1 text-left">${p.shortName || p.name}</span>
                     ${sampleBadge}
-                    <span class="active-dot w-1.5 h-1.5 rounded-full shrink-0 ${active ? 'opacity-100' : 'opacity-0'}" style="background:${pColor}"></span>
                 </button>`;
             });
         }
         html += `</div>
-            <button onclick="App.navigate('new-project')" data-edit-only class="w-full flex items-center gap-2.5 px-3 py-2 mt-1 rounded-lg text-xs font-medium text-gsf-polo/60 hover:text-gsf-polo hover:bg-white/5 transition-all">
-                <i data-lucide="plus" width="13"></i> New Project
+            <button onclick="App.navigate('new-project')" data-edit-only class="w-full flex items-center gap-2.5 px-3 py-2 mt-1 rounded-lg text-xs font-bold text-gsf-polo hover:text-white hover:bg-white/10">
+                <i data-lucide="plus" width="13"></i> New project
             </button>
-            <button onclick="App.navigate('pending-submissions')" data-edit-only class="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-medium text-gsf-polo/60 hover:text-gsf-polo hover:bg-white/5 transition-all" id="sidebar-submissions-btn">
+            <button onclick="App.navigate('pending-submissions')" data-edit-only class="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-bold text-gsf-polo hover:text-white hover:bg-white/10" id="sidebar-submissions-btn">
                 <i data-lucide="inbox" width="13"></i> Submissions
                 <span id="sidebar-submissions-badge" class="ml-auto hidden text-[10px] font-black bg-gsf-crimson text-white px-1.5 py-0.5 rounded-full"></span>
             </button>
@@ -2449,11 +2447,10 @@ Object.assign(window.App, {
         // ── SURGhub (separated below projects, project-like style) ──
         html += `<div class="my-2 mx-1 border-t border-white/10"></div>`;
         html += `<div class="px-2">
-            <p class="px-3 pb-1.5 text-[9px] font-bold text-amber-400/50 uppercase tracking-widest">Learning Platform</p>
-            <button data-proj="surghub" onclick="App.switchProject('surghub')" class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-all ${hubActive ? 'bg-gradient-to-r from-amber-500/20 to-amber-400/5 text-white ring-1 ring-amber-400/20' : 'text-slate-300 hover:bg-gradient-to-r hover:from-white/8 hover:to-white/3 hover:text-white'}">
-                <i data-lucide="graduation-cap" width="15" class="shrink-0" style="color:#E28743"></i>
+            <p class="px-3 pb-1.5 text-[11px] font-bold text-gsf-polo uppercase tracking-wider">Learning platform</p>
+            <button data-proj="surghub" onclick="App.switchProject('surghub')" class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm ${hubActive ? 'bg-gsf-navy-raised text-white font-bold nav-on' : 'text-white/85 hover:bg-white/10 hover:text-white'}">
+                <i data-lucide="graduation-cap" width="15" class="shrink-0 ${hubActive ? 'text-white' : 'text-gsf-polo'}"></i>
                 <span class="truncate flex-1 text-left">SURGhub</span>
-                <span class="active-dot w-1.5 h-1.5 rounded-full shrink-0 ${hubActive ? 'opacity-100' : 'opacity-0'}" style="background:#E28743"></span>
             </button>
         </div>`;
 
@@ -2573,8 +2570,9 @@ Object.assign(window.App, {
                 if (btn.classList.contains('cursor-not-allowed')) return; // skip locked tabs
                 const active = btn.dataset.tabView === this.view;
                 btn.className = active
-                    ? 'flex items-center gap-1.5 px-4 py-3 text-sm font-semibold text-gsf-prussian border-b-2 border-[#E0A93F] transition-colors whitespace-nowrap'
-                    : 'flex items-center gap-1.5 px-4 py-3 text-sm font-medium text-slate-500 hover:text-gsf-prussian border-b-2 border-transparent hover:border-slate-200 transition-colors whitespace-nowrap';
+                    ? 'flex items-center gap-1.5 px-3 py-3 text-sm font-bold text-gsf-boston border-b-[3px] border-gsf-boston whitespace-nowrap'
+                    : 'flex items-center gap-1.5 px-3 py-3 text-sm font-bold text-slate-500 hover:text-gsf-prussian border-b-[3px] border-transparent hover:border-gsf-line whitespace-nowrap';
+                btn.setAttribute('aria-current', active ? 'page' : 'false');
             });
             return;
         }
@@ -2589,9 +2587,9 @@ Object.assign(window.App, {
                     <i data-lucide="lock" width="11" class="text-slate-300"></i><i data-lucide="${icon}" width="14"></i><span class="opacity-60">${label}</span>
                 </button>`;
             }
-            return `<button data-tab-view="${view}" onclick="App.navigate('${view}')"
-                class="flex items-center gap-1.5 px-4 py-3 text-sm font-${active ? 'semibold' : 'medium'} ${active ? 'text-gsf-prussian border-b-2 border-[#E0A93F]' : 'text-slate-500 hover:text-gsf-prussian border-b-2 border-transparent hover:border-slate-200'} transition-colors whitespace-nowrap">
-                <i data-lucide="${icon}" width="14"></i>${label}
+            return `<button data-tab-view="${view}" onclick="App.navigate('${view}')" aria-current="${active ? 'page' : 'false'}"
+                class="flex items-center gap-1.5 px-3 py-3 text-sm font-bold ${active ? 'text-gsf-boston border-b-[3px] border-gsf-boston' : 'text-slate-500 hover:text-gsf-prussian border-b-[3px] border-transparent hover:border-gsf-line'} whitespace-nowrap">
+                <i data-lucide="${icon}" width="15"></i>${label}
             </button>`;
         };
         const editLocked = !App.editUnlocked && !!App._editPasswordHash;
@@ -2644,7 +2642,7 @@ Object.assign(window.App, {
             : '';
 
         tabsEl.innerHTML = `<div class="flex items-center overflow-x-auto">
-            <span class="gsf-eyebrow px-5 py-3 whitespace-nowrap border-r border-slate-100 shrink-0">${contextLabel}</span>
+            <span class="gsf-eyebrow px-4 py-3 whitespace-nowrap border-r border-slate-200 shrink-0">${contextLabel}</span>
             ${tabs}
             ${surghubLoadBtn}
         </div>`;
@@ -4113,13 +4111,12 @@ Object.assign(window.App, {
                                     { label: 'Attribution Coverage', value: Math.round((this._referrerBridge.namedReach || 0) / this._referrerBridge.totalBridged * 100) + '%', color: '#94A3B8', icon: 'user-check', sub: this.formatNumber(this._referrerBridge.namedReach || 0) + ' of ' + this.formatNumber(this._referrerBridge.totalBridged) + ' referred learners matched to a roster ambassador' }
                                 ] : [])
                             ].map(k => `<div class="group relative bg-white rounded-xl border shadow-sm overflow-hidden cursor-pointer hover:shadow-md transition-shadow" onclick="App._copyKpiCard(this)">
-                                <div class="h-1" style="background:${k.color}"></div>
-                                <div class="p-6">
-                                    <div class="flex items-center gap-1.5 mb-2"><i data-lucide="${k.icon}" width="14" style="color:${k.color}" class="shrink-0"></i><h3 class="text-[10px] font-bold text-slate-400 uppercase tracking-wide">${k.label}</h3></div>
-                                    <div class="text-4xl font-bold leading-none tracking-tight" style="color:${k.color};font-family:var(--num)">${k.value}</div>
-                                    ${k.sub ? `<div class="text-[10px] text-slate-400 mt-1">${k.sub}</div>` : ''}
+                                                                <div class="p-6">
+                                    <div class="flex items-center gap-1.5 mb-2"><i data-lucide="${k.icon}" width="16" class="shrink-0 text-gsf-boston"></i><h3 class="gsf-kpi-label">${k.label}</h3></div>
+                                    <div class="gsf-kpi-value" style="font-size:36px">${k.value}</div>
+                                    ${k.sub ? `<div class="gsf-kpi-unit">${k.sub}</div>` : ''}
                                 </div>
-                                <div class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"><i data-lucide="copy" width="10" class="text-slate-300"></i></div>
+                                <div class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"><i data-lucide="copy" width="12" class="text-slate-400"></i></div>
                             </div>`).join('')}
                         </div>
 
@@ -4301,12 +4298,11 @@ Object.assign(window.App, {
                             { label: 'Avg Rating', value: pAvg, color: '#D03734', icon: 'star' },
                             { label: 'Survey Resp.', value: this.formatNumber(pResp), raw: pResp, color: '#E28743', icon: 'message-square' },
                         ].map(k => `<div class="group relative bg-white rounded-xl border shadow-sm overflow-hidden cursor-pointer hover:shadow-md transition-shadow" ${k.title ? 'title="'+this.escapeHtml(k.title)+'"' : ''} onclick="App._copyKpiCard(this)">
-                            <div class="h-1" style="background:${k.color}"></div>
-                            <div class="p-4 pb-5">
-                                <div class="flex items-center gap-1.5 mb-2"><i data-lucide="${k.icon}" width="13" style="color:${k.color}" class="shrink-0"></i><p class="text-[10px] font-bold text-slate-400 uppercase tracking-wide">${k.label}</p></div>
-                                <p class="text-[30px] font-bold leading-none tracking-tight" style="color:${k.color};font-family:var(--num)">${k.value}</p>${(k.unit || this._KPI_UNITS[k.label]) ? '<p class="text-[10px] text-slate-400 mt-1.5 leading-tight">' + this.escapeHtml(k.unit || this._KPI_UNITS[k.label]) + '</p>' : ''}
+                                                        <div class="p-4 pb-5">
+                                <div class="flex items-center gap-1.5 mb-2"><i data-lucide="${k.icon}" width="16" class="shrink-0 text-gsf-boston"></i><p class="gsf-kpi-label">${k.label}</p></div>
+                                <p class="gsf-kpi-value">${k.value}</p>${(k.unit || this._KPI_UNITS[k.label]) ? '<p class="gsf-kpi-unit">' + this.escapeHtml(k.unit || this._KPI_UNITS[k.label]) + '</p>' : ''}
                             </div>
-                            <div class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"><i data-lucide="copy" width="10" class="text-slate-300"></i></div>
+                            <div class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"><i data-lucide="copy" width="12" class="text-slate-400"></i></div>
                         </div>`).join('')}
                     </div>
 
@@ -4452,12 +4448,11 @@ Object.assign(window.App, {
                             { label: 'Avg Rating', value: Number(cSnap.Rating) > 0 ? Number(cSnap.Rating).toFixed(2) : '-', color: '#D03734', icon: 'star' },
                             { label: 'Survey Resp.', value: this.formatNumber(cSnap.Responses), raw: cSnap.Responses, color: '#206095', icon: 'message-square' },
                         ].map(k => `<div class="group relative bg-white rounded-xl border shadow-sm overflow-hidden cursor-pointer hover:shadow-md transition-shadow" ${k.title ? 'title="'+this.escapeHtml(k.title)+'"' : ''} onclick="App._copyKpiCard(this)">
-                            <div class="h-1" style="background:${k.color}"></div>
-                            <div class="p-4 pb-5">
-                                <div class="flex items-center gap-1.5 mb-2"><i data-lucide="${k.icon}" width="13" style="color:${k.color}" class="shrink-0"></i><p class="text-[10px] font-bold text-slate-400 uppercase tracking-wide">${k.label}</p></div>
-                                <p class="text-[30px] font-bold leading-none tracking-tight" style="color:${k.color};font-family:var(--num)">${k.value}</p>${(k.unit || this._KPI_UNITS[k.label]) ? '<p class="text-[10px] text-slate-400 mt-1.5 leading-tight">' + this.escapeHtml(k.unit || this._KPI_UNITS[k.label]) + '</p>' : ''}
+                                                        <div class="p-4 pb-5">
+                                <div class="flex items-center gap-1.5 mb-2"><i data-lucide="${k.icon}" width="16" class="shrink-0 text-gsf-boston"></i><p class="gsf-kpi-label">${k.label}</p></div>
+                                <p class="gsf-kpi-value">${k.value}</p>${(k.unit || this._KPI_UNITS[k.label]) ? '<p class="gsf-kpi-unit">' + this.escapeHtml(k.unit || this._KPI_UNITS[k.label]) + '</p>' : ''}
                             </div>
-                            <div class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"><i data-lucide="copy" width="10" class="text-slate-300"></i></div>
+                            <div class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"><i data-lucide="copy" width="12" class="text-slate-400"></i></div>
                         </div>`).join('')}
                     </div>
 
@@ -5530,10 +5525,10 @@ Object.assign(window.App, {
                         <button onclick="App.tmOpenManual()" class="px-4 py-2 bg-gsf-boston text-white font-bold rounded-lg text-sm hover:bg-gsf-prussian transition-colors">+ Add a testimonial</button>
                         <button onclick="App._dashTab='testimonials'; App._tmSection='published'; App._tmPubF = { show: 'manual' }; App.renderView()" class="text-xs font-bold text-gsf-boston hover:underline">See those added by hand</button>
                     </div>
-                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 border-l-4 border-l-gsf-boston p-6 mb-8">
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-8">
                         <div class="flex items-start justify-between gap-4 flex-wrap">
                             <div class="min-w-0 flex-1">
-                                <p class="text-[10px] font-bold uppercase tracking-widest text-gsf-boston mb-2">✨ The SURGhub story</p>
+                                <p class="gsf-eyebrow mb-3"><i data-lucide="sparkles" width="14"></i> The SURGhub story</p>
                                 ${st ? `
                                     <h3 class="text-xl font-black text-gsf-prussian mb-2">${this.escapeHtml(st.h)}</h3>
                                     <p class="text-sm text-slate-600 leading-relaxed whitespace-pre-line">${this.escapeHtml(st.s)}</p>
@@ -5542,7 +5537,7 @@ Object.assign(window.App, {
                                 ` : '<p class="text-sm text-slate-500">One concise, number-anchored narrative of why SURGhub matters — generated from the live platform data. Great for intros, funder emails and board slides.</p>'}
                             </div>
                             <div class="flex flex-col gap-2 shrink-0">
-                                <button data-edit-only onclick="App.generatePlatformStory()" class="px-4 py-2 bg-gsf-boston text-white font-bold rounded-lg text-sm hover:bg-gsf-prussian transition-colors">${st ? '↻ Regenerate' : '✨ Tell the story'}</button>
+                                <button data-edit-only onclick="App.generatePlatformStory()" class="px-4 py-2 bg-gsf-boston text-white font-bold rounded-lg text-sm hover:bg-gsf-prussian transition-colors">${st ? 'Write it again' : 'Tell the story'}</button>
                                 ${st ? '<button onclick="App._copyAiStory(this)" class="px-4 py-2 bg-white border border-slate-300 text-slate-600 font-bold rounded-lg text-sm hover:bg-slate-50 hover:text-gsf-prussian transition-colors">Copy text</button>' : ''}
                             </div>
                         </div>
@@ -5723,13 +5718,12 @@ Object.assign(window.App, {
                     ${this._dataThroughNote()}
                     ${this._anomalyStripHtml ? this._anomalyStripHtml() : ''}
                     <div id="sh-kpi-grid" class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
-                        ${kpiCards.map(k => `<div class="group relative bg-white rounded-xl border shadow-sm overflow-hidden cursor-pointer hover:shadow-md transition-shadow" ${k.title ? 'title="'+this.escapeHtml(k.title)+'"' : ''} onclick="App._copyKpiCard(this)">
-                            <div class="h-1" style="background:${k.color}"></div>
-                            <div class="p-4 pb-5">
-                                <div class="flex items-center gap-1.5 mb-2"><i data-lucide="${k.icon}" width="13" style="color:${k.color}" class="shrink-0"></i><p class="text-[10px] font-bold text-slate-400 uppercase tracking-wide">${k.label}</p></div>
-                                <p class="text-[30px] font-bold leading-none tracking-tight" style="color:${k.color};font-family:var(--num)">${k.value}</p>${(k.unit || this._KPI_UNITS[k.label]) ? '<p class="text-[10px] text-slate-400 mt-1.5 leading-tight">' + this.escapeHtml(k.unit || this._KPI_UNITS[k.label]) + '</p>' : ''}
+                        ${kpiCards.map(k => `<div class="group relative bg-white rounded-xl border shadow-sm overflow-hidden cursor-pointer hover:shadow-md" ${k.title ? 'title="'+this.escapeHtml(k.title)+'"' : ''} onclick="App._copyKpiCard(this)">
+                            <div class="p-5">
+                                <div class="flex items-center gap-2 mb-3"><i data-lucide="${k.icon}" width="16" class="shrink-0 text-gsf-boston"></i><p class="gsf-kpi-label">${k.label}</p></div>
+                                <p class="gsf-kpi-value">${k.value}</p>${(k.unit || this._KPI_UNITS[k.label]) ? '<p class="gsf-kpi-unit">' + this.escapeHtml(k.unit || this._KPI_UNITS[k.label]) + '</p>' : ''}
                             </div>
-                            <div class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"><i data-lucide="copy" width="10" class="text-slate-300"></i></div>
+                            <div class="absolute top-3 right-3 opacity-0 group-hover:opacity-100"><i data-lucide="copy" width="12" class="text-slate-400"></i></div>
                         </div>`).join('')}
                     </div>
 

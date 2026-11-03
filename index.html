@@ -14,19 +14,58 @@
 
     <script src="vendor/tailwind.js"></script>
     <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        'gsf-prussian': '#002F4C',
-                        'gsf-boston': '#4389C8',
-                        'gsf-crimson': '#D03734',
-                        'gsf-polo': '#91B5D9',
-                        'gsf-tango': '#E28743'
+        // GSF design system (Global Surgery Foundation Design System, the organisation's default;
+        // tokens in the <style id="gsf-design-system"> block below). Every colour family the views
+        // use resolves to GSF values here, so ~4,000 class uses follow the brand without editing
+        // each view: slate = the blue-tinted neutrals (400 and up pass 4.5:1 on white), blue/sky/
+        // indigo/violet/purple = the primary blues, amber = gold (text shades darkened to pass),
+        // emerald/green = success, red/rose = error, orange = orange. Status shades that the
+        // brand book does not define are the brand colour darkened until text passes AA.
+        (function () {
+            const neutral = { 50: '#f3f7fb', 100: '#e6f0f8', 200: '#dee7ef', 300: '#cde1f0', 400: '#56748a', 500: '#4a6b82', 600: '#3a5870', 700: '#24475f', 800: '#12395a', 900: '#002f4c', 950: '#001e31' };
+            const blue    = { 50: '#f3f8fc', 100: '#e6f0f8', 200: '#cde1f0', 300: '#91b5d9', 400: '#4f8ac4', 500: '#0468b1', 600: '#035c9d', 700: '#024e85', 800: '#0a3b58', 900: '#002f4c', 950: '#001e31' };
+            const gold    = { 50: '#fff8e8', 100: '#ffefcc', 200: '#ffe3a3', 300: '#ffd47a', 400: '#ffc145', 500: '#ffc145', 600: '#8a5a00', 700: '#704900', 800: '#5a3a00', 900: '#452c00', 950: '#2e1d00' };
+            const green   = { 50: '#f3faea', 100: '#e5f4d3', 200: '#cdeaa8', 300: '#acdd6c', 400: '#96d44b', 500: '#5a9e1a', 600: '#3d7a0c', 700: '#336b0a', 800: '#285408', 900: '#1e4006', 950: '#142b04' };
+            const red     = { 50: '#fdf0f0', 100: '#fadada', 200: '#f4b5b5', 300: '#ec8a8a', 400: '#e04f4f', 500: '#cf2525', 600: '#b71f1f', 700: '#9e1b1b', 800: '#7f1616', 900: '#651111', 950: '#430b0b' };
+            const orange  = { 50: '#fff4ea', 100: '#ffe5cc', 200: '#ffcb99', 300: '#ffb066', 400: '#ff9734', 500: '#ff9734', 600: '#a35200', 700: '#874400', 800: '#6b3600', 900: '#522900', 950: '#361b00' };
+            tailwind.config = {
+                theme: {
+                    extend: {
+                        colors: {
+                            'gsf-prussian': '#002F4C',   // dark blue: body text, navy surfaces
+                            'gsf-boston': '#0468B1',     // strong blue: headings, links, primary buttons (was #4389C8)
+                            'gsf-blue': '#0468B1',
+                            'gsf-crimson': '#CF2525',    // the form error red (was #D03734)
+                            'gsf-polo': '#91B5D9',       // light blue: graphics, small labels on navy only
+                            'gsf-tango': '#FF9734',      // orange: emphasis blocks with dark text (was #E28743)
+                            'gsf-gold': '#FFC145',
+                            'gsf-tint': '#E6F0F8',
+                            'gsf-line': '#CDE1F0',
+                            'gsf-navy-raised': '#173F5C',
+                            slate: neutral, gray: neutral, zinc: neutral, neutral: neutral, stone: neutral,
+                            blue: blue, sky: blue, indigo: blue, violet: blue, purple: blue, cyan: blue, teal: blue,
+                            amber: gold, yellow: gold,
+                            emerald: green, green: green, lime: green,
+                            red: red, rose: red, pink: red,
+                            orange: orange
+                        },
+                        fontFamily: {
+                            sans: ['"GSF Arial"', 'Arial', '"Helvetica Neue"', 'Helvetica', 'sans-serif'],
+                            serif: ['Georgia', '"Times New Roman"', 'Times', 'serif']
+                        },
+                        borderRadius: { sm: '4px', DEFAULT: '6px', md: '6px', lg: '9px', xl: '9px', '2xl': '12px', '3xl': '12px' },
+                        boxShadow: {
+                            sm: '0 1px 2px rgba(0, 47, 76, 0.06)',
+                            DEFAULT: '0 1px 3px rgba(0, 47, 76, 0.08), 0 1px 2px rgba(0, 47, 76, 0.06)',
+                            md: '0 4px 12px rgba(0, 47, 76, 0.10)',
+                            lg: '0 12px 28px rgba(0, 47, 76, 0.14)',
+                            xl: '0 12px 28px rgba(0, 47, 76, 0.14)',
+                            '2xl': '0 12px 28px rgba(0, 47, 76, 0.14)'
+                        }
                     }
                 }
-            }
-        }
+            };
+        })();
     </script>
     
     <script src="vendor/lucide.min.js"></script>
@@ -138,15 +177,22 @@
     <script src="js/storage.js"></script>
 
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
-        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+        /* GSF type: Arial, with Arial Black for the heaviest weights (the brand book's heading face).
+           Arial itself has no 900 face, so "font-black" would only fake-bold; this family maps the
+           weights to the real faces on this Mac: 100-550 Regular, 551-850 Bold, 851-1000 Black. */
+        @font-face { font-family: 'GSF Arial'; font-style: normal; font-weight: 100 550; src: local('ArialMT'), local('Arial'); }
+        @font-face { font-family: 'GSF Arial'; font-style: normal; font-weight: 551 850; src: local('Arial-BoldMT'), local('Arial Bold'); }
+        @font-face { font-family: 'GSF Arial'; font-style: normal; font-weight: 851 1000; src: local('Arial-Black'), local('Arial Black'); }
+        @font-face { font-family: 'GSF Arial'; font-style: italic; font-weight: 100 550; src: local('Arial-ItalicMT'), local('Arial Italic'); }
+        @font-face { font-family: 'GSF Arial'; font-style: italic; font-weight: 551 1000; src: local('Arial-BoldItalicMT'), local('Arial Bold Italic'); }
+        body { font-family: 'GSF Arial', Arial, 'Helvetica Neue', Helvetica, sans-serif; background-color: #ffffff; color: #002F4C; }
         .fade-in { animation: fadeIn 0.3s ease-in-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 4px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f3f7fb; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cde1f0; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #91b5d9; }
         /* Map label tooltips */
         .map-label { background: rgba(255,255,255,.92) !important; border: 1px solid #e2e8f0 !important; border-radius: 5px !important; padding: 2px 7px !important; font-size: 11px !important; font-weight: 600 !important; color: #334155 !important; box-shadow: 0 1px 4px rgba(0,0,0,.10) !important; white-space: nowrap !important; pointer-events: none !important; }
         .map-label::before { display: none !important; }
@@ -216,158 +262,185 @@
         /* Map watermark (always visible, above all Leaflet panes) */
         .map-watermark { position: absolute !important; bottom: 8px !important; right: 10px !important; z-index: 1100 !important; display: flex; align-items: center; gap: 5px; pointer-events: none; opacity: 0.55; }
         .map-watermark img { width: 16px; height: 16px; border-radius: 3px; }
-        .map-watermark span { font-size: 9px; font-weight: 700; color: #002F4C; font-family: 'Inter', sans-serif; letter-spacing: 0.3px; }
+        .map-watermark span { font-size: 9px; font-weight: 700; color: #002F4C; font-family: 'GSF Arial', Arial, sans-serif; letter-spacing: 0.3px; }
     </style>
 
     <!-- ═══════════════════════════════════════════════════════════════════
-         GSF DESIGN SYSTEM  — a single cohesive design language applied app-wide.
-         Tokens + component classes + measured global refinements of the
-         dominant card / table / button patterns, so every view inherits the
-         refreshed look. Inspired by the dark export reports (editorial eyebrow
-         labels, serif stat numbers, restrained accent, consistent cards) but
-         translated to a light, clearly-GSF surface.
+         GSF DESIGN SYSTEM (Nov 2026): the organisation's default design system
+         ("Global Surgery Foundation Design System"). Tokens are copied from its
+         tokens.css; the rules below restyle the patterns every view shares
+         (cards, buttons, tabs, pills, tags, inputs, tables, banners, focus), so
+         the brand reaches every page without per-view edits. The Tailwind theme
+         above maps the colour families to the same tokens.
          ═══════════════════════════════════════════════════════════════════ -->
     <style id="gsf-design-system">
       :root{
-        --gsf-prussian:#002F4C; --gsf-prussian-600:#013a5e; --gsf-boston:#4389C8;
-        --gsf-polo:#91B5D9; --gsf-tango:#E28743; --gsf-crimson:#D03734;
-        --gsf-gold:#E0A93F; --gsf-green:#3FB984;
-        --ink:#0c2336; --muted:#566b81; --faint:#8a9bad;
-        --bg:#eaeff5; --surface:#ffffff; --surface-2:#f5f8fc;
-        --border:#e3e9f1; --border-strong:#cfdae6;
-        --accent:var(--gsf-boston); --accent-warm:var(--gsf-gold);
-        --r-sm:9px; --r:14px; --r-lg:18px;
-        --shadow-sm:0 1px 2px rgba(4,32,56,.04), 0 1px 3px rgba(4,32,56,.05);
-        --shadow:0 2px 6px rgba(4,32,56,.05), 0 10px 28px -10px rgba(4,32,56,.12);
-        --shadow-lg:0 14px 48px -14px rgba(4,32,56,.26);
-        --serif:Georgia,'Times New Roman',serif;
-        --num:'Arial Black','Arial Bold',Arial,'Helvetica Neue',sans-serif;
-        --mono:'Inter',ui-monospace,'SF Mono',monospace;
+        /* brand colours (tokens.css) */
+        --gsf-blue:#0468b1; --gsf-blue-hover:#035c9d; --gsf-blue-active:#024e85;
+        --gsf-blue-light:#91b5d9; --gsf-blue-dark:#002f4c; --gsf-white:#ffffff; --gsf-black:#000000;
+        --gsf-gold:#ffc145; --gsf-orange:#ff9734; --gsf-red:#cf2525; --gsf-green:#7ecc25;
+        --gsf-blue-tint-12:#e6f0f8; --gsf-blue-tint-20:#cde1f0; --gsf-navy-90:#0a3b58; --gsf-navy-tint:#173f5c;
+        /* roles */
+        --text-heading:var(--gsf-blue); --text-body:var(--gsf-blue-dark); --text-muted:#4a6b82;
+        --text-on-dark:#ffffff; --text-on-dark-muted:rgba(255,255,255,.85); --text-link:var(--gsf-blue);
+        --surface-page:#ffffff; --surface-card:#ffffff; --surface-subtle:var(--gsf-blue-tint-12);
+        --surface-navy:var(--gsf-blue-dark); --surface-navy-raised:var(--gsf-navy-tint);
+        --border-default:var(--gsf-blue-tint-20); --border-strong:var(--gsf-blue); --border-subtle:#dee7ef; --border-on-dark:rgba(255,255,255,.22);
+        /* shape, depth, motion */
+        --radius-sm:6px; --radius-web:9px; --radius-md:12px; --radius-pill:999px;
+        --shadow-xs:0 1px 2px rgba(0,47,76,.06);
+        --shadow-sm:0 1px 3px rgba(0,47,76,.08), 0 1px 2px rgba(0,47,76,.06);
+        --shadow-md:0 4px 12px rgba(0,47,76,.10);
+        --shadow-lg:0 12px 28px rgba(0,47,76,.14);
+        --shadow-focus:0 0 0 2px #002f4c, 0 0 0 5px #ffc145;
+        --ease-standard:cubic-bezier(.4,0,.2,1); --dur-fast:120ms; --dur-normal:200ms; --dur-slow:320ms;
+        --font-sans:'GSF Arial', Arial, 'Helvetica Neue', Helvetica, sans-serif; --font-serif:Georgia, 'Times New Roman', Times, serif;
+        /* names the views already use */
+        --gsf-prussian:#002f4c; --gsf-boston:#0468b1; --gsf-polo:#91b5d9; --gsf-tango:#ff9734; --gsf-crimson:#cf2525;
+        --ink:#002f4c; --muted:#4a6b82; --faint:#4a6b82; --bg:#ffffff; --surface:#ffffff; --surface-2:#f3f7fb;
+        --border:#dee7ef; --border-strong:#cde1f0; --accent:var(--gsf-blue); --accent-warm:var(--gsf-gold);
+        --r-sm:6px; --r:9px; --r-lg:12px; --shadow:var(--shadow-md);
+        --serif:var(--font-serif); --num:var(--font-sans); --mono:var(--font-sans);
       }
-      body{ background:var(--bg); -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; font-feature-settings:'cv05','ss01'; }
-      main#main-content, #view-body{ background:var(--bg)!important; }
-      ::selection{ background:rgba(67,137,200,.20); }
+      body{ background:var(--surface-page); color:var(--text-body); font-family:var(--font-sans); -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; }
+      main#main-content, #view-body{ background:var(--surface-page)!important; }
+      ::selection{ background:rgba(4,104,177,.18); }
+      a{ color:var(--text-link); }
+      a:hover{ text-decoration:underline; }
 
-      /* Editorial eyebrow label (kicker) — the export's signature pattern */
-      .gsf-eyebrow{ font-family:var(--mono); font-size:10px; font-weight:700; letter-spacing:.16em; text-transform:uppercase; color:var(--accent); display:inline-flex; align-items:center; gap:9px; }
-      .gsf-eyebrow::before{ content:''; width:18px; height:2px; border-radius:2px; background:var(--accent-warm); }
+      /* Page and section headings: Arial Black, page titles in strong blue (text-heading) */
+      #view-body h1{ font-weight:900; letter-spacing:-.01em; line-height:1.1; }
+      #view-body h1.text-gsf-prussian, #view-body h1.text-slate-800, #view-body h1.text-slate-900{ color:var(--text-heading); }
 
-      /* Big serif stat number — gives KPIs the editorial feel of the exports */
-      .gsf-stat{ font-family:var(--serif); font-weight:700; line-height:1; letter-spacing:-.01em; }
+      /* Eyebrow (overline): Arial Bold 12px, uppercase, 0.08em, strong blue on light */
+      .gsf-eyebrow{ font-family:var(--font-sans); font-size:12px; font-weight:700; letter-spacing:.08em; line-height:1; text-transform:uppercase; color:var(--gsf-blue); display:inline-flex; align-items:center; gap:8px; }
+      .gsf-stat{ font-family:var(--font-sans); font-weight:900; line-height:1; letter-spacing:-.01em; }
 
-      /* ── Measured global refinements of the dominant patterns ──
-         The compound selectors out-specify single Tailwind utilities, so every
-         card / pill that already uses these combos is unified — no per-view edits. */
-      .rounded-xl.border.shadow-sm,
-      .rounded-2xl.border.shadow-sm{
-        border-color:var(--border)!important;
-        border-radius:var(--r)!important;
-        box-shadow:var(--shadow-sm)!important;
-        transition:box-shadow .18s ease, border-color .18s ease, transform .18s ease;
+      /* Cards: white, soft blue-tinted shadow and a light-blue hairline, 9px radius */
+      .rounded-xl.border, .rounded-2xl.border, .rounded-lg.border.shadow-sm{ border-color:var(--border-subtle); }
+      .rounded-xl.border.shadow-sm, .rounded-2xl.border.shadow-sm, .rounded-xl.shadow-sm, .rounded-2xl.shadow-sm{
+        border-color:var(--border-subtle); border-radius:var(--radius-web); box-shadow:var(--shadow-sm);
+        transition:box-shadow var(--dur-normal) var(--ease-standard), border-color var(--dur-normal) var(--ease-standard);
       }
-      .rounded-xl.border.shadow-sm.hover\:shadow-md:hover,
-      .rounded-xl.border.shadow-sm.hover\:shadow-lg:hover{ box-shadow:var(--shadow)!important; border-color:var(--border-strong)!important; }
+      .rounded-xl.border.shadow-sm.hover\:shadow-md:hover, .rounded-xl.border.shadow-sm.hover\:shadow-lg:hover{ box-shadow:var(--shadow-md); border-color:var(--border-default); }
+      /* the brand book has no dashed or rainbow-ringed cards */
+      .border-dashed.rounded-xl, .border-dashed.rounded-2xl{ border-style:solid; }
+      /* nor coloured left-border cards: they become plain hairline cards */
+      .rounded-xl.border-l-4, .rounded-lg.border-l-4, .rounded-2xl.border-l-4{ border-left-width:1px!important; border-left-color:var(--border-subtle)!important; }
 
-      /* Buttons: consistent motion + accessible focus everywhere */
-      button{ transition:background-color .15s, color .15s, border-color .15s, box-shadow .15s, transform .06s; }
-      button:active:not(:disabled){ transform:translateY(.5px); }
-      a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible{
-        outline:2px solid var(--accent); outline-offset:2px; border-radius:6px;
-      }
-      .bg-gsf-boston{ box-shadow:0 1px 2px rgba(4,32,56,.10); }
+      /* Buttons: calm colour changes, no press movement; the GSF focus ring everywhere */
+      button, a, [role="button"]{ transition:background-color var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard), box-shadow var(--dur-fast) var(--ease-standard); }
+      button:focus-visible, a:focus-visible, [role="button"]:focus-visible, [tabindex]:focus-visible, summary:focus-visible{ outline:none; box-shadow:var(--shadow-focus)!important; border-radius:var(--radius-sm); }
+      input:focus-visible, select:focus-visible, textarea:focus-visible{ outline:none; border-color:var(--gsf-blue)!important; box-shadow:0 0 0 3px rgba(255,193,69,.75)!important; }
+      .bg-gsf-boston:hover, .hover\:bg-gsf-prussian:hover{ box-shadow:none; }
+      button:disabled, button[disabled]{ cursor:not-allowed; }
 
-      /* Refined scrollbars (slightly cooler, matches the new bg) */
-      .custom-scrollbar::-webkit-scrollbar-thumb{ background:#c3d0de; }
-      .custom-scrollbar::-webkit-scrollbar-thumb:hover{ background:#9fb1c4; }
+      /* Form controls: 9px radius, light-blue border, brand-blue checks */
+      input[type="checkbox"], input[type="radio"]{ accent-color:var(--gsf-blue); }
+      select, input[type="text"], input[type="search"], input[type="number"], input[type="date"], input[type="email"], input[type="password"], input[type="url"], textarea{ border-color:var(--border-default); }
+      input::placeholder, textarea::placeholder{ color:#56748a; opacity:1; }
 
-      /* Sidebar polish — active item gets a warm accent rail + crisper states */
+      /* Tables: dark-blue text, hairline rules */
+      table thead th{ color:var(--text-muted); }
+      table td, table th{ border-color:var(--border-subtle); }
+
+      /* Scrollbars */
+      .custom-scrollbar::-webkit-scrollbar-thumb{ background:var(--gsf-blue-tint-20); }
+      .custom-scrollbar::-webkit-scrollbar-thumb:hover{ background:var(--gsf-blue-light); }
+
+      /* Sidebar (navy): active item on the raised navy surface with a light-blue rail */
       #project-nav [data-proj], #project-nav button{ position:relative; }
-      #project-nav [data-proj].nav-on::before,
-      #project-nav button[data-proj].nav-on::before{ content:''; position:absolute; left:-3px; top:50%; transform:translateY(-50%); width:3px; height:20px; border-radius:3px; background:var(--gsf-polo); }
+      #project-nav [data-proj].nav-on::before{ content:''; position:absolute; left:-3px; top:50%; transform:translateY(-50%); width:3px; height:20px; border-radius:3px; background:var(--gsf-blue-light); }
 
-      /* Tab bar container — a clean rule under the tabs on every page */
-      #view-tabs{ background:var(--surface); border-bottom:1px solid var(--border); box-shadow:0 1px 0 rgba(4,32,56,.02); }
+      /* Tab bar: a clean rule under the tabs; the active tab is strong blue */
+      #view-tabs{ background:var(--surface-card); border-bottom:1px solid var(--border-subtle); }
+      #view-tabs [data-tab-view]{ font-weight:700; }
 
-      /* Page-enter motion */
-      .fade-in{ animation:gsfIn .28s cubic-bezier(.2,.7,.2,1); }
-      @keyframes gsfIn{ from{ opacity:0; transform:translateY(6px); } to{ opacity:1; transform:none; } }
+      /* KPI tiles (SURGhub dashboard): overline label, Arial Black figure in strong blue */
+      .gsf-kpi-label{ font-size:12px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--text-muted); line-height:1.2; }
+      .gsf-kpi-value{ font-family:var(--font-sans); font-weight:900; font-size:30px; line-height:1; letter-spacing:-.01em; color:var(--gsf-blue); }
+      .gsf-kpi-unit{ font-size:12px; color:var(--text-muted); line-height:1.35; margin-top:6px; }
 
-      /* KPI card refresh — eyebrow label + serif value + accent rail.
-         Targets the dashboard KPI builder markup without per-view edits. */
-      .gsf-kpi{ background:var(--surface); border:1px solid var(--border); border-radius:var(--r); box-shadow:var(--shadow-sm); overflow:hidden; transition:box-shadow .18s, transform .18s, border-color .18s; }
-      .gsf-kpi:hover{ box-shadow:var(--shadow); transform:translateY(-1px); border-color:var(--border-strong); }
-      .gsf-kpi .gsf-kpi-rail{ height:3px; }
-      .gsf-kpi .gsf-kpi-label{ font-family:var(--mono); font-size:9.5px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--faint); }
-      .gsf-kpi .gsf-kpi-value{ font-family:var(--num); font-weight:900; font-size:30px; line-height:1; letter-spacing:-.01em; color:var(--gsf-prussian); }
+      /* Toasts */
+      .gsf-toast{ pointer-events:auto; display:flex; align-items:flex-start; gap:10px; padding:12px 16px; border-radius:var(--radius-web); font-family:var(--font-sans); font-size:14px; font-weight:700; line-height:1.4; box-shadow:var(--shadow-lg); opacity:0; transform:translateY(8px); transition:opacity var(--dur-slow) var(--ease-standard), transform var(--dur-slow) var(--ease-standard); max-width:460px; }
+      .gsf-toast svg{ flex:none; margin-top:1px; }
+      .gsf-toast-ok{ background:var(--gsf-blue-dark); color:#fff; }
+      .gsf-toast-warn{ background:var(--gsf-gold); color:var(--gsf-blue-dark); }
+      .gsf-toast-error{ background:var(--gsf-red); color:#fff; }
+
+      /* Motion: calm fades only, and none for people who ask for less motion */
+      .fade-in{ animation:gsfIn var(--dur-slow) var(--ease-standard); }
+      @keyframes gsfIn{ from{ opacity:0; } to{ opacity:1; } }
+      @media (prefers-reduced-motion: reduce){ *, *::before, *::after{ animation-duration:.01ms!important; animation-iteration-count:1!important; transition-duration:.01ms!important; scroll-behavior:auto!important; } }
     </style>
 </head>
 <body class="text-slate-800 h-screen flex flex-col overflow-hidden">
-    <div id="app-splash" style="position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:#002F4C;color:#fff;transition:opacity .4s"><img src="build/gsf_logo_symbol.png" alt="" style="width:72px;height:72px;border-radius:14px;box-shadow:0 4px 24px rgba(0,0,0,.4)"><div style="font-size:30px;font-weight:900;letter-spacing:-.01em">SURG<span style="color:#91B5D9">dash</span></div><div style="font-size:12px;opacity:.7;letter-spacing:.04em">Data for impact</div><div style="font-size:10px;opacity:.45;margin-top:6px">&copy; GSF</div></div>
+    <div id="app-splash" style="position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:#002F4C;color:#fff;transition:opacity .4s"><img src="build/gsf_symbol_white.png" alt="Global Surgery Foundation" style="width:76px;height:76px"><div style="font-size:32px;font-weight:900;letter-spacing:-.01em;margin-top:6px">SURG<span style="color:#91B5D9">dash</span></div><div style="font-size:14px;font-weight:700;color:rgba(255,255,255,.85)">Data for impact</div><div style="font-size:12px;color:rgba(255,255,255,.6);margin-top:10px">Global Surgery Foundation</div></div>
     <!-- Read-only mode banner (hidden when edit mode is unlocked) -->
-    <div id="viewer-mode-banner" class="shrink-0 items-center justify-between gap-3 px-4 py-2 bg-gsf-prussian/90 text-white text-xs font-semibold z-50">
+    <div id="viewer-mode-banner" class="shrink-0 items-center justify-between gap-3 px-4 py-2 bg-gsf-prussian text-white text-sm font-bold z-50">
         <div class="flex items-center gap-2">
-            <i data-lucide="lock" width="12" class="text-gsf-polo"></i>
-            <span class="text-gsf-polo">Read-only mode — data syncs automatically from Google Sheets.</span>
+            <i data-lucide="lock" width="14" class="text-gsf-polo"></i>
+            <span class="text-white/85">Read-only. The figures update automatically from the shared Google Sheet.</span>
         </div>
-        <button onclick="App.showUnlockPrompt()" class="px-3 py-1 rounded bg-white/10 hover:bg-white/20 transition-colors text-white text-[11px] flex items-center gap-1"><i data-lucide="lock-open" width="10"></i> Unlock Editing</button>
+        <button onclick="App.showUnlockPrompt()" class="px-3 py-1.5 rounded-lg border-2 border-white/70 hover:bg-white/10 text-white text-xs font-bold flex items-center gap-1.5"><i data-lucide="lock-open" width="12"></i> Unlock editing</button>
     </div>
 
     <!-- Provider-reporting mode banner (shown when the reporting role is unlocked) -->
-    <div id="report-mode-banner" class="shrink-0 items-center justify-between gap-3 px-4 py-2 bg-amber-600 text-white text-xs font-semibold z-50">
+    <div id="report-mode-banner" class="shrink-0 items-center justify-between gap-3 px-4 py-2 bg-gsf-gold text-gsf-prussian text-sm font-bold z-50">
         <div class="flex items-center gap-2">
-            <i data-lucide="file-text" width="12"></i>
-            <span>Provider-reporting mode — you can build SURGhub reports and curate testimonials. Other editing stays locked.</span>
+            <i data-lucide="file-text" width="14"></i>
+            <span>Provider-reporting mode: you can build SURGhub reports and choose testimonials. Other editing stays locked.</span>
         </div>
-        <button onclick="App.relock()" class="px-3 py-1 rounded bg-white/15 hover:bg-white/30 transition-colors text-white text-[11px] flex items-center gap-1"><i data-lucide="lock" width="10"></i> Lock</button>
+        <button onclick="App.relock()" class="px-3 py-1.5 rounded-lg bg-gsf-prussian hover:bg-gsf-navy-raised text-white text-xs font-bold flex items-center gap-1.5"><i data-lucide="lock" width="12"></i> Lock</button>
     </div>
 
     <!-- First-time setup banner — prompts for the Google Sheets link (and Claude API key for
          edit/reporting users). Populated + shown/hidden by App._refreshSetupBanner(); vanishes once configured. -->
-    <div id="setup-banner" class="shrink-0 items-center justify-between gap-3 px-4 py-2 bg-gsf-boston text-white text-xs font-semibold z-50" style="display:none;"></div>
+    <div id="setup-banner" class="shrink-0 items-center justify-between gap-3 px-4 py-2 bg-gsf-boston text-white text-sm font-bold z-50" style="display:none;"></div>
 
     <!-- Unsynced-changes banner (shown only in edit mode when local files are newer than last sync) -->
-    <div id="unsynced-banner" class="shrink-0 items-center justify-between gap-3 px-4 py-2 bg-amber-500 text-white text-xs font-semibold z-50" style="display:none;">
+    <div id="unsynced-banner" class="shrink-0 items-center justify-between gap-3 px-4 py-2 bg-gsf-gold text-gsf-prussian text-sm font-bold z-50" style="display:none;">
         <div class="flex items-center gap-2">
             <i data-lucide="cloud-off" width="14"></i>
-            <span>You have unsynced changes — colleagues won't see them until you push to the cloud.</span>
+            <span>You have changes your colleagues cannot see yet. Sync to share them.</span>
         </div>
-        <button onclick="App.syncNow()" class="px-3 py-1 rounded bg-white/15 hover:bg-white/30 transition-colors text-white text-[11px] flex items-center gap-1 font-bold"><i data-lucide="upload-cloud" width="11"></i> Sync now</button>
+        <button onclick="App.syncNow()" class="px-3 py-1.5 rounded-lg bg-gsf-prussian hover:bg-gsf-navy-raised text-white text-xs font-bold flex items-center gap-1.5"><i data-lucide="upload-cloud" width="12"></i> Sync now</button>
     </div>
 
     <!-- New-cloud-data banner — shown when a background check finds the Google Sheet has
          newer data than this device last pulled (only when auto-pull is OFF). Event-driven
          (not body-class), shown/hidden by App._showCloudUpdateBanner / _dismissCloudBanner. -->
-    <div id="cloud-update-banner" class="shrink-0 items-center justify-between gap-3 px-4 py-2 bg-amber-500 text-white text-xs font-semibold z-50" style="display:none;">
+    <div id="cloud-update-banner" class="shrink-0 items-center justify-between gap-3 px-4 py-2 bg-gsf-gold text-gsf-prussian text-sm font-bold z-50" style="display:none;">
         <div class="flex items-center gap-2">
             <i data-lucide="cloud-download" width="14"></i>
             <span id="cloud-update-text">New data is available in the cloud.</span>
         </div>
         <div class="flex items-center gap-2">
-            <button onclick="App.pullFromCloudNow()" class="px-3 py-1 rounded bg-white/20 hover:bg-white/35 transition-colors text-white text-[11px] flex items-center gap-1 font-bold"><i data-lucide="cloud-download" width="11"></i> Pull now</button>
-            <button onclick="App._dismissCloudBanner()" title="Dismiss" class="px-2 py-1 rounded bg-white/10 hover:bg-white/20 transition-colors text-white/80 text-[11px]"><i data-lucide="x" width="11"></i></button>
+            <button onclick="App.pullFromCloudNow()" class="px-3 py-1.5 rounded-lg bg-gsf-prussian hover:bg-gsf-navy-raised text-white text-xs font-bold flex items-center gap-1.5"><i data-lucide="cloud-download" width="12"></i> Update now</button>
+            <button onclick="App._dismissCloudBanner()" title="Dismiss" aria-label="Dismiss" class="px-2 py-1.5 rounded-lg hover:bg-gsf-prussian/10 text-gsf-prussian"><i data-lucide="x" width="14"></i></button>
         </div>
     </div>
     <!-- Sync-key banner: shown when a pull is refused because the Sheet now requires the
          sync key this device does not hold. The colleague pastes the share link right here
          (GenericViews._saveShareLinkFromBanner) instead of hunting for Settings. -->
-    <div id="sync-key-banner" class="shrink-0 items-center justify-between gap-3 px-4 py-2 bg-gsf-prussian text-white text-xs font-semibold z-50" style="display:none;">
+    <div id="sync-key-banner" class="shrink-0 items-center justify-between gap-3 px-4 py-2 bg-gsf-prussian text-white text-sm font-bold z-50" style="display:none;">
         <div class="flex items-center gap-2 min-w-0">
             <i data-lucide="key-round" width="14" class="shrink-0"></i>
             <span id="sync-key-text">Updates are paused: this Google Sheet now requires a sync key. Paste the share link your SURGdash administrator sent you.</span>
         </div>
         <div class="flex items-center gap-2 shrink-0">
             <input id="sync-key-input" type="text" data-viewer-allowed placeholder="https://script.google.com/…/exec#k=…" class="w-80 px-2 py-1 rounded text-[11px] text-slate-800 bg-white outline-none" onkeydown="if(event.key==='Enter'){event.preventDefault();GenericViews._saveShareLinkFromBanner();}" />
-            <button data-viewer-allowed onclick="GenericViews._saveShareLinkFromBanner()" class="px-3 py-1 rounded bg-white/20 hover:bg-white/35 transition-colors text-white text-[11px] flex items-center gap-1 font-bold"><i data-lucide="check" width="11"></i> Save &amp; pull</button>
+            <button data-viewer-allowed onclick="GenericViews._saveShareLinkFromBanner()" class="px-3 py-1 rounded bg-white/20 hover:bg-white/35 transition-colors text-white text-[11px] flex items-center gap-1 font-bold"><i data-lucide="check" width="11"></i> Save and update</button>
             <button data-viewer-allowed onclick="GenericViews._hideSyncKeyBanner()" title="Hide for now" class="px-2 py-1 rounded bg-white/10 hover:bg-white/20 transition-colors text-white/80 text-[11px]"><i data-lucide="x" width="11"></i></button>
         </div>
     </div>
 
     <!-- Sample-active banner — shown on every SURGfund tab (not SURGhub) whenever the
          demonstration project is blended into the figures, so demo data is never mistaken for real data. -->
-    <div id="sample-active-banner" class="shrink-0 items-center justify-between gap-3 px-4 py-2 bg-purple-600 text-white text-xs font-semibold z-50" style="display:none;">
+    <div id="sample-active-banner" class="shrink-0 items-center justify-between gap-3 px-4 py-2 bg-gsf-boston text-white text-sm font-bold z-50" style="display:none;">
         <div class="flex items-center gap-2">
-            <i data-lucide="flask-conical" width="13"></i>
-            <span>Sample project is blended in — these figures include demonstration data, not just real projects.</span>
+            <i data-lucide="flask-conical" width="14"></i>
+            <span>The sample project is included, so these figures contain demonstration data.</span>
         </div>
         <button onclick="App.toggleSampleInclude(false)" class="px-3 py-1 rounded bg-white/15 hover:bg-white/30 transition-colors text-white text-[11px] flex items-center gap-1 font-bold"><i data-lucide="eye-off" width="11"></i> Hide sample</button>
     </div>
@@ -375,10 +448,10 @@
     <aside class="w-64 bg-gsf-prussian text-white flex flex-col shadow-xl z-20 shrink-0">
         <div class="p-5 pb-3 border-b border-white/10">
             <div class="flex items-center gap-3">
-                <img id="sidebar-logo" src="build/gsf_logo_symbol.png" alt="SURGdash" class="w-9 h-9 rounded-lg shadow-md">
+                <img id="sidebar-logo" src="build/gsf_symbol_white.png" alt="Global Surgery Foundation" class="w-9 h-9">
                 <div>
                     <h2 class="text-xl font-black tracking-tight text-white leading-tight">SURG<span class="text-gsf-polo">dash</span></h2>
-                    <p class="text-gsf-polo/50 text-[9px] font-bold uppercase tracking-wider">Data for impact <span id="app-version" class="ml-1 px-1.5 py-0.5 rounded bg-white/10 text-gsf-polo/40 text-[8px] tracking-wide"></span></p>
+                    <p class="text-gsf-polo text-[11px] font-bold uppercase tracking-wider">Data for impact <span id="app-version" class="ml-1 px-1.5 py-0.5 rounded bg-white/10 text-white/85 text-[10px] tracking-wide"></span></p>
                 </div>
             </div>
         </div>
@@ -391,9 +464,9 @@
                     <div class="w-2 h-2 rounded-full bg-green-400"></div> System Ready
                 </div>
                 <div class="flex items-center gap-2">
-                    <button onclick="App.showWhatsNew()" class="flex items-center gap-1 text-[10px] font-semibold text-gsf-polo/50 hover:text-gsf-polo transition-colors" title="What changed in this version"><i data-lucide="sparkles" width="10"></i>What's new</button>
-                    <button onclick="App.startOnboarding(true)" class="text-[10px] font-semibold text-gsf-polo/50 hover:text-gsf-polo transition-colors" title="Show onboarding tips">Tips</button>
-                    <button id="sidebar-lock-btn" onclick="(App._editPasswordHash || App._reportPasswordHash) ? ((App.editUnlocked || App.reportAccess) ? App.relock() : App.showUnlockPrompt()) : null" class="text-gsf-polo/50 hover:text-gsf-polo transition-colors" title="Lock/Unlock editing" style="display:none;">
+                    <button onclick="App.showWhatsNew()" class="flex items-center gap-1 text-[11px] font-bold text-gsf-polo hover:text-white" title="What changed in this version"><i data-lucide="sparkles" width="11"></i>What's new</button>
+                    <button onclick="App.startOnboarding(true)" class="text-[11px] font-bold text-gsf-polo hover:text-white" title="Show onboarding tips">Tips</button>
+                    <button id="sidebar-lock-btn" onclick="(App._editPasswordHash || App._reportPasswordHash) ? ((App.editUnlocked || App.reportAccess) ? App.relock() : App.showUnlockPrompt()) : null" class="text-gsf-polo hover:text-white" title="Lock or unlock editing" aria-label="Lock or unlock editing" style="display:none;">
                         <i data-lucide="lock" width="12"></i>
                     </button>
                 </div>

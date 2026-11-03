@@ -1,5 +1,7 @@
 # SURGdash — UI Refresh notes & future upgrades
 
+> **November 2026:** the app now follows the GSF design system (phase 0), and the current plan is in `IMPROVEMENT_PLAN.md`. The notes below record the June 2026 refresh and its backlog, most of which the plan carries forward.
+
 _Last updated: 13 Jun 2026_
 
 This document records (a) what the **2026-Q2 UI refresh** changed, and (b) a backlog

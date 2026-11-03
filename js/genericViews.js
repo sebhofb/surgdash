@@ -241,7 +241,7 @@ window.GenericViews = {
             `<button onclick="App.kpiYear=${y}; App.renderView()" class="px-3 py-1.5 rounded-lg text-sm font-semibold transition-all ${y === year ? 'bg-gsf-boston text-white' : 'text-slate-500 hover:bg-slate-100'}">${y}</button>`
         ).join('') +
         `<span class="w-px h-5 bg-slate-300 mx-1 inline-block align-middle"></span>` +
-        `<button onclick="App.kpiYear='all'; App.renderView()" class="ml-0.5 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${isAllYear ? 'bg-gsf-prussian text-white shadow-sm' : 'text-gsf-prussian bg-gsf-prussian/10 hover:bg-gsf-prussian/20'}" title="All-time totals across every year"><span class="text-[10px] ${isAllYear ? 'opacity-90' : 'opacity-70'}">★</span> All time</button>` +
+        `<button onclick="App.kpiYear='all'; App.renderView()" class="ml-0.5 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${isAllYear ? 'bg-gsf-prussian text-white shadow-sm' : 'text-gsf-prussian bg-gsf-prussian/10 hover:bg-gsf-prussian/20'}" title="All-time totals across every year">All time</button>` +
         `<button onclick="App.kpiYearMax=${yearMax + 1}; App.renderView()" class="px-2.5 py-1.5 rounded-lg text-sm font-semibold text-slate-400 hover:bg-slate-100" title="Add future year">+</button><button onclick="GenericViews._removeLastYear()" class="px-2.5 py-1.5 rounded-lg text-sm font-semibold text-slate-400 hover:bg-red-50 hover:text-red-500" title="Remove the topmost year (only allowed if it has no data)">−</button>`;
 
         // KPI-id → event field that contributes to it. Used both for the card's event count
@@ -262,37 +262,35 @@ window.GenericViews = {
             const contribCount = evField ? contribPool.filter(e => Number(e[evField]) > 0).length : 0;
             // Use hex alpha suffixes for tinted shades of the KPI's own colour.
             // 0D ≈ 5% opacity (gradient wash) · 1A ≈ 10% (icon bg, track) · 33 ≈ 20% (border, divider)
-            const cardStyle = goalYear
-                ? `background: linear-gradient(135deg, ${kpi.color}08, #ffffff 72%); border: 1.5px dashed ${kpi.color}66`
-                : `background: linear-gradient(135deg, ${kpi.color}0D, #ffffff 65%); border-color: ${kpi.color}33`;
+            // GSF design system: a white card with a hairline; the figure in strong blue; a goal is
+            // a target, not a result, so it is marked with a gold tag and set in dark blue.
+            const cardStyle = '';
             const corner = goalYear
-                ? `<span class="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full whitespace-nowrap" style="color:${kpi.color}; background:${kpi.color}14; border:1px dashed ${kpi.color}80">Goal · ${year}</span>`
-                : `<span class="text-[11px] font-medium" style="color:${kpi.color}; opacity:0.55">${isAllYear ? 'all time' : 'in ' + year}</span>`;
+                ? `<span class="text-[11px] font-bold px-2.5 py-1 rounded-full whitespace-nowrap bg-gsf-gold text-gsf-prussian">Goal for ${year}</span>`
+                : `<span class="text-xs font-bold text-slate-500">${isAllYear ? 'all time' : 'in ' + year}</span>`;
             return `
-            <div class="rounded-xl p-5 border cursor-pointer hover:shadow-lg transition-shadow group relative overflow-hidden"
-                 style="${cardStyle}"
+            <div class="bg-white rounded-xl p-5 border shadow-sm cursor-pointer hover:shadow-md group relative overflow-hidden"
                  onclick="GenericViews._showKpiDetail('${kpi.id}', ${isAllYear ? now.getFullYear() : year})">
-                <div class="absolute top-0 left-0 right-0 h-1" style="background: ${kpi.color}${goalYear ? '; opacity:0.55' : ''}"></div>
-                <p class="text-[10px] font-black uppercase tracking-wider leading-tight mb-0.5" style="color:${kpi.color}">${kpi.nameBig || kpi.name}</p>
-                ${kpi.nameSub ? `<p class="text-[10px] text-slate-500 font-medium leading-tight mb-3">${kpi.nameSub}</p>` : '<div class="mb-3"></div>'}
+                <p class="gsf-kpi-label" style="color:var(--gsf-blue)">${kpi.nameBig || kpi.name}</p>
+                ${kpi.nameSub ? `<p class="text-xs text-slate-500 font-bold leading-tight mt-1 mb-3">${kpi.nameSub}</p>` : '<div class="mb-3"></div>'}
                 <div class="flex items-baseline gap-2 mb-3 flex-wrap">
-                    <span class="text-4xl font-black tabular-nums" style="color:${kpi.color}${goalYear ? '; font-style:italic; opacity:0.85' : ''}">${big ? this._fmt(big) : '—'}</span>
+                    <span class="gsf-kpi-value tabular-nums" style="font-size:36px${goalYear ? ';color:var(--gsf-blue-dark)' : ''}">${big ? this._fmt(big) : '–'}</span>
                     ${corner}
                 </div>
                 ${goalYear
-                    ? `<p class="text-[10px] text-slate-400">${big ? (current ? this._fmt(current) + ' recorded so far' : 'Reporting in progress') : 'No goal set for ' + year}</p>`
+                    ? `<p class="text-xs text-slate-500">${big ? (current ? this._fmt(current) + ' recorded so far' : 'Reporting in progress') : 'No goal set for ' + year}</p>`
                     : (pct !== null ? `
                     <div>
-                        <div class="flex justify-between items-baseline text-[10px] mb-1.5">
+                        <div class="flex justify-between items-baseline text-xs mb-1.5">
                             <span class="text-slate-500">Target: <strong class="text-slate-700 tabular-nums">${this._fmt(target)}</strong></span>
-                            <span class="font-black text-sm tabular-nums opacity-0 group-hover:opacity-100 transition-opacity" style="color:${kpi.color}">${pct}%</span>
+                            <span class="font-bold text-sm tabular-nums text-gsf-boston">${pct}%</span>
                         </div>
-                        <div class="w-full h-1.5 rounded-full overflow-hidden" style="background: ${kpi.color}1A">
-                            <div class="h-full rounded-full transition-all" style="width:${pct}%; background:${kpi.color}"></div>
+                        <div class="w-full h-1.5 rounded-full overflow-hidden bg-gsf-tint">
+                            <div class="h-full rounded-full bg-gsf-boston" style="width:${pct}%"></div>
                         </div>
                     </div>
-                ` : `<p class="text-[10px] text-slate-400 italic">${isAllYear ? 'No targets set' : 'No target set for ' + year}</p>`)}
-                <p class="text-[10px] font-medium mt-3 pt-2.5 border-t" style="border-color: ${kpi.color}26; color: ${kpi.color}; opacity: 0.75">
+                ` : `<p class="text-xs text-slate-500">${isAllYear ? 'No targets set' : 'No target set for ' + year}</p>`)}
+                <p class="text-xs font-bold mt-3 pt-2.5 border-t border-slate-200 text-slate-500">
                     ${contribCount} contributing event${contribCount !== 1 ? 's' : ''}${isAllYear ? ' total' : ' this year'}
                 </p>
             </div>`;
@@ -1371,7 +1369,7 @@ window.GenericViews = {
         const yrButtons = allYearsAv.map(y => yearChip(y, String(y), aYear === y)).join('');
         const allTimeBtn = `<button onclick="App.activityYear='all'; App.renderView()"
             class="ml-0.5 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${aYear === 'all' ? 'bg-gsf-prussian text-white shadow-sm' : 'text-gsf-prussian bg-gsf-prussian/10 hover:bg-gsf-prussian/20'}"
-            title="Show all activities across every year"><span class="text-[10px] ${aYear === 'all' ? 'opacity-90' : 'opacity-70'}">★</span> All time</button>`;
+            title="Show all activities across every year">All time</button>`;
         const rangeBtn = `<button onclick="App.activityYear='range'; if(!App.activityRangeFrom)App.activityRangeFrom=${allYearsAv[0]}; if(!App.activityRangeTo)App.activityRangeTo=${allYearsAv[allYearsAv.length-1]}; App.renderView()"
             class="px-3 py-1.5 rounded-lg text-sm font-semibold transition-all ${aYear === 'range' ? 'bg-gsf-prussian text-white' : 'text-slate-500 hover:bg-slate-100'}"
             title="Filter activities by a year range">Range…</button>`;
@@ -5318,7 +5316,7 @@ window.GenericViews = {
             `<button onclick="App.kpiYear=${y}; App.renderView()" class="px-3 py-1.5 rounded-lg text-sm font-semibold transition-all ${y === year ? 'bg-gsf-boston text-white' : 'text-slate-500 hover:bg-slate-100'}">${y}</button>`
         ).join('') +
         `<span class="w-px h-5 bg-slate-300 mx-1 inline-block align-middle"></span>` +
-        `<button onclick="App.kpiYear='all'; App.renderView()" class="ml-0.5 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${isAllYear ? 'bg-gsf-prussian text-white shadow-sm' : 'text-gsf-prussian bg-gsf-prussian/10 hover:bg-gsf-prussian/20'}" title="All-time cumulative totals"><span class="text-[10px] ${isAllYear ? 'opacity-90' : 'opacity-70'}">★</span> All time</button>` +
+        `<button onclick="App.kpiYear='all'; App.renderView()" class="ml-0.5 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${isAllYear ? 'bg-gsf-prussian text-white shadow-sm' : 'text-gsf-prussian bg-gsf-prussian/10 hover:bg-gsf-prussian/20'}" title="All-time cumulative totals">All time</button>` +
         `<button onclick="App.kpiYearMax=${yearMax + 1}; App.renderView()" class="px-2.5 py-1.5 rounded-lg text-sm font-semibold text-slate-400 hover:bg-slate-100" title="Add future year">+</button><button onclick="GenericViews._removeLastYear()" class="px-2.5 py-1.5 rounded-lg text-sm font-semibold text-slate-400 hover:bg-red-50 hover:text-red-500" title="Remove the topmost year (only allowed if it has no data)">−</button>`;
 
         const kpiCards = Projects.STANDARD_KPIS.map(kpi => {
@@ -5330,35 +5328,33 @@ window.GenericViews = {
             const goalYear = !isAllYear && Number(year) >= now.getFullYear();
             const big = goalYear ? tgt : v;
             const pct = (!goalYear && tgt > 0) ? Math.min(100, Math.round((v / tgt) * 100)) : null;
-            const cardStyle = goalYear
-                ? `background: linear-gradient(135deg, ${kpi.color}08, #ffffff 72%); border: 1.5px dashed ${kpi.color}66`
-                : `background: linear-gradient(135deg, ${kpi.color}0D, #ffffff 65%); border-color: ${kpi.color}33`;
+            // GSF design system: a white card with a hairline; the figure in strong blue; a goal is
+            // a target, not a result, so it is marked with a gold tag and set in dark blue.
+            const cardStyle = '';
             const corner = goalYear
-                ? `<span class="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full whitespace-nowrap" style="color:${kpi.color}; background:${kpi.color}14; border:1px dashed ${kpi.color}80">Goal · ${year}</span>`
-                : `<span class="text-[11px] font-medium" style="color:${kpi.color}; opacity:0.55">${isAllYear ? 'all time' : 'in ' + year}</span>`;
+                ? `<span class="text-[11px] font-bold px-2.5 py-1 rounded-full whitespace-nowrap bg-gsf-gold text-gsf-prussian">Goal for ${year}</span>`
+                : `<span class="text-xs font-bold text-slate-500">${isAllYear ? 'all time' : 'in ' + year}</span>`;
             return `
-            <div class="rounded-xl p-5 border group relative overflow-hidden"
-                 style="${cardStyle}">
-                <div class="absolute top-0 left-0 right-0 h-1" style="background: ${kpi.color}${goalYear ? '; opacity:0.55' : ''}"></div>
-                <p class="text-[10px] font-black uppercase tracking-wider leading-tight mb-0.5" style="color:${kpi.color}">${kpi.nameBig || kpi.name}</p>
-                ${kpi.nameSub ? `<p class="text-[10px] text-slate-500 font-medium leading-tight mb-3">${kpi.nameSub}</p>` : '<div class="mb-3"></div>'}
+            <div class="bg-white rounded-xl p-5 border shadow-sm group relative overflow-hidden">
+                <p class="gsf-kpi-label" style="color:var(--gsf-blue)">${kpi.nameBig || kpi.name}</p>
+                ${kpi.nameSub ? `<p class="text-xs text-slate-500 font-bold leading-tight mt-1 mb-3">${kpi.nameSub}</p>` : '<div class="mb-3"></div>'}
                 <div class="flex items-baseline gap-2 mb-3 flex-wrap">
-                    <span class="text-4xl font-black tabular-nums" style="color:${kpi.color}${goalYear ? '; font-style:italic; opacity:0.85' : ''}">${big ? this._fmt(big) : '—'}</span>
+                    <span class="gsf-kpi-value tabular-nums" style="font-size:36px${goalYear ? ';color:var(--gsf-blue-dark)' : ''}">${big ? this._fmt(big) : '–'}</span>
                     ${corner}
                 </div>
                 ${goalYear
-                    ? `<p class="text-[10px] text-slate-400">${big ? (v ? this._fmt(v) + ' recorded so far' : 'Reporting in progress') : 'No goal set for ' + year}</p>`
+                    ? `<p class="text-xs text-slate-500">${big ? (v ? this._fmt(v) + ' recorded so far' : 'Reporting in progress') : 'No goal set for ' + year}</p>`
                     : (pct !== null ? `
                     <div>
-                        <div class="flex justify-between items-baseline text-[10px] mb-1.5">
+                        <div class="flex justify-between items-baseline text-xs mb-1.5">
                             <span class="text-slate-500">Target: <strong class="text-slate-700 tabular-nums">${this._fmt(tgt)}</strong></span>
-                            <span class="font-black text-sm tabular-nums opacity-0 group-hover:opacity-100 transition-opacity" style="color:${kpi.color}">${pct}%</span>
+                            <span class="font-bold text-sm tabular-nums text-gsf-boston">${pct}%</span>
                         </div>
-                        <div class="w-full h-1.5 rounded-full overflow-hidden" style="background: ${kpi.color}1A">
-                            <div class="h-full rounded-full transition-all" style="width:${pct}%; background:${kpi.color}"></div>
+                        <div class="w-full h-1.5 rounded-full overflow-hidden bg-gsf-tint">
+                            <div class="h-full rounded-full bg-gsf-boston" style="width:${pct}%"></div>
                         </div>
                     </div>
-                ` : `<p class="text-[10px] text-slate-400 italic">${isAllYear ? 'No targets set' : 'No target set for ' + year}</p>`)}
+                ` : `<p class="text-xs text-slate-500">${isAllYear ? 'No targets set' : 'No target set for ' + year}</p>`)}
             </div>`; }).join('');
 
         // Recent activities across all projects — events + milestones, last 10
@@ -5537,7 +5533,7 @@ window.GenericViews = {
             `<button onclick="GenericViews._breakdownYearClick(event, ${y})" class="px-3 py-1.5 rounded-lg text-sm font-semibold transition-all ${inSel(y) ? 'bg-gsf-boston text-white' : 'text-slate-500 hover:bg-slate-100'}">${y}</button>`
         ).join('') +
         `<span class="w-px h-5 bg-slate-300 mx-1 inline-block align-middle"></span>` +
-        `<button onclick="App.breakdownYear='all'; App.breakdownYearTo=null; App.renderView()" class="ml-0.5 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${sel.isAll ? 'bg-gsf-prussian text-white shadow-sm' : 'text-gsf-prussian bg-gsf-prussian/10 hover:bg-gsf-prussian/20'}" title="All-time cumulative totals"><span class="text-[10px] ${sel.isAll ? 'opacity-90' : 'opacity-70'}">★</span> All time</button>` +
+        `<button onclick="App.breakdownYear='all'; App.breakdownYearTo=null; App.renderView()" class="ml-0.5 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${sel.isAll ? 'bg-gsf-prussian text-white shadow-sm' : 'text-gsf-prussian bg-gsf-prussian/10 hover:bg-gsf-prussian/20'}" title="All-time cumulative totals">All time</button>` +
         `<button onclick="App.kpiYearMax=${yearMax + 1}; App.renderView()" class="px-2.5 py-1.5 rounded-lg text-sm font-semibold text-slate-400 hover:bg-slate-100" title="Add future year">+</button><button onclick="GenericViews._removeLastYear()" class="px-2.5 py-1.5 rounded-lg text-sm font-semibold text-slate-400 hover:bg-red-50 hover:text-red-500" title="Remove the topmost year (only allowed if it has no data)">−</button>`;
 
         if (!genericProjects.length) {
@@ -5883,7 +5879,7 @@ window.GenericViews = {
             `<button onclick="App.kpiYear=${y}; App.renderView()" class="px-3 py-1.5 rounded-lg text-sm font-semibold transition-all ${y === year ? 'bg-gsf-boston text-white' : 'text-slate-500 hover:bg-slate-100'}">${y}</button>`
         ).join('') +
         `<span class="w-px h-5 bg-slate-300 mx-1 inline-block align-middle"></span>` +
-        `<button onclick="App.kpiYear='all'; App.renderView()" class="ml-0.5 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${isAllYear ? 'bg-gsf-prussian text-white shadow-sm' : 'text-gsf-prussian bg-gsf-prussian/10 hover:bg-gsf-prussian/20'}" title="All-time cumulative totals"><span class="text-[10px] ${isAllYear ? 'opacity-90' : 'opacity-70'}">★</span> All time</button>` +
+        `<button onclick="App.kpiYear='all'; App.renderView()" class="ml-0.5 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${isAllYear ? 'bg-gsf-prussian text-white shadow-sm' : 'text-gsf-prussian bg-gsf-prussian/10 hover:bg-gsf-prussian/20'}" title="All-time cumulative totals">All time</button>` +
         `<button onclick="App.kpiYearMax=${yearMax + 1}; App.renderView()" class="px-2.5 py-1.5 rounded-lg text-sm font-semibold text-slate-400 hover:bg-slate-100" title="Add future year">+</button><button onclick="GenericViews._removeLastYear()" class="px-2.5 py-1.5 rounded-lg text-sm font-semibold text-slate-400 hover:bg-red-50 hover:text-red-500" title="Remove the topmost year (only allowed if it has no data)">−</button>`;
 
         // Per-project actuals + targets from stored data
@@ -10580,7 +10576,7 @@ function initProjectMap(pid){
         const yrButtons = allYearsAv.map(y => yearChip(y, String(y), aYear === y)).join('');
         const allTimeBtn = `<button onclick="App.activityYear='all'; App.renderView()"
             class="ml-0.5 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${aYear === 'all' ? 'bg-gsf-prussian text-white shadow-sm' : 'text-gsf-prussian bg-gsf-prussian/10 hover:bg-gsf-prussian/20'}"
-            title="Show all activities across every year"><span class="text-[10px] ${aYear === 'all' ? 'opacity-90' : 'opacity-70'}">★</span> All time</button>`;
+            title="Show all activities across every year">All time</button>`;
         const rangeBtn = `<button onclick="App.activityYear='range'; if(!App.activityRangeFrom)App.activityRangeFrom=${allYearsAv[0]}; if(!App.activityRangeTo)App.activityRangeTo=${allYearsAv[allYearsAv.length-1]}; App.renderView()"
             class="px-3 py-1.5 rounded-lg text-sm font-semibold transition-all ${aYear === 'range' ? 'bg-gsf-prussian text-white' : 'text-slate-500 hover:bg-slate-100'}"
             title="Filter activities by a year range">Range…</button>`;

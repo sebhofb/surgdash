@@ -10,7 +10,8 @@
     "build:mac:arm64": "electron-builder --mac --arm64",
     "release": "electron-builder --mac --publish always",
     "test": "node test/run.js",
-    "test:live": "node test/run.js --live"
+    "test:live": "node test/run.js --live",
+    "screens": "bash scripts/capture/run.sh"
   },
   "build": {
     "appId": "com.gsf.surgdash",
@@ -55,6 +56,7 @@
       "**/*",
       "!.github/**/*",
       "!test/**/*",
+      "!scripts/capture/**/*",
       "!node_modules/.cache",
       "build/**/*"
     ]

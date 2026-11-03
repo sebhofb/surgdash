@@ -1,0 +1,249 @@
+[
+ {
+  "name": "00-startup-locked",
+  "js": "",
+  "wait": 3000
+ },
+ {
+  "name": "01-hub-overview",
+  "js": "App.editUnlocked = true; document.body.classList.remove('viewer-mode'); if (App._autoPullInterval) { clearInterval(App._autoPullInterval); App._autoPullInterval = null; } await App.switchProject('surghub'); App._dashTab='overview'; App.renderView();",
+  "wait": 5000,
+  "full": true
+ },
+ {
+  "name": "02-dash-quarterly",
+  "js": "App.view='platform'; App._dashTab='quarterly'; App.renderView();",
+  "wait": 5000,
+  "full": true
+ },
+ {
+  "name": "02-dash-learners",
+  "js": "App.view='platform'; App._dashTab='learners'; App.renderView();",
+  "wait": 5000,
+  "full": true
+ },
+ {
+  "name": "02-dash-geography",
+  "js": "App.view='platform'; App._dashTab='geography'; App.renderView();",
+  "wait": 5000,
+  "full": true
+ },
+ {
+  "name": "02-dash-performance",
+  "js": "App.view='platform'; App._dashTab='performance'; App.renderView();",
+  "wait": 5000,
+  "full": true
+ },
+ {
+  "name": "02-dash-feedback",
+  "js": "App.view='platform'; App._dashTab='feedback'; App.renderView();",
+  "wait": 5000,
+  "full": true
+ },
+ {
+  "name": "02-dash-conflict",
+  "js": "App.view='platform'; App._dashTab='conflict'; App.renderView();",
+  "wait": 5000,
+  "full": true
+ },
+ {
+  "name": "02-dash-physicians",
+  "js": "App.view='platform'; App._dashTab='physicians'; App.renderView();",
+  "wait": 5000,
+  "full": true
+ },
+ {
+  "name": "02-dash-nurses",
+  "js": "App.view='platform'; App._dashTab='nurses'; App.renderView();",
+  "wait": 5000,
+  "full": true
+ },
+ {
+  "name": "02-dash-institutions",
+  "js": "App.view='platform'; App._dashTab='institutions'; App.renderView();",
+  "wait": 5000,
+  "full": true
+ },
+ {
+  "name": "02-dash-compare",
+  "js": "App.view='platform'; App._dashTab='compare'; App.renderView();",
+  "wait": 5000,
+  "full": true
+ },
+ {
+  "name": "02-dash-journeys",
+  "js": "App.view='platform'; App._dashTab='journeys'; App.renderView();",
+  "wait": 5000,
+  "full": true
+ },
+ {
+  "name": "02-dash-forum",
+  "js": "App.view='platform'; App._dashTab='forum'; App.renderView();",
+  "wait": 5000,
+  "full": true
+ },
+ {
+  "name": "02-dash-testimonials",
+  "js": "App.view='platform'; App._dashTab='testimonials'; App.renderView();",
+  "wait": 5000,
+  "full": true
+ },
+ {
+  "name": "03-hub-provider",
+  "js": "App.navigate('provider');",
+  "wait": 5000,
+  "full": true
+ },
+ {
+  "name": "03-hub-course",
+  "js": "App.navigate('course');",
+  "wait": 5000,
+  "full": true
+ },
+ {
+  "name": "03-hub-ambassadors",
+  "js": "App.navigate('ambassadors');",
+  "wait": 5000,
+  "full": true
+ },
+ {
+  "name": "03-hub-sh-milestones",
+  "js": "App.navigate('sh-milestones');",
+  "wait": 5000,
+  "full": true
+ },
+ {
+  "name": "03-hub-sh-reports",
+  "js": "App.navigate('sh-reports');",
+  "wait": 5000,
+  "full": true
+ },
+ {
+  "name": "03-hub-manage",
+  "js": "App.navigate('manage');",
+  "wait": 5000,
+  "full": true
+ },
+ {
+  "name": "03-hub-upload",
+  "js": "App.navigate('upload');",
+  "wait": 5000,
+  "full": true
+ },
+ {
+  "name": "03-hub-methodology",
+  "js": "App.navigate('methodology');",
+  "wait": 5000,
+  "full": true
+ },
+ {
+  "name": "04-provider-detail",
+  "js": "App.openProvider((App.data.find(d=>d.Provider)||{}).Provider);",
+  "wait": 5000,
+  "full": true
+ },
+ {
+  "name": "04-course-detail",
+  "js": "App.openCourse('Essential Burn Care (EBC)');",
+  "wait": 5000,
+  "full": true
+ },
+ {
+  "name": "05-org-dashboard",
+  "js": "if (App.currentProject !== 'org') await App.switchProject('org'); App.navigate('org-dashboard');",
+  "wait": 5000,
+  "full": true
+ },
+ {
+  "name": "05-org-breakdown",
+  "js": "if (App.currentProject !== 'org') await App.switchProject('org'); App.navigate('org-breakdown');",
+  "wait": 5000,
+  "full": true
+ },
+ {
+  "name": "05-org-calendar",
+  "js": "if (App.currentProject !== 'org') await App.switchProject('org'); App.navigate('org-calendar');",
+  "wait": 5000,
+  "full": true
+ },
+ {
+  "name": "05-org-activities",
+  "js": "if (App.currentProject !== 'org') await App.switchProject('org'); App.navigate('org-activities');",
+  "wait": 5000,
+  "full": true
+ },
+ {
+  "name": "05-org-map",
+  "js": "if (App.currentProject !== 'org') await App.switchProject('org'); App.navigate('org-map');",
+  "wait": 5000,
+  "full": true
+ },
+ {
+  "name": "05-org-methodology",
+  "js": "if (App.currentProject !== 'org') await App.switchProject('org'); App.navigate('org-methodology');",
+  "wait": 5000,
+  "full": true
+ },
+ {
+  "name": "05-org-settings",
+  "js": "if (App.currentProject !== 'org') await App.switchProject('org'); App.navigate('org-settings');",
+  "wait": 5000,
+  "full": true
+ },
+ {
+  "name": "06-project-dashboard",
+  "js": "if (App.currentProject !== 'obstetric-safe-surgery-in-nakuru-county-mpl01e6p') await App.switchProject('obstetric-safe-surgery-in-nakuru-county-mpl01e6p'); App.navigate('project-dashboard');",
+  "wait": 5000,
+  "full": true
+ },
+ {
+  "name": "06-project-calendar",
+  "js": "if (App.currentProject !== 'obstetric-safe-surgery-in-nakuru-county-mpl01e6p') await App.switchProject('obstetric-safe-surgery-in-nakuru-county-mpl01e6p'); App.navigate('project-calendar');",
+  "wait": 5000,
+  "full": true
+ },
+ {
+  "name": "06-project-setup",
+  "js": "if (App.currentProject !== 'obstetric-safe-surgery-in-nakuru-county-mpl01e6p') await App.switchProject('obstetric-safe-surgery-in-nakuru-county-mpl01e6p'); App.navigate('project-setup');",
+  "wait": 5000,
+  "full": true
+ },
+ {
+  "name": "06-project-activities",
+  "js": "if (App.currentProject !== 'obstetric-safe-surgery-in-nakuru-county-mpl01e6p') await App.switchProject('obstetric-safe-surgery-in-nakuru-county-mpl01e6p'); App.navigate('project-activities');",
+  "wait": 5000,
+  "full": true
+ },
+ {
+  "name": "06-project-map",
+  "js": "if (App.currentProject !== 'obstetric-safe-surgery-in-nakuru-county-mpl01e6p') await App.switchProject('obstetric-safe-surgery-in-nakuru-county-mpl01e6p'); App.navigate('project-map');",
+  "wait": 5000,
+  "full": true
+ },
+ {
+  "name": "06-project-reports",
+  "js": "if (App.currentProject !== 'obstetric-safe-surgery-in-nakuru-county-mpl01e6p') await App.switchProject('obstetric-safe-surgery-in-nakuru-county-mpl01e6p'); App.navigate('project-reports');",
+  "wait": 5000,
+  "full": true
+ },
+ {
+  "name": "06-project-settings",
+  "js": "if (App.currentProject !== 'obstetric-safe-surgery-in-nakuru-county-mpl01e6p') await App.switchProject('obstetric-safe-surgery-in-nakuru-county-mpl01e6p'); App.navigate('project-settings');",
+  "wait": 5000,
+  "full": true
+ },
+ {
+  "name": "07-hub-locked",
+  "js": "await App.switchProject('surghub'); App.lockEdit(); App._dashTab='overview'; App.renderView();",
+  "wait": 4000
+ },
+ {
+  "name": "08-narrow-1100",
+  "js": "App.editUnlocked = true; document.body.classList.remove('viewer-mode'); App.renderView();",
+  "wait": 3000,
+  "size": [
+   1100,
+   800
+  ]
+ }
+]
