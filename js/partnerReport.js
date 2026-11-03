@@ -1,11 +1,13 @@
 // ── Partner dashboard in the GSF design (Nov 2026) ───────────────────────────────────────
 //
 // A provider's web report built from scratch on the Global Surgery Foundation Design System,
-// to read like a website: a sticky navigation bar, a light header with the SURGhub and provider
-// logos side by side over a faint globe of connections (drawn from where the learners are),
-// figure cards that open a dialog explaining each figure, sections in alternating bands, Arial
-// Black for the page title only, and the brand accents (orange, gold, pink, green) beside the
-// blues. Seb (3 Nov 2026): "too blue", no Arial Black for subheadings, no photograph in the header.
+// to read like the GSF website's inner pages (the About page): a sticky navy bar with gold links,
+// a deep-navy header (#0d233a) with a slanted foot, where the globe of connections (arcs from
+// Geneva to where the learners are) fades in from the right in place of the website's photograph
+// and the SURGhub and provider logos sit side by side; plain large figures without boxes (like
+// the website's "9 in 10"), each opening a dialog that explains it; Arial Bold throughout; the
+// brand accents (gold, orange, pink, green) beside the blues. Seb (3 Nov 2026): "too blue", no
+// Arial Black for subheadings, no photograph, no boxes with a coloured line above.
 //
 // One self-contained page (images inline, no outside scripts, readable on a phone). The figures
 // are prepared here into one DATA object; a small script in the page draws the header globe,
@@ -75,7 +77,7 @@ Object.assign(window.App, {
         const name = String(providerName).includes(' - ') ? String(providerName).split(' - ').slice(1).join(' - ').trim() : (this.providerFolderName ? this.providerFolderName(providerName) : providerName);
         const through = this.reportDataThrough || (this._lastFullMonth ? this._lastFullMonth() : '');
         const asOf = through ? this._prLastDay(through) : String(D.reportDate || '');
-        const logoBlue = this._prImage('gsf_logo_blue.png'), logoWhite = this._prImage('gsf_logo_white_web.png');
+        const logoWhite = this._prImage('gsf_logo_white_web.png');
         // the header logos, made small enough not to weigh the page down
         const thumb = async (uri) => (uri && this._pdThumb) ? this._pdThumb(uri) : uri;
         const shLogo = await thumb(this._prImage('surghub_logo_color.png'));
@@ -146,15 +148,15 @@ Object.assign(window.App, {
 <meta name="robots" content="noindex,nofollow,noarchive"><title>${esc(name)} on SURGhub</title><style>${this._prCss()}</style></head><body>
 <a class="skip" href="#main">Skip to the figures</a>
 <header class="top"><div class="wrap">
-  <a class="brand" href="#">${logoBlue ? '<img src="' + logoBlue + '" alt="Global Surgery Foundation">' : '<b>Global Surgery Foundation</b>'}</a>
+  <a class="brand" href="#">${logoWhite ? '<img src="' + logoWhite + '" alt="Global Surgery Foundation">' : '<b>Global Surgery Foundation</b>'}</a>
   <nav aria-label="Sections" id="nav"><a href="#sec-numbers">Overview</a><a href="#sec-growth">Growth</a><a href="#sec-map">Reach</a><a href="#sec-impact">Impact</a><a href="#sec-survey">Survey</a><a href="#sec-voices">Voices</a><a href="#sec-courses">Courses</a></nav>
 </div></header>
-<div class="hero"><svg class="globe" id="globe" aria-hidden="true" focusable="false"></svg><div class="wrap hero-in">
+<div class="hero"><svg class="globe" id="globe" aria-hidden="true" focusable="false"></svg><div class="hero-fade"></div><div class="wrap hero-in">
   <div class="hero-text">
     <p class="eyebrow">SURGhub partner dashboard</p>
     <h1 id="hero-title">${esc(name)}</h1>
     <p class="lead" id="hero-lead">${lead}</p>
-    <p class="actions" id="hero-actions"><a class="btn" href="#sec-courses">See your courses</a><a class="btn sec" href="#sec-notes">How we count</a></p>
+    <p class="actions" id="hero-actions"><a class="btn" href="#sec-courses">See your courses</a><a class="link" href="#sec-notes">How we count &rarr;</a></p>
   </div>
   <div class="logos">${shLogo ? '<img src="' + shLogo + '" alt="SURGhub, the UN Global Surgery Learning Hub">' : '<b>SURGhub</b>'}${provLogo ? '<span class="sep" aria-hidden="true"></span><img src="' + provLogo + '" alt="' + esc(name) + '">' : ''}</div>
 </div></div>
@@ -190,7 +192,7 @@ ${sec('sec-notes', 'band', 'About these figures', 'How we count', `<div class="n
   <div class="f-col"><b>On this page</b><a href="#sec-numbers">Overview</a><a href="#sec-map">Reach</a><a href="#sec-courses">Courses</a><a href="#sec-notes">How we count</a></div>
   <div class="f-col"><b>Contact</b><a href="mailto:info@globalsurgeryfoundation.org">info@globalsurgeryfoundation.org</a><a href="https://www.globalsurgeryfoundation.org">globalsurgeryfoundation.org</a><a href="https://www.surghub.org">surghub.org</a></div>
 </div><div class="wrap f-small">Figures to ${esc(asOf)}. This page is private to you; please do not share the link or password.</div></footer>
-<dialog id="info" class="info" aria-labelledby="info-t"><div class="info-bar" id="info-bar"></div><div class="info-in"><button class="x" id="info-x" aria-label="Close">&times;</button><p class="eyebrow" id="info-e"></p><h3 id="info-t"></h3><div class="info-v" id="info-v"></div><div id="info-b"></div></div></dialog>
+<dialog id="info" class="info" aria-labelledby="info-t"><div class="info-in"><button class="x" id="info-x" aria-label="Close">&times;</button><p class="eyebrow" id="info-e"></p><h3 id="info-t"></h3><div class="info-v" id="info-v"></div><div id="info-b"></div></div></dialog>
 <div id="tip" class="tip" hidden></div>
 <script>var DATA=${json};
 ${this._prScript()}<\/script>
@@ -199,46 +201,48 @@ ${this._prScript()}<\/script>
 
     _prCss() {
         return `
-:root{--blue:#0468b1;--blue-h:#035c9d;--navy:#002f4c;--light:#91b5d9;--tint:#e6f0f8;--paper:#f3f7fb;--line:#dee7ef;--line2:#cde1f0;--gold:#ffc145;--orange:#ff9734;--orange-d:#e07412;--pink:#de3a8d;--green:#5d9e1c;--muted:#4a6b82;--warm:#fff8ec}
+:root{--blue:#0468b1;--blue-h:#035c9d;--navy:#002f4c;--light:#91b5d9;--tint:#e6f0f8;--paper:#f3f7fb;--line:#dee7ef;--line2:#cde1f0;--gold:#ffc145;--orange:#ff9734;--orange-d:#e07412;--pink:#de3a8d;--green:#5d9e1c;--muted:#4a6b82;--warm:#fff8ec;--deep:#0d233a}
 *{box-sizing:border-box}[hidden]{display:none!important}html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
 body{margin:0;background:#fff;color:var(--navy);font:16px/1.55 Arial,"Helvetica Neue",Helvetica,sans-serif}
 .wrap{max-width:1200px;margin:0 auto;padding:0 24px}
 a{color:var(--blue)}a:hover{text-decoration:underline}
 .skip{position:absolute;left:-9999px;top:8px;background:var(--gold);color:var(--navy);padding:8px 14px;border-radius:9px;font-weight:700;z-index:100}.skip:focus{left:16px}
-.top{position:sticky;top:0;z-index:40;background:rgba(255,255,255,.96);backdrop-filter:saturate(1.4) blur(6px);border-bottom:1px solid var(--line)}
+.top{position:sticky;top:0;z-index:40;background:var(--deep)}
 .top .wrap{display:flex;align-items:center;justify-content:space-between;gap:24px;height:72px}
 .brand img{height:42px;width:auto;display:block}
 .top nav{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none}.top nav::-webkit-scrollbar{display:none}
-.top nav a{font-size:15px;font-weight:700;color:var(--navy);text-decoration:none;padding:8px 12px;border-radius:9px;white-space:nowrap;border-bottom:3px solid transparent}
-.top nav a:hover{background:var(--paper)}.top nav a.on{color:var(--blue);border-bottom-color:var(--orange);border-radius:9px 9px 0 0}
-.hero{position:relative;overflow:hidden;background:linear-gradient(180deg,#fff 0,var(--paper) 100%);border-bottom:1px solid var(--line)}
+.top nav a{font-size:15px;letter-spacing:.03em;text-transform:uppercase;color:var(--gold);text-decoration:none;padding:8px 10px;white-space:nowrap;text-underline-offset:6px}
+.top nav a:hover{color:#fff}.top nav a.on{text-decoration:underline;text-decoration-thickness:2px}
+.hero{position:relative;overflow:hidden;color:#fff;background:radial-gradient(ellipse 50% 90% at 82% 50%,#1e4a73 0,#0d233a 75%);clip-path:polygon(0 0,100% 0,100% 100%,0 calc(100% - 22px))}
+.hero-fade{position:absolute;inset:0;background:linear-gradient(90deg,#0d233a 0,#0d233a 34%,rgba(13,35,58,0) 62%);pointer-events:none}
 .globe{position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none}
-.hero-in{position:relative;display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:40px;align-items:center;padding-top:64px;padding-bottom:120px}
-.eyebrow{display:flex;align-items:center;gap:10px;font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--blue);margin:0 0 12px}
-.eyebrow:before{content:"";width:28px;height:4px;border-radius:2px;background:var(--orange);flex:none}
-.hero h1{font-family:"Arial Black",Arial,sans-serif;font-weight:900;font-size:46px;line-height:1.1;letter-spacing:-.01em;margin:0;color:var(--navy)}
-.hero p.lead{font-size:19px;line-height:1.5;color:var(--muted);max-width:560px;margin:16px 0 0}
-.actions{display:flex;flex-wrap:wrap;gap:12px;margin:28px 0 0}
-.logos{justify-self:end;align-self:end;margin-bottom:8px;display:flex;align-items:center;gap:28px;background:rgba(255,255,255,.92);border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 28px rgba(0,47,76,.10);padding:24px 32px}
+.hero-in{position:relative;display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:40px;align-items:center;padding-top:96px;padding-bottom:110px}
+.eyebrow{font-size:16px;color:var(--blue);margin:0 0 8px}
+.hero .eyebrow{color:var(--gold)}
+.hero h1{font-weight:700;font-size:56px;line-height:1.08;letter-spacing:-.01em;margin:0;color:#fff}
+.hero p.lead{font-size:19px;line-height:1.5;color:rgba(255,255,255,.88);max-width:560px;margin:16px 0 0}
+.actions{display:flex;flex-wrap:wrap;align-items:center;gap:28px;margin:30px 0 0}
+.hero .btn{background:var(--gold);border-color:var(--gold);color:var(--navy)}.hero .btn:hover{background:#ffcf6e;border-color:#ffcf6e}
+.link{color:#fff;font-weight:700;font-size:16px;text-decoration:underline;text-underline-offset:5px}.link:hover{color:var(--gold)}
+.logos{justify-self:end;align-self:end;margin-bottom:8px;display:flex;align-items:center;gap:28px;background:#fff;border-radius:12px;box-shadow:0 16px 36px rgba(0,20,40,.28);padding:24px 32px}
 .logos img{height:76px;width:auto;max-width:220px;object-fit:contain;display:block}.logos b{font-size:28px}
 .logos .sep{width:1px;align-self:stretch;background:var(--line2)}
 section{padding:72px 0;scroll-margin-top:72px}
 section.band{background:var(--paper)}section.warm{background:var(--warm)}
-section.dark{background:var(--navy);color:#fff}section.dark h2{color:#fff}section.dark .intro{color:rgba(255,255,255,.8)}section.dark .eyebrow{color:var(--gold)}
-section.lift{padding-top:0;padding-bottom:8px;margin-top:-72px;position:relative}
+section.dark{background:var(--deep);color:#fff}section.dark h2{color:#fff}section.dark .intro{color:rgba(255,255,255,.8)}section.dark .eyebrow{color:var(--gold)}
+section.lift{padding-top:64px;padding-bottom:8px}
 h2{font-weight:700;font-size:32px;line-height:1.2;letter-spacing:-.005em;color:var(--navy);margin:0 0 10px}
 h3{font-weight:700;font-size:19px;line-height:1.25;margin:0 0 12px;color:var(--navy)}
 .intro{font-size:17px;color:var(--muted);max-width:760px;margin:0 0 32px}
-.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:20px}
-.stat{all:unset;box-sizing:border-box;position:relative;display:flex;flex-direction:column;background:#fff;border:1px solid var(--line);border-top:5px solid var(--ac,var(--blue));border-radius:12px;padding:22px 22px 20px;box-shadow:0 6px 18px rgba(0,47,76,.08);cursor:pointer;transition:transform .15s,box-shadow .15s;color:var(--navy)}
-.stat:hover{transform:translateY(-2px);box-shadow:0 14px 30px rgba(0,47,76,.14)}
-.stat:focus-visible{box-shadow:0 0 0 2px #002f4c,0 0 0 5px #ffc145}
-.stat-v{font-weight:700;font-size:40px;line-height:1;letter-spacing:-.01em;white-space:nowrap;color:var(--navy)}
-.stat-l{margin-top:12px;font-weight:700;font-size:16px;line-height:1.35}
-.stat-s{margin-top:4px;font-size:13px;line-height:1.4;color:var(--muted)}
-.stat-i{position:absolute;top:14px;right:14px;width:22px;height:22px;border-radius:50%;background:var(--tint);color:var(--blue);font:700 13px/22px Georgia,serif;text-align:center;font-style:italic}
-.stat:hover .stat-i{background:var(--ac,var(--blue));color:#fff}
-section.dark .stat{background:#0a3d5e;border-color:#1b5378;border-top-color:var(--ac);color:#fff;box-shadow:none}section.dark .stat-v{color:var(--gold)}section.dark .stat-s{color:rgba(255,255,255,.75)}section.dark .stat-i{background:rgba(255,255,255,.14);color:#fff}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px 24px;margin:0 -14px}
+.stat{all:unset;box-sizing:border-box;display:flex;flex-direction:column;padding:14px;border-radius:9px;cursor:pointer;color:var(--navy);transition:background .15s}
+.stat:hover{background:var(--paper)}.stat:focus-visible{box-shadow:0 0 0 2px #002f4c,0 0 0 5px #ffc145}
+.stat-v{font-weight:700;font-size:52px;line-height:1;letter-spacing:-.01em;white-space:nowrap;color:var(--blue)}
+.stat-l{margin-top:12px;font-size:17px;line-height:1.35}
+.stat-s{margin-top:4px;font-size:14px;line-height:1.4;color:var(--muted)}
+.stat-m{margin-top:auto;padding-top:12px;font-size:14px;font-weight:700;color:var(--blue);text-decoration:underline;text-underline-offset:4px;text-decoration-color:rgba(4,104,177,.35)}.stat:hover .stat-m{text-decoration-color:currentColor}
+section.dark .stat{color:#fff}section.dark .stat:hover{background:rgba(255,255,255,.07)}
+section.dark .stat-v{color:var(--gold)}section.dark .stat-s{color:rgba(255,255,255,.75)}section.dark .stat-m{color:#fff;text-decoration-color:rgba(255,255,255,.4)}
 .tags{display:flex;flex-wrap:wrap;gap:8px;margin-top:24px}.tags:empty{display:none}
 .tag{display:inline-flex;align-items:center;font-weight:700;font-size:13px;line-height:1.3;padding:7px 14px;border-radius:999px;background:var(--tint);color:var(--blue)}
 .tag-gold{background:var(--gold);color:var(--navy)}
@@ -260,11 +264,10 @@ section.dark .stat{background:#0a3d5e;border-color:#1b5378;border-top-color:var(
 .q-t{font-weight:700}.q-t small{display:block;font-weight:400;color:var(--muted);margin-top:2px}
 .q-bar{background:var(--tint);border-radius:4px;height:10px}.q-bar i{display:block;height:10px;border-radius:4px;background:var(--green)}
 .num{text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
-.summary{background:#fff;border:1px solid var(--line);border-left:5px solid var(--orange);border-radius:12px;padding:28px 32px;font-family:Georgia,"Times New Roman",serif;font-size:17px;line-height:1.65;max-width:900px}
+.summary{font-family:Georgia,"Times New Roman",serif;font-size:20px;line-height:1.65;max-width:900px}
 .summary small{display:block;margin-top:12px;font-family:Arial,sans-serif;font-size:13px;color:var(--muted)}
 .quotes{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:24px;margin-top:28px}
-.quote{margin:0;background:#fff;border:1px solid var(--line);border-radius:12px;padding:28px;box-shadow:0 1px 3px rgba(0,47,76,.06)}
-.quote:nth-child(3n+1){border-top:5px solid var(--orange)}.quote:nth-child(3n+2){border-top:5px solid var(--gold)}.quote:nth-child(3n){border-top:5px solid var(--pink)}
+.quote{margin:0;background:#fff;border-radius:12px;padding:28px}
 .quote blockquote{margin:0;font-family:Georgia,"Times New Roman",serif;font-size:17px;line-height:1.65;color:var(--navy)}
 .quote blockquote:before{content:"\\201C";display:block;font-family:Georgia,serif;font-size:56px;line-height:.6;color:var(--orange);margin-bottom:10px}
 .quote figcaption{margin-top:16px;font-size:14px}.quote figcaption b{display:block}.quote figcaption span{display:block;color:var(--muted);margin-top:2px}
@@ -288,19 +291,19 @@ section.dark .stat{background:#0a3d5e;border-color:#1b5378;border-top-color:var(
 .notes{columns:2;column-gap:40px;font-size:14px}.notes p{margin:0 0 12px;break-inside:avoid}
 .info{border:0;padding:0;border-radius:12px;max-width:560px;width:calc(100% - 32px);color:var(--navy);box-shadow:0 24px 60px rgba(0,47,76,.3)}
 .info::backdrop{background:rgba(0,47,76,.55)}
-.info-bar{height:6px;background:var(--blue)}.info-in{position:relative;padding:28px 32px 30px}
+.info-in{position:relative;padding:28px 32px 30px}
 .info h3{font-size:24px;margin:0 0 8px;padding-right:32px}.info-v{font-weight:700;font-size:34px;line-height:1.1;margin:4px 0 16px}
 .info p{margin:0 0 12px;font-size:15px;line-height:1.6}.info ul{margin:0 0 12px;padding-left:20px;font-size:15px}.info li{margin:3px 0}
 .info .fact{display:grid;grid-template-columns:1fr auto;gap:12px;padding:8px 0;border-top:1px solid var(--line);font-size:15px}.info .fact b{font-variant-numeric:tabular-nums}
 .x{position:absolute;top:16px;right:16px;width:36px;height:36px;border-radius:50%;border:0;background:var(--paper);color:var(--navy);font-size:24px;line-height:36px;cursor:pointer}.x:hover{background:var(--tint)}
-footer{background:var(--navy);color:#fff}footer .wrap{display:grid;grid-template-columns:minmax(0,2fr) 1fr 1fr;gap:40px;padding-top:56px;padding-bottom:32px}
+footer{background:var(--deep);color:#fff}footer .wrap{display:grid;grid-template-columns:minmax(0,2fr) 1fr 1fr;gap:40px;padding-top:56px;padding-bottom:32px}
 footer img{height:52px;width:auto;display:block;margin-bottom:16px}footer p{margin:0;font-size:14px;color:rgba(255,255,255,.8);max-width:420px}
 .f-col{display:flex;flex-direction:column;gap:8px;font-size:14px}.f-col b{color:var(--gold);font-size:13px;letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px}.f-col a{color:#fff;text-decoration:none}.f-col a:hover{text-decoration:underline}
 footer .f-small{display:block;padding-top:20px;padding-bottom:28px;border-top:1px solid rgba(255,255,255,.15);font-size:13px;color:rgba(255,255,255,.65)}
 @keyframes flow{from{stroke-dashoffset:100}to{stroke-dashoffset:0}}.globe .arc{animation:flow 6s linear infinite}
 @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}.globe .arc{animation:none;stroke-opacity:0}.stat{transition:none}}
-@media (max-width:900px){.globe{opacity:.5}.top nav{display:none}.hero-in{grid-template-columns:1fr;padding-top:40px}.logos{justify-self:start;order:-1;padding:16px 20px;gap:18px}.logos img{height:52px}}
-@media (max-width:760px){.hero h1{font-size:32px}.two,.map-card{grid-template-columns:1fr}.notes{columns:1}.stats{grid-template-columns:1fr 1fr;gap:14px}h2{font-size:25px}.stat-v{font-size:30px}.stat{padding:18px 16px}section{padding:52px 0}.brand img{height:36px}footer .wrap{grid-template-columns:1fr}.q-row{grid-template-columns:minmax(0,1fr) 60px 56px}.q-row .q-bar{display:none}.q-row.head span:nth-child(2){display:none}.info-in{padding:24px 20px}}
+@media (max-width:900px){.globe{opacity:.45}.top nav{display:none}.hero-in{grid-template-columns:1fr;padding-top:40px}.logos{justify-self:start;order:-1;padding:16px 20px;gap:18px}.logos img{height:52px}}
+@media (max-width:760px){.hero h1{font-size:32px}.two,.map-card{grid-template-columns:1fr}.notes{columns:1}.stats{grid-template-columns:1fr 1fr}h2{font-size:25px}.stat-v{font-size:38px}.stat{padding:20px 16px}section{padding:52px 0}.brand img{height:36px}footer .wrap{grid-template-columns:1fr}.q-row{grid-template-columns:minmax(0,1fr) 60px 56px}.q-row .q-bar{display:none}.q-row.head span:nth-child(2){display:none}.info-in{padding:24px 20px}}
 @media print{.top{position:static}.dl,.toggles,.actions{display:none}section{break-inside:avoid}.globe .arc{animation:none}}`;
     },
 
@@ -319,15 +322,15 @@ function hideTip(){tip.hidden=true}
 // the same twelve calendar months for every course, ending with the data-through month
 var WIN=(function(){var end=D.through||(D.monthly.length?D.monthly[D.monthly.length-1][0]:"");if(!end)return [];var p=end.split("-").map(Number),y=p[0],m=p[1],out=[];for(var i=0;i<12;i++){out.unshift(y+"-"+(m<10?"0":"")+m);m--;if(!m){m=12;y--}}return out})();
 // a figure card; with an explanation it is a button that opens the dialog
-var INFO=[],AC={blue:"#0468b1",orange:"#ff9734",gold:"#ffc145",pink:"#de3a8d",green:"#5d9e1c",navy:"#002f4c"};
-function stat(v,l,s,info,ac){var c=AC[ac]||AC.blue,body='<div class="stat-v">'+v+'</div><div class="stat-l">'+l+'</div>'+(s?'<div class="stat-s">'+s+'</div>':'');
-  if(!info)return '<div class="stat" style="--ac:'+c+';cursor:default">'+body+'</div>';
-  info.v=v;info.l=l;info.ac=c;INFO.push(info);
-  return '<button type="button" class="stat" style="--ac:'+c+'" data-info="'+(INFO.length-1)+'" aria-haspopup="dialog"><span class="stat-i" aria-hidden="true">i</span>'+body+'<span style="position:absolute;left:-9999px"> (more about this figure)</span></button>'}
+var INFO=[];
+function stat(v,l,s,info){var body='<span class="stat-v">'+v+'</span><span class="stat-l">'+l+'</span>'+(s?'<span class="stat-s">'+s+'</span>':'');
+  if(!info)return '<div class="stat" style="cursor:default">'+body+'</div>';
+  info.v=v;info.l=l;INFO.push(info);
+  return '<button type="button" class="stat" data-info="'+(INFO.length-1)+'" aria-haspopup="dialog">'+body+'<span class="stat-m">What this counts</span></button>'}
 function fact(l,v){return '<div class="fact"><span>'+l+'</span><b>'+v+'</b></div>'}
 var dlg=$("info"),lastFocus=null;
 function openInfo(i){var x=INFO[i];if(!x)return;lastFocus=document.activeElement;
-  $("info-bar").style.background=x.ac;$("info-e").textContent=x.e||"About this figure";$("info-t").textContent=x.t||x.l;$("info-v").innerHTML=x.v;$("info-v").style.color=(x.ac===AC.gold||x.ac===AC.orange)?"#002f4c":x.ac;$("info-b").innerHTML=x.b;
+  $("info-e").textContent=x.e||"About this figure";$("info-t").textContent=x.t||x.l;$("info-v").innerHTML=x.v;$("info-b").innerHTML=x.b;
   if(dlg.showModal){if(!dlg.open)dlg.showModal()}else dlg.setAttribute("open","");$("info-x").focus()}
 function closeInfo(){if(dlg.close&&dlg.open)dlg.close();else dlg.removeAttribute("open");if(lastFocus&&lastFocus.focus)lastFocus.focus()}
 $("info-x").addEventListener("click",closeInfo);
@@ -410,37 +413,31 @@ function questions(list){
 function quotes(list){return (list||[]).map(function(q){return '<figure class="quote"><blockquote>'+esc(q.t)+'</blockquote><figcaption><b>'+esc(q.w)+'</b>'+(q.c?'<span>'+esc(q.c)+'</span>':'')+'</figcaption></figure>'}).join("")}
 function surveyInfo(x,what){return {e:"Learning impact",b:'<p>From the survey learners fill in at the end of each course. They were asked '+what+', on a scale of 1 to 5; this is the share who answered 4 or 5.</p>'+fact("Learners who answered this question",fmt(x.n))+fact("Answered 4 or 5",fmt(Math.round(x.n*x.pct/100))+" ("+x.pct+"%)")+'<p class="note">Only learners who finish the survey are counted, so the share describes those who answered, not every learner.</p>'}}
 function timeInfo(min,time,enrol){return {e:"Learning impact",t:"Learning time",b:'<p>The time learners spent in the course pages, as SURGhub records it, added up across every learner. It counts time with a course open, not time spent studying away from SURGhub.</p>'+fact("In total",esc(time))+(perHead(min,enrol)?fact("On average per enrolment",perHead(min,enrol)):"")}}
-function impactStats(I){return [I.time?stat(esc(I.time),"Learning time","Recorded across all learners",timeInfo(T.min,I.time,T.enrol),"gold"):"",I.contentNew?stat(I.contentNew.pct+"%","Found the content new","Of "+fmt(I.contentNew.n)+" who answered",surveyInfo(I.contentNew,"how much of the content was new to them"),"gold"):"",I.willApply?stat(I.willApply.pct+"%","Are likely to apply it at work","Of "+fmt(I.willApply.n)+" who answered",surveyInfo(I.willApply,"how likely they are to apply what they learnt in their work"),"gold"):"",I.careerValue?stat(I.careerValue.pct+"%","Rate it important for their work","Of "+fmt(I.careerValue.n)+" who answered",surveyInfo(I.careerValue,"how important the course is for their work"),"gold"):""].join("")}
+function impactStats(I){return [I.time?stat(esc(I.time),"Learning time","Recorded across all learners",timeInfo(T.min,I.time,T.enrol)):"",I.contentNew?stat(I.contentNew.pct+"%","Found the content new","Of "+fmt(I.contentNew.n)+" who answered",surveyInfo(I.contentNew,"how much of the content was new to them")):"",I.willApply?stat(I.willApply.pct+"%","Are likely to apply it at work","Of "+fmt(I.willApply.n)+" who answered",surveyInfo(I.willApply,"how likely they are to apply what they learnt in their work")):"",I.careerValue?stat(I.careerValue.pct+"%","Rate it important for their work","Of "+fmt(I.careerValue.n)+" who answered",surveyInfo(I.careerValue,"how important the course is for their work")):""].join("")}
 
 // ── the header: a faint globe, with arcs from Geneva to where most learners are ──
 function globe(){
   var svg=$("globe");if(!svg)return;var land=[];try{land=JSON.parse(D.land)}catch(e){}
-  var W=1400,H=560,cx=1120,cy=330,R=270,rad=Math.PI/180,lon0=14*rad,lat0=22*rad,sl0=Math.sin(lat0),cl0=Math.cos(lat0);
+  var W=1400,H=560,cx=1080,cy=300,R=290,rad=Math.PI/180,lon0=14*rad,lat0=22*rad,sl0=Math.sin(lat0),cl0=Math.cos(lat0);
   function vec(lon,lat){var a=lon*rad,b=lat*rad;return [Math.cos(b)*Math.cos(a),Math.cos(b)*Math.sin(a),Math.sin(b)]}
   function pv(v,k){var lon=Math.atan2(v[1],v[0]),lat=Math.asin(Math.max(-1,Math.min(1,v[2]))),l=lon-lon0,z=sl0*Math.sin(lat)+cl0*Math.cos(lat)*Math.cos(l);k=k||1;return {x:cx+k*R*Math.cos(lat)*Math.sin(l),y:cy-k*R*(cl0*Math.sin(lat)-sl0*Math.cos(lat)*Math.cos(l)),z:z}}
   function pr(lon,lat){return pv(vec(lon,lat))}
   function line(pts){var d="",pen=false;pts.forEach(function(q){if(q.z>0){d+=(pen?"L":"M")+q.x.toFixed(1)+" "+q.y.toFixed(1);pen=true}else pen=false});return d}
   svg.setAttribute("viewBox","0 0 "+W+" "+H);svg.setAttribute("preserveAspectRatio","xMaxYMid slice");
-  var s='<defs><radialGradient id="gl" cx="38%" cy="32%" r="75%"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#e6f0f8"/></radialGradient></defs>';
-  // a loose web of points across the rest of the header
-  var seed=7;function rnd(){seed=(seed*16807)%2147483647;return seed/2147483647}
-  var pts=[];for(var i=0;i<30;i++)pts.push([rnd()*820,20+rnd()*(H-40)]);
-  pts.forEach(function(a,i){var near=pts.map(function(b,j){return [j,(a[0]-b[0])*(a[0]-b[0])+(a[1]-b[1])*(a[1]-b[1])]}).filter(function(x){return x[0]>i}).sort(function(x,y){return x[1]-y[1]}).slice(0,2);
-    near.forEach(function(x){var b=pts[x[0]];s+='<line x1="'+a[0].toFixed(0)+'" y1="'+a[1].toFixed(0)+'" x2="'+b[0].toFixed(0)+'" y2="'+b[1].toFixed(0)+'" stroke="#cde1f0" stroke-width="1" stroke-opacity=".7"/>'})});
-  pts.forEach(function(a,i){s+='<circle cx="'+a[0].toFixed(0)+'" cy="'+a[1].toFixed(0)+'" r="'+(i%5?2.5:4)+'" fill="'+(i%7===0?"#ffc145":i%5===0?"#ff9734":"#cde1f0")+'"/>'});
-  s+='<circle cx="'+cx+'" cy="'+cy+'" r="'+R+'" fill="url(#gl)" stroke="#cde1f0" stroke-width="1.5"/>';
-  for(var lo=-180;lo<180;lo+=30){var m=[];for(var la=-90;la<=90;la+=4)m.push(pr(lo,la));s+='<path d="'+line(m)+'" fill="none" stroke="#dee7ef"/>'}
-  for(var la2=-60;la2<=60;la2+=30){var p2=[];for(var lo2=-180;lo2<=180;lo2+=4)p2.push(pr(lo2,la2));s+='<path d="'+line(p2)+'" fill="none" stroke="#dee7ef"/>'}
-  for(var k=0;k+1<land.length;k+=2){var q=pr(land[k],land[k+1]);if(q.z>0.02)s+='<circle cx="'+q.x.toFixed(1)+'" cy="'+q.y.toFixed(1)+'" r="'+(1.4+1.6*q.z).toFixed(1)+'" fill="#91b5d9" fill-opacity="'+(0.3+0.4*q.z).toFixed(2)+'"/>'}
+  var s='<defs><radialGradient id="gl" cx="38%" cy="32%" r="75%"><stop offset="0" stop-color="#ffffff" stop-opacity=".10"/><stop offset="1" stop-color="#ffffff" stop-opacity=".02"/></radialGradient></defs>';
+  s+='<circle cx="'+cx+'" cy="'+cy+'" r="'+R+'" fill="url(#gl)" stroke="#ffffff" stroke-opacity=".22" stroke-width="1.5"/>';
+  for(var lo=-180;lo<180;lo+=30){var m=[];for(var la=-90;la<=90;la+=4)m.push(pr(lo,la));s+='<path d="'+line(m)+'" fill="none" stroke="#ffffff" stroke-opacity=".12"/>'}
+  for(var la2=-60;la2<=60;la2+=30){var p2=[];for(var lo2=-180;lo2<=180;lo2+=4)p2.push(pr(lo2,la2));s+='<path d="'+line(p2)+'" fill="none" stroke="#ffffff" stroke-opacity=".12"/>'}
+  for(var k=0;k+1<land.length;k+=2){if(land[k+1]>68)continue;var q=pr(land[k],land[k+1]);if(q.z>0.02)s+='<circle cx="'+q.x.toFixed(1)+'" cy="'+q.y.toFixed(1)+'" r="'+(1.4+1.6*q.z).toFixed(1)+'" fill="#91b5d9" fill-opacity="'+(0.25+0.45*q.z).toFixed(2)+'"/>'}
   // arcs lifted off the surface, from the hub to the countries with the most learners
-  var hub=vec(6.14,46.2),cols=["#ff9734","#de3a8d","#ffc145","#0468b1"],ends="",n=0;
+  var hub=vec(6.14,46.2),cols=["#ffc145","#ff9734","#91b5d9","#f27bb7"],ends="",n=0;
   D.countries.filter(function(c){return c.length>=4}).forEach(function(c){if(n>=16)return;var to=vec(c[2],c[3]),e=pv(to);if(e.z<0.15)return;
     var dot=hub[0]*to[0]+hub[1]*to[1]+hub[2]*to[2],om=Math.acos(Math.max(-1,Math.min(1,dot)));if(om<0.08)return;
     var arc=[];for(var t=0;t<=1.0001;t+=1/32){var a1=Math.sin((1-t)*om)/Math.sin(om),a2=Math.sin(t*om)/Math.sin(om),v=[a1*hub[0]+a2*to[0],a1*hub[1]+a2*to[1],a1*hub[2]+a2*to[2]];arc.push(pv(v,1+0.22*om/Math.PI*Math.sin(Math.PI*t)))}
     var col=cols[n%cols.length];var d=arc.map(function(q,i){return(i?"L":"M")+q.x.toFixed(1)+" "+q.y.toFixed(1)}).join("");
     s+='<path d="'+d+'" fill="none" stroke="'+col+'" stroke-width="1.4" stroke-opacity=".55" stroke-linecap="round"/><path class="arc" d="'+d+'" pathLength="100" fill="none" stroke="'+col+'" stroke-width="2.4" stroke-linecap="round" stroke-dasharray="7 93" style="animation-delay:-'+(n*0.7).toFixed(1)+'s"/>';
-    ends+='<circle cx="'+e.x.toFixed(1)+'" cy="'+e.y.toFixed(1)+'" r="4" fill="'+col+'" stroke="#fff" stroke-width="1.5"/>';n++});
-  var h0=pv(hub);s+=ends+'<circle cx="'+h0.x.toFixed(1)+'" cy="'+h0.y.toFixed(1)+'" r="11" fill="#002f4c" fill-opacity=".12"/><circle cx="'+h0.x.toFixed(1)+'" cy="'+h0.y.toFixed(1)+'" r="5.5" fill="#002f4c" stroke="#fff" stroke-width="2"/>';
+    ends+='<circle cx="'+e.x.toFixed(1)+'" cy="'+e.y.toFixed(1)+'" r="4" fill="'+col+'" stroke="#112f4f" stroke-width="1.5"/>';n++});
+  var h0=pv(hub);s+=ends+'<circle cx="'+h0.x.toFixed(1)+'" cy="'+h0.y.toFixed(1)+'" r="11" fill="#ffffff" fill-opacity=".14"/><circle cx="'+h0.x.toFixed(1)+'" cy="'+h0.y.toFixed(1)+'" r="5.5" fill="#ffffff" stroke="#112f4f" stroke-width="2"/>';
   svg.innerHTML=s;
 }
 globe();
@@ -455,11 +452,11 @@ function certInfo(x,avg){var rate=x.enrol?(x.cert/x.enrol*100).toFixed(1)+"%":"�
 function ratingInfo(n,best){return {t:"Average rating",b:'<p>The average of the overall rating learners give in the survey at the end of the course, on a scale of 1 to 5.</p>'+fact("Survey responses",fmt(n))+(best?fact("Highest rated course (20 or more responses)",esc(best.name)+", "+best.rating.toFixed(2)):"")+'<p class="note">Only learners who finish the survey are counted.</p>'}}
 var byEnrol=D.courses.slice().sort(function(a,b){return b.enrol-a.enrol});
 var best=D.courses.filter(function(c){return c.resp>=20&&c.rating}).sort(function(a,b){return b.rating-a.rating})[0];
-$("stats").innerHTML=[stat(fmt(T.enrol),"Course enrolments","One learner can enrol in several courses",enrolInfo({monthly:D.monthly}),"blue"),
-  stat(fmt(T.cert),"Certificates",T.rate?T.rate+"% of enrolments":"",certInfo({enrol:T.enrol,cert:T.cert,monthly:D.monthly}),"orange"),
-  T.countries?stat(fmt(T.countries),"Countries","Where learners gave their country",{t:"Countries",b:'<p>The countries learners give in their SURGhub profile. Not every learner gives one, so this counts the countries we know of.</p>'+fact("Enrolments with a known country",fmt(T.known)+" of "+fmt(T.enrol))+D.countries.slice(0,5).map(function(c,i){return fact((i+1)+". "+esc(c[0]),fmt(c[1]))}).join("")+(D.firsts.length?'<p class="note">You have more learners than any other SURGhub provider from '+esc(D.firsts.slice(0,8).join(", "))+(D.firsts.length>8?" and "+(D.firsts.length-8)+" more":"")+'.</p>':"")+'<p><a href="#sec-map">See the map</a></p>'},"green"):"",
-  T.rating?stat(T.rating,"Average rating","Out of 5, from "+fmt(T.resp)+" survey responses",ratingInfo(T.resp,best),"gold"):"",
-  stat(fmt(T.courses),T.courses===1?"Course":"Courses","On SURGhub",{t:"Your courses",b:'<p>Your courses on SURGhub that these figures include. The five with the most enrolments:</p>'+byEnrol.slice(0,5).map(function(c){return fact('<a href="#course-'+c.i+'">'+esc(c.name)+'</a>',fmt(c.enrol))}).join("")+'<p><a href="#sec-courses">See every course</a></p>'},"pink")].join("");
+$("stats").innerHTML=[stat(fmt(T.enrol),"Course enrolments","One learner can enrol in several courses",enrolInfo({monthly:D.monthly})),
+  stat(fmt(T.cert),"Certificates",T.rate?T.rate+"% of enrolments":"",certInfo({enrol:T.enrol,cert:T.cert,monthly:D.monthly})),
+  T.countries?stat(fmt(T.countries),"Countries","Where learners gave their country",{t:"Countries",b:'<p>The countries learners give in their SURGhub profile. Not every learner gives one, so this counts the countries we know of.</p>'+fact("Enrolments with a known country",fmt(T.known)+" of "+fmt(T.enrol))+D.countries.slice(0,5).map(function(c,i){return fact((i+1)+". "+esc(c[0]),fmt(c[1]))}).join("")+(D.firsts.length?'<p class="note">You have more learners than any other SURGhub provider from '+esc(D.firsts.slice(0,8).join(", "))+(D.firsts.length>8?" and "+(D.firsts.length-8)+" more":"")+'.</p>':"")+'<p><a href="#sec-map">See the map</a></p>'}):"",
+  T.rating?stat(T.rating,"Average rating","Out of 5, from "+fmt(T.resp)+" survey responses",ratingInfo(T.resp,best)):"",
+  stat(fmt(T.courses),T.courses===1?"Course":"Courses","On SURGhub",{t:"Your courses",b:'<p>Your courses on SURGhub that these figures include. The five with the most enrolments:</p>'+byEnrol.slice(0,5).map(function(c){return fact('<a href="#course-'+c.i+'">'+esc(c.name)+'</a>',fmt(c.enrol))}).join("")+'<p><a href="#sec-courses">See every course</a></p>'})].join("");
 $("awards").innerHTML=D.awards.map(function(a){return '<span class="tag tag-gold">'+esc(a)+'</span>'}).join("")+(D.firsts.length?'<span class="tag">More learners than any other provider from '+esc(D.firsts.slice(0,6).join(", "))+(D.firsts.length>6?" and "+(D.firsts.length-6)+" more countries":"")+'</span>':"");
 growth($("growth"),D.monthly);
 if(D.countries.length){$("map-intro").textContent="Learners from "+fmt(D.countries.length)+" countries took your courses. Point at a circle to see the number; the ten largest are listed.";worldMap($("map"),D.countries);$("toplist").innerHTML='<h3>The ten largest</h3>'+bars(D.countries,T.known)+'<p class="note">Country is known for '+fmt(T.known)+' of '+fmt(T.enrol)+' enrolments; shares are of those.</p>'}else $("sec-map").hidden=true;
@@ -485,7 +482,7 @@ function coursePage(c){
   var rc=c.ratings||[],rate=c.enrol?(c.cert/c.enrol*100).toFixed(1)+"%":"–";
   var h='<section style="padding:32px 0 0"><div class="wrap"><a class="back" href="#sec-courses">&larr; All courses</a></div></section>'
    +'<section style="padding-top:28px"><div class="wrap"><p class="eyebrow">At a glance</p><h2>This course in numbers</h2><p class="intro">Choose a figure to see what it counts.</p>'
-   +'<div class="stats">'+[stat(fmt(c.enrol),"Course enrolments",fmt(last12(c.monthly,1))+" in the last 12 months",enrolInfo(c,T.enrol?(c.enrol/T.enrol*100).toFixed(1)+"%":"–"),"blue"),stat(fmt(c.cert),"Certificates",rate+" of enrolments",certInfo(c,T.rate?T.rate+"%":""),"orange"),c.rating?stat(c.rating.toFixed(2),"Average rating","Out of 5, from "+fmt(c.resp)+" responses",ratingInfo(c.resp,null),"gold"):"",c.time?stat(esc(c.time),"Learning time","Recorded across all learners",timeInfo(c.min,c.time,c.enrol),"pink"):""].join("")+'</div>'
+   +'<div class="stats">'+[stat(fmt(c.enrol),"Course enrolments",fmt(last12(c.monthly,1))+" in the last 12 months",enrolInfo(c,T.enrol?(c.enrol/T.enrol*100).toFixed(1)+"%":"–")),stat(fmt(c.cert),"Certificates",rate+" of enrolments",certInfo(c,T.rate?T.rate+"%":"")),c.rating?stat(c.rating.toFixed(2),"Average rating","Out of 5, from "+fmt(c.resp)+" responses",ratingInfo(c.resp,null)):"",c.time?stat(esc(c.time),"Learning time","Recorded across all learners",timeInfo(c.min,c.time,c.enrol)):""].join("")+'</div>'
    +(c.awards.length?'<div class="tags">'+c.awards.map(function(a){return '<span class="tag tag-gold">'+esc(a)+'</span>'}).join("")+'</div>':"")+'</div></section>'
    +'<section><div class="wrap"><p class="eyebrow">Growth</p><h2>Enrolments and certificates over time</h2><div class="card"><div id="cgrowth"></div></div></div></section>'
    +(rc.length?'<section><div class="wrap"><p class="eyebrow">Ratings</p><h2>Average rating by month</h2><p class="intro">From the end-of-course survey; the bar height is the number of ratings that month. Point at a bar for the figures.</p><div class="card"><div id="cratings" class="chart"></div></div></div></section>':"")

@@ -61,8 +61,9 @@ vm.runInContext(fs.readFileSync(path.join(ROOT, 'js', 'partnerReport.js'), 'utf8
   check('no outside scripts or styles: the page works on its own', !/<script[^>]+src=/.test(html) && !/<link[^>]+stylesheet/.test(html));
   check('the page script has the interactions: hover read-out, switches, monthly bars, sorting, course pages, the same 12 months in every small chart', ['showTip(', 'aria-pressed', 'Numbers each month', 'aria-sort', 'location.hash="course-"', 'var WIN='].every(x => html.includes(x)));
   const css = html.match(/<style>([\s\S]*?)<\/style>/)[1];
-  check('Arial Black only for the page title: never for section headings or figures', !/(^|})h2\{[^}]*Arial Black/.test(css) && !/\.stat-v\{[^}]*Arial Black/.test(css) && /\.hero h1\{[^}]*Arial Black/.test(css));
-  check('the header has no photograph, a globe of connections, and room for the SURGhub and provider logos', !/hero-photo|hero_surghub/.test(html) && html.includes('id="globe"') && html.includes('class="logos"') && html.includes('function globe('));
+  check('Arial Bold as on the website, never Arial Black', !/Arial Black/.test(css) && /\.hero h1\{[^}]*font-weight:700/.test(css));
+  check('figures are plain, without boxes with a coloured line above', !/border-top:\s*\d+px solid var\(--(ac|orange|gold|pink|blue)/.test(css) && !/stat-i/.test(html));
+  check('the header has no photograph, a globe of connections, and room for the SURGhub and provider logos', !/hero-photo|hero_surghub/.test(html) && html.includes('id="globe"') && html.includes('class="logos"') && html.includes('function globe(') && /\.hero\{[^}]*#0d233a/.test(css));
   check('the brand accents are used beside the blues', ['--orange', '--gold', '--pink', '--green'].every(x => css.includes(x)));
   check('figure cards open a dialog that explains them, closable with Escape', html.includes('<dialog id="info"') && ['data-info', 'showModal', 'Escape', 'aria-haspopup="dialog"', 'enrolInfo(', 'certInfo('].every(x => html.includes(x)));
   check('a navigation bar links to the sections', html.includes('<nav aria-label="Sections"') && html.includes('href="#sec-courses"') && html.includes('id="sec-courses"'));
