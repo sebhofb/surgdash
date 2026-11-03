@@ -514,8 +514,21 @@ Object.assign(window.App, {
                 await this._pdGh('PUT', '/contents/README.md', { message: 'Start', content: btoa('SURGhub partner reports, published by SURGdash.\n'), branch }, token);
                 first = await blob(files[0]);
             }
-            const shas = [first.sha];
-            for (const f of files.slice(1)) shas.push((await blob(f)).sha);
+            // Three uploads at a time, with a count and the megabytes sent, so a long publish never
+            // looks stuck (Seb, 3 Nov 2026: "uploading 35 reports…" sat unchanged for minutes).
+            const shas = [first.sha], total = files.length, mb = (n) => (n / 1048576).toFixed(0);
+            const allBytes = files.reduce((a, f) => a + String(f.content || '').length, 0);
+            let done = 1, sent = String(files[0].content || '').length, next = 1;
+            const tell = () => { if (opts.progress) opts.progress('Partner dashboards: uploading file ' + done + ' of ' + total + ' (' + mb(sent) + ' of ' + mb(allBytes) + ' MB)…'); };
+            tell();
+            const worker = async () => {
+                while (next < total) {
+                    const i = next++;
+                    shas[i] = (await blob(files[i])).sha;
+                    done++; sent += String(files[i].content || '').length; tell();
+                }
+            };
+            await Promise.all([worker(), worker(), worker()]);
             // One small tree per folder, then the root: a single tree of every file is
             // too much for GitHub to build in one request (it times out).
             if (opts.progress) opts.progress('Partner dashboards: arranging the site…');
