@@ -291,7 +291,7 @@ Object.assign(window.App, {
                         <th class="py-2 px-4 text-left">Metric</th><th class="py-2 px-4 text-right">B · ${esc(B.label)}</th><th class="py-2 px-4 text-right">A · ${esc(A.label)}</th><th class="py-2 px-4 text-right">Change</th></tr></thead>
                     <tbody>
                         ${section('Activity in the period')}
-                        ${row('New registered users', B.registrations, A.registrations, fmt, { strong: true, unfilterable: true })}
+                        ${row('New registered learners', B.registrations, A.registrations, fmt, { strong: true, unfilterable: true })}
                         ${row('Courses started', B.coursesStarted, A.coursesStarted, fmt, { strong: true, hint: 'enrolments where the learner opened the course' })}
                         ${row('Certificates awarded', B.certificates, A.certificates, fmt, { strong: true })}
                         ${row('Learners starting a course', B.learners, A.learners, fmt)}
@@ -349,7 +349,7 @@ Object.assign(window.App, {
         const pp = (a, b) => (a != null && b != null) ? +(a - b).toFixed(1) : '';
         const r = (metric, b, a, kind) => ({ Metric: metric, ['B · ' + B.label]: b == null ? '' : (typeof b === 'number' ? +b.toFixed(kind === 'pct' ? 1 : 2) : b), ['A · ' + A.label]: a == null ? '' : (typeof a === 'number' ? +a.toFixed(kind === 'pct' ? 1 : 2) : a), Change: kind === 'pct' ? pp(a, b) : pct(a, b), Unit: kind === 'pct' ? 'percentage points' : '%' });
         const rows = [
-            r('New registered users', B.registrations, A.registrations), r('Courses started', B.coursesStarted, A.coursesStarted), r('Certificates awarded', B.certificates, A.certificates),
+            r('New registered learners', B.registrations, A.registrations), r('Courses started', B.coursesStarted, A.coursesStarted), r('Certificates awarded', B.certificates, A.certificates),
             r('Learners starting a course', B.learners, A.learners), r('Learning hours', B.hours, A.hours),
             r('Registrations per day', B.perDay.registrations, A.perDay.registrations), r('Courses started per day', B.perDay.coursesStarted, A.perDay.coursesStarted), r('Certificates per day', B.perDay.certificates, A.perDay.certificates),
             r('Certificates ÷ courses started %', B.certPerStart, A.certPerStart, 'pct'), r('Cohort completion %', B.cohortCompletion, A.cohortCompletion, 'pct'),

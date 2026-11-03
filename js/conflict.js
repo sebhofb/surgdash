@@ -227,7 +227,7 @@ Object.assign(window.App, {
         await this.setConflictList(active);
 
         if (exact) {
-            this.showMsg('Added ' + exact + ' — ' + this.formatNumber(stats[exact] || 0) + ' registered users. The KPI is now marked as edited.');
+            this.showMsg('Added ' + exact + ' — ' + this.formatNumber(stats[exact] || 0) + ' registered learners. The KPI is now marked as edited.');
         } else {
             const n = this._conflictNorm(name);
             const near = keys
@@ -265,7 +265,7 @@ Object.assign(window.App, {
         return `
             <div class="bg-white rounded-xl border shadow-sm p-6">
                 <h2 class="text-lg font-bold text-gsf-prussian mb-3 flex items-center gap-2"><i data-lucide="shield" width="20" class="text-gsf-boston"></i> Conflict Settings</h2>
-                <p class="text-sm text-slate-600 mb-3">The <strong>&ldquo;Conflict Settings&rdquo;</strong> KPI on the Platform Overview shows the estimated number of <strong>registered users</strong> whose recorded country is on a published conflict classification. It supports GSF&rsquo;s mission to track reach into fragile and conflict-affected settings.</p>
+                <p class="text-sm text-slate-600 mb-3">The <strong>&ldquo;Conflict Settings&rdquo;</strong> KPI on the Platform Overview shows the estimated number of <strong>registered learners</strong> whose recorded country is on a published conflict classification. It supports GSF&rsquo;s mission to track reach into fragile and conflict-affected settings.</p>
 
                 <div class="bg-slate-50 border border-slate-200 rounded-lg p-4 mb-4">
                     <p class="text-xs font-bold uppercase tracking-wide text-slate-500 mb-1">Source</p>
@@ -278,12 +278,12 @@ Object.assign(window.App, {
                     </div>
                 </div>
 
-                <p class="text-sm text-slate-600 mb-2"><strong>Counted now:</strong> ${this.formatNumber(b.total)} registered users${pct ? ' (' + pct + '% of ' + this.formatNumber(aud.TotalUsers) + ')' : ''} across ${b.rows.length} ${b.rows.length === 1 ? 'country' : 'countries'}.</p>
+                <p class="text-sm text-slate-600 mb-2"><strong>Counted now:</strong> ${this.formatNumber(b.total)} registered learners${pct ? ' (' + pct + '% of ' + this.formatNumber(aud.TotalUsers) + ')' : ''} across ${b.rows.length} ${b.rows.length === 1 ? 'country' : 'countries'}.</p>
                 <div class="flex flex-wrap gap-1.5 mb-1">${chips || '<span class="text-xs text-slate-400 italic">No matching countries in the current data.</span>'}</div>
                 ${none}
 
                 <ul class="text-sm text-slate-600 space-y-1 list-disc list-inside mt-4 mb-3">
-                    <li>Counts <strong>registered users</strong>, not enrolments — the &ldquo;Enrolled Learners&rdquo; card counts course enrolments and is a much larger number, so the two must not be divided into each other</li>
+                    <li>Counts <strong>registered learners</strong>, not enrolments — the &ldquo;Course enrolments&rdquo; card counts course enrolments and is a much larger number, so the two must not be divided into each other</li>
                     <li>Country figures are extrapolated (see above), so this is an <strong>estimate</strong>: country is known for ${aud && aud.CountryKnownPct != null ? aud.CountryKnownPct : '~72'}% of users and scaled up to the full base</li>
                     <li>The country recorded is where the learner says they are <strong>currently based</strong> (residence), not their nationality — so a displaced Sudanese clinician working in Cairo counts under Egypt, not Sudan</li>
                     <li>Matching is by explicit country name and alias, so a spelling the platform uses (&ldquo;DR Congo&rdquo;, &ldquo;Palestine&rdquo;) is mapped to its World Bank entry; any list entry with no match is listed above rather than silently counting zero</li>
@@ -996,7 +996,7 @@ Object.assign(window.App, {
             ['Source', this.CONFLICT_SOURCE.url],
             [''],
             ['Registered learners (estimate)', b.total],
-            ['Share of all registered users', (aud.TotalUsers ? (b.total / aud.TotalUsers * 100).toFixed(1) : '') + '%'],
+            ['Share of all registered learners', (aud.TotalUsers ? (b.total / aud.TotalUsers * 100).toFixed(1) : '') + '%'],
             ['Countries on the list', this.conflictList().length],
             ['Countries with learners', b.rows.length],
             [''],

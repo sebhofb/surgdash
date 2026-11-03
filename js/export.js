@@ -964,7 +964,7 @@ function renderPlatform() {
             <div class="bg-white p-5 rounded-xl border shadow-sm"><p class="text-xs font-bold text-slate-400 uppercase mb-1">Learning Time</p><p class="text-2xl font-black" style="color:#5B8C5A">\${fmtTime(D.totalCourseMinutes)}</p></div>
             <div class="bg-white p-5 rounded-xl border shadow-sm"><p class="text-xs font-bold text-slate-400 uppercase mb-1">Avg Rating</p><p class="text-2xl font-black text-gsf-crimson">\${D.avgRating}</p></div>
             <div class="bg-white p-5 rounded-xl border shadow-sm"><p class="text-xs font-bold text-slate-400 uppercase mb-1">Survey Resp.</p><p class="text-2xl font-black text-gsf-prussian">\${fmt(D.totalResponses)}</p></div>
-            <div class="bg-white p-5 rounded-xl border shadow-sm" title="Registered users whose country is on the \${D.conflictSource}\${D.conflictPct ? ' — ' + D.conflictPct + '% of registered users' : ''}. Country is known for a subset of users and scaled up, so this is an estimate. Countries: \${D.conflictCountries.join(', ')}."><p class="text-xs font-bold text-slate-400 uppercase mb-1">Conflict Settings</p><p class="text-2xl font-black text-gsf-tango">\${fmt(D.conflictLearners)}</p></div>
+            <div class="bg-white p-5 rounded-xl border shadow-sm" title="Registered users whose country is on the \${D.conflictSource}\${D.conflictPct ? ' — ' + D.conflictPct + '% of registered learners' : ''}. Country is known for a subset of users and scaled up, so this is an estimate. Countries: \${D.conflictCountries.join(', ')}."><p class="text-xs font-bold text-slate-400 uppercase mb-1">Conflict Settings</p><p class="text-2xl font-black text-gsf-tango">\${fmt(D.conflictLearners)}</p></div>
         </div>
         <div class="bg-white p-6 rounded-xl shadow-sm border mb-8">
             <h3 class="text-lg font-bold mb-3 text-gsf-prussian">Platform Growth</h3>
@@ -1282,11 +1282,11 @@ function renderMethodology() {
 
             <div class="bg-white rounded-xl border shadow-sm p-6">
                 <h3 class="text-lg font-bold text-gsf-prussian mb-3">Conflict Settings</h3>
-                <p class="text-sm text-slate-600 mb-3">The <strong>&ldquo;Conflict Settings&rdquo;</strong> KPI on the Platform tab shows the estimated number of <strong>registered users</strong> whose recorded country is on a published conflict classification. It supports GSF&rsquo;s mission to track reach into fragile and conflict-affected settings.</p>
+                <p class="text-sm text-slate-600 mb-3">The <strong>&ldquo;Conflict Settings&rdquo;</strong> KPI on the Platform tab shows the estimated number of <strong>registered learners</strong> whose recorded country is on a published conflict classification. It supports GSF&rsquo;s mission to track reach into fragile and conflict-affected settings.</p>
                 <p class="text-sm text-slate-600 mb-3"><strong>Source:</strong> \${D.conflictSource}</p>
                 <p class="text-sm text-slate-600 mb-3"><strong>Countries with learners:</strong> \${D.conflictCountries.join(', ')}</p>
                 <ul class="text-sm text-slate-600 space-y-1 list-disc list-inside mb-3">
-                    <li>Counts <strong>registered users</strong>, not enrolments &mdash; the &ldquo;Enrolled Learners&rdquo; figure counts course enrolments and is much larger, so the two must not be divided into each other</li>
+                    <li>Counts <strong>registered learners</strong>, not enrolments &mdash; the &ldquo;Course enrolments&rdquo; figure counts course enrolments and is much larger, so the two must not be divided into each other</li>
                     <li>Since country data is extrapolated (see above), this is an <strong>estimate</strong>, not an exact count</li>
                     <li>The country recorded is where the learner says they are <strong>currently based</strong> (residence), not their nationality &mdash; a displaced clinician is counted where they now live</li>
                 </ul>
@@ -1324,7 +1324,7 @@ function renderMethodology() {
                 <ul class="text-sm text-slate-600 space-y-2 list-disc list-inside">
                     <li><strong>Survey bias:</strong> Only ~\${m.surveyPct}% of users complete the profile survey. If respondents are systematically different, extrapolated data may be skewed.</li>
                     <li><strong>Browser tracking accuracy:</strong> IP geolocation can be affected by VPNs, proxies, or shared devices.</li>
-                    <li><strong>Learner vs. active users:</strong> Learner counts include all registered users, including those who never started or dropped out.</li>
+                    <li><strong>Learner vs. active users:</strong> Learner counts include all registered learners, including those who never started or dropped out.</li>
                     <li><strong>Timeline gaps:</strong> Some courses may not have learner timeline files. These courses show KPI totals but no growth charts.</li>
                     <li><strong>Rating data:</strong> Survey ratings are only available for courses with active survey links.</li>
                 </ul>

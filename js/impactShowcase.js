@@ -357,7 +357,7 @@
       // Just the three headline numbers — registered learners, courses, countries. (Enrolments,
       // certificates and learning-hours live in the growth / other sections, not this opening grid.)
       const scaleCards = [
-        kpi(D.learners, '', '', 'Registered Users', 'healthcare workers worldwide', '', 'd1'),
+        kpi(D.learners, '', '', 'Registered learners', 'healthcare workers worldwide', '', 'd1'),
         kpi(D.courses, '', 'boston', 'Courses', (D.providers ? ('from ' + D.providers + ' expert providers') : ''), '', 'd2'),
         kpi(D.countries, '+', 'green', 'Countries reached', 'on every continent', '', 'd3')
       ].join('');
@@ -436,15 +436,15 @@
       var gSteps = [];
       if (gN) {
         gSteps.push({ idx: Math.min(3, gN - 1), k: gMon(gLs[0].m), t: 'It began with a few.', b: 'SURGhub opened to the whole surgical team — free, online, from anywhere.' });
-        [[10000, 'A first milestone — adoption beyond the early few.'], [25000, 'Word spreads, country by country.'], [50000, 'From a launch to a movement.'], [100000, 'Still climbing.']].forEach(function (p) { var ci = gCross(p[0]); if (ci > 0) gSteps.push({ idx: ci, k: gMon(gLs[ci].m), t: fmt(p[0]) + ' registered users', b: p[1] }); });
-        gSteps.push({ idx: gN - 1, k: 'Today', t: fmt(D.learners) + ' registered users', b: 'across ' + fmt(D.countries) + '+ countries — and still growing every month.' });
+        [[10000, 'A first milestone — adoption beyond the early few.'], [25000, 'Word spreads, country by country.'], [50000, 'From a launch to a movement.'], [100000, 'Still climbing.']].forEach(function (p) { var ci = gCross(p[0]); if (ci > 0) gSteps.push({ idx: ci, k: gMon(gLs[ci].m), t: fmt(p[0]) + ' registered learners', b: p[1] }); });
+        gSteps.push({ idx: gN - 1, k: 'Today', t: fmt(D.learners) + ' registered learners', b: 'across ' + fmt(D.countries) + '+ countries — and still growing every month.' });
       }
       var growthSteps = gSteps.map(function (st) { return '<article class="gr-step" data-idx="' + st.idx + '"><div class="gr-card"><div class="gr-kicker">' + esc(st.k) + '</div><div class="gr-title">' + esc(st.t) + '</div><div class="gr-body">' + esc(st.b) + '</div></div></article>'; }).join('');
       var growthScrolly = '<div class="gr-scrolly">'
         + '<div class="gr-stage"><div class="chartcard growthhero">'
-        + '<div class="gh-top"><div class="gh-stat"><div id="gh-learn" class="gh-big">0</div><div class="gh-lab">registered users</div></div>'
+        + '<div class="gh-top"><div class="gh-stat"><div id="gh-learn" class="gh-big">0</div><div class="gh-lab">registered learners</div></div>'
         + '<div class="gh-stat gh-pillwrap"><span id="gh-asof" class="gh-asof"></span></div></div>'
-        + '<div class="gh-legend"><span><i class="sw" style="background:#2f86c9"></i>Registered Users</span><span><i class="gh-barsw"></i>New users / month</span></div>'
+        + '<div class="gh-legend"><span><i class="sw" style="background:#2f86c9"></i>Registered learners</span><span><i class="gh-barsw"></i>New users / month</span></div>'
         + '<div id="growth-hero" class="gh-box"></div>'
         + '</div></div>'
         + '<div class="gr-steps">' + growthSteps + '</div>'
@@ -598,7 +598,7 @@
             + '<path class="gline" d="' + lpath(A) + '" stroke="#2f86c9"\/><\/g>'
             + mksvg
             + '<circle class="ghhead" r="5" fill="#2f86c9" stroke="#fff" stroke-width="2" opacity="0"\/>';
-          wrap.innerHTML = '<svg id="growth-hero-svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Cumulative registered users since launch" style="display:block;width:100%;height:' + H + 'px">' + inner + '<\/svg>';
+          wrap.innerHTML = '<svg id="growth-hero-svg" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Cumulative registered learners since launch" style="display:block;width:100%;height:' + H + 'px">' + inner + '<\/svg>';
           var cr = wrap.querySelector('.ghcr'), head = wrap.querySelector('.ghhead'), msEls = wrap.querySelectorAll('.ghms');
           var learnEl = document.getElementById('gh-learn'), asofEl = document.getElementById('gh-asof');
           var MN = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];

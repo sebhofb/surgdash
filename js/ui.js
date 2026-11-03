@@ -152,6 +152,11 @@ Object.assign(window.App, {
     },
     // The dashboard tab to show. Retired keys (Data Health moved to the Data Sync page,
     // Learner lookup to the Directory on 11 Sep 2026) may still be remembered on a device.
+    // The dashboard view a section opens on: the one last used in it this session, else its first.
+    _dashSecTab(sec) {
+        const first = { overview: 'overview', reach: 'learners', quality: 'performance', trends: 'compare', website: 'testimonials' };
+        return (this._dashSecLast && this._dashSecLast[sec]) || first[sec] || 'overview';
+    },
     _dashTabKey() {
         const k = this._dashTab || 'overview';
         if (k === 'health' || k === 'lookup') { this._dashTab = 'overview'; return 'overview'; }
@@ -2116,15 +2121,15 @@ Object.assign(window.App, {
     // Deliberately not derived from record timestamps: a course's Timestamp only moves
     // when its metrics change, so "latest record" reads older than the actual sync.
     // Unit shown under each KPI tile, keyed by tile label. Exists so "Registered
-    // Users" (accounts) is never read as "Enrolled Learners" (course enrolments,
-    // not people), and the Conflict Settings estimate (accounts) is never confused
+    // learners" (people with an account) is never read as "Course enrolments" (one
+    // person can enrol in several courses), and the Conflict Settings estimate (accounts) is never confused
     // with the Conflict tab's learner counts. Tiles may also carry their own `unit`.
     _KPI_UNITS: {
         'Providers':          'partner organisations',
         'Courses':            'courses on the platform',
-        'Registered Users':   'accounts — people, not enrolments',
+        'Registered learners': 'people with a SURGhub account',
         'Active (30 days)':   'accounts that logged in',
-        'Enrolled Learners':  'course enrolments — not people',
+        'Course enrolments':  'one learner can enrol in several courses',
         'Certificates':       'certificates issued',
         'Certification Rate': 'certificates ÷ enrolments',
         'Learning Time':      'learner-years of study',
@@ -3948,19 +3953,19 @@ Object.assign(window.App, {
             const kpiCards = [
                 { label: 'Providers', value: providers.length, color: '#206095', icon: 'building-2' },
                 { label: 'Courses', value: snapData.length, color: '#4389C8', icon: 'book-open' },
-                { label: 'Registered Users', value: this.formatNumber(totalAudience), raw: totalAudience, color: '#1a5276', icon: 'users', title: 'Distinct SURGhub accounts — people who registered on the platform' },
+                { label: 'Registered learners', value: this.formatNumber(totalAudience), raw: totalAudience, color: '#1a5276', icon: 'users', title: 'Distinct SURGhub accounts — people who registered on the platform' },
                 // Registered ≠ active. Active30 is written by the Learners sync (API path)
                 // from each account's last login, as of that sync — so it is a real
                 // usage measure rather than a cumulative registration count.
                 { label: 'Active (30 days)', value: (audSnap && audSnap.Active30 != null) ? this.formatNumber(audSnap.Active30) : '-', raw: (audSnap && audSnap.Active30) || 0, color: '#3FB984', icon: 'activity',
                   title: (audSnap && audSnap.Active30 != null)
                     ? 'Accounts that logged in within 30 days of the ' + (audSnap.ActiveAsOf || 'last') + ' sync — ' +
-                      (totalAudience ? Math.round(audSnap.Active30 / totalAudience * 100) + '% of registered users' : '') +
+                      (totalAudience ? Math.round(audSnap.Active30 / totalAudience * 100) + '% of registered learners' : '') +
                       '. 90 days: ' + this.formatNumber(audSnap.Active90 || 0) +
                       ' · 12 months: ' + this.formatNumber(audSnap.Active365 || 0) +
                       '. Last-login known for ' + this.formatNumber(audSnap.LastLoginKnownCount || 0) + ' accounts.'
                     : 'Run Sync Learners (card 3, API) to populate — login recency comes from the API user records, not the CSV export.' },
-                { label: 'Enrolled Learners', value: this.formatNumber(lrn), raw: lrn, color: '#4389C8', icon: 'user-plus', title: 'Course enrolments — one registered user can enrol in several courses, so this exceeds Registered Users' },
+                { label: 'Course enrolments', value: this.formatNumber(lrn), raw: lrn, color: '#4389C8', icon: 'user-plus', title: 'Course enrolments — one registered user can enrol in several courses, so this exceeds Registered learners' },
                 { label: 'Certificates', value: this.formatNumber(cert), raw: cert, color: '#7A9E9F', icon: 'award' },
                 { label: 'Certification Rate', value: this.formatCertRate(cert, lrn), raw: (this.formatCertRate(cert, lrn, { asNumber: true }) || 0), color: '#B8860B', icon: 'badge-check', title: 'Certificates awarded ÷ total learners, all time' },
                 { label: 'Learning Time', value: studyYears, raw: studyMin, color: '#5B8C5A', icon: 'clock', title: studyMin ? Math.round(studyMin).toLocaleString() + ' learner-minutes total' : 'Run Sync Courses to populate' },
@@ -3969,7 +3974,7 @@ Object.assign(window.App, {
                 { label: 'Survey Responses', value: this.formatNumber(resp), raw: resp, color: '#E28743', icon: 'message-square' },
                 (() => {
                     const cb = this.conflictBreakdown(audSnap);
-                    const share = totalAudience ? (cb.total / totalAudience * 100).toFixed(1) + '% of registered users' : '';
+                    const share = totalAudience ? (cb.total / totalAudience * 100).toFixed(1) + '% of registered learners' : '';
                     return { label: 'Conflict Settings', value: this.formatNumber(cb.total), raw: cb.total, color: '#e57373', icon: 'shield-alert',
                         title: 'Registered users whose country is on the ' + this.CONFLICT_SOURCE.label + (this.isConflictListCustom() ? ' (edited)' : '') + '. '
                             + (share ? share + '. ' : '')
@@ -3979,27 +3984,33 @@ Object.assign(window.App, {
             ];
 
             const dt = this._dashTabKey();
-            // Eleven analysis views. Short labels with the full name as a tooltip, a pill
-            // never breaks mid-label, and the bar wraps as a whole instead of running off
-            // the page. Data Health is on the Data Sync page, Learner lookup in the Directory.
+            // Fourteen views in five sections (Seb, 3 Nov 2026): a row of sections, then the views
+            // of the open section. Short labels with the full name as a tooltip; a pill never breaks
+            // mid-label. Data Health is on the Data Sync page, Learner lookup in the Directory.
+            const dashSections = [['overview', 'Overview', 'layout-dashboard'], ['reach', 'Reach', 'users'], ['quality', 'Quality', 'award'], ['trends', 'Trends', 'trending-up'], ['website', 'Website', 'globe-2']];
             const dashPillDefs = [
-                ['overview', 'Overview', 'layout-dashboard', 'Overview'],
-                ['quarterly', 'Quarterly', 'calendar-range', 'Quarterly metrics — the core figures per quarter'],
-                ['learners', 'Learners', 'users', 'Learners'],
-                ['geography', 'Geography', 'globe', 'Geography'],
-                ['performance', 'Performance', 'award', 'Performance'],
-                ['feedback', 'Feedback', 'message-square', 'Feedback'],
-                ['conflict', 'Conflict', 'shield-alert', 'Conflict Settings — learners in conflict-affected countries'],
-                ['physicians', 'Physicians', 'stethoscope', 'Physician Reach'],
-                ['nurses', 'Nurses', 'heart-pulse', 'Nursing Reach'],
-                ['institutions', 'Institutions', 'building-2', 'Institutions — who arrives together'],
-                ['compare', 'Compare', 'git-compare', 'Compare periods'],
-                ['journeys', 'Journeys', 'route', 'Learner journeys'],
-                ['forum', 'Forum', 'messages-square', 'Forum activity — posts in the course discussion spaces'],
-                ['testimonials', 'Testimonials', 'quote', 'Testimonials — the learner comments surghub.org course pages show'],
+                ['overview', 'Overview', 'layout-dashboard', 'Overview', '', 'overview'],
+                ['quarterly', 'Quarterly', 'calendar-range', 'Quarterly metrics: the core figures per quarter', '', 'overview'],
+                ['learners', 'Learners', 'users', 'Learners', '', 'reach'],
+                ['geography', 'Geography', 'globe', 'Geography', '', 'reach'],
+                ['conflict', 'Conflict', 'shield-alert', 'Conflict-affected countries: learners in conflict-affected countries', '', 'reach'],
+                ['physicians', 'Physicians', 'stethoscope', 'Physician Reach', '', 'reach'],
+                ['nurses', 'Nurses', 'heart-pulse', 'Nursing Reach', '', 'reach'],
+                ['institutions', 'Institutions', 'building-2', 'Institutions: who arrives together', '', 'reach'],
+                ['performance', 'Performance', 'award', 'Performance', '', 'quality'],
+                ['feedback', 'Feedback', 'message-square', 'Feedback', '', 'quality'],
+                ['forum', 'Forum', 'messages-square', 'Forum activity: posts in the course discussion spaces', '', 'quality'],
+                ['compare', 'Compare', 'git-compare', 'Compare periods', '', 'trends'],
+                ['journeys', 'Journeys', 'route', 'Learner journeys', '', 'trends'],
+                ['testimonials', 'Testimonials', 'quote', 'Testimonials: the learner comments surghub.org course pages show', '', 'website'],
             ];
-            const dashPill = ([k, l, ic, full, editOnly]) => `<button ${editOnly ? 'data-edit-only ' : ''}title="${this.escapeHtml(full || l)}" onclick="App._dashTab='${k}'; App.renderView()" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold whitespace-nowrap transition-colors ${dt === k ? 'bg-gsf-prussian text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100'}"><i data-lucide="${ic}" width="14"></i> ${l}</button>`;
-            const dashPills = dashPillDefs.map(dashPill).join('');
+            const curSec = (dashPillDefs.find(d => d[0] === dt) || dashPillDefs[0])[5];
+            this._dashSecLast = Object.assign({}, this._dashSecLast, { [curSec]: dt });
+            const dashSec = ([k, l, ic]) => `<button onclick="App._dashTab=App._dashSecTab('${k}'); App.renderView()" aria-pressed="${curSec === k}" class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap ${curSec === k ? 'bg-gsf-prussian text-white' : 'text-slate-600 hover:bg-slate-100 hover:text-gsf-prussian'}"><i data-lucide="${ic}" width="15"></i> ${l}</button>`;
+            const dashPill = ([k, l, ic, full, editOnly]) => `<button ${editOnly ? 'data-edit-only ' : ''}title="${this.escapeHtml(full || l)}" onclick="App._dashTab='${k}'; App.renderView()" aria-current="${dt === k ? 'page' : 'false'}" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-bold whitespace-nowrap ${dt === k ? 'bg-gsf-tint text-gsf-boston' : 'text-slate-600 hover:bg-slate-100 hover:text-gsf-prussian'}"><i data-lucide="${ic}" width="14"></i> ${l}</button>`;
+            const secPills = dashPillDefs.filter(d => d[5] === curSec);
+            const dashPills = '<div class="flex flex-wrap items-center gap-1 w-full">' + dashSections.map(dashSec).join('') + '</div>'
+                + (secPills.length > 1 ? '<div class="flex flex-wrap items-center gap-1 w-full border-t border-slate-200 mt-1 pt-1">' + secPills.map(dashPill).join('') + '</div>' : '');
 
             const dashContent = this._dashContentHtml(dt, snapData, audSnap, kpiCards);
 
@@ -4290,7 +4301,7 @@ Object.assign(window.App, {
                     <div id="prov-kpi-grid" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-4 mb-10">
                         ${[
                             { label: 'Courses', value: pSnap.length, color: '#206095', icon: 'book-open' },
-                            { label: 'Enrolled Learners', value: this.formatNumber(pLrn), raw: pLrn, color: '#4389C8', icon: 'user-plus', title: 'Course enrolments across this provider\'s courses' },
+                            { label: 'Course enrolments', value: this.formatNumber(pLrn), raw: pLrn, color: '#4389C8', icon: 'user-plus', title: 'Course enrolments across this provider\'s courses' },
                             { label: 'Certificates', value: this.formatNumber(pCert), raw: pCert, color: '#7A9E9F', icon: 'award' },
                             { label: 'Cert. Rate', value: this.formatCertRate(pCert, pLrn), raw: (this.formatCertRate(pCert, pLrn, { asNumber: true }) || 0), color: '#B8860B', icon: 'badge-check', title: 'Certificates ÷ learners across this provider\'s courses' },
                             { label: 'Learning Time', value: this.formatLearningTime(pMin), raw: pMin, color: '#5B8C5A', icon: 'clock', title: pMin ? Math.round(pMin).toLocaleString() + ' learner-minutes total' : 'Run Sync Courses to populate' },
@@ -4323,7 +4334,7 @@ Object.assign(window.App, {
                     <div class="bg-white p-6 rounded-xl shadow-sm border mb-8">
                         <h3 class="text-lg font-bold mb-4 flex items-center gap-2 text-gsf-prussian"><i data-lucide="trending-up" class="text-gsf-boston"></i> Provider Growth ${this._chartWidthBtns('chart_growth')} ${this._resetChartBtn('chart_growth')} ${this._chartBtns('chart_growth', 'Provider_Growth')}</h3>
                         <div class="mb-3 flex flex-wrap gap-4">
-                            <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed checked onchange="if(window.Charts) window.Charts.redrawProviderGrowth(App.getAnalyticsHistory(), App.selectedProvider)" data-series="prov-enroll"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#1a5276"></span> Enrolled Learners</label>
+                            <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed checked onchange="if(window.Charts) window.Charts.redrawProviderGrowth(App.getAnalyticsHistory(), App.selectedProvider)" data-series="prov-enroll"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#1a5276"></span> Course enrolments</label>
                             <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed checked onchange="if(window.Charts) window.Charts.redrawProviderGrowth(App.getAnalyticsHistory(), App.selectedProvider)" data-series="prov-cert"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#4389C8"></span> Certificates</label>
                             <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed id="toggle-prov-growth-bars" onchange="if(window.Charts) window.Charts.redrawProviderGrowth(App.getAnalyticsHistory(), App.selectedProvider)"> Show monthly bars</label>
                             ${this._partialMonthToggle()}
@@ -4440,7 +4451,7 @@ Object.assign(window.App, {
                     ${this._courseAwardsGrid(this.selectedCourse)}
                     <div id="crs-kpi-grid" class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
                         ${[
-                            { label: 'Enrolled Learners', value: this.formatNumber(cSnap.Learners), raw: cSnap.Learners, color: '#4389C8', icon: 'user-plus', title: 'Enrolments in this course' },
+                            { label: 'Course enrolments', value: this.formatNumber(cSnap.Learners), raw: cSnap.Learners, color: '#4389C8', icon: 'user-plus', title: 'Enrolments in this course' },
                             { label: 'Certificates', value: this.formatNumber(cSnap.Certificates), raw: cSnap.Certificates, color: '#7A9E9F', icon: 'award' },
                             { label: 'Cert. Rate', value: this.formatCertRate(cSnap.Certificates, cSnap.Learners), raw: (this.formatCertRate(cSnap.Certificates, cSnap.Learners, { asNumber: true }) || 0), color: '#B8860B', icon: 'badge-check', title: 'Certificates ÷ learners for this course' },
                             { label: 'Learning Time', value: this.formatLearningTime(this.courseLearningMinutes(cSnap)), color: '#E28743', icon: 'clock' },
@@ -4459,7 +4470,7 @@ Object.assign(window.App, {
                     <div class="bg-white p-6 rounded-xl shadow-sm border mb-8">
                         <h3 class="text-lg font-bold mb-4 flex items-center gap-2 text-gsf-prussian"><i data-lucide="trending-up" class="text-gsf-boston"></i> Course Growth ${this._chartWidthBtns('chart_growth')} ${this._resetChartBtn('chart_growth')} ${this._chartBtns('chart_growth', 'Course_Growth')}</h3>
                         <div class="mb-3 flex flex-wrap gap-4">
-                            <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed checked onchange="if(window.Charts) window.Charts.drawCourse(App.getAnalyticsHistory(), App.selectedCourse)" data-series="crs-enroll"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#1a5276"></span> Enrolled Learners</label>
+                            <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed checked onchange="if(window.Charts) window.Charts.drawCourse(App.getAnalyticsHistory(), App.selectedCourse)" data-series="crs-enroll"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#1a5276"></span> Course enrolments</label>
                             <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed checked onchange="if(window.Charts) window.Charts.drawCourse(App.getAnalyticsHistory(), App.selectedCourse)" data-series="crs-cert"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#4389C8"></span> Certificates</label>
                             <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed id="toggle-crs-growth-bars" onchange="if(window.Charts) window.Charts.drawCourse(App.getAnalyticsHistory(), App.selectedCourse)"> Show monthly bars</label>
                             ${this._partialMonthToggle()}
@@ -4664,7 +4675,7 @@ Object.assign(window.App, {
                         <ul class="text-sm text-slate-600 space-y-2 list-disc list-inside">
                             <li><strong>Survey bias:</strong> Only ~${surveyPct}% of users complete the profile survey. If survey respondents are systematically different from non-respondents, extrapolated demographic data may be skewed.</li>
                             <li><strong>Browser tracking accuracy:</strong> The fc_country/lc_country fields reflect IP geolocation, which can be affected by VPNs, proxies, or shared devices.</li>
-                            <li><strong>Learner vs. active users:</strong> Learner counts include all registered users, including those who never started or dropped out.</li>
+                            <li><strong>Learner vs. active users:</strong> Learner counts include all registered learners, including those who never started or dropped out.</li>
                             <li><strong>Course slug matching:</strong> ~2% of user-course records cannot be matched to course titles due to URL slug changes or completely different naming. These are excluded from user-level exports.</li>
                             <li><strong>Timeline gaps:</strong> Some courses may not have learner timeline files. These courses show KPI totals but no growth charts.</li>
                             <li><strong>Rating data:</strong> Survey ratings are only available for courses with active survey links. The "Avg Rating" reflects surveyed users only, not all enrollees.</li>
@@ -5767,7 +5778,7 @@ Object.assign(window.App, {
                     <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-100 mb-8">
                         <h3 class="text-lg font-bold mb-4 flex items-center gap-2 text-gsf-prussian"><i data-lucide="trending-up" class="text-gsf-boston"></i> Platform Growth ${this._chartWidthBtns('chart_growth')} ${this._resetChartBtn('chart_growth')} ${this._chartBtns('chart_growth', 'Platform_Growth')}</h3>
                         <div class="mb-3 flex flex-wrap gap-4 items-center">
-                            <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed checked onchange="if(window.Charts) window.Charts.redrawPlatformGrowth(App.getPlatformHistory())" data-series="plat-enroll"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#1a5276"></span> Enrolled Learners</label>
+                            <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed checked onchange="if(window.Charts) window.Charts.redrawPlatformGrowth(App.getPlatformHistory())" data-series="plat-enroll"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#1a5276"></span> Course enrolments</label>
                             <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed checked onchange="if(window.Charts) window.Charts.redrawPlatformGrowth(App.getPlatformHistory())" data-series="plat-cert"> <span class="w-3 h-3 rounded-sm inline-block" style="background:#4389C8"></span> Certificates</label>
                             <label class="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer"><input type="checkbox" data-viewer-allowed id="toggle-plat-growth-bars" onchange="if(window.Charts) window.Charts.redrawPlatformGrowth(App.getPlatformHistory())"> Show monthly bars</label>
                             ${this._partialMonthToggle()}
@@ -6079,7 +6090,7 @@ Object.assign(window.App, {
                     ${this._renderDailyCertsPanel()}
 
                     <div class="bg-white p-6 rounded-xl border mb-8">
-                        <div class="flex items-center mb-4"><h4 class="font-bold text-xs uppercase text-gsf-prussian">Enrolled Learners by Provider</h4>${this._chartBtns('chart_prov_learners', 'Enrollments_by_Provider')}</div>
+                        <div class="flex items-center mb-4"><h4 class="font-bold text-xs uppercase text-gsf-prussian">Course enrolments by provider</h4>${this._chartBtns('chart_prov_learners', 'Enrollments_by_Provider')}</div>
                         <div id="chart_prov_learners" style="width: 100%; height: 450px;"></div>
                     </div>
                     <div class="bg-white p-6 rounded-xl border mb-8">

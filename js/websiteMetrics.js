@@ -7,7 +7,7 @@
 // Figures (Seb, 19 Oct 2026), all with the report toggles OFF so a report setting never
 // moves the website:
 //   registered_learners  registered SURGhub accounts (newest learner snapshot, TotalUsers)
-//   enrolments           every course enrolment, opened or not, all courses (dashboard "Enrolled Learners")
+//   enrolments           every course enrolment, opened or not, all courses (dashboard "Course enrolments")
 //   countries            countries & territories learners come from (KnownCountry; public 219)
 //   courses              live courses: included, not private, not draft
 //   certificates         every certificate issued, all courses (dashboard "Certificates")

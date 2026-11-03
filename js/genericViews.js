@@ -5402,7 +5402,7 @@ window.GenericViews = {
                 </h2>
                 <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     ${[
-                        { label: 'Registered Users', yearVal: surghubYear.learners, yearEndVal: surghubYearEnd.learners, totalVal: surghubTotal.learners, color: '#4389C8', icon: 'users' },
+                        { label: 'Registered learners', yearVal: surghubYear.learners, yearEndVal: surghubYearEnd.learners, totalVal: surghubTotal.learners, color: '#4389C8', icon: 'users' },
                         { label: 'Certificates Issued',  yearVal: surghubYear.certificates, yearEndVal: surghubYearEnd.certificates, totalVal: surghubTotal.certificates, color: '#002F4C', icon: 'award' },
                         { label: 'Countries',            yearVal: surghubYear_countries, yearEndVal: surghubYearEnd_countries, totalVal: surghubTotal_countries, color: '#10B981', icon: 'globe' }
                     ].map(k => `
@@ -8795,8 +8795,8 @@ updateDirtyCount();
             if (data.surghub) _mSec.push({ t: 'SURGhub — Learning Platform', b:
                 `<p class="text-sm text-slate-600 leading-relaxed mb-2">SURGhub figures come from the platform's own records (LearnWorlds) and are shown as all-time totals on the SURGhub page of this snapshot.</p>
     <ul class="text-sm text-slate-600 leading-relaxed list-disc pl-5 space-y-1.5 mb-3">
-        <li><strong>Registered Users</strong> — unique registered accounts on the platform.</li>
-        <li><strong>Enrolled Learners</strong> — total course enrolments; a learner taking three courses counts three times.</li>
+        <li><strong>Registered learners</strong> — unique registered accounts on the platform.</li>
+        <li><strong>Course enrolments</strong> — total course enrolments; a learner taking three courses counts three times.</li>
         <li><strong>Courses completed</strong> — certificates issued on completion of a course.</li>
         <li><strong>Growth timing</strong> — learner curves use learner signup dates clamped to each course's launch month, so monthly timing is approximate (totals are exact); certificates use actual issue dates.</li>
         <li><strong>Countries/Territories</strong> — distinct countries or territories identified from learner profiles.</li>
@@ -9659,9 +9659,9 @@ function renderSurghub(){
             +'<\/div>';
     }
     var cards=[
-        card('Registered Users','Unique people',s.learners,'#4389C8'),
+        card('Registered learners','Unique people',s.learners,'#4389C8'),
         card('Courses Completed','Certificates awarded',s.certificates,'#FFC145'),
-        card('Enrolled Learners','Across all courses',s.enrolments,'#5AA9E6'),
+        card('Course enrolments','Across all courses',s.enrolments,'#5AA9E6'),
         card('Countries/Territories','Reached',s.countries,'#3FB984'),
         card('Courses','Live on platform',s.courses,'#A78BFA')
     ].join('');
@@ -9710,7 +9710,7 @@ function renderSurghub(){
         ):'')
         +'<div class="reveal" style="margin-bottom:10px"><h2 style="margin:0;font-family:var(--mono);font-size:10px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.2em">Growth Over Time<\/h2><\/div>'
         +'<div class="reveal growth-split">'
-            +'<div class="chart-card"><div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:0 0 12px"><p style="margin:0;font-family:var(--mono);font-size:10px;font-weight:700;color:#6d8ba3;text-transform:uppercase;letter-spacing:.14em">Enrolled Learners<\/p><p style="margin:0;font-family:var(--serif);font-size:26px;font-weight:700;color:#4389C8;line-height:1">'+fmt(s.enrolments)+'<span style="font-family:var(--mono);font-size:10px;font-weight:600;color:#6d8ba3;text-transform:uppercase;letter-spacing:.08em;margin-left:8px">to date<\/span><\/p><\/div><div id="shub-learners" style="position:relative;height:270px"><\/div><\/div>'
+            +'<div class="chart-card"><div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:0 0 12px"><p style="margin:0;font-family:var(--mono);font-size:10px;font-weight:700;color:#6d8ba3;text-transform:uppercase;letter-spacing:.14em">Course enrolments<\/p><p style="margin:0;font-family:var(--serif);font-size:26px;font-weight:700;color:#4389C8;line-height:1">'+fmt(s.enrolments)+'<span style="font-family:var(--mono);font-size:10px;font-weight:600;color:#6d8ba3;text-transform:uppercase;letter-spacing:.08em;margin-left:8px">to date<\/span><\/p><\/div><div id="shub-learners" style="position:relative;height:270px"><\/div><\/div>'
             +'<div class="chart-card" style="display:flex;flex-direction:column;justify-content:center;text-align:center;background:radial-gradient(600px 340px at 50% 0%, rgba(63,185,132,0.16), transparent 70%),var(--surface)">'
                 +'<p style="margin:0 0 4px;font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#3FB984">Certification rate<\/p>'
                 +'<div style="font-family:var(--serif);font-size:clamp(52px,8vw,84px);font-weight:800;color:#3FB984;line-height:.95">'+(s.certRate!=null?s.certRate+'%':'&ndash;')+'<\/div>'
@@ -9756,7 +9756,7 @@ function renderSurghub(){
         ):'')
         +'<p style="margin:22px 0 0;font-family:var(--mono);font-size:9.5px;letter-spacing:.04em;color:#6d8ba3;text-transform:uppercase">Cumulative totals · SURGhub platform data<\/p>'
         +'<\/div>';
-    _drawGrowthLine(document.getElementById('shub-learners'),'Enrolled Learners',s.enrolSeries||s.learnersSeries,'#4389C8');
+    _drawGrowthLine(document.getElementById('shub-learners'),'Course enrolments',s.enrolSeries||s.learnersSeries,'#4389C8');
     if(s.countryMap) _drawCountryMap('shub-map',s.countryMap);
     // Learning-impact dials: build + count-up.
     [].forEach.call(el.querySelectorAll('.dial'),function(d){buildDial(d);if(d._fire)d._fire();});
@@ -10977,7 +10977,7 @@ function initProjectMap(pid){
 
                 ${kpiCard('stethoscope', '#4389C8', 'Healthcare Workers Strengthened',
                     'The total number of unique healthcare workers who have participated in at least one learning or capacity-building activity delivered through GSF initiatives, whether online or in person, during the specified reporting period. This captures the reach and uptake of GSF-supported capacity-building interventions. Where relevant, the indicator may be disaggregated by gender and health workforce cadre.',
-                    '<li>Participants in in-person training workshops on clinical and non-technical skills</li><li>Mentors/trainers who participated in dedicated facilitator skills workshops</li><li>Participants in virtual training or online Communities of Practice with tracked participation</li><li>Unique registered users in self-paced online courses (Level 1)</li>',
+                    '<li>Participants in in-person training workshops on clinical and non-technical skills</li><li>Mentors/trainers who participated in dedicated facilitator skills workshops</li><li>Participants in virtual training or online Communities of Practice with tracked participation</li><li>Unique registered learners in self-paced online courses (Level 1)</li>',
                     'Participant registration records, partner reporting templates (with unique identifiers to avoid double counting), project-specific SURGhub platforms, and mentor/supervisor logs.'
                 )}
 

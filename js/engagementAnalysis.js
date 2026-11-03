@@ -7,7 +7,7 @@
 //
 // All numbers are computed from `App._rawAnonymizedUsers` (one record per
 // user-course learner) joined with `AllCountryStats` from the audience snapshot
-// for the "registered users" headcount.
+// for the "registered learners" headcount.
 
 Object.assign(window.App, {
     // ── Sort + filter state for the Country Engagement table ─────────────
@@ -145,7 +145,7 @@ Object.assign(window.App, {
         if (kind === 'country') {
             rows.push(['# Coverage', 'Users with country', data.usersWithCountry, 'Total platform users', data.totalUsersPlatform, 'Coverage %', data.totalUsersPlatform > 0 ? ((data.usersWithCountry/data.totalUsersPlatform)*100).toFixed(1) : '']);
             rows.push([]);
-            rows.push(['Country', 'Registered Users', 'Learners', 'Active Learners', 'Active %', 'Avg minutes / active', 'Certificates', 'Completion %']);
+            rows.push(['Country', 'Registered learners', 'Learners', 'Active Learners', 'Active %', 'Avg minutes / active', 'Certificates', 'Completion %']);
             Object.entries(data.byCountry)
                 .filter(([_, v]) => v.enrolls >= this._engMinEnrolments)
                 .forEach(([country, v]) => {

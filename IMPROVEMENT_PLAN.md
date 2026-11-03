@@ -86,7 +86,7 @@ Priority: **P0** now, **P1** next 4 to 6 weeks, **P2** later. Effort: S (under h
 
 | Id | Problem | Change | Effort |
 |---|---|---|---|
-| A1 | 14 Dashboard sub-tabs in two wrapping rows (01-hub-overview) | Group them into five sections with a second-level bar:<br>• **Overview** (Overview, Quarterly)<br>• **Reach** (Learners, Geography, Conflict, Physicians, Nurses, Institutions)<br>• **Quality** (Performance, Feedback, Forum)<br>• **Trends** (Compare, Journeys)<br>Remember the last one. | M |
+| A1 (done 3 Nov) | 14 Dashboard sub-tabs in two wrapping rows (01-hub-overview) | Group them into five sections with a second-level bar:<br>• **Overview** (Overview, Quarterly)<br>• **Reach** (Learners, Geography, Conflict, Physicians, Nurses, Institutions)<br>• **Quality** (Performance, Feedback, Forum)<br>• **Trends** (Compare, Journeys)<br>Remember the last one. | M |
 | A2 | Publishing tools are mixed into analysis (Testimonials tab; Publish buttons in several headers) | A "Website and sharing" area for website figures, course feed, testimonials (with hand-added ones), partner dashboards and milestones. | M |
 | A3 | No way to jump to a provider, course or country | A search box (⌘K) over providers, courses, projects, countries and tabs, plus breadcrumbs (SURGhub › Provider › Course) on detail pages. | M |
 | A5 | The tab bar overflows below about 1300 px (08-narrow-1100) | Move the overflow into a "More" menu. | S |
@@ -99,7 +99,7 @@ Priority: **P0** now, **P1** next 4 to 6 weeks, **P2** later. Effort: S (under h
 | B2 | Definitions only on hover; estimates look exact | A standard KPI tile: label, figure, unit line, "as of" date, an info button that opens the definition, and an "estimate" tag where scaled. | M |
 | B3 | Every chart has its own "Include Nov (partial)", S/M/L and "Trim y-axis (drama mode)" | One "Include the current month" switch per page. Chart size and zoom go into a small "…" menu. | M |
 | B4 | Forecasts sit beside results | Label projections as projections (design-system rule) and set them visibly apart. | S |
-| B5 | "Enrolled learners" counts enrolments | Rename to "Course enrolments" and "Registered learners" (see decision 4). | S |
+| B5 (done 3 Nov) | "Enrolled learners" counts enrolments | Rename to "Course enrolments" and "Registered learners" (see decision 4). | S |
 
 ### C. Updating data and freshness (P0/P1)
 
@@ -127,7 +127,7 @@ Priority: **P0** now, **P1** next 4 to 6 weeks, **P2** later. Effort: S (under h
 | Id | Problem | Change | Effort |
 |---|---|---|---|
 | E1 | Export buttons scattered and named differently | One "Share and export" menu on every page: PDF report, Web page, Excel data, Shareable file. | M |
-| E2 | Exports use the old dark editorial look and Inter | Move exports to the design system: a navy hero cover, white pages, Arial, and GSF colours and logo rules (decision 1). | L |
+| E2 (next) | Exports use the old dark editorial look and Inter | Move exports to the design system: a navy hero cover, white pages, Arial, and GSF colours and logo rules (agreed, decision 1). | L |
 | E3 | Publishing goes straight out | A preview of what will change (figures, courses, testimonials) before it goes online, from one place (A2). | M |
 | E4 | Internal and external outputs look alike | Mark every export "internal" or "for sharing", and keep internal figures out of shareable ones (house style). | S |
 
@@ -135,7 +135,7 @@ Priority: **P0** now, **P1** next 4 to 6 weeks, **P2** later. Effort: S (under h
 
 | Id | Problem | Change | Effort |
 |---|---|---|---|
-| F1 | Four programme areas (maternal health, trauma, children's surgery, cancer care) | Align with the two GSF programmes: the Women's Health Programme, with maternal health as its entry point, and the Children's Surgery Programme (decision 3). | M |
+| F1 (on hold) | Four programme areas (maternal health, trauma, children's surgery, cancer care) | Align with the two GSF programmes: the Women's Health Programme, with maternal health as its entry point, and the Children's Surgery Programme (decision 3). | M |
 | F2 | Dense overview controls (years, Sample, HCW multiplier, Sheets) | Put secondary options behind "View options". | S |
 | F3 | KPI names in Title Case ("Reached with Improved Surgical Care") | Sentence case, written once in `Projects.STANDARD_KPIS`. | S |
 | F4 | Data-entry save states are shown mainly by colour (amber, grey, green, red cells) | Text states ("Saving…", "Saved", "Not saved: try again") and inline checks. | M |
@@ -196,13 +196,13 @@ Priority: **P0** now, **P1** next 4 to 6 weeks, **P2** later. Effort: S (under h
 - **Exports reuse app styles.** The PDF, html2canvas and HTML exports are checked separately for each E item.
 - **Big files.** I4 is done last and in small pieces, with the shared helpers introduced first.
 
-## Decisions for you
+## Decisions (Seb, 3 November 2026)
 
-1. **Exported reports.** Move them to the design system: a navy hero cover, white pages and Arial. _Recommended._ The alternative is to keep the dark editorial style.
-2. **Page background.** Phase 0 uses white, the design system's default. _Recommended:_ keep white. A very light blue tint is the alternative.
-3. **Programme areas in SURGfund projects.** Align them with the two GSF programmes. _Recommended._ Trauma and cancer remain clinical needs but are not programmes.
-4. **Labels.** Use "Registered learners" (was "Registered users") and "Course enrolments" (was "Enrolled learners"), plus the glossary in H3. _Recommended._
-5. **Dashboard structure.** Five sections instead of 14 sub-tabs (A1). _Recommended._
+1. **Exported reports move to the GSF design system** (a navy hero cover, white pages, Arial, GSF colours and logo rules): yes. This is work item E2, now scheduled next.
+2. **Page background stays white:** yes (done in phase 0).
+3. **Programme areas in SURGfund projects:** wait. F1 is on hold, and the four areas stay as they are for now.
+4. **Labels:** yes. Done on 3 November: "Registered learners" (was "Registered users") and "Course enrolments" (was "Enrolled learners") in the app and in the exports. The rest of the H3 glossary follows with H2.
+5. **Dashboard in five sections:** yes. Done on 3 November (A1): Overview (Overview, Quarterly), Reach (Learners, Geography, Conflict, Physicians, Nurses, Institutions), Quality (Performance, Feedback, Forum), Trends (Compare, Journeys) and Website (Testimonials). A section opens on the view last used in it.
 
 ## Appendix: measurements (3 November 2026)
 
