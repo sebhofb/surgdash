@@ -218,7 +218,7 @@ check('…uploaded encrypted: no provider name, link or password readable', !/Li
   const tc3 = calls.filter(c => c.url.endsWith('/git/trees')), sub3 = (dir) => { const t = JSON.parse(tc3[tc3.length - 1].body).tree.find(x => x.path === dir); return treeBySha[t.sha]; };
   const page3 = blobBySha[sub3('gsf').find(x => x.path === 'index.html').sha];
   const gsfG = new TextDecoder().decode(await decryptJson(JSON.stringify(JSON.parse(page3.match(/var P=(\{[^;]*\});/)[1])), App._pd.providers['GSF - Global Surgery Foundation'].password));
-  check('GSF is published in the GSF design, the downloads as a section in the page (not a floating bar)', /GSF DESIGN FOR GSF - Global Surgery Foundation/.test(gsfG) && /<section><div class="wrap"><p class="eyebrow">Downloads<\/p>[\s\S]*id="sh-dl" class="dl"/.test(gsfG) && !/position:fixed/.test(gsfG) && !/<!--SH-DOWNLOADS-->/.test(gsfG) && /fetch\(f\.file/.test(gsfG));
+  check('GSF is published in the GSF design, the downloads as a section in the page (not a floating bar) that the top menu links to', /GSF DESIGN FOR GSF - Global Surgery Foundation/.test(gsfG) && /<section id="sec-downloads"><div class="wrap"><p class="eyebrow">Downloads<\/p>[\s\S]*id="sh-dl" class="dl"/.test(gsfG) && !/position:fixed/.test(gsfG) && !/<!--SH-DOWNLOADS-->/.test(gsfG) && /fetch\(f\.file/.test(gsfG));
   check('the password page is in the GSF design: navy band, strong-blue button, the same form fields', /\.band\{background:#002f4c/.test(page3) && /background:#0468b1;color:#ffffff/.test(page3) && /id="pw"/.test(page3) && /id="rm"/.test(page3) && /id="go"/.test(page3));
   delete App._buildPartnerReportHtml;
   await App.pdSetDesign('GSF - Global Surgery Foundation', '');

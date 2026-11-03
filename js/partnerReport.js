@@ -149,7 +149,7 @@ Object.assign(window.App, {
 <a class="skip" href="#main">Skip to the figures</a>
 <header class="top"><div class="wrap">
   <a class="brand" href="#">${logoWhite ? '<img src="' + logoWhite + '" alt="Global Surgery Foundation">' : '<b>Global Surgery Foundation</b>'}</a>
-  <nav aria-label="Sections" id="nav"><a href="#sec-numbers">Overview</a><a href="#sec-growth">Growth</a><a href="#sec-map">Reach</a><a href="#sec-impact">Impact</a><a href="#sec-survey">Survey</a><a href="#sec-voices">Voices</a><a href="#sec-courses">Courses</a></nav>
+  <nav aria-label="Sections" id="nav"><a href="#sec-numbers">Overview</a><a href="#sec-growth">Growth</a><a href="#sec-map">Reach</a><a href="#sec-impact">Impact</a><a href="#sec-survey">Survey</a><a href="#sec-voices">Voices</a><a href="#sec-courses">Courses</a><a href="#sec-downloads">Downloads</a></nav>
 </div></header>
 <div class="hero"><svg class="globe" id="globe" aria-hidden="true" focusable="false"></svg><div class="hero-fade"></div><div class="wrap hero-in">
   <div class="hero-text">
@@ -169,8 +169,8 @@ Object.assign(window.App, {
 ${sec('sec-growth', '', 'Growth', 'Enrolments and certificates over time', '<p class="intro">Running totals by month. Point at the chart to read a month; switch the lines on and off, or add the numbers for each month.</p><div class="card"><div id="growth"></div></div>')}
 ${sec('sec-map', 'band', 'Reach', 'Where your learners are', '<p class="intro" id="map-intro"></p><div class="card map-card"><div id="map"></div><div id="toplist"></div></div>')}
 ${sec('sec-impact', 'dark', 'Learning impact', 'What the learning changes', '<p class="intro">From the survey at the end of each course: the share of learners answering 4 or 5 on a scale of 1 to 5. Choose a figure for the question behind it.</p><div class="stats" id="impact"></div>')}
-${sec('sec-survey', '', 'Survey insights', 'How learners rate the courses', '<p class="intro" id="survey-intro"></p><div class="card"><div id="questions"></div></div>')}
-${sec('sec-voices', 'band warm', 'Learner voices', 'What learners say', '<div id="summary"></div><div class="quotes" id="quotes"></div>')}
+${sec('sec-survey', '', 'Survey insights', 'How learners rate the courses', '<p class="intro" id="survey-intro"></p><div class="big2" id="survey-big"></div><div class="card"><div id="questions"></div></div>')}
+${sec('sec-voices', 'band warm', 'Learner voices', 'What learners say', '<div id="voices"></div>')}
 ${sec('sec-courses', '', 'Courses', 'Course by course', '<p class="intro">Choose a column to sort; choose a course to see its own page.</p><div class="card table-card"><div class="table-scroll"><table class="ctable" id="ctable"></table></div></div>')}
 
 <!--SH-DOWNLOADS-->
@@ -188,8 +188,8 @@ ${sec('sec-notes', 'band', 'About these figures', 'How we count', `<div class="n
 <main id="course" hidden></main>
 
 <footer><div class="wrap">
-  <div class="f-brand">${logoWhite ? '<img src="' + logoWhite + '" alt="Global Surgery Foundation">' : '<b>Global Surgery Foundation</b>'}<p>SURGhub, the UN Global Surgery Learning Hub, is the Global Surgery Foundation's online learning platform.</p></div>
-  <div class="f-col"><b>On this page</b><a href="#sec-numbers">Overview</a><a href="#sec-map">Reach</a><a href="#sec-courses">Courses</a><a href="#sec-notes">How we count</a></div>
+  <div class="f-brand"><b>SURGhub, the UN Global Surgery Learning Hub</b><p>SURGhub is a joint initiative of the Global Surgery Foundation (GSF) and UNITAR (United Nations Institute for Training and Research), supported by the Royal College of Surgeons in Ireland (RCSI), and implemented in association with the Johnson &amp; Johnson Foundation.</p></div>
+  <div class="f-col"><b>On this page</b><a href="#sec-numbers">Overview</a><a href="#sec-map">Reach</a><a href="#sec-courses">Courses</a><a href="#sec-downloads">Downloads</a><a href="#sec-notes">How we count</a></div>
   <div class="f-col"><b>Contact</b><a href="mailto:info@globalsurgeryfoundation.org">info@globalsurgeryfoundation.org</a><a href="https://www.globalsurgeryfoundation.org">globalsurgeryfoundation.org</a><a href="https://www.surghub.org">surghub.org</a></div>
 </div><div class="wrap f-small">Figures to ${esc(asOf)}. This page is private to you; please do not share the link or password.</div></footer>
 <dialog id="info" class="info" aria-labelledby="info-t"><div class="info-in"><button class="x" id="info-x" aria-label="Close">&times;</button><p class="eyebrow" id="info-e"></p><h3 id="info-t"></h3><div class="info-v" id="info-v"></div><div id="info-b"></div></div></dialog>
@@ -264,7 +264,15 @@ section.dark .stat-v{color:var(--gold)}section.dark .stat-s{color:rgba(255,255,2
 .q-t{font-weight:700}.q-t small{display:block;font-weight:400;color:var(--muted);margin-top:2px}
 .q-bar{background:var(--tint);border-radius:4px;height:10px}.q-bar i{display:block;height:10px;border-radius:4px;background:var(--green)}
 .num{text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
-.summary{font-family:Georgia,"Times New Roman",serif;font-size:20px;line-height:1.65;max-width:900px}
+.summary{font-family:Georgia,"Times New Roman",serif;font-size:19px;line-height:1.65;max-width:820px}
+.more{all:unset;cursor:pointer;font:700 15px Arial,sans-serif;color:var(--blue);text-decoration:underline;text-underline-offset:4px}.more:focus-visible{box-shadow:0 0 0 2px #002f4c,0 0 0 5px #ffc145;border-radius:4px}
+.summary .more{margin-left:6px}.quotes-more{margin-top:24px}
+.big2{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin:0 0 20px}
+.big{background:var(--paper);border:1px solid var(--line2);border-radius:12px;padding:30px 32px;display:flex;align-items:center;gap:28px}
+.big-v{font-weight:700;font-size:72px;line-height:1;letter-spacing:-.02em;color:var(--blue);white-space:nowrap}.big-v small{font-size:24px;color:var(--muted);font-weight:700;margin-left:4px}
+.big-l{font-size:18px;font-weight:700;line-height:1.35}.big-s{margin-top:4px;font-size:14px;color:var(--muted)}
+.stars{display:flex;gap:4px;margin-top:10px}.stars svg{width:24px;height:24px}
+.share{margin-top:12px;height:12px;border-radius:6px;background:#fff;border:1px solid var(--line2);overflow:hidden;max-width:260px}.share i{display:block;height:100%;background:var(--green)}
 .summary small{display:block;margin-top:12px;font-family:Arial,sans-serif;font-size:13px;color:var(--muted)}
 .quotes{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:24px;margin-top:28px}
 .quote{margin:0;background:#fff;border-radius:12px;padding:28px}
@@ -297,13 +305,13 @@ section.dark .stat-v{color:var(--gold)}section.dark .stat-s{color:rgba(255,255,2
 .info .fact{display:grid;grid-template-columns:1fr auto;gap:12px;padding:8px 0;border-top:1px solid var(--line);font-size:15px}.info .fact b{font-variant-numeric:tabular-nums}
 .x{position:absolute;top:16px;right:16px;width:36px;height:36px;border-radius:50%;border:0;background:var(--paper);color:var(--navy);font-size:24px;line-height:36px;cursor:pointer}.x:hover{background:var(--tint)}
 footer{background:var(--deep);color:#fff}footer .wrap{display:grid;grid-template-columns:minmax(0,2fr) 1fr 1fr;gap:40px;padding-top:56px;padding-bottom:32px}
-footer img{height:52px;width:auto;display:block;margin-bottom:16px}footer p{margin:0;font-size:14px;color:rgba(255,255,255,.8);max-width:420px}
+.f-brand b{display:block;font-size:17px;margin-bottom:10px}footer p{margin:0;font-size:14px;line-height:1.6;color:rgba(255,255,255,.8);max-width:460px}
 .f-col{display:flex;flex-direction:column;gap:8px;font-size:14px}.f-col b{color:var(--gold);font-size:13px;letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px}.f-col a{color:#fff;text-decoration:none}.f-col a:hover{text-decoration:underline}
 footer .f-small{display:block;padding-top:20px;padding-bottom:28px;border-top:1px solid rgba(255,255,255,.15);font-size:13px;color:rgba(255,255,255,.65)}
 @keyframes flow{from{stroke-dashoffset:100}to{stroke-dashoffset:0}}.globe .arc{animation:flow 6s linear infinite}
 @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}.globe .arc{animation:none;stroke-opacity:0}.stat{transition:none}}
 @media (max-width:900px){.globe{opacity:.45}.top nav{display:none}.hero-in{grid-template-columns:1fr;padding-top:40px}.logos{justify-self:start;order:-1;padding:16px 20px;gap:18px}.logos img{height:52px}}
-@media (max-width:760px){.hero h1{font-size:32px}.two,.map-card{grid-template-columns:1fr}.notes{columns:1}.stats{grid-template-columns:1fr 1fr;gap:12px}h2{font-size:25px}.stat-v{font-size:38px}.stat{padding:20px 16px}section{padding:52px 0}.brand img{height:36px}footer .wrap{grid-template-columns:1fr}.q-row{grid-template-columns:minmax(0,1fr) 60px 56px}.q-row .q-bar{display:none}.q-row.head span:nth-child(2){display:none}.info-in{padding:24px 20px}}
+@media (max-width:760px){.hero h1{font-size:32px}.two,.map-card{grid-template-columns:1fr}.notes{columns:1}.stats{grid-template-columns:1fr 1fr;gap:12px}.big2{grid-template-columns:1fr}.big{flex-direction:column;align-items:flex-start;gap:12px;padding:24px}.big-v{font-size:56px}h2{font-size:25px}.stat-v{font-size:38px}.stat{padding:20px 16px}section{padding:52px 0}.brand img{height:36px}footer .wrap{grid-template-columns:1fr}.q-row{grid-template-columns:minmax(0,1fr) 60px 56px}.q-row .q-bar{display:none}.q-row.head span:nth-child(2){display:none}.info-in{padding:24px 20px}}
 @media print{.top{position:static}.dl,.toggles,.actions{display:none}section{break-inside:avoid}.globe .arc{animation:none}}`;
     },
 
@@ -413,6 +421,22 @@ function questions(list){
   return '<div class="q-row head"><span>Question</span><span>Average out of 5</span><span class="num">Average</span><span class="num">4 or 5</span></div>'
     +list.map(function(q){return '<div class="q-row"><div class="q-t">'+esc(q.t)+(q.t!==q.q?'<small>'+esc(q.q)+'</small>':'')+'</div><div class="q-bar"><i style="width:'+(q.avg/5*100).toFixed(1)+'%"></i></div><div class="num">'+q.avg.toFixed(2)+'</div><div class="num">'+q.hi+'%</div></div>'}).join("");
 }
+// two large figures for the survey: the average rating with stars, and the share who rated it 4 or 5
+function star(f,id){return '<svg viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient id="'+id+'"><stop offset="'+f+'" stop-color="#ffc145"/><stop offset="'+f+'" stop-color="#cde1f0"/></linearGradient></defs><path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5-4.8-4.6 6.6-.9z" fill="url(#'+id+')" stroke="#e0a520" stroke-width=".8"/></svg>'}
+var STARN=0;
+function bigSurvey(rating,resp,qs){var o=(qs||[]).filter(function(q){return /overall satisfaction/i.test(q.t+" "+q.q)})[0],h="";
+  if(rating){var r=+rating,st="";for(var i=0;i<5;i++)st+=star(Math.max(0,Math.min(1,r-i)).toFixed(2),"st"+(STARN++));h+='<div class="big"><div class="big-v">'+r.toFixed(2)+'<small>/ 5</small></div><div><div class="big-l">Overall rating</div><div class="big-s">Average of '+fmt(resp)+' survey responses</div><div class="stars" role="img" aria-label="'+r.toFixed(2)+' out of 5 stars">'+st+'</div></div></div>'}
+  if(o)h+='<div class="big"><div class="big-v">'+o.hi+'%</div><div><div class="big-l">Rated it 4 or 5 out of 5</div><div class="big-s">For overall satisfaction, of '+fmt(o.n)+' who answered</div><div class="share"><i style="width:'+o.hi+'%"></i></div></div></div>';
+  return h}
+// the summary to its first sentence and three quotes, each with a way to see the rest
+function voices(summary,list,note){var h="";
+  if(summary){var ss=String(summary).match(/[^.!?]+[.!?]+["')\\]]*(\\s+|$)/g)||[summary],head=ss.slice(0,1).join(""),rest=ss.slice(1).join("");
+    h+='<div class="summary"><span>'+esc(head)+'</span>'+(rest?'<span hidden>'+esc(rest)+'</span><button type="button" class="more" data-more="summary">Read the full summary</button>':"")+'<small>'+note+'</small></div>'}
+  var q=list||[];if(q.length)h+='<div class="quotes">'+quotes(q.slice(0,3))+(q.length>3?'<div hidden style="display:contents">'+quotes(q.slice(3))+'</div>':"")+'</div>'+(q.length>3?'<p class="quotes-more"><button type="button" class="more" data-more="quotes">Show '+(q.length-3)+' more '+(q.length-3===1?"quote":"quotes")+'</button></p>':"");
+  return h}
+document.addEventListener("click",function(ev){var b=ev.target.closest?ev.target.closest("[data-more]"):null;if(!b)return;
+  if(b.getAttribute("data-more")==="summary"){var sp=b.previousElementSibling;sp.hidden=false;b.remove()}
+  else{var box=b.parentNode.previousElementSibling,hid=box.querySelector("div[hidden]");if(hid)hid.hidden=false;b.parentNode.remove()}});
 function quotes(list){return (list||[]).map(function(q){return '<figure class="quote"><blockquote>'+esc(q.t)+'</blockquote><figcaption><b>'+esc(q.w)+'</b>'+(q.c?'<span>'+esc(q.c)+'</span>':'')+'</figcaption></figure>'}).join("")}
 function surveyInfo(x,what){return {e:"Learning impact",b:'<p>From the survey learners fill in at the end of each course. They were asked '+what+', on a scale of 1 to 5; this is the share who answered 4 or 5.</p>'+fact("Learners who answered this question",fmt(x.n))+fact("Answered 4 or 5",fmt(Math.round(x.n*x.pct/100))+" ("+x.pct+"%)")+'<p class="note">Only learners who finish the survey are counted, so the share describes those who answered, not every learner.</p>'}}
 function timeInfo(min,time,enrol){return {e:"Learning impact",t:"Learning time",b:'<p>The time learners spent in the course pages, as SURGhub records it, added up across every learner. It counts time with a course open, not time spent studying away from SURGhub.</p>'+fact("In total",esc(time))+(perHead(min,enrol)?fact("On average per enrolment",perHead(min,enrol)):"")}}
@@ -464,9 +488,8 @@ $("awards").innerHTML=recog(D.awards,"award")+(D.firsts.length?recog(["More lear
 growth($("growth"),D.monthly);
 if(D.countries.length){$("map-intro").textContent="Learners from "+fmt(D.countries.length)+" countries took your courses. Point at a circle to see the number; the ten largest are listed.";worldMap($("map"),D.countries);$("toplist").innerHTML='<h3>The ten largest</h3>'+bars(D.countries,T.known)+'<p class="note">Country is known for '+fmt(T.known)+' of '+fmt(T.enrol)+' enrolments; shares are of those.</p>'}else $("sec-map").hidden=true;
 var I=impactStats(D.impact);if(I)$("impact").innerHTML=I;else $("sec-impact").hidden=true;
-if(D.questions.length){$("survey-intro").textContent="Every question with at least three answers, across "+fmt(T.resp)+" survey responses. The bar shows the average out of 5; the last column the share answering 4 or 5.";$("questions").innerHTML=questions(D.questions)}else $("sec-survey").hidden=true;
-if(D.summary)$("summary").innerHTML='<div class="summary">'+esc(D.summary)+'<small>A summary of the written answers in the end-of-course surveys.</small></div>';
-if(D.quotes.length)$("quotes").innerHTML=quotes(D.quotes);if(!D.summary&&!D.quotes.length)$("sec-voices").hidden=true;
+if(D.questions.length){$("survey-intro").textContent="Every question with at least three answers, across "+fmt(T.resp)+" survey responses. The bar shows the average out of 5; the last column the share answering 4 or 5.";$("questions").innerHTML=questions(D.questions);$("survey-big").innerHTML=bigSurvey(T.rating,T.resp,D.questions)}else $("sec-survey").hidden=true;
+if(D.summary||D.quotes.length)$("voices").innerHTML=voices(D.summary,D.quotes,"A summary of the written answers in the end-of-course surveys.");else $("sec-voices").hidden=true;
 
 // ── the course table: sortable, each row opens the course page ──
 var cols=[{k:"name",t:"Course"},{k:"enrol",t:"Enrolments"},{k:"cert",t:"Certificates"},{k:"rate",t:"Cert. rate"},{k:"rating",t:"Rating"},{k:"resp",t:"Responses"},{k:"spark",t:"Last 12 months"}];
@@ -490,8 +513,8 @@ function coursePage(c){
    +'<section><div class="wrap"><p class="eyebrow">Growth</p><h2>Enrolments and certificates over time</h2><div class="card"><div id="cgrowth"></div></div></div></section>'
    +(rc.length?'<section><div class="wrap"><p class="eyebrow">Ratings</p><h2>Average rating by month</h2><p class="intro">From the end-of-course survey; the bar height is the number of ratings that month. Point at a bar for the figures.</p><div class="card"><div id="cratings" class="chart"></div></div></div></section>':"")
    +(c.countries.length?'<section><div class="wrap"><p class="eyebrow">Reach</p><h2>Where this course\\'s learners are</h2><div class="card"><div class="two"><div>'+bars(c.countries.slice(0,5),c.known)+'</div><div>'+bars(c.countries.slice(5,10),c.known)+'</div></div><p class="note">Country is known for '+fmt(c.known)+' of '+fmt(c.enrol)+' enrolments; shares are of those.</p></div></div></section>':"")
-   +(c.questions.length?'<section><div class="wrap"><p class="eyebrow">Survey insights</p><h2>How learners rate this course</h2><div class="card">'+questions(c.questions)+'</div></div></section>':"")
-   +((c.summary||c.quotes.length)?'<section><div class="wrap"><p class="eyebrow">Learner voices</p><h2>What learners say</h2>'+(c.summary?'<div class="summary">'+esc(c.summary)+'<small>A summary of the written answers in this course\\'s survey.</small></div>':"")+'<div class="quotes">'+quotes(c.quotes)+'</div></div></section>':"")
+   +(c.questions.length?'<section><div class="wrap"><p class="eyebrow">Survey insights</p><h2>How learners rate this course</h2><div class="big2">'+bigSurvey(c.rating,c.resp,c.questions)+'</div><div class="card">'+questions(c.questions)+'</div></div></section>':"")
+   +((c.summary||c.quotes.length)?'<section><div class="wrap"><p class="eyebrow">Learner voices</p><h2>What learners say</h2>'+voices(c.summary,c.quotes,"A summary of the written answers in this course\\'s survey.")+'</div></section>':"")
    +'<section style="padding-top:0"><div class="wrap"><a class="back" href="#sec-courses">&larr; All courses</a></div></section>';
   $("course").innerHTML=h;
   growth($("cgrowth"),c.monthly);

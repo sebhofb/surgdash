@@ -125,7 +125,7 @@ Object.assign(window.App, {
         const bar = white ? 'background:#ffffff;border:1px solid #e1e7ee;box-shadow:0 6px 24px rgba(11,34,51,.14)' : 'background:#0b2233;border:1px solid #1d3a4f;box-shadow:0 6px 24px rgba(0,0,0,.35)';
         const esc = (t) => String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
         const head = gsf
-            ? '<section><div class="wrap"><p class="eyebrow">Downloads</p><h2>Take the data with you</h2><p class="intro">The full report and the anonymised data behind it. Each file opens with the same password as this page.</p>'
+            ? '<section id="sec-downloads"><div class="wrap"><p class="eyebrow">Downloads</p><h2>Take the data with you</h2><p class="intro">The full report and the anonymised data behind it. Each file opens with the same password as this page.</p>'
                 + '<div id="sh-dl" class="dl">' + manifest.map((f, i) => '<button data-i="' + i + '" title="' + esc(f.name) + '" class="btn' + (i ? ' sec' : '') + '">' + esc(f.label) + '</button>').join('') + '<span id="sh-dl-msg" class="note" style="margin:0"></span></div></div></section>'
             : '<div id="sh-dl" style="position:fixed;right:16px;bottom:16px;z-index:9999;display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 12px;border-radius:12px;' + bar + ';font:13px Arial,Helvetica,sans-serif;color:#9fb3c8">'
             + '<span style="font-weight:700;color:' + (white ? '#0b2233' : '#eef4f9') + ';margin-right:4px">Downloads</span>'

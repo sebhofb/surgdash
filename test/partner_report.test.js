@@ -67,6 +67,9 @@ vm.runInContext(fs.readFileSync(path.join(ROOT, 'js', 'partnerReport.js'), 'utf8
   check('the brand accents are used beside the blues', ['--orange', '--gold', '--pink', '--green'].every(x => css.includes(x)));
   check('figure cards open a dialog that explains them, closable with Escape', html.includes('<dialog id="info"') && ['data-info', 'showModal', 'Escape', 'aria-haspopup="dialog"', 'enrolInfo(', 'certInfo('].every(x => html.includes(x)));
   check('a navigation bar links to the sections', html.includes('<nav aria-label="Sections"') && html.includes('href="#sec-courses"') && html.includes('id="sec-courses"'));
+  check('voices start short: the summary opens on one sentence, three quotes, with a way to read the rest', ['data-more="summary"', 'Read the full summary', 'q.slice(0,3)', 'ss.slice(0,1)'].every(x => html.includes(x)));
+  check('survey insights lead with the overall rating and the share rating it 4 or 5', html.includes('id="survey-big"') && html.includes('function bigSurvey(') && html.includes('Rated it 4 or 5 out of 5'));
+  check('the menu links to the downloads; the footer carries the joint-initiative line, without the GSF logo', html.includes('href="#sec-downloads">Downloads</a></nav>') && /joint initiative of the Global Surgery Foundation \(GSF\) and UNITAR/.test(html) && !/f-brand">\$\{|f-brand"><img/.test(html));
   console.log('\n' + ok + '/' + (ok + bad) + ' passed');
   process.exit(bad ? 1 : 0);
 })();
