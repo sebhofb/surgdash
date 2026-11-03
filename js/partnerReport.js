@@ -163,7 +163,7 @@ Object.assign(window.App, {
 
 <main id="main">
 <section id="sec-numbers" class="lift"><div class="wrap">
-  <div class="stats" id="stats"></div><div class="tags" id="awards"></div>
+  <div class="stats" id="stats"></div><ul class="tags" id="awards"></ul>
   <p class="note">All of your courses on SURGhub, since each one opened. Choose a figure to see what it counts.</p>
 </div></section>
 ${sec('sec-growth', '', 'Growth', 'Enrolments and certificates over time', '<p class="intro">Running totals by month. Point at the chart to read a month; switch the lines on and off, or add the numbers for each month.</p><div class="card"><div id="growth"></div></div>')}
@@ -243,9 +243,9 @@ h3{font-weight:700;font-size:19px;line-height:1.25;margin:0 0 12px;color:var(--n
 .stat-m{margin-top:auto;padding-top:12px;font-size:14px;font-weight:700;color:var(--blue);text-decoration:underline;text-underline-offset:4px;text-decoration-color:rgba(4,104,177,.35)}.stat:hover .stat-m{text-decoration-color:currentColor}
 section.dark .stat{color:#fff;background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.2)}section.dark .stat:hover{background:rgba(255,255,255,.11);border-color:rgba(255,255,255,.35)}
 section.dark .stat-v{color:var(--gold)}section.dark .stat-s{color:rgba(255,255,255,.75)}section.dark .stat-m{color:#fff;text-decoration-color:rgba(255,255,255,.4)}
-.tags{display:flex;flex-wrap:wrap;gap:8px;margin-top:24px}.tags:empty{display:none}
-.tag{display:inline-flex;align-items:center;font-weight:700;font-size:13px;line-height:1.3;padding:7px 14px;border-radius:999px;background:var(--tint);color:var(--blue)}
-.tag-gold{background:var(--gold);color:var(--navy)}
+.tags{list-style:none;display:flex;flex-wrap:wrap;gap:12px 40px;margin:28px 0 0;padding:0}.tags:empty{display:none}
+.tags li{display:flex;align-items:flex-start;gap:10px;font-size:16px;line-height:1.4;color:var(--navy);max-width:560px}
+.tags svg{flex:none;width:22px;height:22px;margin-top:-1px;fill:none;stroke:var(--orange-d);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .card{background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 1px 3px rgba(0,47,76,.08),0 1px 2px rgba(0,47,76,.06);padding:28px}
 .toggles{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 16px}
 .tg{display:inline-flex;align-items:center;gap:8px;font:700 14px Arial,sans-serif;padding:7px 14px;border-radius:999px;border:2px solid var(--line2);background:#fff;color:var(--muted);cursor:pointer}
@@ -321,6 +321,9 @@ function hideTip(){tip.hidden=true}
 // ── the last twelve months of new enrolments, as small bars ──
 // the same twelve calendar months for every course, ending with the data-through month
 var WIN=(function(){var end=D.through||(D.monthly.length?D.monthly[D.monthly.length-1][0]:"");if(!end)return [];var p=end.split("-").map(Number),y=p[0],m=p[1],out=[];for(var i=0;i<12;i++){out.unshift(y+"-"+(m<10?"0":"")+m);m--;if(!m){m=12;y--}}return out})();
+var ICON={award:'<path d="m15.477 12.89 1.515 8.526a.5.5 0 0 1-.81.47l-3.58-2.687a1 1 0 0 0-1.197 0l-3.586 2.686a.5.5 0 0 1-.81-.469l1.514-8.526"/><circle cx="12" cy="8" r="6"/>',globe:'<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>'};
+function recog(items,icon){return (items||[]).map(function(t){return '<li><svg viewBox="0 0 24 24" aria-hidden="true">'+ICON[icon]+'</svg><span>'+esc(t)+'</span></li>'}).join("")}
+function list(a){return a.length<2?a.join(""):a.length===2?a.join(" and "):a.slice(0,-1).join(", ")+", and "+a[a.length-1]}
 // a figure card; with an explanation it is a button that opens the dialog
 var INFO=[];
 function stat(v,l,s,info){var body='<span class="stat-v">'+v+'</span><span class="stat-l">'+l+'</span>'+(s?'<span class="stat-s">'+s+'</span>':'');
@@ -457,7 +460,7 @@ $("stats").innerHTML=[stat(fmt(T.enrol),"Course enrolments","One learner can enr
   T.countries?stat(fmt(T.countries),"Countries","Where learners gave their country",{t:"Countries",b:'<p>The countries learners give in their SURGhub profile. Not every learner gives one, so this counts the countries we know of.</p>'+fact("Enrolments with a known country",fmt(T.known)+" of "+fmt(T.enrol))+D.countries.slice(0,5).map(function(c,i){return fact((i+1)+". "+esc(c[0]),fmt(c[1]))}).join("")+(D.firsts.length?'<p class="note">You have more learners than any other SURGhub provider from '+esc(D.firsts.slice(0,8).join(", "))+(D.firsts.length>8?" and "+(D.firsts.length-8)+" more":"")+'.</p>':"")+'<p><a href="#sec-map">See the map</a></p>'}):"",
   T.rating?stat(T.rating,"Average rating","Out of 5, from "+fmt(T.resp)+" survey responses",ratingInfo(T.resp,best)):"",
   stat(fmt(T.courses),T.courses===1?"Course":"Courses","On SURGhub",{t:"Your courses",b:'<p>Your courses on SURGhub that these figures include. The five with the most enrolments:</p>'+byEnrol.slice(0,5).map(function(c){return fact('<a href="#course-'+c.i+'">'+esc(c.name)+'</a>',fmt(c.enrol))}).join("")+'<p><a href="#sec-courses">See every course</a></p>'})].join("");
-$("awards").innerHTML=D.awards.map(function(a){return '<span class="tag tag-gold">'+esc(a)+'</span>'}).join("")+(D.firsts.length?'<span class="tag">More learners than any other provider from '+esc(D.firsts.slice(0,6).join(", "))+(D.firsts.length>6?" and "+(D.firsts.length-6)+" more countries":"")+'</span>':"");
+$("awards").innerHTML=recog(D.awards,"award")+(D.firsts.length?recog(["More learners than any other provider from "+list(D.firsts.slice(0,6))+(D.firsts.length>6?", and "+(D.firsts.length-6)+" more countries":"")],"globe"):"");
 growth($("growth"),D.monthly);
 if(D.countries.length){$("map-intro").textContent="Learners from "+fmt(D.countries.length)+" countries took your courses. Point at a circle to see the number; the ten largest are listed.";worldMap($("map"),D.countries);$("toplist").innerHTML='<h3>The ten largest</h3>'+bars(D.countries,T.known)+'<p class="note">Country is known for '+fmt(T.known)+' of '+fmt(T.enrol)+' enrolments; shares are of those.</p>'}else $("sec-map").hidden=true;
 var I=impactStats(D.impact);if(I)$("impact").innerHTML=I;else $("sec-impact").hidden=true;
@@ -483,7 +486,7 @@ function coursePage(c){
   var h='<section style="padding:32px 0 0"><div class="wrap"><a class="back" href="#sec-courses">&larr; All courses</a></div></section>'
    +'<section style="padding-top:28px"><div class="wrap"><p class="eyebrow">At a glance</p><h2>This course in numbers</h2><p class="intro">Choose a figure to see what it counts.</p>'
    +'<div class="stats">'+[stat(fmt(c.enrol),"Course enrolments",fmt(last12(c.monthly,1))+" in the last 12 months",enrolInfo(c,T.enrol?(c.enrol/T.enrol*100).toFixed(1)+"%":"–")),stat(fmt(c.cert),"Certificates",rate+" of enrolments",certInfo(c,T.rate?T.rate+"%":"")),c.rating?stat(c.rating.toFixed(2),"Average rating","Out of 5, from "+fmt(c.resp)+" responses",ratingInfo(c.resp,null)):"",c.time?stat(esc(c.time),"Learning time","Recorded across all learners",timeInfo(c.min,c.time,c.enrol)):""].join("")+'</div>'
-   +(c.awards.length?'<div class="tags">'+c.awards.map(function(a){return '<span class="tag tag-gold">'+esc(a)+'</span>'}).join("")+'</div>':"")+'</div></section>'
+   +(c.awards.length?'<ul class="tags">'+recog(c.awards,"award")+'</ul>':"")+'</div></section>'
    +'<section><div class="wrap"><p class="eyebrow">Growth</p><h2>Enrolments and certificates over time</h2><div class="card"><div id="cgrowth"></div></div></div></section>'
    +(rc.length?'<section><div class="wrap"><p class="eyebrow">Ratings</p><h2>Average rating by month</h2><p class="intro">From the end-of-course survey; the bar height is the number of ratings that month. Point at a bar for the figures.</p><div class="card"><div id="cratings" class="chart"></div></div></div></section>':"")
    +(c.countries.length?'<section><div class="wrap"><p class="eyebrow">Reach</p><h2>Where this course\\'s learners are</h2><div class="card"><div class="two"><div>'+bars(c.countries.slice(0,5),c.known)+'</div><div>'+bars(c.countries.slice(5,10),c.known)+'</div></div><p class="note">Country is known for '+fmt(c.known)+' of '+fmt(c.enrol)+' enrolments; shares are of those.</p></div></div></section>':"")
