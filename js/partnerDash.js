@@ -121,12 +121,17 @@ Object.assign(window.App, {
     // decrypts it with the password the page was opened with, and saves it under its name.
     _pdDownloadsHtml(manifest, white) {
         if (!manifest || !manifest.length) return '';
+        const gsf = white === 'gsf';
         const bar = white ? 'background:#ffffff;border:1px solid #e1e7ee;box-shadow:0 6px 24px rgba(11,34,51,.14)' : 'background:#0b2233;border:1px solid #1d3a4f;box-shadow:0 6px 24px rgba(0,0,0,.35)';
         const esc = (t) => String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-        return '<div id="sh-dl" style="position:fixed;right:16px;bottom:16px;z-index:9999;display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 12px;border-radius:12px;' + bar + ';font:13px Arial,Helvetica,sans-serif;color:#9fb3c8">'
+        const head = gsf
+            ? '<section><div class="wrap"><p class="eyebrow">Downloads</p><h2>Take the data with you</h2><p class="intro">The full report and the anonymised data behind it. Each file opens with the same password as this page.</p>'
+                + '<div id="sh-dl" class="dl">' + manifest.map((f, i) => '<button data-i="' + i + '" title="' + esc(f.name) + '" class="btn' + (i ? ' sec' : '') + '">' + esc(f.label) + '</button>').join('') + '<span id="sh-dl-msg" class="note" style="margin:0"></span></div></div></section>'
+            : '<div id="sh-dl" style="position:fixed;right:16px;bottom:16px;z-index:9999;display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 12px;border-radius:12px;' + bar + ';font:13px Arial,Helvetica,sans-serif;color:#9fb3c8">'
             + '<span style="font-weight:700;color:' + (white ? '#0b2233' : '#eef4f9') + ';margin-right:4px">Downloads</span>'
             + manifest.map((f, i) => '<button data-i="' + i + '" title="' + esc(f.name) + '" style="padding:7px 10px;border:0;border-radius:8px;background:#FFC145;color:#002F4C;font-weight:700;font-size:12px;cursor:pointer">' + esc(f.label) + '</button>').join('')
-            + '<span id="sh-dl-msg" style="min-width:0"></span></div>'
+            + '<span id="sh-dl-msg" style="min-width:0"></span></div>';
+        return head
             + '<script>(function(){var F=' + JSON.stringify(manifest.map(f => ({ name: f.name, file: f.file, mime: f.mime }))).replace(/</g, '\\u003c') + ';var K="surghub-report:"+location.pathname;'
             + 'function b(s){var x=atob(s),u=new Uint8Array(x.length);for(var i=0;i<x.length;i++)u[i]=x.charCodeAt(i);return u}'
             + 'function dec(P,pw){return crypto.subtle.importKey("raw",new TextEncoder().encode(pw),"PBKDF2",false,["deriveKey"]).then(function(k){'
@@ -150,18 +155,28 @@ Object.assign(window.App, {
     // replaces itself with the report. "Remember on this device" keeps the password in
     // this browser only (localStorage, per page), so the provider types it once.
     _pdPageHtml(payload, heading, prompt) {
-        heading = heading || 'SURGhub partner report'; prompt = prompt || 'Enter the password you received with this link.';
+        heading = heading || 'Your partner dashboard'; prompt = prompt || 'Enter the password you received with this link.';
+        const logo = this._prImage ? this._prImage('gsf_logo_white_web.png') : '';
         return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
             + '<meta name="robots" content="noindex,nofollow,noarchive"><title>' + heading + '</title>'
-            + '<style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#001523;color:#eef4f9;font:16px/1.5 Arial,Helvetica,sans-serif}'
-            + '.box{width:min(380px,90vw);padding:32px;border-radius:16px;background:#0b2233;border:1px solid #1d3a4f}h1{margin:0 0 6px;font-size:20px}p{margin:0 0 18px;color:#9fb3c8;font-size:14px}'
-            + 'input[type=password]{box-sizing:border-box;width:100%;padding:11px 12px;border-radius:10px;border:1px solid #2c4a60;background:#001523;color:#eef4f9;font-size:15px}'
-            + 'button{margin-top:14px;width:100%;padding:11px;border:0;border-radius:10px;background:#FFC145;color:#002F4C;font-weight:700;font-size:15px;cursor:pointer}'
-            + 'label{display:flex;gap:8px;align-items:center;margin-top:12px;font-size:13px;color:#9fb3c8}.err{min-height:20px;margin-top:10px;color:#ff8a80;font-size:13px}</style></head>'
-            + '<body><form class="box" id="f"><h1>' + heading + '</h1><p>' + prompt + '</p>'
-            + '<input type="password" id="pw" autocomplete="current-password" autofocus placeholder="Password">'
+            // GSF design: a navy band with the white logo, then a white form (Arial, strong-blue button, GSF focus ring)
+            + '<style>*{box-sizing:border-box}body{margin:0;min-height:100vh;background:#ffffff;color:#002f4c;font:16px/1.5 Arial,"Helvetica Neue",Helvetica,sans-serif}'
+            + '.band{background:#002f4c;padding:28px 24px 64px;border-bottom-left-radius:50% 24px;border-bottom-right-radius:50% 24px}.band div{max-width:420px;margin:0 auto}.band img{height:48px;width:auto;display:block}'
+            + '.box{width:min(420px,calc(100vw - 32px));margin:-36px auto 40px;padding:32px;border-radius:12px;background:#ffffff;border:1px solid #dee7ef;box-shadow:0 12px 28px rgba(0,47,76,.14)}'
+            + '.eb{margin:0 0 8px;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#0468b1}'
+            + 'h1{margin:0 0 6px;font-family:"Arial Black",Arial,sans-serif;font-weight:900;font-size:26px;line-height:1.15;color:#0468b1}p{margin:0 0 20px;color:#4a6b82;font-size:15px}'
+            + 'input[type=password]{width:100%;padding:12px 14px;border-radius:9px;border:1px solid #cde1f0;background:#ffffff;color:#002f4c;font:16px Arial,sans-serif}'
+            + 'input[type=password]:focus{outline:none;border-color:#0468b1;box-shadow:0 0 0 3px rgba(255,193,69,.75)}'
+            + 'button{margin-top:16px;width:100%;padding:13px;border:0;border-radius:9px;background:#0468b1;color:#ffffff;font:700 16px Arial,sans-serif;cursor:pointer}button:hover{background:#035c9d}'
+            + 'button:focus-visible{outline:none;box-shadow:0 0 0 2px #002f4c,0 0 0 5px #ffc145}button:disabled{opacity:.6}'
+            + 'label{display:flex;gap:8px;align-items:center;margin-top:14px;font-size:14px;color:#002f4c}input[type=checkbox]{accent-color:#0468b1;width:16px;height:16px}'
+            + '.err{min-height:20px;margin-top:12px;color:#cf2525;font-size:14px;font-weight:700}.foot{text-align:center;font-size:13px;color:#4a6b82;margin:0 16px 32px}</style></head>'
+            + '<body><div class="band"><div>' + (logo ? '<img src="' + logo + '" alt="Global Surgery Foundation">' : '<b style="color:#fff">Global Surgery Foundation</b>') + '</div></div>'
+            + '<form class="box" id="f"><p class="eb">SURGhub</p><h1>' + heading + '</h1><p>' + prompt + '</p>'
+            + '<input type="password" id="pw" autocomplete="current-password" autofocus placeholder="Password" aria-label="Password">'
             + '<label><input type="checkbox" id="rm" checked> Remember on this device</label>'
-            + '<button type="submit" id="go">Open report</button><div class="err" id="err"></div></form>'
+            + '<button type="submit" id="go">Open report</button><div class="err" id="err" role="alert"></div></form>'
+            + '<p class="foot">SURGhub, the UN Global Surgery Learning Hub, is the Global Surgery Foundation\'s online learning platform.</p>'
             + '<script>(function(){var P=' + JSON.stringify(payload) + ';var K="surghub-report:"+location.pathname;'
             + 'function b(s){var x=atob(s),u=new Uint8Array(x.length);for(var i=0;i<x.length;i++)u[i]=x.charCodeAt(i);return u}'
             + 'function open(pw){return crypto.subtle.importKey("raw",new TextEncoder().encode(pw),"PBKDF2",false,["deriveKey"]).then(function(k){'
@@ -293,7 +308,7 @@ Object.assign(window.App, {
     },
     async pdSetDesign(provider, value) {
         const s = await this._pdLoad(); const p = s.providers[provider]; if (!p) return;
-        p.design = value === 'white' ? 'white' : ''; p.published = null; await this._pdSave(); this._pdRerender();
+        p.design = value === 'white' || value === 'gsf' ? value : ''; p.published = null; await this._pdSave(); this._pdRerender();
     },
     async pdNewPassword(provider) {
         if (!confirm('Give ' + provider + ' a new password?\n\nThe old password stops working at the next publish. Send them the new one.')) return;
@@ -376,9 +391,11 @@ Object.assign(window.App, {
                 try {
                     if (!p.slug) p.slug = this._pdNiceSlug(prov, prov);
                     if (!p.password) p.password = this._pdNewPassword();
-                    let html = await this._buildDarkReportHtml(prov);
+                    // 'gsf': the page in the GSF design (partnerReport.js); else the dark report, optionally turned white
+                    const gsf = p.design === 'gsf' && !!this._buildPartnerReportHtml;
+                    let html = gsf ? await this._buildPartnerReportHtml(prov) : await this._buildDarkReportHtml(prov);
                     if (!html) { failed.push(prov + ': no data'); continue; }
-                    const white = p.design === 'white' && !!this.reportToWhite;
+                    const white = !gsf && p.design === 'white' && !!this.reportToWhite;
                     if (white) html = this.reportToWhite(html);
                     // The downloads: each encrypted with the provider's password under a random name.
                     const manifest = [];
@@ -387,7 +404,7 @@ Object.assign(window.App, {
                         files.push({ path: p.slug + '/' + file, content: JSON.stringify(await this._pdEncrypt(a.bytes, p.password)) });
                         manifest.push({ label: a.label, name: a.name, mime: a.mime, file });
                     }
-                    html = this._pdInject(html, this._pdDownloadsHtml(manifest, white));
+                    html = gsf ? html.replace('<!--SH-DOWNLOADS-->', this._pdDownloadsHtml(manifest, 'gsf')) : this._pdInject(html, this._pdDownloadsHtml(manifest, white));
                     files.push({ path: p.slug + '/index.html', content: this._pdPageHtml(await this._pdEncrypt(html, p.password)) });
                     built.push(prov);
                 } catch (e) { failed.push(prov + ': ' + String((e && e.message) || e)); }
@@ -555,7 +572,7 @@ Object.assign(window.App, {
                 + '<td class="py-2 pr-3"><label class="inline-flex items-center gap-2 cursor-pointer"><input type="checkbox" ' + (on ? 'checked' : '') + ' onchange="App.pdSetEnabled(\'' + pe + '\', this.checked)"> <span class="' + (on ? 'font-semibold text-gsf-prussian' : '') + '">' + esc(this.providerFolderName ? this.providerFolderName(prov) : prov) + '</span></label></td>'
                 + '<td class="py-2 pr-3 font-mono text-[11px] whitespace-nowrap">' + (on && p.slug ? (s.baseUrl ? esc(String(s.baseUrl).replace(/^https?:\/\//, '') + '/') + '<input type="text" value="' + esc(p.slug) + '" title="Edit to change the address; the old one stops working at the next publish" onchange="App.pdSetSlug(\'' + pe + '\', this.value)" class="w-40 font-mono text-[11px] border rounded px-1.5 py-0.5 outline-none focus:ring-2 focus:ring-gsf-boston/30">' : '<span class="text-amber-700 font-sans">set the web address first</span>') : '') + '</td>'
                 + '<td class="py-2 pr-3 font-mono text-[11px] whitespace-nowrap">' + (on && p.password ? esc(p.password) : '') + '</td>'
-                + '<td class="py-2 pr-3">' + (on ? '<select onchange="App.pdSetDesign(\'' + pe + '\', this.value)" class="text-[11px] border rounded px-1 py-0.5 bg-white"><option value=""' + (p.design === 'white' ? '' : ' selected') + '>Dark</option><option value="white"' + (p.design === 'white' ? ' selected' : '') + '>White</option></select>' : '') + '</td>'
+                + '<td class="py-2 pr-3">' + (on ? '<select onchange="App.pdSetDesign(\'' + pe + '\', this.value)" class="text-[11px] border rounded px-1 py-0.5 bg-white"><option value=""' + (p.design === 'white' || p.design === 'gsf' ? '' : ' selected') + '>Dark</option><option value="white"' + (p.design === 'white' ? ' selected' : '') + '>White</option><option value="gsf"' + (p.design === 'gsf' ? ' selected' : '') + '>GSF website</option></select>' : '') + '</td>'
                 + '<td class="py-2 pr-3 text-[11px] whitespace-nowrap">' + (on ? (live ? '<span class="text-emerald-700">live · ' + esc(when(p.published.at)) + '</span>' : '<span class="text-amber-700">at the next publish</span>') : '') + '</td>'
                 + '<td class="py-2 text-right whitespace-nowrap">' + (on && p.slug && s.baseUrl ? (live ? '<button onclick="App.pdOpen(\'' + pe + '\')" class="text-[11px] font-bold text-gsf-boston hover:underline mr-2">Open</button>' : '') + '<button onclick="App.pdCopy(\'' + pe + '\', this)" class="text-[11px] font-bold text-gsf-boston hover:underline mr-2">Copy</button><button onclick="App.pdEmail(\'' + pe + '\')" class="text-[11px] font-bold text-gsf-boston hover:underline mr-2">Email…</button><button onclick="App.pdNewPassword(\'' + pe + '\')" class="text-[11px] text-slate-500 hover:underline" title="If a link and password have gone further than they should: the old password stops working at the next publish">New password</button>' : '') + '</td></tr>';
         }).join('');

@@ -159,7 +159,8 @@ async function openPage(html, pw) {
   const teamPw = App._pd.teamPassword;
   check('the team page gets its own password, kept on this Mac', /^[a-km-zA-HJ-NP-Z2-9]{4}(-[a-km-zA-HJ-NP-Z2-9]{4}){3}$/.test(teamPw || '') && !all.includes(teamPw) && tree.includes('team/index.html'));
   const teamWrapped = contentOf('team/index.html');
-  check('…uploaded encrypted: no provider name, link or password readable', !/Lifebox|\/gsf\/|Global Surgery Foundation/.test(teamWrapped) && !teamWrapped.includes(lbP.password));
+  // the password page itself carries GSF's branding (logo, footer), so GSF's PROVIDER entry is what must not show
+check('…uploaded encrypted: no provider name, link or password readable', !/Lifebox|\/gsf\/|GSF - Global Surgery Foundation/.test(teamWrapped) && !teamWrapped.includes(lbP.password));
   const teamOpen = await openPage(teamWrapped, teamPw);
   check('…a provider password does not open it', (await openPage(teamWrapped, lbP.password)).written === null);
   check('…the team password opens a list of every published provider with its link', /href="\/gsf\/"/.test(teamOpen.written || '') && /href="\/lifebox\/"/.test(teamOpen.written || '') && /SURGhub partner reports/.test(teamOpen.written || ''));
@@ -208,6 +209,18 @@ async function openPage(html, pw) {
   const lbD = new TextDecoder().decode(await decryptJson(JSON.stringify(JSON.parse(pageOf(App._pd.providers.Lifebox.slug).match(/var P=(\{[^;]*\});/)[1])), App._pd.providers.Lifebox.password));
   check('GSF is published white (page, text and downloads bar), Lifebox stays dark', /id="white-theme"/.test(gsfW) && /background:#ffffff;color:#0b2233/i.test(gsfW) && /id="sh-dl" style="[^"]*background:#ffffff/.test(gsfW) && !/white-theme/.test(lbD) && /background:#001523/.test(lbD));
   check('the panel offers Dark / White per provider', /App\.pdSetDesign\('GSF - Global Surgery Foundation', this\.value\)[^>]*><option value="">Dark<\/option><option value="white" selected>White/.test(App._partnerDashHtml()));
+  // ── the GSF website design (partnerReport.js, 3 Nov 2026) ──
+  App._buildPartnerReportHtml = async (prov) => '<html><body>GSF DESIGN FOR ' + prov + ' <!--SH-DOWNLOADS--> end</body></html>';
+  await App.pdSetDesign('GSF - Global Surgery Foundation', 'gsf');
+  check('the panel offers the GSF website design', App._pd.providers['GSF - Global Surgery Foundation'].design === 'gsf' && /<option value="gsf" selected>GSF website<\/option>/.test(App._partnerDashHtml()));
+  calls.length = 0; ghRefExists = true;
+  await App.publishPartnerDashboards({ silent: true });
+  const tc3 = calls.filter(c => c.url.endsWith('/git/trees')), sub3 = (dir) => { const t = JSON.parse(tc3[tc3.length - 1].body).tree.find(x => x.path === dir); return treeBySha[t.sha]; };
+  const page3 = blobBySha[sub3('gsf').find(x => x.path === 'index.html').sha];
+  const gsfG = new TextDecoder().decode(await decryptJson(JSON.stringify(JSON.parse(page3.match(/var P=(\{[^;]*\});/)[1])), App._pd.providers['GSF - Global Surgery Foundation'].password));
+  check('GSF is published in the GSF design, the downloads as a section in the page (not a floating bar)', /GSF DESIGN FOR GSF - Global Surgery Foundation/.test(gsfG) && /<section><div class="wrap"><p class="eyebrow">Downloads<\/p>[\s\S]*id="sh-dl" class="dl"/.test(gsfG) && !/position:fixed/.test(gsfG) && !/<!--SH-DOWNLOADS-->/.test(gsfG) && /fetch\(f\.file/.test(gsfG));
+  check('the password page is in the GSF design: navy band, strong-blue button, the same form fields', /\.band\{background:#002f4c/.test(page3) && /background:#0468b1;color:#ffffff/.test(page3) && /id="pw"/.test(page3) && /id="rm"/.test(page3) && /id="go"/.test(page3));
+  delete App._buildPartnerReportHtml;
   await App.pdSetDesign('GSF - Global Surgery Foundation', '');
 
   // ── the select-all tick ──
