@@ -251,34 +251,28 @@ Object.assign(window.App, {
             draw();
         }
         // the average rating by month; months outside the period are faded
-        // the average rating by month as a calendar: a row per year, the colour the average, the bar under it
-        // how many ratings it rests on; months outside the chosen period are faded
-        var RBANDS = [[4.8, '#0468b1', '4.8 and above'], [4.6, '#3f86c4', '4.6 to 4.79'], [4.4, '#91b5d9', '4.4 to 4.59'], [4.0, '#cde1f0', '4.0 to 4.39'], [0, '#eef3f8', 'Below 4.0']];
-        function band(v) { for (var i = 0; i < RBANDS.length; i++) if (v >= RBANDS[i][0]) return RBANDS[i]; return RBANDS[RBANDS.length - 1]; }
+        // the average rating by month as dots: the height is the month's average (every rating counts once),
+        // the size how many ratings it rests on; the dashed line is the average of all the ratings shown.
+        // The scale starts near the lowest month, not at 1, so differences show; months outside a period are faded.
         function ratingChart(el, rc) {
             if (!rc.length) { el.innerHTML = ''; return; }
-            var by = {}, mx = 1; rc.forEach(function (r) { by[r[0]] = r; mx = Math.max(mx, r[2]); });
-            var y0 = +rc[0][0].slice(0, 4), y1 = +rc[rc.length - 1][0].slice(0, 4);
-            var am = P.a ? dstr(P.a).slice(0, 7) : null, bm = P.b ? dstr(P.b).slice(0, 7) : null;
-            var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-            var h = '<div class="hm-scroll"><table class="hm" role="grid" aria-label="Average rating by month"><thead><tr><th></th>' + MON.map(function (m) { return '<th scope="col">' + m + '</th>'; }).join('') + '</tr></thead><tbody>';
-            for (var y = y1; y >= y0; y--) {
-                h += '<tr><th scope="row">' + y + '</th>';
-                for (var m = 1; m <= 12; m++) {
-                    var k = y + '-' + (m < 10 ? '0' : '') + m, r = by[k], out = am && (k < am || k > bm);
-                    if (!r) { h += '<td class="hm-none' + (out ? ' out' : '') + '"></td>'; continue; }
-                    var bd = band(r[1]), dark = r[1] >= 4.6, few = r[2] < 10;
-                    h += '<td class="hm-c' + (out ? ' out' : '') + (few ? ' few' : '') + '" tabindex="0" data-m="' + k + '" style="background:' + bd[1] + ';color:' + (dark ? '#fff' : '#002f4c') + '"><span class="hm-v">' + r[1].toFixed(2) + '</span><span class="hm-n">' + fmt(r[2]) + '</span><i style="width:' + Math.max(4, r[2] / mx * 100).toFixed(1) + '%;background:' + (dark ? 'rgba(255,255,255,.85)' : '#0468b1') + '"></i></td>';
-                }
-                h += '</tr>';
-            }
-            h += '</tbody></table></div><div class="hm-key"><span class="hm-kt">Average rating</span>' + RBANDS.map(function (b) { return '<span><i style="background:' + b[1] + '"></i>' + b[2] + '</span>'; }).join('') + '<span class="hm-kn"><i class="hm-bar"></i>Number of ratings that month (the small number); the bar shows it against the busiest month</span><span class="hm-kn"><i class="hm-few"></i>Striped: fewer than 10 ratings, so read with care</span></div>';
-            el.innerHTML = h;
-            el.querySelectorAll('.hm-c').forEach(function (c) {
-                var r = by[c.getAttribute('data-m')], t = '<b>' + mName(r[0], true) + '</b>Average ' + r[1].toFixed(2) + ' out of 5<br>' + fmt(r[2]) + (r[2] === 1 ? ' rating' : ' ratings') + (r[2] < 10 ? '<br><i>Few ratings: read with care</i>' : '');
-                c.addEventListener('mousemove', function (ev) { showTip(t, ev.clientX, ev.clientY); }); c.addEventListener('mouseleave', hideTip);
-                c.addEventListener('focus', function () { var b = c.getBoundingClientRect(); showTip(t, b.right, b.top); }); c.addEventListener('blur', hideTip);
-            });
+            var W = 1000, H = 300, L = 52, R = 96, Tp = 24, B = 36, w = W - L - R, hh = H - Tp - B, n = rc.length, mx = 1, sx = 0, sn = 0, lo = 5;
+            rc.forEach(function (r) { mx = Math.max(mx, r[2]); sx += r[1] * r[2]; sn += r[2]; lo = Math.min(lo, r[1]); });
+            var all = sx / sn, y0 = Math.min(4.2, Math.floor((lo - 0.05) * 5) / 5), am = P.a ? dstr(P.a).slice(0, 7) : null, bm = P.b ? dstr(P.b).slice(0, 7) : null;
+            var inP = function (m) { return !am || (m >= am && m <= bm); };
+            var x = function (i) { return L + (n === 1 ? w / 2 : i * w / (n - 1)); }, y = function (v) { return Tp + hh - (v - y0) / (5 - y0) * hh; };
+            var rad = function (k) { return 3 + 13 * Math.sqrt(k / mx); };
+            var s = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Average rating by month, dots sized by the number of ratings">';
+            for (var v = y0; v <= 5.0001; v += (5 - y0) > 1.2 ? 0.5 : 0.2) { var yy = y(v).toFixed(1); s += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + yy + '" y2="' + yy + '" stroke="#dee7ef"/><text x="' + (L - 10) + '" y="' + yy + '" dy="4" text-anchor="end" font-size="13" fill="#4a6b82">' + v.toFixed(1) + '</text>'; }
+            rc.forEach(function (r, i) { if (r[0].slice(5) === '01' || i === 0) s += '<text x="' + x(i).toFixed(1) + '" y="' + (H - 10) + '" text-anchor="' + (i === 0 ? 'start' : 'middle') + '" font-size="13" fill="#4a6b82">' + (i === 0 ? mName(r[0]) : r[0].slice(0, 4)) + '</text>'; });
+            var ya = y(all).toFixed(1);
+            s += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + ya + '" y2="' + ya + '" stroke="#e07412" stroke-width="1.5" stroke-dasharray="6 5"/><text x="' + (W - R + 12) + '" y="' + ya + '" dy="-3" font-size="13" fill="#b45c0c">All ratings</text><text x="' + (W - R + 12) + '" y="' + ya + '" dy="14" font-size="15" font-weight="700" fill="#b45c0c">' + all.toFixed(2) + '</text>';
+            s += '<path d="' + rc.map(function (r, i) { return (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(r[1]).toFixed(1); }).join(' ') + '" fill="none" stroke="#91b5d9" stroke-width="1.5" stroke-linejoin="round"/>';
+            rc.forEach(function (r, i) { s += '<circle cx="' + x(i).toFixed(1) + '" cy="' + y(r[1]).toFixed(1) + '" r="' + rad(r[2]).toFixed(1) + '" fill="#0468b1" fill-opacity="' + (inP(r[0]) ? 0.78 : 0.18) + '" stroke="#fff" stroke-width="1.5"/>'; });
+            s += '<line class="guide" x1="0" x2="0" y1="' + Tp + '" y2="' + (Tp + hh) + '" stroke="#002f4c" stroke-dasharray="3 3" visibility="hidden"/><g class="dots"></g><rect x="' + (L - 14) + '" y="' + Tp + '" width="' + (w + 28) + '" height="' + hh + '" fill="transparent" class="hit"/></svg>';
+            var small = Math.max(1, Math.round(mx / 10)), key = '<div class="rk"><span class="rk-t">Dot size</span><span><svg viewBox="0 0 40 30" width="28" height="22" aria-hidden="true"><circle cx="20" cy="15" r="' + rad(small).toFixed(1) + '" fill="#0468b1" fill-opacity=".78"/></svg>' + fmt(small) + ' ratings</span><span><svg viewBox="0 0 40 34" width="32" height="26" aria-hidden="true"><circle cx="20" cy="17" r="' + rad(mx).toFixed(1) + '" fill="#0468b1" fill-opacity=".78"/></svg>' + fmt(mx) + ' ratings</span><span class="rk-a"><i></i>Average of all ' + fmt(sn) + ' ratings, each counted once</span></div>';
+            el.innerHTML = s + key;
+            hover(el, n, x, W, L, w, function (i) { var r = rc[i]; return { pts: [[y(r[1]), '#002f4c']], html: '<b>' + mName(r[0], true) + '</b>Average ' + r[1].toFixed(2) + ' out of 5<br>' + fmt(r[2]) + (r[2] === 1 ? ' rating' : ' ratings') + (r[2] < 10 ? '<br><i>Few ratings: read with care</i>' : '') }; });
         }
         // the last twelve months of new enrolments as small bars: the same months for every course
         var WIN = (function () { var end = D.through || (D.monthly.length ? D.monthly[D.monthly.length - 1][0] : ''); if (!end) return []; var p = end.split('-').map(Number), y = p[0], m = p[1], out = []; for (var i = 0; i < 12; i++) { out.unshift(y + '-' + (m < 10 ? '0' : '') + m); m--; if (!m) { m = 12; y--; } } return out; })();
@@ -511,7 +505,7 @@ Object.assign(window.App, {
                 + '<section style="padding-top:28px"><div class="wrap"><p class="eyebrow">At a glance</p><h2>This course in numbers</h2><div data-pw></div><p class="intro">Choose a figure to see what it counts.</p><div class="stats">' + figures(c.i) + '</div>'
                 + (aw.length ? '<ul class="tags">' + awardLines(aw, 'courses') + '</ul><p class="aw-all"><button type="button" class="more" data-info="' + info(awardsDialog(aw, 'courses', true)) + '">All course awards and how they are decided</button></p>' : '') + '</div></section>'
                 + '<section><div class="wrap"><p class="eyebrow">Growth</p><h2>Enrolments and certificates over time</h2><div data-pw></div><div class="card"><div id="cgrowth"></div></div></div></section>'
-                + (rc.length ? '<section><div class="wrap"><p class="eyebrow">Ratings</p><h2>Average rating by month</h2><div data-pw></div><p class="intro">From the end-of-course survey. The colour shows the average; the small number and the bar, how many ratings it rests on.' + (P.a ? ' Months outside the period are faded.' : '') + '</p><div class="card"><div id="cratings" class="chart"></div></div></div></section>' : '')
+                + (rc.length ? '<section><div class="wrap"><p class="eyebrow">Ratings</p><h2>Average rating by month</h2><div data-pw></div><p class="intro">From the end-of-course survey. The height of a dot is the month\'s average; its size, how many ratings it rests on. Point at the chart to read a month.' + (P.a ? ' Months outside the period are faded.' : '') + '</p><div class="card"><div id="cratings" class="chart"></div></div></div></section>' : '')
                 + (cs.length ? '<section><div class="wrap"><p class="eyebrow">Reach</p><h2>Where this course\'s learners are</h2><div data-pw></div>' + (P.a ? '<p class="intro">Learners who enrolled in the period.</p>' : '') + '<div class="card"><div class="two"><div>' + bars(cs.slice(0, 5), known) + '</div><div>' + bars(cs.slice(5, 10), known) + '</div></div><p class="note">Country is known for ' + fmt(known) + ' of ' + fmt(tot) + ' enrolments; shares are of those.</p></div></div></section>' : '')
                 + (c.questions.length ? '<section><div class="wrap"><p class="eyebrow">Survey insights</p><h2>How learners rate this course</h2>' + (P.a ? '<p class="intro">All time: the survey questions are not broken down by period.</p>' : '') + '<div class="big2">' + bigSurvey(c.rating, c.resp, c.questions) + '</div><div class="card">' + questions(c.questions) + '</div></div></section>' : '')
                 + ((c.summary || c.quotes.length || (c.stories || []).length) ? '<section><div class="wrap"><p class="eyebrow">Learner voices</p><h2>What learners say</h2>' + storiesBlock((c.stories || []).map(function (id) { return D.stories.filter(function (s) { return s.id === id; })[0]; }).filter(Boolean), false, 'Stories published on the SURGhub blog by learners who took this course.') + voices(c.summary, c.quotes, 'A summary of the written answers in this course\'s survey.') + '</div></section>' : '')
@@ -557,16 +551,16 @@ Object.assign(window.App, {
                 if (c) coursePage(c); else methodology();
                 $('main').hidden = true; $('page').hidden = false; $('period').hidden = !!meth;
                 $('hero-title').textContent = c ? c.name : 'How this dashboard is made';
-                $('hero-lead').textContent = c ? 'A course by ' + D.name + ' on SURGhub, the UN Global Surgery Learning Hub.' : 'The methodology behind ' + D.name + '\'s SURGhub partner dashboard.';
+                $('hero-lead').textContent = c ? 'A course by ' + D.name + ' on SURGhub.' : 'The methodology behind ' + D.name + '\'s SURGhub partner dashboard.';
                 $('hero-actions').hidden = true; window.scrollTo(0, 0);
             } else {
                 $('page').hidden = true; $('main').hidden = false; $('period').hidden = false;
-                $('hero-title').textContent = D.name; $('hero-lead').textContent = LEAD; $('hero-actions').hidden = false;
+                $('hero-title').textContent = D.name; $('hero-lead').innerHTML = LEAD; $('hero-actions').hidden = false;
                 if (was) renderMain();
                 var t = hs.length > 1 ? document.getElementById(hs.slice(1)) : null; if (was || t) (t || $('sec-courses')).scrollIntoView();
             }
         }
-        var LEAD = $('hero-lead').textContent;
+        var LEAD = $('hero-lead').innerHTML;
         // the parts that never change with the period
         var I = impactStats(D.impact); if (I) $('impact').innerHTML = I; else $('sec-impact').hidden = true;
         if (D.summary || D.quotes.length) $('voices').innerHTML = voices(D.summary, D.quotes, 'A summary of the written answers in the end-of-course surveys, written with the help of AI.');
