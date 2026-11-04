@@ -188,7 +188,7 @@ Object.assign(window.App, {
         const json = JSON.stringify(DATA).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
 
         const updatedLong = this._prLastDay ? new Date(todayN * 86400000).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }) : '';
-        const lead = 'Your courses on SURGhub.<span class="lead-sub">Updated about once a week; last updated ' + esc(updatedLong) + '.</span>';
+        const lead = 'Your courses on SURGhub.<span class="lead-sub">Updated about once a week; last updated ' + esc(updatedLong) + '<span class="upd-age"></span>.</span>';
         const sec = (id, tone, eyebrow, title, body) => `<section id="${id}" class="${tone}"><div class="wrap"><p class="eyebrow">${eyebrow}</p><h2>${title}</h2>${body}</div></section>`;
         return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow,noarchive"><title>${esc(name)} on SURGhub</title><style>${this._prCss()}</style></head><body>
@@ -202,7 +202,7 @@ Object.assign(window.App, {
     <p class="eyebrow">SURGhub partner dashboard</p>
     <h1 id="hero-title">${esc(name)}</h1>
     <p class="lead" id="hero-lead">${lead}</p>
-    <p class="actions" id="hero-actions"><a class="btn" href="#sec-courses">See your courses</a><a class="link" href="#sec-notes">How we count &rarr;</a></p>
+    <p class="actions" id="hero-actions"><a class="btn" href="#sec-courses">See your courses</a></p>
   </div>
   <div class="logos">${shLogo ? '<img src="' + shLogo + '" alt="SURGhub, the UN Global Surgery Learning Hub">' : '<b>SURGhub</b>'}${provLogo ? '<span class="sep" aria-hidden="true"></span><img src="' + provLogo + '" alt="' + esc(name) + '">' : ''}</div>
 </div></div>
@@ -227,7 +227,7 @@ ${sec('sec-notes', 'band', 'About these figures', 'How we count', `<div class="n
     <p><b>Certificates</b> are the course certificates learners earned. The certification rate is certificates divided by enrolments.</p>
     <p><b>Countries</b> come from what learners give in their SURGhub profile; not every learner gives one. The map places each country at its centre.</p>
     <p><b>Ratings and survey answers</b> come from the survey at the end of each course. Quotes are shown as learners wrote them, without names.</p>
-    <p><b>Updated about once a week.</b> Last updated ${esc(updatedLong)}. The monthly charts run to the end of the last full month (${esc(asOf)}). The figures come from SURGhub and are prepared by the Global Surgery Foundation with SURGdash.</p>
+    <p><b>Updated about once a week.</b> Last updated ${esc(updatedLong)}<span class="upd-age"></span>. The monthly charts run to the end of the last full month (${esc(asOf)}). The figures come from SURGhub and are prepared by the Global Surgery Foundation with SURGdash.</p>
     <p>Questions about this dashboard: <a href="mailto:info@globalsurgeryfoundation.org">info@globalsurgeryfoundation.org</a></p>
   </div>
   <p style="margin-top:20px"><a class="btn sec" href="#methodology">Read the full methodology &rarr;</a></p>`)}
@@ -239,7 +239,7 @@ ${sec('sec-notes', 'band', 'About these figures', 'How we count', `<div class="n
   <div class="f-brand"><b>SURGhub, the UN Global Surgery Learning Hub</b><p>SURGhub is a joint initiative of the Global Surgery Foundation (GSF) and UNITAR (United Nations Institute for Training and Research), supported by the Royal College of Surgeons in Ireland (RCSI), and implemented in association with the Johnson &amp; Johnson Foundation.</p></div>
   <div class="f-col"><b>On this page</b><a href="#sec-numbers">Overview</a><a href="#sec-map">Reach</a><a href="#sec-courses">Courses</a><a href="#sec-downloads">Downloads</a><a href="#sec-notes">How we count</a><a href="#methodology">Methodology</a></div>
   <div class="f-col"><b>Contact</b><a href="mailto:info@globalsurgeryfoundation.org">info@globalsurgeryfoundation.org</a><a href="https://www.globalsurgeryfoundation.org">globalsurgeryfoundation.org</a><a href="https://www.surghub.org">surghub.org</a></div>
-</div><div class="wrap f-small">Updated about once a week; last updated ${esc(updatedLong)}. This page is private to you; please do not share the link or password.</div></footer>
+</div><div class="wrap f-small">Updated about once a week; last updated ${esc(updatedLong)}<span class="upd-age"></span>. This page is private to you; please do not share the link or password.</div></footer>
 <dialog id="info" class="info" aria-labelledby="info-t"><div class="info-in"><button class="x" id="info-x" aria-label="Close">&times;</button><p class="eyebrow" id="info-e"></p><h3 id="info-t"></h3><div class="info-v" id="info-v"></div><div id="info-b"></div></div></dialog>
 <div id="tip" class="tip" hidden></div>
 <script>var DATA=${json};
@@ -272,7 +272,7 @@ a{color:var(--blue)}a:hover{text-decoration:underline}
 .actions{display:flex;flex-wrap:wrap;align-items:center;gap:28px;margin:30px 0 0}
 .hero .btn{background:var(--gold);border-color:var(--gold);color:var(--navy)}.hero .btn:hover{background:#ffcf6e;border-color:#ffcf6e}
 .link{color:#fff;font-weight:700;font-size:16px;text-decoration:underline;text-underline-offset:5px}.link:hover{color:var(--gold)}
-.logos{justify-self:end;align-self:end;margin-bottom:8px;display:flex;align-items:center;gap:28px;background:#fff;border-radius:12px;box-shadow:0 16px 36px rgba(0,20,40,.28);padding:24px 32px}
+.logos{justify-self:end;align-self:center;display:flex;align-items:center;gap:28px;background:#fff;border-radius:12px;box-shadow:0 16px 36px rgba(0,20,40,.28);padding:24px 32px}
 .logos img{height:76px;width:auto;max-width:220px;object-fit:contain;display:block}.logos b{font-size:28px}
 .logos .sep{width:1px;align-self:stretch;background:var(--line2)}
 section{padding:72px 0;scroll-margin-top:72px}
@@ -398,6 +398,12 @@ section.dark .up{color:#9be06b}section.dark .down{color:#ff9b8f}
 .badge:hover{border-color:var(--blue)}.badge:focus-visible{box-shadow:0 0 0 2px #002f4c,0 0 0 5px #ffc145}
 .b-megaphone{background:#fff3d6;border-color:#f3cf7a}.b-flame{color:#b5530a}.b-trend{color:#2f7a14}.b-star{color:#9a6b00}.b-spark{color:var(--blue)}.b-cap{color:#6b3fa0}
 .c-badges .badges{margin-top:14px}.cn-t{display:block}
+.m-h3{font-size:14px;letter-spacing:.06em;text-transform:uppercase;color:var(--blue);margin:24px 0 6px}
+.m-rows{max-width:860px}.m-row{display:grid;grid-template-columns:40px 1fr;gap:12px;align-items:start;padding:12px 0;border-top:1px solid var(--line)}.m-row p{margin:2px 0 0;font-size:15px;color:var(--muted)}.m-row b{font-size:16px}
+.m-ic{display:flex;justify-content:center;padding-top:1px}.m-sec .lb-row{max-width:860px}.m-sec .lb-row p{font-size:15px}
+.m-medals{display:flex;flex-wrap:wrap;gap:14px 36px;margin:4px 0 16px}.m-medals span{display:inline-flex;align-items:center;gap:8px;font-size:16px}
+.m-ex{margin:6px 0 18px}.m-fake{font-weight:700;color:var(--blue);text-decoration:underline;text-underline-offset:3px}
+.m-stars .stars{display:inline-flex;vertical-align:-6px;margin:0 10px 0 0}.m-stars .stars svg{width:20px;height:20px}
 .m-toc{display:flex;flex-wrap:wrap;gap:6px 18px;margin-top:8px;font-size:15px}
 .m-sec{padding:40px 0 8px}.m-sec h2{font-size:24px}.m-sec p,.m-sec li{max-width:820px;font-size:16px;line-height:1.65}.m-sec ul{padding-left:22px}.m-sec li{margin:6px 0}
 @keyframes flow{from{stroke-dashoffset:100}to{stroke-dashoffset:0}}.globe .arc{animation:flow 6s linear infinite}

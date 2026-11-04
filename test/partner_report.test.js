@@ -93,6 +93,8 @@ for (const f of ['partnerReport.js', 'partnerReportPage.js']) vm.runInContext(fs
   check('voices start short: the summary opens on one sentence, three quotes, with a way to read the rest', ['data-more="summary"', 'Read the full summary', 'q.slice(0, 3)', 'ss.slice(0, 1)'].every(x => html.includes(x)));
   check('survey insights lead with the overall rating and the share rating it 4 or 5', html.includes('id="survey-big"') && html.includes('function bigSurvey(') && html.includes('Rated it 4 or 5 out of 5'));
   check('the menu links to the downloads; the footer carries the joint-initiative line, without the GSF logo', html.includes('href="#sec-downloads">Downloads</a></nav>') && /joint initiative of the Global Surgery Foundation \(GSF\) and UNITAR/.test(html) && !/f-brand">\$\{|f-brand"><img/.test(html));
+  check('the hero has no How we count link; the logos are centred; the update says how many days ago', !/hero-actions[^\n]*How we count/.test(html) && /\.logos\{[^}]*align-self:center/.test(html) && (html.match(/class="upd-age"/g) || []).length === 3 && html.includes("'yesterday'"));
+  check('the methodology shows the icons the report uses: labels, medals, the award and globe icons, stars, the rating dots and the period reminder', /function methodology[\s\S]{0,6000}badge static/.test(html) && /function methodology[\s\S]{0,6000}medal\(r, 34\)/.test(html) && html.includes('AWARD_IC') && /function methodology[\s\S]{0,9000}GLOBE/.test(html) && html.includes('m-stars') && html.includes('A month with many') && html.includes('pwarn m-ex'));
   console.log('\n' + ok + '/' + (ok + bad) + ' passed');
   process.exit(bad ? 1 : 0);
 })();
