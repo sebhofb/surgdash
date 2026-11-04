@@ -216,9 +216,9 @@ Object.assign(window.App, {
 ${sec('sec-growth', '', 'Growth', 'Enrolments and certificates over time', '<div data-pw></div><p class="intro" id="growth-intro"></p><div class="card"><div id="growth"></div></div>')}
 ${sec('sec-map', 'band', 'Reach', 'Where your learners are', '<div data-pw></div><p class="intro" id="map-intro"></p><div class="card map-card"><div id="map"></div><div id="toplist"></div></div>')}
 ${sec('sec-impact', 'dark', 'Learning impact', 'What the learning changes', '<p class="intro">From the survey at the end of each course: the share of learners answering 4 or 5 on a scale of 1 to 5. Choose a figure for the question behind it.</p><div class="stats" id="impact"></div><p class="note" id="impact-note" hidden>All time: the survey questions are not broken down by period.</p>')}
-${sec('sec-survey', '', 'Survey insights', 'How learners rate the courses', '<div data-pw></div><div class="big2" id="survey-big"></div><div class="card" id="ratings-box"><h3>Average rating by month</h3><p class="note" style="margin:0 0 12px">From the end-of-course survey; the bar height is the number of ratings that month. Point at the chart to read a month.</p><div id="ratings" class="chart"></div></div><p class="intro" id="survey-intro" style="margin-top:32px"></p><div class="card"><div id="questions"></div></div>')}
+${sec('sec-survey', '', 'Survey insights', 'How learners rate the courses', '<div data-pw></div><div class="big2" id="survey-big"></div><div class="card" id="ratings-box"><h3>Average rating by month</h3><p class="note" style="margin:0 0 16px">From the end-of-course survey. The colour shows the average; the small number and the bar, how many ratings it rests on. Point at a month for the figures.</p><div id="ratings" class="chart"></div></div><p class="intro" id="survey-intro" style="margin-top:32px"></p><div class="card"><div id="questions"></div></div>')}
 ${sec('sec-voices', 'band warm', 'Learner voices', 'What learners say', '<div id="voices"></div><div id="stories"></div>')}
-${sec('sec-courses', '', 'Courses', 'Course by course', '<div data-pw></div><p class="intro">Choose a column to sort; choose a course to see its own page. <span id="labels-all"></span></p><div class="card table-card"><div class="table-scroll"><table class="ctable" id="ctable"></table></div></div>')}
+${sec('sec-courses', '', 'Courses', 'Course by course', '<div data-pw></div><p class="intro">Choose a column to sort; choose a course to see its own page.</p><div class="card table-card"><div class="table-scroll"><table class="ctable" id="ctable"></table></div><div class="t-foot" id="labels-all"></div></div>')}
 
 <!--SH-DOWNLOADS-->
 
@@ -380,7 +380,20 @@ section.dark .up{color:#9be06b}section.dark .down{color:#ff9b8f}
 .aw-cell .aw-won{display:block;margin-top:2px}.aw-cell:not(.won) b{color:var(--muted)}
 .info.wide{max-width:920px}.info h4{font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--blue);margin:22px 0 4px}
 .lb-row{display:grid;grid-template-columns:minmax(150px,auto) 1fr;gap:14px;align-items:start;padding:12px 0;border-top:1px solid var(--line)}.lb-row p{margin:0;font-size:14.5px}.lb-row.on{background:var(--warm);margin:0 -12px;padding:12px}
+.t-foot{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;padding:14px 16px;border-top:1px solid var(--line);background:var(--paper);border-radius:0 0 12px 12px}.t-foot:empty{display:none}.t-foot .lb-t{font-size:13px;font-weight:700;color:var(--muted);margin-right:4px}.t-foot .more{margin-left:6px;font-size:14px}
 .badge.static{cursor:default}.badge.static:hover{border-color:var(--line2)}
+.hm-scroll{overflow-x:auto}.hm{border-collapse:separate;border-spacing:4px;width:100%;min-width:720px;table-layout:fixed}
+.hm th{font-size:12px;font-weight:700;color:var(--muted);text-align:center;padding:0 0 4px}.hm tbody th{text-align:right;padding:0 10px 0 0;width:52px;font-size:14px;color:var(--navy)}
+.hm td{position:relative;height:58px;border-radius:7px;text-align:center;vertical-align:middle;padding:0}
+.hm-none{background:repeating-linear-gradient(135deg,#f6f9fc 0 6px,#fff 6px 12px);border:1px solid var(--line)}
+.hm-c{cursor:default}.hm-c:focus-visible{outline:none;box-shadow:0 0 0 2px #002f4c,0 0 0 5px #ffc145}
+.hm-v{display:block;font-weight:700;font-size:15px;line-height:1.1}.hm-n{display:block;font-size:11px;opacity:.85;margin-top:2px}
+.hm-c i{position:absolute;left:6px;bottom:5px;height:3px;border-radius:2px;max-width:calc(100% - 12px)}
+.hm-c.few{background-image:repeating-linear-gradient(135deg,rgba(255,255,255,.38) 0 5px,transparent 5px 10px)!important}
+.hm-key .hm-few{background:repeating-linear-gradient(135deg,#91b5d9 0 3px,#e6f0f8 3px 6px)}.hm .out{opacity:.28}
+.hm-key{display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px;margin-top:14px;font-size:13px;color:var(--muted)}
+.hm-key span{display:inline-flex;align-items:center;gap:6px}.hm-key i{display:inline-block;width:16px;height:12px;border-radius:3px}.hm-kt{font-weight:700;color:var(--navy)}
+.hm-key .hm-bar{width:18px;height:3px;background:#0468b1}.hm-kn{flex-basis:100%}
 .pwarn{display:inline-flex;align-items:center;flex-wrap:wrap;gap:8px 12px;margin:0 0 20px;padding:8px 12px;border-radius:9px;background:#fff3d6;border:1px solid #f3cf7a;font-size:14px;color:var(--navy)}
 .pwarn svg{width:16px;height:16px;fill:none;stroke:#9a6b00;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
 .pwarn button{all:unset;cursor:pointer;font-weight:700;color:var(--blue);text-decoration:underline;text-underline-offset:3px}.pwarn button:focus-visible{box-shadow:0 0 0 2px #002f4c,0 0 0 5px #ffc145;border-radius:3px}

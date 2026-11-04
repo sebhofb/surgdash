@@ -251,19 +251,34 @@ Object.assign(window.App, {
             draw();
         }
         // the average rating by month; months outside the period are faded
+        // the average rating by month as a calendar: a row per year, the colour the average, the bar under it
+        // how many ratings it rests on; months outside the chosen period are faded
+        var RBANDS = [[4.8, '#0468b1', '4.8 and above'], [4.6, '#3f86c4', '4.6 to 4.79'], [4.4, '#91b5d9', '4.4 to 4.59'], [4.0, '#cde1f0', '4.0 to 4.39'], [0, '#eef3f8', 'Below 4.0']];
+        function band(v) { for (var i = 0; i < RBANDS.length; i++) if (v >= RBANDS[i][0]) return RBANDS[i]; return RBANDS[RBANDS.length - 1]; }
         function ratingChart(el, rc) {
-            var W = 1000, H = 240, L = 48, R = 16, Tp = 16, B = 36, w = W - L - R, hh = H - Tp - B, n = rc.length, mx = 1; rc.forEach(function (r) { mx = Math.max(mx, r[2]); });
-            var bw = Math.max(3, w / n * 0.7), am = P.a ? dstr(P.a).slice(0, 7) : null, bm = P.b ? dstr(P.b).slice(0, 7) : null;
-            var inP = function (m) { return !am || (m >= am && m <= bm); };
-            var x = function (i) { return L + (n === 1 ? w / 2 : i * w / (n - 1)); }, y = function (v) { return Tp + hh - v / 5 * hh; };
-            var s = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Average rating by month">';
-            [1, 2, 3, 4, 5].forEach(function (v) { var yy = y(v).toFixed(1); s += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + yy + '" y2="' + yy + '" stroke="#dee7ef"/><text x="' + (L - 10) + '" y="' + yy + '" dy="4" text-anchor="end" font-size="13" fill="#4a6b82">' + v + '</text>'; });
-            rc.forEach(function (r, i) { var hb = Math.max(2, r[2] / mx * hh * 0.5); s += '<rect x="' + (x(i) - bw / 2).toFixed(1) + '" y="' + (Tp + hh - hb).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + hb.toFixed(1) + '" fill="' + (inP(r[0]) ? '#cde1f0' : '#eef3f8') + '"/>'; if (r[0].slice(5) === '01' || i === 0) s += '<text x="' + x(i).toFixed(1) + '" y="' + (H - 10) + '" text-anchor="' + (i === 0 ? 'start' : 'middle') + '" font-size="13" fill="#4a6b82">' + (i === 0 ? mName(r[0]) : r[0].slice(0, 4)) + '</text>'; });
-            s += '<path d="' + rc.map(function (r, i) { return (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(r[1]).toFixed(1); }).join(' ') + '" fill="none" stroke="#f08a24" stroke-width="3" stroke-opacity="' + (am ? 0.35 : 1) + '"/>';
-            if (am) { var seg = []; rc.forEach(function (r, i) { if (inP(r[0])) seg.push((seg.length ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(r[1]).toFixed(1)); }); if (seg.length) s += '<path d="' + seg.join(' ') + '" fill="none" stroke="#f08a24" stroke-width="3"/>'; }
-            s += '<line class="guide" x1="0" x2="0" y1="' + Tp + '" y2="' + (Tp + hh) + '" stroke="#002f4c" stroke-dasharray="3 3" visibility="hidden"/><g class="dots"></g><rect x="' + (L - bw / 2) + '" y="' + Tp + '" width="' + (w + bw) + '" height="' + hh + '" fill="transparent" class="hit"/></svg>';
-            el.innerHTML = s;
-            hover(el, n, x, W, L, w, function (i) { var r = rc[i]; return { pts: [[y(r[1]), '#f08a24']], html: '<b>' + mName(r[0], true) + '</b>Average ' + r[1].toFixed(2) + ' out of 5<br>' + fmt(r[2]) + ' ratings' }; });
+            if (!rc.length) { el.innerHTML = ''; return; }
+            var by = {}, mx = 1; rc.forEach(function (r) { by[r[0]] = r; mx = Math.max(mx, r[2]); });
+            var y0 = +rc[0][0].slice(0, 4), y1 = +rc[rc.length - 1][0].slice(0, 4);
+            var am = P.a ? dstr(P.a).slice(0, 7) : null, bm = P.b ? dstr(P.b).slice(0, 7) : null;
+            var MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            var h = '<div class="hm-scroll"><table class="hm" role="grid" aria-label="Average rating by month"><thead><tr><th></th>' + MON.map(function (m) { return '<th scope="col">' + m + '</th>'; }).join('') + '</tr></thead><tbody>';
+            for (var y = y1; y >= y0; y--) {
+                h += '<tr><th scope="row">' + y + '</th>';
+                for (var m = 1; m <= 12; m++) {
+                    var k = y + '-' + (m < 10 ? '0' : '') + m, r = by[k], out = am && (k < am || k > bm);
+                    if (!r) { h += '<td class="hm-none' + (out ? ' out' : '') + '"></td>'; continue; }
+                    var bd = band(r[1]), dark = r[1] >= 4.6, few = r[2] < 10;
+                    h += '<td class="hm-c' + (out ? ' out' : '') + (few ? ' few' : '') + '" tabindex="0" data-m="' + k + '" style="background:' + bd[1] + ';color:' + (dark ? '#fff' : '#002f4c') + '"><span class="hm-v">' + r[1].toFixed(2) + '</span><span class="hm-n">' + fmt(r[2]) + '</span><i style="width:' + Math.max(4, r[2] / mx * 100).toFixed(1) + '%;background:' + (dark ? 'rgba(255,255,255,.85)' : '#0468b1') + '"></i></td>';
+                }
+                h += '</tr>';
+            }
+            h += '</tbody></table></div><div class="hm-key"><span class="hm-kt">Average rating</span>' + RBANDS.map(function (b) { return '<span><i style="background:' + b[1] + '"></i>' + b[2] + '</span>'; }).join('') + '<span class="hm-kn"><i class="hm-bar"></i>Number of ratings that month (the small number); the bar shows it against the busiest month</span><span class="hm-kn"><i class="hm-few"></i>Striped: fewer than 10 ratings, so read with care</span></div>';
+            el.innerHTML = h;
+            el.querySelectorAll('.hm-c').forEach(function (c) {
+                var r = by[c.getAttribute('data-m')], t = '<b>' + mName(r[0], true) + '</b>Average ' + r[1].toFixed(2) + ' out of 5<br>' + fmt(r[2]) + (r[2] === 1 ? ' rating' : ' ratings') + (r[2] < 10 ? '<br><i>Few ratings: read with care</i>' : '');
+                c.addEventListener('mousemove', function (ev) { showTip(t, ev.clientX, ev.clientY); }); c.addEventListener('mouseleave', hideTip);
+                c.addEventListener('focus', function () { var b = c.getBoundingClientRect(); showTip(t, b.right, b.top); }); c.addEventListener('blur', hideTip);
+            });
         }
         // the last twelve months of new enrolments as small bars: the same months for every course
         var WIN = (function () { var end = D.through || (D.monthly.length ? D.monthly[D.monthly.length - 1][0] : ''); if (!end) return []; var p = end.split('-').map(Number), y = p[0], m = p[1], out = []; for (var i = 0; i < 12; i++) { out.unshift(y + '-' + (m < 10 ? '0' : '') + m); m--; if (!m) { m = 12; y--; } } return out; })();
@@ -459,7 +474,7 @@ Object.assign(window.App, {
                 if (D.ratings.length > 1) { $('ratings-box').hidden = false; ratingChart($('ratings'), D.ratings); } else $('ratings-box').hidden = true;
             } else $('sec-survey').hidden = true;
             $('impact-note').hidden = !P.a;
-            if ($('labels-all')) $('labels-all').innerHTML = D.courses.some(function (c) { return (c.tags || []).length || (c.featured || []).length; }) ? '<button type="button" class="more" data-info="' + info(labelsInfo()) + '">What the course labels mean</button>' : '';
+            if ($('labels-all')) $('labels-all').innerHTML = '<span class="lb-t">Course labels</span>' + ['Featured', 'Popular', 'Trending', 'Top rated', 'New', 'CME/CPD'].map(function (k) { var d = BADGE[k]; return '<button type="button" class="badge b-' + d[0] + '" data-info="' + info(labelsInfo(k, d[1])) + '"><svg viewBox="0 0 24 24" aria-hidden="true">' + BI[d[0]] + '</svg>' + esc(d[1]) + '</button>'; }).join('') + '<button type="button" class="more" data-info="' + info(labelsInfo()) + '">What they mean</button>';
             table();
             fillPw();
         }
@@ -496,7 +511,7 @@ Object.assign(window.App, {
                 + '<section style="padding-top:28px"><div class="wrap"><p class="eyebrow">At a glance</p><h2>This course in numbers</h2><div data-pw></div><p class="intro">Choose a figure to see what it counts.</p><div class="stats">' + figures(c.i) + '</div>'
                 + (aw.length ? '<ul class="tags">' + awardLines(aw, 'courses') + '</ul><p class="aw-all"><button type="button" class="more" data-info="' + info(awardsDialog(aw, 'courses', true)) + '">All course awards and how they are decided</button></p>' : '') + '</div></section>'
                 + '<section><div class="wrap"><p class="eyebrow">Growth</p><h2>Enrolments and certificates over time</h2><div data-pw></div><div class="card"><div id="cgrowth"></div></div></div></section>'
-                + (rc.length ? '<section><div class="wrap"><p class="eyebrow">Ratings</p><h2>Average rating by month</h2><div data-pw></div><p class="intro">From the end-of-course survey; the bar height is the number of ratings that month. Point at the chart to read a month.' + (P.a ? ' Months outside the period are faded.' : '') + '</p><div class="card"><div id="cratings" class="chart"></div></div></div></section>' : '')
+                + (rc.length ? '<section><div class="wrap"><p class="eyebrow">Ratings</p><h2>Average rating by month</h2><div data-pw></div><p class="intro">From the end-of-course survey. The colour shows the average; the small number and the bar, how many ratings it rests on.' + (P.a ? ' Months outside the period are faded.' : '') + '</p><div class="card"><div id="cratings" class="chart"></div></div></div></section>' : '')
                 + (cs.length ? '<section><div class="wrap"><p class="eyebrow">Reach</p><h2>Where this course\'s learners are</h2><div data-pw></div>' + (P.a ? '<p class="intro">Learners who enrolled in the period.</p>' : '') + '<div class="card"><div class="two"><div>' + bars(cs.slice(0, 5), known) + '</div><div>' + bars(cs.slice(5, 10), known) + '</div></div><p class="note">Country is known for ' + fmt(known) + ' of ' + fmt(tot) + ' enrolments; shares are of those.</p></div></div></section>' : '')
                 + (c.questions.length ? '<section><div class="wrap"><p class="eyebrow">Survey insights</p><h2>How learners rate this course</h2>' + (P.a ? '<p class="intro">All time: the survey questions are not broken down by period.</p>' : '') + '<div class="big2">' + bigSurvey(c.rating, c.resp, c.questions) + '</div><div class="card">' + questions(c.questions) + '</div></div></section>' : '')
                 + ((c.summary || c.quotes.length || (c.stories || []).length) ? '<section><div class="wrap"><p class="eyebrow">Learner voices</p><h2>What learners say</h2>' + storiesBlock((c.stories || []).map(function (id) { return D.stories.filter(function (s) { return s.id === id; })[0]; }).filter(Boolean), false, 'Stories published on the SURGhub blog by learners who took this course.') + voices(c.summary, c.quotes, 'A summary of the written answers in this course\'s survey.') + '</div></section>' : '')
