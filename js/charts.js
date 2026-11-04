@@ -943,7 +943,7 @@ window.Charts = {
             pLearners[d.Provider] = (pLearners[d.Provider] || 0) + (Number(d.Learners) || 0);
             pCerts[d.Provider] = (pCerts[d.Provider] || 0) + (Number(d.Certificates) || 0);
             const r = Number(d.Rating) || 0;
-            if (r > 0) { if (!pRate[d.Provider]) pRate[d.Provider] = { sum: 0, cnt: 0 }; pRate[d.Provider].sum += r; pRate[d.Provider].cnt++; }
+            if (r > 0) { const w = (window.App && window.App.ratingWeight) ? window.App.ratingWeight(d) : (Number(d.Responses) > 0 ? Number(d.Responses) : 1); if (!pRate[d.Provider]) pRate[d.Provider] = { sum: 0, cnt: 0 }; pRate[d.Provider].sum += r * w; pRate[d.Provider].cnt += w; }
         });
         this.drawColumnChart('chart_prov_learners', pLearners, 'Provider', GSF_COLORS[0]);
         this.drawColumnChart('chart_prov_certs', pCerts, 'Provider', GSF_COLORS[1]);

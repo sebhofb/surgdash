@@ -448,7 +448,7 @@ Object.assign(window.App, {
                 totalResponses += Number(d.Responses)||0;
                 totalCourseMinutes += Number(d.LearningMinutes)||0;
                 const r = Number(d.Rating)||0;
-                if (r > 0) { rSum += r; rCount++; }
+                if (r > 0) { const w = this.ratingWeight ? this.ratingWeight(d) : (Number(d.Responses) > 0 ? Number(d.Responses) : 1); rSum += r * w; rCount += w; }
             });
 
             // Build feedback data (top 200 items across all courses, for platform-level display)
@@ -1489,7 +1489,7 @@ renderPlatform();
             const p = String(d.Provider || 'Unknown').trim() || 'Unknown';
             const m = pm[p] || (pm[p] = { courses: 0, lrn: 0, cert: 0, resp: 0, rSum: 0, rCnt: 0, mins: 0, countries: new Set() });
             m.courses++; m.lrn += Number(d.Learners) || 0; m.cert += Number(d.Certificates) || 0; m.resp += Number(d.Responses) || 0;
-            const r = Number(d.Rating) || 0; if (r > 0) { m.rSum += r; m.rCnt++; }
+            const r = Number(d.Rating) || 0; if (r > 0) { const w = this.ratingWeight ? this.ratingWeight(d) : (Number(d.Responses) > 0 ? Number(d.Responses) : 1); m.rSum += r * w; m.rCnt += w; }
             m.mins += this.courseLearningMinutes ? this.courseLearningMinutes(d, courseMins) : (Number(d.LearningMinutes) || 0);
             Object.keys(d.CountryStats ? parse(d.CountryStats) : {}).forEach(c => { if (c && c !== 'Unknown' && c !== 'nan') m.countries.add(c); });
         });

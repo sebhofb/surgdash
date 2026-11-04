@@ -34,6 +34,8 @@ const App = ctx.App;
   if (D) {
     check('enrolments, certificates, responses and study time count every course, private and unpublished too', D.totalLrn === 1500 && D.totalCert === 380 && D.totalResp === 130 && D.totalMin === 8100, JSON.stringify({ l: D.totalLrn, c: D.totalCert, r: D.totalResp, m: D.totalMin }));
     check('…and so the certification rate', D.certRate === (380 / 1500 * 100).toFixed(1), D.certRate);
+    // weighted by survey responses (Seb, 4 Nov 2026): (4.8×100 + 4.0×20 + 4.2×10) / 130 = 4.63, not the plain 4.33
+    check('the average rating is weighted by each course\'s survey responses', D.avgRating === '4.63', D.avgRating);
     check('the courses listed (and counted) are the included ones only', D.coursesSorted.length === 2 && !D.coursesSorted.some(d => d.Course === 'Hidden C'));
     check('countries count every course', D.providerCountryData.Nepal === 250 && D.providerCountryData.India === 450, JSON.stringify(D.providerCountryData));
     const sat = (D.surveyQRows || []).find(r => /satisfaction/i.test(r.q));
@@ -47,5 +49,6 @@ const App = ctx.App;
   check('a provider report is unchanged: only its included courses (WFSA has none here)', P === null);
   let G = null; try { G = await App._assembleReportData('GSF', {}); } catch (e) { err = e; }
   check('…and GSF\'s report totals its own included courses', G && G.totalLrn === 1200 && G.totalCert === 350, G && JSON.stringify({ l: G.totalLrn, c: G.totalCert }));
+  check('…with its rating weighted the same way: (4.8×100 + 4.0×20) / 120 = 4.67', G && G.avgRating === '4.67', G && G.avgRating);
   console.log(`\n${ok}/${ok + bad} passed`); process.exit(bad ? 1 : 0);
 })();

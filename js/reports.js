@@ -152,7 +152,7 @@
                 totalResp += (Number(d.Responses) || 0);
                 totalMin += (this.courseLearningMinutes ? this.courseLearningMinutes(d, courseMins) : (Number(d.LearningMinutes) || 0));
                 let r = Number(d.Rating) || 0;
-                if (r > 0) { rSum += r; rCnt++; }
+                if (r > 0) { const w = this.ratingWeight ? this.ratingWeight(d) : (Number(d.Responses) > 0 ? Number(d.Responses) : 1); rSum += r * w; rCnt += w; }   // weighted by survey responses
             });
             const avgRating = rCnt > 0 ? (rSum / rCnt).toFixed(2) : 'N/A';
             // null (not '0') when no learners, so report surfaces render '-' like the dashboard.
@@ -338,7 +338,7 @@
                 let rs = 0, rc = 0;
                 const gq = {}; const gCountries = {}; let gCountryTotal = 0;
                 snapData.forEach(d => {
-                    const r = Number(d.Rating) || 0; if (r > 0) { rs += r; rc++; }
+                    const r = Number(d.Rating) || 0; if (r > 0) { const w = this.ratingWeight ? this.ratingWeight(d) : (Number(d.Responses) > 0 ? Number(d.Responses) : 1); rs += r * w; rc += w; }
                     if (d.QuestionStats) {
                         try {
                             (JSON.parse(d.QuestionStats) || []).forEach(s => {
@@ -684,7 +684,7 @@
                 tSnap.forEach(d => {
                     const m = pm[pName(d)]; if (!m) return;
                     m.lrn += Number(d.Learners) || 0; m.cert += Number(d.Certificates) || 0;
-                    const r = Number(d.Rating) || 0; if (r > 0) { m.rSum += r; m.rCnt++; }
+                    const r = Number(d.Rating) || 0; if (r > 0) { const w = this.ratingWeight ? this.ratingWeight(d) : (Number(d.Responses) > 0 ? Number(d.Responses) : 1); m.rSum += r * w; m.rCnt += w; }
                 });
                 providerCount = Object.keys(pm).length;
                 topProviders = Object.values(pm).map(m => ({
@@ -875,7 +875,7 @@
         ? '<strong>' + esc(D.courseName) + '</strong> (a course by ' + esc(providerName) + ') is live on SURGhub,'
         : esc(providerName) + ' has <strong>' + pSnap.length + ' active course' + (pSnap.length !== 1 ? 's' : '') + '</strong> on SURGhub,'}
     reaching <strong>${this.formatNumber(totalLrn)} learners</strong>${certRate != null ? ' with a <strong>' + certRate + '% certification rate</strong>' : ''}.
-    ${totalResp > 0 ? 'Across <strong>' + this.formatNumber(totalResp) + ' survey responses</strong>, the average rating is <strong>' + avgRating + ' out of 5</strong>.' : ''}
+    ${totalResp > 0 ? 'Across <strong>' + this.formatNumber(totalResp) + ' survey responses</strong>, the weighted average rating is <strong>' + avgRating + ' out of 5</strong>.' : ''}
   </div>
 
   ${(D.fbSummaries && D.fbSummaries['@provider:' + providerName] && D.fbSummaries['@provider:' + providerName].s) ? '<div class="summary-box" style="background:#fefce8;border-color:#fde68a;color:#713f12"><strong>What learners are saying:</strong> ' + esc(D.fbSummaries['@provider:' + providerName].s) + ' <span style="color:#a16207;font-size:11px">(AI summary of survey feedback)</span></div>' : ''}
@@ -1636,7 +1636,7 @@ a.shl:hover{color:var(--accent);border-bottom-color:var(--accent);}
     ${card('Courses Completed', 'Certificates awarded', fmt(D.totalCert), '#FFC145', { info: 'Certificates awarded across the provider’s courses — each one represents a learner finishing a course.' })}
     ${card('Certification Rate', 'Certificates ÷ learners', (D.certRate != null ? D.certRate + '%' : '&ndash;'), '#3FB984', { info: 'Share of learners who earned a certificate — certificates divided by total learners, across the provider’s courses, all time. Learning time is shown in the Learning Impact section below.' })}
     ${card('Countries/Territories', 'Reached', Object.keys(D.providerCountryData).length || '&ndash;', '#5AA9E6', { info: 'Distinct countries and territories of learners enrolled in the provider’s courses, where the learner’s country is known.' })}
-    ${card('Avg Rating', fmt(D.totalResp) + ' responses', D.avgRating === 'N/A' ? '&ndash;' : D.avgRating + ' / 5', '#E28743', { info: 'Average overall-satisfaction rating from end-of-course surveys, on a 1–5 scale. Reflects survey respondents only.' })}
+    ${card('Avg Rating', fmt(D.totalResp) + ' responses', D.avgRating === 'N/A' ? '&ndash;' : D.avgRating + ' / 5', '#E28743', { info: 'Average overall-satisfaction rating from end-of-course surveys, on a 1–5 scale, weighted by each course\'s number of responses. Reflects survey respondents only.' })}
   </div>
   <div style="display:flex;justify-content:flex-end;margin:-18px 0 24px"><button class="dlb" onclick="dlKpis()">&#8595; Download results card (PNG)</button></div>
 

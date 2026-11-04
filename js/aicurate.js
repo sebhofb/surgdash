@@ -487,7 +487,7 @@
             plat.forEach(d => {
                 lrn += Number(d.Learners) || 0; cert += Number(d.Certificates) || 0;
                 resp += Number(d.Responses) || 0; min += (this.courseLearningMinutes ? this.courseLearningMinutes(d, storyMins) : (Number(d.LearningMinutes) || 0));
-                const r = Number(d.Rating) || 0; if (r > 0) { rSum += r; rCnt++; }
+                const r = Number(d.Rating) || 0; if (r > 0) { const w = this.ratingWeight ? this.ratingWeight(d) : (Number(d.Responses) > 0 ? Number(d.Responses) : 1); rSum += r * w; rCnt += w; }
             });
             const providers = [...new Set(snap.map(d => d.Provider).filter(Boolean))];
             const top = snap.slice().sort((a, b) => (Number(b.Learners) || 0) - (Number(a.Learners) || 0)).slice(0, 3)

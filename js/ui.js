@@ -252,6 +252,11 @@ Object.assign(window.App, {
     // Single source of truth for certification rate: certs ÷ learners as a 1-decimal
     // percent string, or '-' when there are no learners. Pass {asNumber:true} for the
     // raw number (or null when no learners) for charts / data packs.
+    // Average ratings over several courses are WEIGHTED by each course's survey responses (Seb, 4 Nov 2026):
+    // a course rated by 400 learners counts 400 times, one rated by 10 counts 10 times, so the average is
+    // the average of all the ratings given. A rated course with no response count weighs 1. Use as
+    // `rSum += r * w; rCnt += w` with w = App.ratingWeight(d).
+    ratingWeight(d) { const n = Number(d && d.Responses) || 0; return n > 0 ? n : 1; },
     formatCertRate(cert, lrn, opts) {
         const c = Number(cert) || 0, l = Number(lrn) || 0;
         if (l <= 0) return (opts && opts.asNumber) ? null : '-';
@@ -2134,7 +2139,7 @@ Object.assign(window.App, {
         'Certification Rate': 'certificates ÷ enrolments',
         'Learning Time':      'learner-years of study',
         'Countries':          'countries with ≥1 account',
-        'Avg Rating':         'out of 5 · survey mean',
+        'Avg Rating':         'out of 5 · weighted by responses',
         'Survey Responses':   'survey submissions',
         'Conflict Settings':  'accounts (estimate) — not learners',
     },
@@ -3944,7 +3949,7 @@ Object.assign(window.App, {
                 resp += (Number(d.Responses)||0);
                 studyMin += this.courseLearningMinutes(d, courseMins);
                 let rat = Number(d.Rating)||0;
-                if(rat>0){rSum+=rat; cRated++;}
+                if(rat>0){const w=this.ratingWeight(d); rSum+=rat*w; cRated+=w;}
             });
             const avgRat = cRated > 0 ? (rSum/cRated).toFixed(2) : '0.00';
             const studyYears = studyMin > 0 ? (studyMin / 525960).toFixed(1) + ' yrs' : '-';
@@ -3970,7 +3975,7 @@ Object.assign(window.App, {
                 { label: 'Certification Rate', value: this.formatCertRate(cert, lrn), raw: (this.formatCertRate(cert, lrn, { asNumber: true }) || 0), color: '#B8860B', icon: 'badge-check', title: 'Certificates awarded ÷ total learners, all time' },
                 { label: 'Learning Time', value: studyYears, raw: studyMin, color: '#5B8C5A', icon: 'clock', title: studyMin ? Math.round(studyMin).toLocaleString() + ' learner-minutes total' : 'Run Sync Courses to populate' },
                 { label: 'Countries', value: (audSnap && audSnap.KnownCountry) ? this.formatNumber(audSnap.KnownCountry) : '-', raw: (audSnap && audSnap.KnownCountry) || 0, color: '#5AA9E6', icon: 'globe' },
-                { label: 'Avg Rating', value: avgRat, color: '#D03734', icon: 'star' },
+                { label: 'Avg Rating', value: avgRat, color: '#D03734', icon: 'star', title: 'Weighted average: each course\'s rating counts in proportion to its survey responses' },
                 { label: 'Survey Responses', value: this.formatNumber(resp), raw: resp, color: '#E28743', icon: 'message-square' },
                 (() => {
                     const cb = this.conflictBreakdown(audSnap);
@@ -4251,7 +4256,7 @@ Object.assign(window.App, {
             const pSnap = snapData.filter(d => d.Provider === this.selectedProvider);
             const courseMins = this.getCourseLearningMinutes();
             let pLrn=0, pCert=0, pResp=0, pRSum=0, pRCnt=0, pMin=0;
-            pSnap.forEach(d => { pLrn += (Number(d.Learners)||0); pCert += (Number(d.Certificates)||0); pResp += (Number(d.Responses)||0); pMin += this.courseLearningMinutes(d, courseMins); let r=Number(d.Rating)||0; if(r>0){pRSum+=r;pRCnt++;} });
+            pSnap.forEach(d => { pLrn += (Number(d.Learners)||0); pCert += (Number(d.Certificates)||0); pResp += (Number(d.Responses)||0); pMin += this.courseLearningMinutes(d, courseMins); let r=Number(d.Rating)||0; if(r>0){const w=this.ratingWeight(d); pRSum+=r*w;pRCnt+=w;} });
             const pAvg = pRCnt > 0 ? (pRSum/pRCnt).toFixed(2) : '0.00';
             const pCountries = this.aggregateCourseCountries(pSnap).countryCount;
 
@@ -4306,7 +4311,7 @@ Object.assign(window.App, {
                             { label: 'Cert. Rate', value: this.formatCertRate(pCert, pLrn), raw: (this.formatCertRate(pCert, pLrn, { asNumber: true }) || 0), color: '#B8860B', icon: 'badge-check', title: 'Certificates ÷ learners across this provider\'s courses' },
                             { label: 'Learning Time', value: this.formatLearningTime(pMin), raw: pMin, color: '#5B8C5A', icon: 'clock', title: pMin ? Math.round(pMin).toLocaleString() + ' learner-minutes total' : 'Run Sync Courses to populate' },
                             { label: 'Countries', value: pCountries || '-', raw: pCountries, color: '#206095', icon: 'globe', title: pCountries ? pCountries + ' countries reached' : 'Upload Growth Timelines to populate' },
-                            { label: 'Avg Rating', value: pAvg, color: '#D03734', icon: 'star' },
+                            { label: 'Avg Rating', value: pAvg, color: '#D03734', icon: 'star', title: 'Weighted average: each course\'s rating counts in proportion to its survey responses' },
                             { label: 'Survey Resp.', value: this.formatNumber(pResp), raw: pResp, color: '#E28743', icon: 'message-square' },
                         ].map(k => `<div class="group relative bg-white rounded-xl border shadow-sm overflow-hidden cursor-pointer hover:shadow-md transition-shadow" ${k.title ? 'title="'+this.escapeHtml(k.title)+'"' : ''} onclick="App._copyKpiCard(this)">
                                                         <div class="p-4 pb-5">
@@ -4678,7 +4683,7 @@ Object.assign(window.App, {
                             <li><strong>Learner vs. active users:</strong> Learner counts include all registered learners, including those who never started or dropped out.</li>
                             <li><strong>Course slug matching:</strong> ~2% of user-course records cannot be matched to course titles due to URL slug changes or completely different naming. These are excluded from user-level exports.</li>
                             <li><strong>Timeline gaps:</strong> Some courses may not have learner timeline files. These courses show KPI totals but no growth charts.</li>
-                            <li><strong>Rating data:</strong> Survey ratings are only available for courses with active survey links. The "Avg Rating" reflects surveyed users only, not all enrollees.</li>
+                            <li><strong>Rating data:</strong> Survey ratings are only available for courses with active survey links. The "Avg Rating" reflects surveyed users only, not all enrollees. Across several courses it is a weighted average: each course's rating counts in proportion to its number of survey responses.</li>
                             <li><strong>"Exclude &lt; 50" filter:</strong> When enabled, courses with fewer than 50 learners are hidden from all analytics views. This affects totals and provider aggregations.</li>
                         </ul>
                     </div>
