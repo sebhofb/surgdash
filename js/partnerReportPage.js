@@ -54,11 +54,11 @@ Object.assign(window.App, {
         function cmpName() { return P.cmp === 'prev' ? 'the previous ' + (P.b - P.a + 1) + ' days' : 'the same dates a year earlier'; }
         // enrolments and certificates dated in [a, b], for one course or all, with countries
         function agg(ci, a, b) {
-            var o = { e: 0, c: 0, ct: {}, known: 0, by: {} };
+            var o = { e: 0, c: 0, ct: {}, known: 0, by: {}, l: 0 }, seen = {};
             D.recs.forEach(function (r) {
                 if (ci != null && r[0] !== ci) return;
                 var pc = o.by[r[0]] || (o.by[r[0]] = { e: 0, c: 0 });
-                if (r[1] >= a && r[1] <= b) { o.e++; pc.e++; if (r[3] >= 0) { var n = D.rc[r[3]]; o.ct[n] = (o.ct[n] || 0) + 1; o.known++; } }
+                if (r[1] >= a && r[1] <= b) { o.e++; pc.e++; if (r[4] && !seen[r[4]]) { seen[r[4]] = 1; o.l++; } if (r[3] >= 0) { var n = D.rc[r[3]]; o.ct[n] = (o.ct[n] || 0) + 1; o.known++; } }
                 if (r[2] >= a && r[2] <= b) { o.c++; pc.c++; }
             });
             return o;
@@ -427,6 +427,7 @@ Object.assign(window.App, {
             var c = ci == null ? null : D.courses[ci], cr = cmpRange(), out = [];
             if (!P.a) {
                 if (!c) {
+                    if (T.learners) out.push(stat(fmt(T.learners), 'Learners', 'People who enrolled in ' + (D.platform ? 'a course' : 'at least one of ' + YOUR + ' courses'), { t: 'Learners', b: '<p>The number of different people who enrolled in ' + (D.platform ? 'at least one course on SURGhub' : 'at least one of ' + YOUR + ' courses') + ', counted once however many courses they took. It is fewer than the course enrolments, because many learners take more than one course.</p>' + fact('Course enrolments per learner', (T.enrol / T.learners).toFixed(1)) + '<p class="note">Counted from the enrolment records, by email address; the page itself holds no email addresses or names.' + (D.platform ? ' Registered SURGhub accounts that have not enrolled in a course are not counted.' : '') + '</p>' }));
                     out.push(stat(fmt(T.enrol), 'Course enrolments', 'One learner can enrol in several courses', enrolInfo({ monthly: D.monthly })));
                     out.push(stat(fmt(T.cert), 'Certificates', T.rate ? T.rate + '% of enrolments' : '', certInfo({ enrol: T.enrol, cert: T.cert, monthly: D.monthly })));
                     if (T.countries) out.push(stat(fmt(T.countries), 'Countries', 'Where learners gave their country', { t: 'Countries', b: '<p>The countries learners give in their SURGhub profile. Not every learner gives one, so this counts the countries we know of.</p>' + fact('Enrolments with a known country', fmt(T.known) + ' of ' + fmt(T.enrol)) + D.countries.slice(0, 5).map(function (x, i) { return fact((i + 1) + '. ' + esc(x[0]), fmt(x[1])); }).join('') + (firsts.length ? '<p class="note">You have more learners than any other SURGhub provider from ' + esc(list(firsts.slice(0, 8))) + (firsts.length > 8 ? ' and ' + (firsts.length - 8) + ' more' : '') + '.</p>' : '') + '<p><a href="#sec-map">See the map</a></p>' }));
@@ -444,6 +445,7 @@ Object.assign(window.App, {
             }
             var cur = agg(ci, P.a, P.b), prev = cr ? agg(ci, cr[0], cr[1]) : null, rr = rateIn(c ? c.ratings : D.ratings, P.a, P.b), rp = cr ? rateIn(c ? c.ratings : D.ratings, cr[0], cr[1]) : null;
             var nc = Object.keys(cur.ct).length, np = prev ? Object.keys(prev.ct).length : null;
+            if (!c && T.learners) out.push(stat(fmt(cur.l), 'Learners', 'Who enrolled in this period', periodInfo('Learners', 'The number of different people who enrolled in the period, counted once however many courses they enrolled in.', fmt(cur.l), prev ? fmt(prev.l) : '', cr), prev ? delta(cur.l, prev.l) : ''));
             out.push(stat(fmt(cur.e), 'Course enrolments', 'New in this period', periodInfo('Course enrolments', 'Enrolments made in the period, whether or not the learner has started.', fmt(cur.e), prev ? fmt(prev.e) : '', cr), prev ? delta(cur.e, prev.e) : ''));
             out.push(stat(fmt(cur.c), 'Certificates', 'Earned in this period', periodInfo('Certificates', 'Certificates earned in the period, whichever month the learner enrolled.', fmt(cur.c), prev ? fmt(prev.c) : '', cr), prev ? delta(cur.c, prev.c) : ''));
             out.push(stat(fmt(nc), 'Countries', 'Of the new learners', periodInfo('Countries', 'The countries of learners who enrolled in the period, as given in their SURGhub profile.', fmt(nc), prev ? fmt(np) : '', cr), prev ? delta(nc, np) : ''));
