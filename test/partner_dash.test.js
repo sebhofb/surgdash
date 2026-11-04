@@ -200,7 +200,8 @@ check('…uploaded encrypted: no provider name, link or password readable', !/Li
 
   // ── every provider in the GSF design (Seb, 4 Nov 2026: no Dark / White choice) ──
   check('the panel has no design choice', !/pdSetDesign|>Design</.test(App._partnerDashHtml()) && typeof App.pdSetDesign === 'undefined');
-  App._buildPartnerReportHtml = async (prov) => '<html><body>GSF DESIGN FOR ' + prov + ' <!--SH-DOWNLOADS--> end</body></html>';
+  let platOpts = null;
+  App._buildPartnerReportHtml = async (prov, o) => { if (o && o.platform) platOpts = o; return '<html><body>GSF DESIGN FOR ' + prov + (o && o.platform ? ' PLATFORM' : '') + ' <!--SH-DOWNLOADS--> end</body></html>'; };
   App._pd.providers['GSF - Global Surgery Foundation'].design = 'white';   // an old choice is ignored
   calls.length = 0; ghRefExists = true;
   await App.publishPartnerDashboards({ silent: true });
@@ -215,6 +216,8 @@ check('…uploaded encrypted: no provider name, link or password readable', !/Li
   const team3 = await dec3('team', App._pd.teamPassword);
   check('the team page is in the GSF design: navy bar and header, search, all of SURGhub, a tile per provider, the joint-initiative footer', /--deep:#0d233a/.test(team3) && /class="hero"/.test(team3) && /id="q" type="search"/.test(team3) && /class="card" href="\/gsf\/"/.test(team3) && /joint initiative of the Global Surgery Foundation/.test(team3) && !/background:#001523/.test(team3));
   check('…and still stores each provider\'s password in the browser, and says how old it is', /localStorage\.setItem\("surghub-report:\/"\+s\+"\/"/.test(team3) && /"yesterday"/.test(team3) && team3.includes(App._pd.providers.Lifebox.password));
+  const hub3 = await dec3('surghub', App._pd.teamPassword);
+  check('All of SURGhub is in the GSF design too, opened with the team password, its provider rows linked to their dashboards, no downloads placeholder', /GSF DESIGN FOR SURGhub PLATFORM/.test(hub3) && !/<!--SH-DOWNLOADS-->/.test(hub3) && platOpts && platOpts.links['GSF - Global Surgery Foundation'] === 'gsf' && platOpts.links.Lifebox === App._pd.providers.Lifebox.slug, JSON.stringify(platOpts && platOpts.links));
   delete App._buildPartnerReportHtml;
 
   // ── the select-all tick ──

@@ -18,7 +18,7 @@
 // The survey questions, learning impact and learning time are all time only (no dates per answer).
 Object.assign(window.App, {
     _prPageScript: function () {
-        var D = DATA, DAY = 86400000;
+        var D = DATA, DAY = 86400000, YOUR = D.platform ? 'the' : 'your', YOURC = D.platform ? 'The' : 'Your';
         function fmt(n) { return Math.round(+n || 0).toLocaleString('en-GB'); }
         function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
         function $(id) { return document.getElementById(id); }
@@ -81,6 +81,13 @@ Object.assign(window.App, {
             inf.v = v; inf.l = l;
             return '<button type="button" class="stat" data-info="' + info(inf) + '" aria-haspopup="dialog" title="More about this figure">' + body + '</button>';
         }
+        // a figure too wide for its card (six cards, a six-digit number) is made smaller, all of them alike
+        function fitFigures(box) {
+            if (!box) return; var vs = [].slice.call(box.querySelectorAll('.stat-v')); vs.forEach(function (v) { v.style.fontSize = ''; });
+            var k = 1; vs.forEach(function (v) { var room = v.parentNode.clientWidth - 48; if (room > 0 && v.scrollWidth > room) k = Math.min(k, room / v.scrollWidth); });
+            if (k < 1) vs.forEach(function (v) { v.style.fontSize = Math.floor(parseFloat(getComputedStyle(v).fontSize) * k) + 'px'; });
+        }
+        window.addEventListener('resize', function () { fitFigures($('stats')); });
         function fact(l, v) { return '<div class="fact"><span>' + l + '</span><b>' + v + '</b></div>'; }
         function openInfo(i) {
             var x = INFO[i]; if (!x) return; lastFocus = document.activeElement;
@@ -407,7 +414,7 @@ Object.assign(window.App, {
         // ── the main page ──
         D.courses.forEach(function (c, i) { c.i = i; c.rate = c.enrol ? c.cert / c.enrol * 100 : 0; });
         var T = D.totals, RANGE = WIN.length ? mName(WIN[0]) + ' to ' + mName(WIN[11]) : 'the last 12 months';
-        function enrolInfo(x, share) { var b = busiest(x.monthly, 1); return { t: 'Course enrolments', b: '<p>Every enrolment in ' + (share != null ? 'this course' : 'your courses') + ', whether or not the learner has started. One person who takes two courses counts twice, so this is more than the number of people.</p>' + fact('New in ' + RANGE, fmt(last12(x.monthly, 1))) + (b ? fact('Busiest month', mName(b[0], true) + ', ' + fmt(b[1])) : '') + (share != null ? fact('Share of all ' + esc(D.name) + ' enrolments', share) : '') }; }
+        function enrolInfo(x, share) { var b = busiest(x.monthly, 1); return { t: 'Course enrolments', b: '<p>Every enrolment in ' + (share != null ? 'this course' : YOUR + ' courses') + ', whether or not the learner has started. One person who takes two courses counts twice, so this is more than the number of people.</p>' + fact('New in ' + RANGE, fmt(last12(x.monthly, 1))) + (b ? fact('Busiest month', mName(b[0], true) + ', ' + fmt(b[1])) : '') + (share != null ? fact('Share of all ' + esc(D.name) + ' enrolments', share) : '') }; }
         function certInfo(x, avg) { var rate = x.enrol ? (x.cert / x.enrol * 100).toFixed(1) + '%' : '–'; return { t: 'Certificates', b: '<p>Course certificates learners earned by completing the course. The certification rate is certificates divided by enrolments; recent enrolments lower it for a while, as those learners are still working through the course.</p>' + fact('Certification rate', rate) + (avg ? fact('Across all your courses', avg) : '') + fact('Earned in ' + RANGE, fmt(last12(x.monthly, 2))) }; }
         function ratingInfo(n, best) { return { t: 'Average rating', b: '<p>The average of the overall rating learners give in the survey at the end of the course, on a scale of 1 to 5. Across several courses it is a weighted average: each course counts in proportion to its number of survey responses.</p>' + fact('Survey responses', fmt(n)) + (best ? fact('Highest rated course (20 or more responses)', esc(best.name) + ', ' + best.rating.toFixed(2)) : '') + '<p class="note">Only learners who finish the survey are counted.</p>' }; }
         function periodInfo(t, what, cur, prev, cr) { return { e: 'In this period', t: t, b: '<p>' + what + '</p>' + fact(esc(span(P.a, P.b)), cur) + (cr ? fact(esc(span(cr[0], cr[1])), prev) : '') + '<p class="note">Counted from the dated enrolment and certificate records, so a period can differ slightly from the all-time totals, which are SURGhub\'s own course counts. <a href="#methodology">More on how periods are counted</a></p>' }; }
@@ -424,7 +431,8 @@ Object.assign(window.App, {
                     out.push(stat(fmt(T.cert), 'Certificates', T.rate ? T.rate + '% of enrolments' : '', certInfo({ enrol: T.enrol, cert: T.cert, monthly: D.monthly })));
                     if (T.countries) out.push(stat(fmt(T.countries), 'Countries', 'Where learners gave their country', { t: 'Countries', b: '<p>The countries learners give in their SURGhub profile. Not every learner gives one, so this counts the countries we know of.</p>' + fact('Enrolments with a known country', fmt(T.known) + ' of ' + fmt(T.enrol)) + D.countries.slice(0, 5).map(function (x, i) { return fact((i + 1) + '. ' + esc(x[0]), fmt(x[1])); }).join('') + (firsts.length ? '<p class="note">You have more learners than any other SURGhub provider from ' + esc(list(firsts.slice(0, 8))) + (firsts.length > 8 ? ' and ' + (firsts.length - 8) + ' more' : '') + '.</p>' : '') + '<p><a href="#sec-map">See the map</a></p>' }));
                     if (T.rating) out.push(stat(T.rating, 'Average rating', 'Out of 5, from ' + fmt(T.resp) + ' survey responses', ratingInfo(T.resp, best)));
-                    out.push(stat(fmt(T.courses), T.courses === 1 ? 'Course' : 'Courses', 'On SURGhub', { t: 'Your courses', b: '<p>Your courses on SURGhub that these figures include. The five with the most enrolments:</p>' + byEnrol.slice(0, 5).map(function (x) { return fact('<a href="#course-' + x.i + '">' + esc(x.name) + '</a>', fmt(x.enrol)); }).join('') + '<p><a href="#sec-courses">See every course</a></p>' }));
+                    if (D.platform && T.providers) out.push(stat(fmt(T.providers), 'Providers', 'With courses on SURGhub', { t: 'Providers', b: '<p>The organisations whose courses are on SURGhub. The five with the most enrolments:</p>' + D.provs.slice().sort(function (a, b) { return b.enrol - a.enrol; }).slice(0, 5).map(function (x) { return fact(esc(x.n), fmt(x.enrol)); }).join('') + '<p><a href="#sec-providers">See every provider</a></p>' }));
+                    out.push(stat(fmt(T.courses), T.courses === 1 ? 'Course' : 'Courses', 'On SURGhub', { t: YOURC + ' courses', b: '<p>' + YOURC + ' courses on SURGhub that these figures list. The five with the most enrolments:</p>' + byEnrol.slice(0, 5).map(function (x) { return fact('<a href="#course-' + x.i + '">' + esc(x.name) + '</a>', fmt(x.enrol)); }).join('') + '<p><a href="#sec-courses">See every course</a></p>' }));
                 } else {
                     var rate = c.enrol ? (c.cert / c.enrol * 100).toFixed(1) + '%' : '–';
                     out.push(stat(fmt(c.enrol), 'Course enrolments', fmt(last12(c.monthly, 1)) + ' in the last 12 months', enrolInfo(c, T.enrol ? (c.enrol / T.enrol * 100).toFixed(1) + '%' : '–')));
@@ -440,14 +448,15 @@ Object.assign(window.App, {
             out.push(stat(fmt(cur.c), 'Certificates', 'Earned in this period', periodInfo('Certificates', 'Certificates earned in the period, whichever month the learner enrolled.', fmt(cur.c), prev ? fmt(prev.c) : '', cr), prev ? delta(cur.c, prev.c) : ''));
             out.push(stat(fmt(nc), 'Countries', 'Of the new learners', periodInfo('Countries', 'The countries of learners who enrolled in the period, as given in their SURGhub profile.', fmt(nc), prev ? fmt(np) : '', cr), prev ? delta(nc, np) : ''));
             if (rr) out.push(stat(rr.avg.toFixed(2), 'Average rating', 'From ' + fmt(rr.n) + ' ratings in these months', periodInfo('Average rating', 'The average overall rating in the end-of-course survey, from the ratings given in the months this period touches. Ratings are counted by month.', rr.avg.toFixed(2) + ' (' + fmt(rr.n) + ')', rp ? rp.avg.toFixed(2) + ' (' + fmt(rp.n) + ')' : 'none', cr), rp ? delta(rr.avg, rp.avg, true) : ''));
-            if (!c) { var active = Object.keys(cur.by).filter(function (k) { return cur.by[k].e > 0; }).length; out.push(stat(fmt(active), active === 1 ? 'Course' : 'Courses', 'With new enrolments in this period', { t: 'Courses with new enrolments', b: '<p>Your courses that had at least one new enrolment in the period, out of ' + fmt(T.courses) + '.</p>' })); }
+            if (!c) { var active = Object.keys(cur.by).filter(function (k) { return cur.by[k].e > 0; }).length; out.push(stat(fmt(active), active === 1 ? 'Course' : 'Courses', 'With new enrolments in this period', { t: 'Courses with new enrolments', b: '<p>' + YOURC + ' courses that had at least one new enrolment in the period, out of ' + fmt(T.courses) + '.</p>' })); }
             return out.join('');
         }
         function renderMain() {
             $('stats').innerHTML = figures(null);
+            fitFigures($('stats'));
             $('awards').innerHTML = awardLines(D.awards, 'providers') + (firsts.length ? '<li>' + GLOBE + '<span><b>More learners than any other provider</b><small>from ' + esc(list(firsts.slice(0, 6))) + (firsts.length > 6 ? ', and ' + (firsts.length - 6) + ' more countries' : '') + '</small></span></li>' : '');
             $('awards-all').innerHTML = (D.awards.length || D.caw.length) ? '<button type="button" class="more" data-info="' + info(awardsDialog(D.awards, 'providers', false)) + '">All awards and how they are decided</button>' : '';
-            $('numbers-note').textContent = P.a ? 'New enrolments, certificates and ratings in the chosen period. Choose a figure to see what it counts.' : 'All of your courses on SURGhub, since each one opened. Choose a figure to see what it counts.';
+            $('numbers-note').textContent = P.a ? 'New enrolments, certificates and ratings in the chosen period. Choose a figure to see what it counts.' : (D.platform ? 'Every course on SURGhub, since each one opened. Choose a figure to see what it counts.' : 'All of your courses on SURGhub, since each one opened. Choose a figure to see what it counts.');
             // growth
             if (P.a) { $('growth-intro').textContent = 'New enrolments and certificates in the chosen period. Point at the chart to read the numbers.'; periodChart($('growth'), null); }
             else { $('growth-intro').textContent = 'Running totals by month. Point at the chart to read a month; switch the lines on and off, or add the numbers for each month.'; growth($('growth'), D.monthly); }
@@ -456,7 +465,7 @@ Object.assign(window.App, {
             if (P.a) { var g = agg(null, P.a, P.b); cs = ctryList(g.ct); known = g.known; tot = g.e; }
             if (cs.length) {
                 $('sec-map').hidden = false;
-                $('map-intro').textContent = (P.a ? 'Learners who enrolled in this period came from ' : 'Learners from ') + fmt(cs.length) + ' ' + (cs.length === 1 ? 'country' : 'countries') + (P.a ? '.' : ' took your courses.') + ' Point at a circle to see the number; the ten largest are listed.';
+                $('map-intro').textContent = (P.a ? 'Learners who enrolled in this period came from ' : 'Learners from ') + fmt(cs.length) + ' ' + (cs.length === 1 ? 'country' : 'countries') + (P.a ? '.' : ' took ' + YOUR + ' courses.') + ' Point at a circle to see the number; the ten largest are listed.';
                 worldMap($('map'), cs);
                 $('toplist').innerHTML = '<h3>The ten largest</h3>' + bars(cs, known) + '<p class="note">Country is known for ' + fmt(known) + ' of ' + fmt(tot) + ' enrolments; shares are of those.</p>';
             } else if (!P.a) $('sec-map').hidden = true;
@@ -472,6 +481,7 @@ Object.assign(window.App, {
             $('impact-note').hidden = !P.a;
             if ($('labels-all')) $('labels-all').innerHTML = '<span class="lb-t">Course labels</span>' + ['Featured', 'Popular', 'Trending', 'Top rated', 'New', 'CME/CPD'].map(function (k) { var d = BADGE[k]; return '<button type="button" class="badge b-' + d[0] + '" data-info="' + info(labelsInfo(k, d[1])) + '"><svg viewBox="0 0 24 24" aria-hidden="true">' + BI[d[0]] + '</svg>' + esc(d[1]) + '</button>'; }).join('') + '<button type="button" class="more" data-info="' + info(labelsInfo()) + '">What they mean</button>';
             table();
+            ptable();
             fillPw();
         }
 
@@ -491,11 +501,37 @@ Object.assign(window.App, {
             var chg = function (r) { if (r.chg == null) return ''; if (r.chg === Infinity) return '<span class="up">New</span>'; if (!r.pe && !r.enrol) return '–'; return '<span class="' + (r.chg >= 0 ? 'up' : 'down') + '">' + (r.chg >= 0 ? '+' : '−') + Math.abs(r.chg).toFixed(0) + '%</span>'; };
             $('ctable').innerHTML = '<thead><tr>' + cols.map(function (x) { return x[0] === 'spark' ? '<th title="New enrolments in each month">' + x[1] + (WIN.length ? '<br><span style="font-weight:400;letter-spacing:0;text-transform:none">' + mName(WIN[0]) + ' to ' + mName(WIN[11]) + '</span>' : '') + '</th>' : '<th' + (x[0] === sortK ? ' aria-sort="' + (sortDir > 0 ? 'ascending' : 'descending') + '"' : '') + '><button data-k="' + x[0] + '">' + x[1] + '</button></th>'; }).join('') + '</tr></thead><tbody>'
                 + rows.map(function (r) {
-                    var c = r.c, cells = { name: '<td class="cn"><span class="cn-t">' + esc(c.name) + '</span>' + badges(c) + '</td>', enrol: '<td>' + fmt(r.enrol) + '</td>', chg: '<td>' + chg(r) + '</td>', cert: '<td>' + fmt(r.cert) + '</td>', rate: '<td>' + (c.enrol ? c.rate.toFixed(1) + '%' : '–') + '</td>', rating: '<td>' + (r.rating ? r.rating.toFixed(2) : '–') + '</td>', resp: '<td>' + fmt(r.resp) + '</td>', spark: '<td class="sp">' + spark(c.monthly) + '</td>' };
+                    var c = r.c, cells = { name: '<td class="cn"><span class="cn-t">' + esc(c.name) + '</span>' + (c.provider ? '<span class="cn-p">' + esc(c.provider) + '</span>' : '') + badges(c) + '</td>', enrol: '<td>' + fmt(r.enrol) + '</td>', chg: '<td>' + chg(r) + '</td>', cert: '<td>' + fmt(r.cert) + '</td>', rate: '<td>' + (c.enrol ? c.rate.toFixed(1) + '%' : '–') + '</td>', rating: '<td>' + (r.rating ? r.rating.toFixed(2) : '–') + '</td>', resp: '<td>' + fmt(r.resp) + '</td>', spark: '<td class="sp">' + spark(c.monthly) + '</td>' };
                     return '<tr tabindex="0" data-i="' + c.i + '">' + cols.map(function (x) { return cells[x[0]]; }).join('') + '</tr>';
                 }).join('') + '</tbody>';
             $('ctable').querySelectorAll('th button').forEach(function (b) { b.addEventListener('click', function (ev) { ev.stopPropagation(); var k = b.getAttribute('data-k'); if (k === sortK) sortDir = -sortDir; else { sortK = k; sortDir = k === 'name' ? 1 : -1; } table(); }); });
             $('ctable').querySelectorAll('tbody tr').forEach(function (r) { var go = function (ev) { if (ev && ev.target.closest && ev.target.closest('[data-info]')) return; location.hash = 'course-' + r.getAttribute('data-i'); }; r.addEventListener('click', go); r.addEventListener('keydown', function (ev) { if ((ev.key === 'Enter' || ev.key === ' ') && ev.target === r) { ev.preventDefault(); go(); } }); });
+        }
+
+        // ── all of SURGhub: the providers, sortable, following the period; a row opens that provider's dashboard ──
+        var pSortK = 'enrol', pSortDir = -1;
+        function ptable() {
+            var el = $('ptable'); if (!el || !D.platform) return;
+            var cr = cmpRange(), g = P.a ? agg(null, P.a, P.b) : null, gp = cr ? agg(null, cr[0], cr[1]) : null, by = {};
+            D.provs.forEach(function (p) { by[p.n] = { p: p, n: p.n, courses: p.courses, enrol: p.enrol, cert: p.cert, rating: p.rating, rate: p.enrol ? p.cert / p.enrol * 100 : 0, pe: null, chg: null }; });
+            if (P.a) {
+                Object.keys(by).forEach(function (k) { var r = by[k]; r.enrol = 0; r.cert = 0; r.pe = gp ? 0 : null; });
+                D.courses.forEach(function (c) { var r = by[c.provider]; if (!r) return; var o = g.by[c.i]; if (o) { r.enrol += o.e; r.cert += o.c; } if (gp) { var q = gp.by[c.i]; if (q) r.pe += q.e; } });
+                Object.keys(by).forEach(function (k) { var r = by[k]; if (r.pe != null) r.chg = r.pe ? (r.enrol - r.pe) / r.pe * 100 : (r.enrol ? Infinity : 0); });
+            }
+            var rows = Object.keys(by).map(function (k) { return by[k]; });
+            var cols = P.a ? [['n', 'Provider'], ['courses', 'Courses'], ['enrol', 'Enrolments']].concat(cr ? [['chg', 'Change']] : []).concat([['cert', 'Certificates']])
+                : [['n', 'Provider'], ['courses', 'Courses'], ['enrol', 'Enrolments'], ['cert', 'Certificates'], ['rate', 'Cert. rate'], ['rating', 'Rating']];
+            if (!cols.some(function (x) { return x[0] === pSortK; })) { pSortK = 'enrol'; pSortDir = -1; }
+            rows.sort(function (a, b) { var x = a[pSortK], y = b[pSortK]; if (pSortK === 'n') return pSortDir * String(x).localeCompare(String(y)); return pSortDir * (((x == null ? -Infinity : x) - (y == null ? -Infinity : y)) || 0); });
+            var chg = function (r) { if (r.chg == null) return ''; if (r.chg === Infinity) return '<span class="up">New</span>'; if (!r.pe && !r.enrol) return '–'; return '<span class="' + (r.chg >= 0 ? 'up' : 'down') + '">' + (r.chg >= 0 ? '+' : '−') + Math.abs(r.chg).toFixed(0) + '%</span>'; };
+            el.innerHTML = '<thead><tr>' + cols.map(function (x) { return '<th' + (x[0] === pSortK ? ' aria-sort="' + (pSortDir > 0 ? 'ascending' : 'descending') + '"' : '') + '><button data-k="' + x[0] + '">' + x[1] + '</button></th>'; }).join('') + '</tr></thead><tbody>'
+                + rows.map(function (r) {
+                    var cells = { n: '<td class="cn"><span class="cn-t">' + esc(r.n) + '</span>' + (r.p.slug ? '' : '<span class="cn-p">No dashboard of its own</span>') + '</td>', courses: '<td>' + fmt(r.courses) + '</td>', enrol: '<td>' + fmt(r.enrol) + '</td>', chg: '<td>' + chg(r) + '</td>', cert: '<td>' + fmt(r.cert) + '</td>', rate: '<td>' + (r.enrol ? r.rate.toFixed(1) + '%' : '–') + '</td>', rating: '<td>' + (r.rating ? r.rating.toFixed(2) : '–') + '</td>' };
+                    return '<tr' + (r.p.slug ? ' tabindex="0" data-href="/' + esc(r.p.slug) + '/"' : ' class="nolink"') + '>' + cols.map(function (x) { return cells[x[0]]; }).join('') + '</tr>';
+                }).join('') + '</tbody>';
+            el.querySelectorAll('th button').forEach(function (b) { b.addEventListener('click', function (ev) { ev.stopPropagation(); var k = b.getAttribute('data-k'); if (k === pSortK) pSortDir = -pSortDir; else { pSortK = k; pSortDir = k === 'n' ? 1 : -1; } ptable(); }); });
+            el.querySelectorAll('tbody tr[data-href]').forEach(function (r) { var go = function () { location.href = r.getAttribute('data-href'); }; r.addEventListener('click', go); r.addEventListener('keydown', function (ev) { if ((ev.key === 'Enter' || ev.key === ' ') && ev.target === r) { ev.preventDefault(); go(); } }); });
         }
 
         // ── a course's own page ──
@@ -533,7 +569,7 @@ Object.assign(window.App, {
             $('page').innerHTML = '<section style="padding:32px 0 0"><div class="wrap"><a class="back" href="#sec-notes">&larr; Back to the dashboard</a></div></section>'
                 + '<section class="m-intro" style="padding-top:24px"><div class="wrap"><p class="intro">Where every figure on this dashboard comes from, how it is counted, and what it leaves out. Questions are welcome at <a href="mailto:info@globalsurgeryfoundation.org">info@globalsurgeryfoundation.org</a>.</p>'
                 + '<nav class="m-toc" aria-label="On this page"><a href="#m-source">Sources</a><a href="#m-updates">Updates</a><a href="#m-periods">Periods</a><a href="#m-enrol">Enrolments and certificates</a><a href="#m-countries">Countries</a><a href="#m-survey">Survey</a><a href="#m-voices">Learner voices</a><a href="#m-labels">Course labels</a><a href="#m-awards">Awards</a><a href="#m-privacy">Privacy</a></nav></div></section>'
-                + sec('source', 'Where the figures come from', '<p>SURGhub runs on the LearnWorlds learning platform. The Global Surgery Foundation reads the course, enrolment, certificate and survey records from LearnWorlds into SURGdash, its reporting tool, which prepares this dashboard. Countries and professions come from what learners give in their SURGhub profile.</p><p>The figures cover every course of ' + esc(D.name) + ' that SURGdash includes, public and private.</p>')
+                + sec('source', 'Where the figures come from', '<p>SURGhub runs on the LearnWorlds learning platform. The Global Surgery Foundation reads the course, enrolment, certificate and survey records from LearnWorlds into SURGdash, its reporting tool, which prepares this dashboard. Countries and professions come from what learners give in their SURGhub profile.</p>' + (D.platform ? '<p>The totals count every course on SURGhub, public, private and unpublished; the lists show the courses SURGdash includes.</p>' : '<p>The figures cover every course of ' + esc(D.name) + ' that SURGdash includes, public and private.</p>'))
                 + sec('updates', 'How often it is updated', '<p>This dashboard is updated about once a week, when the Global Surgery Foundation refreshes the data from SURGhub. It was last updated on <b>' + esc(dLong(dnum(D.updated))) + '</b>, with records to ' + esc(dLong(END)) + '.</p><p>The monthly charts run to the end of the last full month (' + esc(D.asOf) + '), so a month is never shown half counted. Figures for a chosen period run to the latest record.</p>')
                 + sec('periods', 'Periods and comparisons', '<p>The period bar shows the dashboard for all time or for a period: the last 30 or 90 days, the last full calendar quarter, this year so far, the last 12 months, last year, or dates you choose. Periods end on the latest record.</p><p>For a period, enrolments are counted on the day the learner enrolled and certificates on the day they were earned, from the dated records. A few records carry no date, and the all-time totals are SURGhub\'s own course counts, so a period that covers everything can differ slightly from the totals.</p><p>Ratings for a period come from the months the period touches, because ratings are kept by month. The survey questions, learning impact and learning time are for all time: their answers carry no date we can count by.</p><p>While a period is chosen, every section that follows it says so, with a way back to all time:</p>' + pEx + '<p>A comparison sets the period beside the one just before it (of the same length) or the same dates a year earlier. Changes are shown as a percentage, <span class="up">+14%</span> up or <span class="down">−5%</span> down; for ratings, as the difference in points. In the charts the comparison is the dashed line.</p>')
                 + sec('enrol', 'Enrolments and certificates', '<p><b>Course enrolments</b> count every enrolment in a course, whether or not the learner has started. One person who takes two courses counts twice.</p><p><b>Certificates</b> are the course certificates learners have earned. The <b>certification rate</b> is certificates divided by enrolments; it is lower for a while after many new enrolments, as those learners are still working through the course.</p><p><b>Learning time</b> is the time learners have spent in the course pages, as SURGhub records it.</p>')
@@ -542,7 +578,7 @@ Object.assign(window.App, {
                 + sec('voices', 'Learner voices', '<p>The <b>summary</b> of what learners say is written with the help of AI from the written answers in the survey. The <b>quotes</b> are answers chosen by the Global Surgery Foundation, shown as learners wrote them, with names, emails and phone numbers removed; each says only the learner\'s profession and country.</p><p><b>Learner stories</b> are published on the SURGhub blog, with the learner\'s consent, and are shown for the courses they mention.</p>')
                 + sec('labels', 'Course labels', '<p>Courses carry the same labels as on surghub.org. They are worked out again at every update, except Featured, which the SURGhub team sets.</p><ul>' + labels + '</ul>')
                 + sec('awards', 'Awards', '<p>SURGhub recognises the top three providers and courses in each category, among all providers and courses on SURGhub.</p>' + medals + '<p> Standings are for all time and are worked out again at every update' + (D.awAsOf ? '; they are stamped with the quarter (' + esc(D.awAsOf) + ')' : '') + '.</p>' + awards + '<h3 class="m-h3">Countries</h3><div class="m-rows"><div class="m-row"><span class="m-ic">' + GLOBE + '</span><div><b>Most learners from a country</b><p>Among providers, the top three for each country with at least 25 learners on SURGhub.</p></div></div></div>')
-                + sec('privacy', 'Privacy', '<p>This page is private to ' + esc(D.name) + ' and protected by a password. It shows no learner\'s name or contact details, except in learner stories the learner chose to publish. The downloads hold anonymised records: a number instead of a name, and no email address.</p>')
+                + sec('privacy', 'Privacy', '<p>' + (D.platform ? 'This page is for the Global Surgery Foundation team' : 'This page is private to ' + esc(D.name)) + ' and protected by a password. It shows no learner\'s name or contact details, except in learner stories the learner chose to publish. The downloads hold anonymised records: a number instead of a name, and no email address.</p>')
                 + '<section style="padding-top:0"><div class="wrap"><a class="back" href="#sec-notes">&larr; Back to the dashboard</a></div></section>';
         }
 
@@ -559,7 +595,7 @@ Object.assign(window.App, {
                 if (c) coursePage(c); else methodology();
                 $('main').hidden = true; $('page').hidden = false; $('period').hidden = !!meth;
                 $('hero-title').textContent = c ? c.name : 'How this dashboard is made';
-                $('hero-lead').textContent = c ? 'A course by ' + D.name + ' on SURGhub.' : 'The methodology behind ' + D.name + '\'s SURGhub partner dashboard.';
+                $('hero-lead').textContent = c ? 'A course by ' + (c.provider || D.name) + ' on SURGhub.' : 'The methodology behind ' + D.name + '\'s SURGhub partner dashboard.';
                 $('hero-actions').hidden = true; window.scrollTo(0, 0);
             } else {
                 $('page').hidden = true; $('main').hidden = false; $('period').hidden = false;
@@ -574,7 +610,7 @@ Object.assign(window.App, {
         // the parts that never change with the period
         var I = impactStats(D.impact); if (I) $('impact').innerHTML = I; else $('sec-impact').hidden = true;
         if (D.summary || D.quotes.length) $('voices').innerHTML = voices(D.summary, D.quotes, 'A summary of the written answers in the end-of-course surveys, written with the help of AI.');
-        $('stories').innerHTML = storiesBlock(D.stories, true, 'Stories published on the SURGhub blog by learners who took your courses.');
+        $('stories').innerHTML = storiesBlock(D.stories, true, 'Stories published on the SURGhub blog by learners who took ' + YOUR + ' courses.');
         if (!D.summary && !D.quotes.length && !D.stories.length) $('sec-voices').hidden = true;
         periodBar();
         // the navigation: hide links to empty sections, mark the section in view

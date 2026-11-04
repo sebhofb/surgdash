@@ -66,22 +66,26 @@ Object.assign(window.App, {
         });
     },
 
+    // opts.platform: the page for all of SURGhub (the team page's All of SURGhub card), every provider's
+    // courses with a providers table; opts.links = { provider: slug } makes its rows open their dashboards.
     async _buildPartnerReportHtml(providerName, opts) {
         opts = opts || {};
-        const D = await this._assembleReportData(providerName, {});
+        const platform = !!opts.platform;
+        const D = await this._assembleReportData(providerName, platform ? { platform: true } : {});
         if (!D) return null;
+        const provShort = (p) => { const t = String(p || '').trim(); return t.includes(' - ') ? t.split(' - ').slice(1).join(' - ').trim() : t; };
         const esc = (s) => this.escapeHtml(String(s == null ? '' : s));
         const scrub = (t) => this.scrubPersonal ? this.scrubPersonal(String(t || '')) : String(t || '');
         const fmt = (n) => this.formatNumber(Math.round(Number(n) || 0));
         // The full name ("GSF - Global Surgery Foundation" reads "Global Surgery Foundation")
-        const name = String(providerName).includes(' - ') ? String(providerName).split(' - ').slice(1).join(' - ').trim() : (this.providerFolderName ? this.providerFolderName(providerName) : providerName);
+        const name = platform ? 'All of SURGhub' : String(providerName).includes(' - ') ? String(providerName).split(' - ').slice(1).join(' - ').trim() : (this.providerFolderName ? this.providerFolderName(providerName) : providerName);
         const through = this.reportDataThrough || (this._lastFullMonth ? this._lastFullMonth() : '');
         const asOf = through ? this._prLastDay(through) : String(D.reportDate || '');
         const logoWhite = this._prImage('gsf_logo_white_web.png');
         // the header logos, made small enough not to weigh the page down
         const thumb = async (uri) => (uri && this._pdThumb) ? this._pdThumb(uri) : uri;
         const shLogo = await thumb(this._prImage('surghub_logo_color.png'));
-        const provLogo = await thumb(this._prProviderLogo(providerName));
+        const provLogo = platform ? '' : await thumb(this._prProviderLogo(providerName));
         const lt = (min) => (Number(min) > 0 && this.formatLearningTime) ? this.formatLearningTime(Number(min)) : '';
         const sentence = (t) => String(t || '').toLowerCase().replace(/^\w/, c => c.toUpperCase());
 
@@ -121,7 +125,7 @@ Object.assign(window.App, {
             const rt = (D.courseRatings || {})[c.Course] || {};
             const sm = D.fbSummaries && D.fbSummaries[c.Course] && D.fbSummaries[c.Course].s;
             return {
-                name: c.Course, enrol: Number(c.Learners) || 0, cert: Number(c.Certificates) || 0, rating: Number(c.Rating) > 0 ? +Number(c.Rating).toFixed(2) : 0,
+                name: c.Course, provider: platform ? provShort(c.Provider) : '', enrol: Number(c.Learners) || 0, cert: Number(c.Certificates) || 0, rating: Number(c.Rating) > 0 ? +Number(c.Rating).toFixed(2) : 0,
                 resp: Number(c.Responses) || 0, time: lt(c.LearningMinutes), min: Math.round(Number(c.LearningMinutes) || 0),
                 monthly: this._prMonthly((D.courseTimelines || {})[c.Course], through),
                 countries: cc && cc.top10 ? cc.top10.slice(0, 10) : [], known: cc ? (cc.totalWithCountry || 0) : 0,
@@ -172,14 +176,17 @@ Object.assign(window.App, {
         Object.values(D.courseRatings || {}).forEach(rt => Object.keys(rt || {}).forEach(m => { if (through && m > through) return; const v = rt[m]; if (!v || !(v.count > 0)) return; const o = rm[m] || (rm[m] = { s: 0, n: 0 }); o.s += Number(v.sum) || 0; o.n += v.count; }));
         const ratingsByMonth = Object.keys(rm).sort().map(m => [m, +(rm[m].s / rm[m].n).toFixed(2), rm[m].n]);
 
+        // all of SURGhub: one row per provider (figures from every course, as the dark platform report), linked to its dashboard
+        const links = opts.links || {};
+        const provs = platform ? (D.topProviders || []).map(p => ({ n: provShort(p.name), full: p.name, courses: p.courses, enrol: p.lrn, cert: p.cert, rating: p.avg ? +Number(p.avg).toFixed(2) : 0, slug: links[p.name] || '' })) : [];
         const DATA = {
-            name, asOf, through, updated: dStr(todayN), dataTo: dMax >= 0 ? dStr(dMax) : '', dataFrom: dMin < Infinity ? dStr(dMin) : '',
-            totals: { enrol: D.totalLrn, cert: D.totalCert, rate: D.certRate, rating: Number(D.avgRating) > 0 ? Number(D.avgRating).toFixed(2) : '', resp: D.totalResp, time: lt(D.totalMin), min: Math.round(Number(D.totalMin) || 0), courses: courses.length, countries: countries.length, known },
+            name, asOf, through, platform, provs, updated: dStr(todayN), dataTo: dMax >= 0 ? dStr(dMax) : '', dataFrom: dMin < Infinity ? dStr(dMin) : '',
+            totals: { providers: platform ? (D.providerCount || provs.length) : 0, enrol: D.totalLrn, cert: D.totalCert, rate: D.certRate, rating: Number(D.avgRating) > 0 ? Number(D.avgRating).toFixed(2) : '', resp: D.totalResp, time: lt(D.totalMin), min: Math.round(Number(D.totalMin) || 0), courses: courses.length, countries: countries.length, known },
             monthly: this._prMonthly(D.provTimeline, through),
             countries, land: G.LAND || '[]',
             impact: { time: lt(D.totalMin), contentNew: pick(si.contentNew), willApply: pick(si.willApply), careerValue: pick(si.careerValue) },
             questions: this._prQuestions(D.surveyQRows),
-            summary: (D.fbSummaries && D.fbSummaries['@provider:' + providerName] && D.fbSummaries['@provider:' + providerName].s) || '',
+            summary: platform ? '' : ((D.fbSummaries && D.fbSummaries['@provider:' + providerName] && D.fbSummaries['@provider:' + providerName].s) || ''),
             quotes: allQuotes.filter(q => q.t.length >= 25).slice(0, 6),
             courses, stories, recs, rc, cpos, ratings: ratingsByMonth,
             awards: (D.providerAwards || []).map(awardOf), cats, awAsOf: this._currentQuarterLabel ? this._currentQuarterLabel() : '',
@@ -188,21 +195,21 @@ Object.assign(window.App, {
         const json = JSON.stringify(DATA).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
 
         const updatedLong = this._prLastDay ? new Date(todayN * 86400000).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }) : '';
-        const lead = 'Your courses on SURGhub.<span class="lead-sub">Updated about once a week; last updated ' + esc(updatedLong) + '<span class="upd-age"></span>.</span>';
+        const lead = (platform ? 'Every provider\'s courses on SURGhub.' : 'Your courses on SURGhub.') + '<span class="lead-sub">Updated about once a week; last updated ' + esc(updatedLong) + '<span class="upd-age"></span>.</span>';
         const sec = (id, tone, eyebrow, title, body) => `<section id="${id}" class="${tone}"><div class="wrap"><p class="eyebrow">${eyebrow}</p><h2>${title}</h2>${body}</div></section>`;
         return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow,noarchive"><title>${esc(name)} on SURGhub</title><style>${this._prCss()}</style></head><body>
 <a class="skip" href="#main">Skip to the figures</a>
 <header class="top"><div class="wrap">
   <a class="brand" href="#">${logoWhite ? '<img src="' + logoWhite + '" alt="Global Surgery Foundation">' : '<b>Global Surgery Foundation</b>'}</a>
-  <nav aria-label="Sections" id="nav"><a href="#sec-numbers">Overview</a><a href="#sec-growth">Growth</a><a href="#sec-map">Reach</a><a href="#sec-impact">Impact</a><a href="#sec-survey">Survey</a><a href="#sec-voices">Voices</a><a href="#sec-courses">Courses</a><a href="#sec-downloads">Downloads</a></nav>
+  <nav aria-label="Sections" id="nav"><a href="#sec-numbers">Overview</a><a href="#sec-growth">Growth</a><a href="#sec-map">Reach</a><a href="#sec-impact">Impact</a><a href="#sec-survey">Survey</a><a href="#sec-voices">Voices</a>${platform ? '<a href="#sec-providers">Providers</a>' : ''}<a href="#sec-courses">Courses</a><a href="#sec-downloads">Downloads</a></nav>
 </div></header>
 <div class="hero"><svg class="globe" id="globe" aria-hidden="true" focusable="false"></svg><div class="hero-fade"></div><div class="wrap hero-in">
   <div class="hero-text">
-    <p class="eyebrow">SURGhub partner dashboard</p>
+    <p class="eyebrow">${platform ? 'SURGhub dashboard' : 'SURGhub partner dashboard'}</p>
     <h1 id="hero-title">${esc(name)}</h1>
     <p class="lead" id="hero-lead">${lead}</p>
-    <p class="actions" id="hero-actions"><a class="btn" href="#sec-courses">See your courses</a></p>
+    <p class="actions" id="hero-actions">${platform ? '<a class="btn" href="#sec-providers">See the providers</a>' : '<a class="btn" href="#sec-courses">See your courses</a>'}</p>
   </div>
   <div class="logos">${shLogo ? '<img src="' + shLogo + '" alt="SURGhub, the UN Global Surgery Learning Hub">' : '<b>SURGhub</b>'}${provLogo ? '<span class="sep" aria-hidden="true"></span><img src="' + provLogo + '" alt="' + esc(name) + '">' : ''}</div>
 </div></div>
@@ -218,6 +225,7 @@ ${sec('sec-map', 'band', 'Reach', 'Where your learners are', '<div data-pw></div
 ${sec('sec-impact', 'dark', 'Learning impact', 'What the learning changes', '<p class="intro">From the survey at the end of each course: the share of learners answering 4 or 5 on a scale of 1 to 5. Choose a figure for the question behind it.</p><div class="stats" id="impact"></div><p class="note" id="impact-note" hidden>All time: the survey questions are not broken down by period.</p>')}
 ${sec('sec-survey', '', 'Survey insights', 'How learners rate the courses', '<div data-pw></div><div class="big2" id="survey-big"></div><div class="card" id="ratings-box"><h3>Average rating by month</h3><p class="note" style="margin:0 0 16px">From the end-of-course survey. The height of a dot is the average for the month; its size, how many ratings it rests on. Point at the chart to read a month.</p><div id="ratings" class="chart"></div></div><p class="intro" id="survey-intro" style="margin-top:32px"></p><div class="card"><div id="questions"></div></div>')}
 ${sec('sec-voices', 'band warm', 'Learner voices', 'What learners say', '<div id="voices"></div><div id="stories"></div>')}
+${platform ? sec('sec-providers', 'band', 'Providers', 'Provider by provider', '<div data-pw></div><p class="intro">Choose a column to sort; choose a provider to open its own dashboard.</p><div class="card table-card"><div class="table-scroll"><table class="ctable" id="ptable"></table></div></div>') : ''}
 ${sec('sec-courses', '', 'Courses', 'Course by course', '<div data-pw></div><p class="intro">Choose a column to sort; choose a course to see its own page.</p><div class="card table-card"><div class="table-scroll"><table class="ctable" id="ctable"></table></div><div class="t-foot" id="labels-all"></div></div>')}
 
 <!--SH-DOWNLOADS-->
@@ -282,7 +290,7 @@ section.lift{padding-top:64px;padding-bottom:8px}
 h2{font-weight:700;font-size:32px;line-height:1.2;letter-spacing:-.005em;color:var(--navy);margin:0 0 10px}
 h3{font-weight:700;font-size:19px;line-height:1.25;margin:0 0 12px;color:var(--navy)}
 .intro{font-size:17px;color:var(--muted);max-width:760px;margin:0 0 32px}
-.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:20px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:20px}
 .stat{all:unset;box-sizing:border-box;display:flex;flex-direction:column;padding:24px 24px 20px;border-radius:12px;background:var(--paper);border:1px solid var(--line2);cursor:pointer;color:var(--navy);transition:background .15s,border-color .15s}
 .stat:hover{background:var(--tint);border-color:var(--light)}.stat:focus-visible{box-shadow:0 0 0 2px #002f4c,0 0 0 5px #ffc145}
 .stat-v{font-weight:700;font-size:46px;line-height:1;letter-spacing:-.01em;white-space:nowrap;color:var(--blue)}
@@ -397,7 +405,7 @@ section.dark .up{color:#9be06b}section.dark .down{color:#ff9b8f}
 .badge svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .badge:hover{border-color:var(--blue)}.badge:focus-visible{box-shadow:0 0 0 2px #002f4c,0 0 0 5px #ffc145}
 .b-megaphone{background:#fff3d6;border-color:#f3cf7a}.b-flame{color:#b5530a}.b-trend{color:#2f7a14}.b-star{color:#9a6b00}.b-spark{color:var(--blue)}.b-cap{color:#6b3fa0}
-.c-badges .badges{margin-top:14px}.cn-t{display:block}
+.c-badges .badges{margin-top:14px}.cn-t{display:block}.cn-p{display:block;font-size:13px;font-weight:400;color:var(--muted);margin-top:2px}.ctable tbody tr.nolink{cursor:default}
 .m-h3{font-size:14px;letter-spacing:.06em;text-transform:uppercase;color:var(--blue);margin:24px 0 6px}
 .m-rows{max-width:860px}.m-row{display:grid;grid-template-columns:40px 1fr;gap:12px;align-items:start;padding:12px 0;border-top:1px solid var(--line)}.m-row p{margin:2px 0 0;font-size:15px;color:var(--muted)}.m-row b{font-size:16px}
 .m-ic{display:flex;justify-content:center;padding-top:1px}.m-sec .lb-row{max-width:860px}.m-sec .lb-row p{font-size:15px}

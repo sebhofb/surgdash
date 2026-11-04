@@ -426,7 +426,10 @@ Object.assign(window.App, {
                 try {
                     if (opts.progress) opts.progress('Partner dashboards: all of SURGhub…');
                     const D = this._assembleReportData ? await this._assembleReportData('SURGhub', { platform: true }) : null;
-                    const html = await this._buildDarkReportHtml('SURGhub', true);
+                    // in the GSF design like the provider pages (Seb, 4 Nov 2026); its providers table opens their dashboards
+                    const links = {}; built.forEach(prov => { if (s.providers[prov] && s.providers[prov].slug) links[prov] = s.providers[prov].slug; });
+                    let html = this._buildPartnerReportHtml ? await this._buildPartnerReportHtml('SURGhub', { platform: true, links }) : await this._buildDarkReportHtml('SURGhub', true);
+                    if (html) html = html.replace('<!--SH-DOWNLOADS-->', '');
                     if (html) {
                         if (!s.teamPassword) s.teamPassword = this._pdNewPassword();
                         files.push({ path: this.PD_PLATFORM_SLUG + '/index.html', content: this._pdPageHtml(await this._pdEncrypt(html, s.teamPassword), 'SURGhub · all providers', 'Enter the team password.') });
