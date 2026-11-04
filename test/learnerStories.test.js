@@ -24,7 +24,7 @@ ctx.App = { msgs: [], escapeHtml: (t) => String(t).replace(/[&<>"']/g, c => ({ '
   scrubPersonal: (t) => String(t).replace(/Sourov|Das/g, '[name]'),
   async _assembleReportData(p) { const rows = SNAP.filter(r => r.Provider === p); return { reportDate: 'Nov 3, 2026', totalLrn: 1400, totalCert: 400, certRate: '28.6', avgRating: '4.70', totalResp: 10, totalMin: 0, provTimeline: {}, providerCountryData: {}, surveyImpact: {}, surveyQRows: [], fbSummaries: {}, testimonials: [], providerAwards: [], providerCountryAwards: [], coursesSorted: rows, courseTimelines: {}, courseCountryData: {}, courseRatings: {}, courseAwardMap: {} }; } };
 vm.createContext(ctx);
-for (const f of ['js/learnerStories.js', 'js/partnerReport.js']) vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, { filename: f });
+for (const f of ['js/learnerStories.js', 'js/partnerReport.js', 'js/partnerReportPage.js']) vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, { filename: f });
 const App = ctx.App;
 
 (async () => {

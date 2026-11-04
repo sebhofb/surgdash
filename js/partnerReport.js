@@ -107,6 +107,12 @@ Object.assign(window.App, {
             .map(([c, n]) => { const p = cent[toIso(c)]; return p ? [c, n, p[0], p[1]] : [c, n]; });
         const known = countries.reduce((s, c) => s + c[1], 0);
 
+        // Course labels as on surghub.org (coursesFeed.js), and when each course was featured.
+        let feed = null;
+        try { if (this._cfLoad) await this._cfLoad(); feed = this.coursesFeedBuild ? this.coursesFeedBuild() : null; } catch (e) { __swallowed(e, 'pr.labels'); }
+        const tagsById = {}; ((feed && feed.courses) || []).forEach(c => { tagsById[c.id] = c.tags || []; });
+        const cfMeta = (this._cfMeta && this._cfMeta.byId) || {};
+        const awardOf = (a) => ({ k: a.key, r: a.rank, n: a.total, v: a.valueFmt || '' });
         const si = D.surveyImpact || {};
         const pick = (x) => x ? { pct: x.pct, n: x.n } : null;
         const courses = (D.coursesSorted || []).filter(c => c && c.Course).map(c => {
@@ -123,7 +129,9 @@ Object.assign(window.App, {
                 questions: this._prQuestions(qs),
                 quotes: (quotesByCourse[c.Course] || []).map(f => quoteOf(f, '')).filter(q => q.t.length >= 25).slice(0, 6),
                 summary: sm ? String(sm) : '',
-                awards: ((D.courseAwardMap || {})[c.Course] || []).slice().sort((a, b) => a.rank - b.rank).map(a => sentence(a.label) + (a.rank === 1 ? ' of ' : ': number ' + a.rank + ' of ') + fmt(a.total) + ' courses'),
+                awards: ((D.courseAwardMap || {})[c.Course] || []).map(awardOf),
+                tags: (tagsById[c.CourseId] || []).filter(t => t !== 'Free' && t !== 'Featured'),
+                featured: ((cfMeta[c.CourseId] && cfMeta[c.CourseId].featured) || []).filter(f => f && f.from).map(f => [String(f.from).slice(0, 10), f.to ? String(f.to).slice(0, 10) : '']),
             };
         });
         // Learner stories from the blog that mention one of these courses (js/learnerStories.js). Public
@@ -135,11 +143,37 @@ Object.assign(window.App, {
             on.forEach(i => { if (courses[i]) (courses[i].stories = courses[i].stories || []).push(st.id); });
             return { id: st.id, t: st.title, n: st.name, r: st.role, w: [st.city, st.country].filter(Boolean).join(', '), s: st.summary, q: st.quote, u: /^https:\/\//.test(st.url || '') ? st.url : '', i: /^https:\/\//.test(st.image || '') ? st.image : '', c: on };
         });
-        const awards = (D.providerAwards || []).slice().sort((a, b) => a.rank - b.rank).map(a => sentence(a.label) + (a.rank === 1 ? ' of ' : ': number ' + a.rank + ' of ') + fmt(a.total) + ' providers on SURGhub');
-        const firsts = (D.providerCountryAwards || []).filter(c => c.rank === 1).map(c => c.country);
+        let cats = [];
+        try { const aw = this.computeAwards ? this.computeAwards() : null; cats = ((aw && aw.categories) || []).map(c => ({ k: c.key, p: !!c.providerOnly })); } catch (e) { __swallowed(e, 'pr.awards'); }
+
+        // The dated records behind a chosen period: [course, enrolment day, certificate day, country],
+        // days counted from 1 Jan 1970 (-1 = none). No ids, names or emails: the email only finds the
+        // country, as for the quotes. The course is matched by name, as the records carry no id.
+        const dayOf = (v) => { const t = String(v || '').slice(0, 10); return /^\d{4}-\d{2}-\d{2}$/.test(t) ? Math.round(Date.UTC(+t.slice(0, 4), +t.slice(5, 7) - 1, +t.slice(8, 10)) / 86400000) : -1; };
+        const today = new Date(), todayN = Math.round(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()) / 86400000);
+        const normC = (x) => String(x || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        const byName = {}; courses.forEach((c, i) => { const k = normC(c.name); if (byName[k] == null) byName[k] = i; });
+        const demo = this._emailDemoMap || {}, rc = [], rcIdx = {}, recs = [];
+        let dMin = Infinity, dMax = -1;
+        (Array.isArray(this._rawCompletion) ? this._rawCompletion : []).forEach(r => {
+            const i = r ? byName[normC(r.course)] : null; if (i == null) return;
+            let e = dayOf(r.enrolled_date || r.start_date), c = r.certificate ? dayOf(r.certificate_date) : -1;
+            if (e > todayN) e = -1; if (c > todayN) c = -1;
+            if (e < 0 && c < 0) return;
+            const dm = r.email ? demo[String(r.email).trim().toLowerCase()] : null, cn = dm && dm.country ? String(dm.country).trim() : '';
+            let k = -1; if (cn && !/^(unknown|nan|n\/a)$/i.test(cn)) { if (rcIdx[cn] == null) { rcIdx[cn] = rc.length; rc.push(cn); } k = rcIdx[cn]; }
+            recs.push([i, e, c, k]);
+            [e, c].forEach(d => { if (d >= 0) { dMin = Math.min(dMin, d); dMax = Math.max(dMax, d); } });
+        });
+        const dStr = (n) => new Date(n * 86400000).toISOString().slice(0, 10);
+        const cpos = {}; rc.forEach(n => { const p = cent[toIso(n)]; if (p) cpos[n] = [p[0], p[1]]; });
+        // the average rating by month across the provider's courses: [[month, average, ratings]]
+        const rm = {};
+        Object.values(D.courseRatings || {}).forEach(rt => Object.keys(rt || {}).forEach(m => { if (through && m > through) return; const v = rt[m]; if (!v || !(v.count > 0)) return; const o = rm[m] || (rm[m] = { s: 0, n: 0 }); o.s += Number(v.sum) || 0; o.n += v.count; }));
+        const ratingsByMonth = Object.keys(rm).sort().map(m => [m, +(rm[m].s / rm[m].n).toFixed(2), rm[m].n]);
 
         const DATA = {
-            name, asOf, through,
+            name, asOf, through, updated: dStr(todayN), dataTo: dMax >= 0 ? dStr(dMax) : '', dataFrom: dMin < Infinity ? dStr(dMin) : '',
             totals: { enrol: D.totalLrn, cert: D.totalCert, rate: D.certRate, rating: Number(D.avgRating) > 0 ? Number(D.avgRating).toFixed(2) : '', resp: D.totalResp, time: lt(D.totalMin), min: Math.round(Number(D.totalMin) || 0), courses: courses.length, countries: countries.length, known },
             monthly: this._prMonthly(D.provTimeline, through),
             countries, land: G.LAND || '[]',
@@ -147,11 +181,14 @@ Object.assign(window.App, {
             questions: this._prQuestions(D.surveyQRows),
             summary: (D.fbSummaries && D.fbSummaries['@provider:' + providerName] && D.fbSummaries['@provider:' + providerName].s) || '',
             quotes: allQuotes.filter(q => q.t.length >= 25).slice(0, 6),
-            courses, awards, firsts, stories,
+            courses, stories, recs, rc, cpos, ratings: ratingsByMonth,
+            awards: (D.providerAwards || []).map(awardOf), cats, awAsOf: this._currentQuarterLabel ? this._currentQuarterLabel() : '',
+            caw: (D.providerCountryAwards || []).map(c => ({ c: c.country, r: c.rank, n: c.learners, t: c.total })),
         };
         const json = JSON.stringify(DATA).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
 
-        const lead = 'Your courses on SURGhub, the UN Global Surgery Learning Hub. Figures to ' + esc(asOf) + '.';
+        const updatedLong = this._prLastDay ? new Date(todayN * 86400000).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }) : '';
+        const lead = 'Your courses on SURGhub, the UN Global Surgery Learning Hub. Updated about once a week; last updated ' + esc(updatedLong) + '.';
         const sec = (id, tone, eyebrow, title, body) => `<section id="${id}" class="${tone}"><div class="wrap"><p class="eyebrow">${eyebrow}</p><h2>${title}</h2>${body}</div></section>`;
         return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow,noarchive"><title>${esc(name)} on SURGhub</title><style>${this._prCss()}</style></head><body>
@@ -169,16 +206,17 @@ Object.assign(window.App, {
   </div>
   <div class="logos">${shLogo ? '<img src="' + shLogo + '" alt="SURGhub, the UN Global Surgery Learning Hub">' : '<b>SURGhub</b>'}${provLogo ? '<span class="sep" aria-hidden="true"></span><img src="' + provLogo + '" alt="' + esc(name) + '">' : ''}</div>
 </div></div>
+<div id="period" class="period" role="region" aria-label="Period"></div>
 
 <main id="main">
 <section id="sec-numbers" class="lift"><div class="wrap">
-  <div class="stats" id="stats"></div><ul class="tags" id="awards"></ul>
-  <p class="note">All of your courses on SURGhub, since each one opened. Choose a figure to see what it counts.</p>
+  <div class="stats" id="stats"></div><ul class="tags" id="awards"></ul><p class="aw-all" id="awards-all"></p>
+  <p class="note" id="numbers-note"></p>
 </div></section>
-${sec('sec-growth', '', 'Growth', 'Enrolments and certificates over time', '<p class="intro">Running totals by month. Point at the chart to read a month; switch the lines on and off, or add the numbers for each month.</p><div class="card"><div id="growth"></div></div>')}
+${sec('sec-growth', '', 'Growth', 'Enrolments and certificates over time', '<p class="intro" id="growth-intro"></p><div class="card"><div id="growth"></div></div>')}
 ${sec('sec-map', 'band', 'Reach', 'Where your learners are', '<p class="intro" id="map-intro"></p><div class="card map-card"><div id="map"></div><div id="toplist"></div></div>')}
-${sec('sec-impact', 'dark', 'Learning impact', 'What the learning changes', '<p class="intro">From the survey at the end of each course: the share of learners answering 4 or 5 on a scale of 1 to 5. Choose a figure for the question behind it.</p><div class="stats" id="impact"></div>')}
-${sec('sec-survey', '', 'Survey insights', 'How learners rate the courses', '<p class="intro" id="survey-intro"></p><div class="big2" id="survey-big"></div><div class="card"><div id="questions"></div></div>')}
+${sec('sec-impact', 'dark', 'Learning impact', 'What the learning changes', '<p class="intro">From the survey at the end of each course: the share of learners answering 4 or 5 on a scale of 1 to 5. Choose a figure for the question behind it.</p><div class="stats" id="impact"></div><p class="note" id="impact-note" hidden>All time: the survey questions are not broken down by period.</p>')}
+${sec('sec-survey', '', 'Survey insights', 'How learners rate the courses', '<div class="big2" id="survey-big"></div><div class="card" id="ratings-box"><h3>Average rating by month</h3><p class="note" style="margin:0 0 12px">From the end-of-course survey; the bar height is the number of ratings that month. Point at a bar for the figures.</p><div id="ratings" class="chart"></div></div><p class="intro" id="survey-intro" style="margin-top:32px"></p><div class="card"><div id="questions"></div></div>')}
 ${sec('sec-voices', 'band warm', 'Learner voices', 'What learners say', '<div id="voices"></div><div id="stories"></div>')}
 ${sec('sec-courses', '', 'Courses', 'Course by course', '<p class="intro">Choose a column to sort; choose a course to see its own page.</p><div class="card table-card"><div class="table-scroll"><table class="ctable" id="ctable"></table></div></div>')}
 
@@ -189,18 +227,19 @@ ${sec('sec-notes', 'band', 'About these figures', 'How we count', `<div class="n
     <p><b>Certificates</b> are the course certificates learners earned. The certification rate is certificates divided by enrolments.</p>
     <p><b>Countries</b> come from what learners give in their SURGhub profile; not every learner gives one. The map places each country at its centre.</p>
     <p><b>Ratings and survey answers</b> come from the survey at the end of each course. Quotes are shown as learners wrote them, without names.</p>
-    <p><b>Figures run to ${esc(asOf)}.</b> They come from SURGhub and are prepared by the Global Surgery Foundation with SURGdash.</p>
+    <p><b>Updated about once a week.</b> Last updated ${esc(updatedLong)}. The monthly charts run to the end of the last full month (${esc(asOf)}). The figures come from SURGhub and are prepared by the Global Surgery Foundation with SURGdash.</p>
     <p>Questions about this dashboard: <a href="mailto:info@globalsurgeryfoundation.org">info@globalsurgeryfoundation.org</a></p>
-  </div>`)}
+  </div>
+  <p style="margin-top:20px"><a class="btn sec" href="#methodology">Read the full methodology &rarr;</a></p>`)}
 </main>
 
-<main id="course" hidden></main>
+<main id="page" hidden></main>
 
 <footer><div class="wrap">
   <div class="f-brand"><b>SURGhub, the UN Global Surgery Learning Hub</b><p>SURGhub is a joint initiative of the Global Surgery Foundation (GSF) and UNITAR (United Nations Institute for Training and Research), supported by the Royal College of Surgeons in Ireland (RCSI), and implemented in association with the Johnson &amp; Johnson Foundation.</p></div>
-  <div class="f-col"><b>On this page</b><a href="#sec-numbers">Overview</a><a href="#sec-map">Reach</a><a href="#sec-courses">Courses</a><a href="#sec-downloads">Downloads</a><a href="#sec-notes">How we count</a></div>
+  <div class="f-col"><b>On this page</b><a href="#sec-numbers">Overview</a><a href="#sec-map">Reach</a><a href="#sec-courses">Courses</a><a href="#sec-downloads">Downloads</a><a href="#sec-notes">How we count</a><a href="#methodology">Methodology</a></div>
   <div class="f-col"><b>Contact</b><a href="mailto:info@globalsurgeryfoundation.org">info@globalsurgeryfoundation.org</a><a href="https://www.globalsurgeryfoundation.org">globalsurgeryfoundation.org</a><a href="https://www.surghub.org">surghub.org</a></div>
-</div><div class="wrap f-small">Figures to ${esc(asOf)}. This page is private to you; please do not share the link or password.</div></footer>
+</div><div class="wrap f-small">Updated about once a week; last updated ${esc(updatedLong)}. This page is private to you; please do not share the link or password.</div></footer>
 <dialog id="info" class="info" aria-labelledby="info-t"><div class="info-in"><button class="x" id="info-x" aria-label="Close">&times;</button><p class="eyebrow" id="info-e"></p><h3 id="info-t"></h3><div class="info-v" id="info-v"></div><div id="info-b"></div></div></dialog>
 <div id="tip" class="tip" hidden></div>
 <script>var DATA=${json};
@@ -223,8 +262,8 @@ a{color:var(--blue)}a:hover{text-decoration:underline}
 .top nav a{font-size:15px;letter-spacing:.03em;text-transform:uppercase;color:var(--gold);text-decoration:none;padding:8px 10px;white-space:nowrap;text-underline-offset:6px}
 .top nav a:hover{color:#fff}.top nav a.on{text-decoration:underline;text-decoration-thickness:2px}
 .hero{position:relative;overflow:hidden;color:#fff;background:radial-gradient(ellipse 50% 90% at 82% 50%,#1e4a73 0,#0d233a 75%);clip-path:polygon(0 0,100% 0,100% 100%,0 calc(100% - 22px))}
-.hero-fade{position:absolute;inset:0;background:linear-gradient(90deg,#0d233a 0,#0d233a 34%,rgba(13,35,58,0) 62%);pointer-events:none}
-.globe{position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none}
+.hero-fade{position:absolute;inset:0;background:linear-gradient(90deg,#0d233a 0,#0d233a 36%,rgba(13,35,58,.6) 60%,rgba(13,35,58,.35) 100%),linear-gradient(0deg,rgba(13,35,58,.5) 0,rgba(13,35,58,0) 40%);pointer-events:none}
+.globe{position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none;opacity:.7}
 .hero-in{position:relative;display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:40px;align-items:center;padding-top:96px;padding-bottom:110px}
 .eyebrow{font-size:16px;color:var(--blue);margin:0 0 8px}
 .hero .eyebrow{color:var(--gold)}
@@ -326,242 +365,35 @@ footer{background:var(--deep);color:#fff}footer .wrap{display:grid;grid-template
 .f-brand b{display:block;font-size:17px;margin-bottom:10px}footer p{margin:0;font-size:14px;line-height:1.6;color:rgba(255,255,255,.8);max-width:460px}
 .f-col{display:flex;flex-direction:column;gap:8px;font-size:14px}.f-col b{color:var(--gold);font-size:13px;letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px}.f-col a{color:#fff;text-decoration:none}.f-col a:hover{text-decoration:underline}
 footer .f-small{display:block;padding-top:20px;padding-bottom:28px;border-top:1px solid rgba(255,255,255,.15);font-size:13px;color:rgba(255,255,255,.65)}
+.period{position:sticky;top:72px;z-index:30;background:#fff;border-bottom:1px solid var(--line);box-shadow:0 6px 16px rgba(0,47,76,.06)}
+.pb{display:flex;flex-wrap:wrap;align-items:center;gap:10px 20px;padding-top:12px;padding-bottom:12px;font-size:14px}
+.pb label{display:inline-flex;align-items:center;gap:8px;font-weight:700}
+.pb select,.pb input{font:15px Arial,sans-serif;color:var(--navy);border:1px solid var(--line2);border-radius:9px;padding:7px 10px;background:#fff}
+.pb select:focus-visible,.pb input:focus-visible{outline:none;box-shadow:0 0 0 2px #002f4c,0 0 0 5px #ffc145}
+#p-dates{display:inline-flex;gap:12px;flex-wrap:wrap}.p-now{color:var(--muted);margin-left:auto}
+.stat-d{margin-top:6px;font-size:13px;color:var(--muted)}.up{color:#2f7a14;font-weight:700}.down{color:#c0392b;font-weight:700}
+section.dark .up{color:#9be06b}section.dark .down{color:#ff9b8f}
+.legend-cmp{display:inline-flex;align-items:center;gap:8px;font-size:14px;color:var(--muted);margin-left:6px}.legend-cmp i{width:22px;border-top:2px dashed var(--muted)}
+.tags li b{display:block}.tags li small{display:block;font-size:13px;color:var(--muted);margin-top:2px}.tags .medal{flex:none;width:30px;height:30px;margin-top:-2px;stroke:none;fill:initial}
+.aw-all{margin:16px 0 0}.aw-all:empty{display:none}
+.aw-row{display:grid;grid-template-columns:40px 1fr;gap:12px;align-items:start;padding:12px 0;border-top:1px solid var(--line)}.aw-row p{margin:2px 0 4px;font-size:14px;color:var(--muted)}.aw-row b{font-size:15px}
+.aw-c{padding:8px 0}.aw-won{font-size:14px;font-weight:700;color:var(--navy)}.aw-not{font-size:14px;color:var(--muted)}
+.info h4{font-size:17px;margin:20px 0 4px}.info{max-width:640px}
+.badges{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.badge{all:unset;cursor:pointer;display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;line-height:1;padding:5px 8px;border-radius:6px;border:1px solid var(--line2);color:var(--navy);background:#fff;white-space:nowrap}
+.badge svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.badge:hover{border-color:var(--blue)}.badge:focus-visible{box-shadow:0 0 0 2px #002f4c,0 0 0 5px #ffc145}
+.b-megaphone{background:#fff3d6;border-color:#f3cf7a}.b-flame{color:#b5530a}.b-trend{color:#2f7a14}.b-star{color:#9a6b00}.b-spark{color:var(--blue)}.b-cap{color:#6b3fa0}
+.c-badges .badges{margin-top:14px}.cn-t{display:block}
+.m-toc{display:flex;flex-wrap:wrap;gap:6px 18px;margin-top:8px;font-size:15px}
+.m-sec{padding:40px 0 8px}.m-sec h2{font-size:24px}.m-sec p,.m-sec li{max-width:820px;font-size:16px;line-height:1.65}.m-sec ul{padding-left:22px}.m-sec li{margin:6px 0}
 @keyframes flow{from{stroke-dashoffset:100}to{stroke-dashoffset:0}}.globe .arc{animation:flow 6s linear infinite}
 @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}.globe .arc{animation:none;stroke-opacity:0}.stat{transition:none}}
-@media (max-width:900px){.globe{opacity:.45}.top nav{display:none}.hero-in{grid-template-columns:1fr;padding-top:40px}.logos{justify-self:start;order:-1;padding:16px 20px;gap:18px}.logos img{height:52px}}
-@media (max-width:760px){.hero h1{font-size:32px}.two,.map-card{grid-template-columns:1fr}.notes{columns:1}.stats{grid-template-columns:1fr 1fr;gap:12px}.big2{grid-template-columns:1fr}.big{flex-direction:column;align-items:flex-start;gap:12px;padding:24px}.big-v{font-size:56px}h2{font-size:25px}.stat-v{font-size:38px}.stat{padding:20px 16px}section{padding:52px 0}.brand img{height:36px}footer .wrap{grid-template-columns:1fr}.q-row{grid-template-columns:minmax(0,1fr) 60px 56px}.q-row .q-bar{display:none}.q-row.head span:nth-child(2){display:none}.info-in{padding:24px 20px}}
-@media print{.top{position:static}.dl,.toggles,.actions{display:none}section{break-inside:avoid}.globe .arc{animation:none}}`;
+@media (max-width:900px){.globe{opacity:.35}.p-now{margin-left:0;width:100%}.top nav{display:none}.hero-in{grid-template-columns:1fr;padding-top:40px}.logos{justify-self:start;order:-1;padding:16px 20px;gap:18px}.logos img{height:52px}}
+@media (max-width:760px){.period{position:static}.hero h1{font-size:32px}.two,.map-card{grid-template-columns:1fr}.notes{columns:1}.stats{grid-template-columns:1fr 1fr;gap:12px}.big2{grid-template-columns:1fr}.big{flex-direction:column;align-items:flex-start;gap:12px;padding:24px}.big-v{font-size:56px}h2{font-size:25px}.stat-v{font-size:38px}.stat{padding:20px 16px}section{padding:52px 0}.brand img{height:36px}footer .wrap{grid-template-columns:1fr}.q-row{grid-template-columns:minmax(0,1fr) 60px 56px}.q-row .q-bar{display:none}.q-row.head span:nth-child(2){display:none}.info-in{padding:24px 20px}}
+@media print{.top,.period{position:static}.dl,.toggles,.actions{display:none}section{break-inside:avoid}.globe .arc{animation:none}}`;
     },
 
-    // The page's own script: plain ES5-style JavaScript so it runs in any browser a partner uses.
-    _prScript() {
-        return `(function(){
-var D=DATA,NS="http://www.w3.org/2000/svg";
-function fmt(n){return Math.round(+n||0).toLocaleString("en-GB")}
-function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
-function mName(m,long){var p=String(m).split("-");return new Date(Date.UTC(+p[0],+p[1]-1,15)).toLocaleDateString("en-GB",{month:long?"long":"short",year:"numeric",timeZone:"UTC"})}
-function $(id){return document.getElementById(id)}
-var tip=$("tip");
-function showTip(html,x,y){tip.innerHTML=html;tip.hidden=false;var w=tip.offsetWidth,h=tip.offsetHeight,X=x+16,Y=y+16;if(X+w>innerWidth-8)X=x-w-16;if(Y+h>innerHeight-8)Y=y-h-16;tip.style.left=Math.max(8,X)+"px";tip.style.top=Math.max(8,Y)+"px"}
-function hideTip(){tip.hidden=true}
-// ── the last twelve months of new enrolments, as small bars ──
-// the same twelve calendar months for every course, ending with the data-through month
-var WIN=(function(){var end=D.through||(D.monthly.length?D.monthly[D.monthly.length-1][0]:"");if(!end)return [];var p=end.split("-").map(Number),y=p[0],m=p[1],out=[];for(var i=0;i<12;i++){out.unshift(y+"-"+(m<10?"0":"")+m);m--;if(!m){m=12;y--}}return out})();
-var ICON={award:'<path d="m15.477 12.89 1.515 8.526a.5.5 0 0 1-.81.47l-3.58-2.687a1 1 0 0 0-1.197 0l-3.586 2.686a.5.5 0 0 1-.81-.469l1.514-8.526"/><circle cx="12" cy="8" r="6"/>',globe:'<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>'};
-function recog(items,icon){return (items||[]).map(function(t){return '<li><svg viewBox="0 0 24 24" aria-hidden="true">'+ICON[icon]+'</svg><span>'+esc(t)+'</span></li>'}).join("")}
-function list(a){return a.length<2?a.join(""):a.length===2?a.join(" and "):a.slice(0,-1).join(", ")+", and "+a[a.length-1]}
-// a figure card; with an explanation it is a button that opens the dialog
-var INFO=[];
-function stat(v,l,s,info){var body='<span class="stat-v">'+v+'</span><span class="stat-l">'+l+'</span>'+(s?'<span class="stat-s">'+s+'</span>':'');
-  if(!info)return '<div class="stat" style="cursor:default">'+body+'</div>';
-  info.v=v;info.l=l;INFO.push(info);
-  return '<button type="button" class="stat" data-info="'+(INFO.length-1)+'" aria-haspopup="dialog">'+body+'<span class="stat-m">What this counts</span></button>'}
-function fact(l,v){return '<div class="fact"><span>'+l+'</span><b>'+v+'</b></div>'}
-var dlg=$("info"),lastFocus=null;
-function openInfo(i){var x=INFO[i];if(!x)return;lastFocus=document.activeElement;
-  $("info-e").textContent=x.e||"About this figure";$("info-t").textContent=x.t||x.l;$("info-v").innerHTML=x.v;$("info-b").innerHTML=x.b;
-  if(dlg.showModal){if(!dlg.open)dlg.showModal()}else dlg.setAttribute("open","");$("info-x").focus()}
-function closeInfo(){if(dlg.close&&dlg.open)dlg.close();else dlg.removeAttribute("open");if(lastFocus&&lastFocus.focus)lastFocus.focus()}
-$("info-x").addEventListener("click",closeInfo);
-dlg.addEventListener("click",function(ev){if(ev.target===dlg){closeInfo();return}var a=ev.target.closest?ev.target.closest("a[href^='#']"):null;if(a){lastFocus=null;closeInfo()}});
-document.addEventListener("keydown",function(ev){if(ev.key==="Escape"&&dlg.hasAttribute("open"))closeInfo()});
-document.addEventListener("click",function(ev){var b=ev.target.closest?ev.target.closest("[data-info]"):null;if(b)openInfo(+b.getAttribute("data-info"))});
-// the last twelve months, and the busiest month, from a [[month, enrolments, certificates]] list
-function last12(monthly,k){var by={};(monthly||[]).forEach(function(r){by[r[0]]=r[k]});return WIN.reduce(function(t,m){return t+(by[m]||0)},0)}
-function busiest(monthly,k){var b=null;(monthly||[]).forEach(function(r){if(r[k]>0&&(!b||r[k]>b[k]))b=r});return b}
-function perHead(min,n){if(!min||!n)return "";var m=min/n;return m>=90?(m/60).toFixed(1)+" hours":Math.round(m)+" minutes"}
-function nice(max,parts){var raw=Math.max(1,max)/parts,p=Math.pow(10,Math.floor(Math.log10(raw))),st=[1,2,2.5,5,10].map(function(x){return x*p}).filter(function(x){return x>=raw})[0];return {step:st,top:st*Math.ceil(Math.max(1,max)/st)}}
-
-// ── the growth chart: running totals as lines, monthly numbers as bars on their own scale ──
-function growth(el,monthly){
-  if(!monthly||monthly.length<2){el.innerHTML='<p class="note">Not enough months yet to draw a chart.</p>';return}
-  var st={e:true,c:true,bars:false},cum=[],e=0,c=0;
-  monthly.forEach(function(r){e+=r[1];c+=r[2];cum.push({m:r[0],e:e,c:c,de:r[1],dc:r[2]})});
-  el.innerHTML='<div class="toggles" role="group" aria-label="Show in the chart">'
-    +'<button class="tg" data-k="e" aria-pressed="true"><i style="background:#0468b1"></i>Course enrolments</button>'
-    +'<button class="tg" data-k="c" aria-pressed="true"><i style="background:#f08a24"></i>Certificates</button>'
-    +'<button class="tg" data-k="bars" aria-pressed="false"><i style="background:#91b5d9;height:10px;width:10px"></i><i style="background:#ffd29c;height:10px;width:10px;margin-left:-6px"></i>Numbers each month</button></div><div class="chart"></div>';
-  var box=el.querySelector(".chart");
-  el.querySelectorAll(".tg").forEach(function(b){b.addEventListener("click",function(){var k=b.getAttribute("data-k");st[k]=!st[k];if(!st.e&&!st.c&&!st.bars){st[k]=true}b.setAttribute("aria-pressed",String(st[k]));draw()})});
-  function draw(){
-    var W=1000,H=330,L=64,R=st.bars?64:16,T=16,B=40,w=W-L-R,h=H-T-B,n=cum.length,last=cum[n-1];
-    var lmax=Math.max(st.e?last.e:0,st.c?last.c:0,1),bmax=1;cum.forEach(function(r){if(st.e)bmax=Math.max(bmax,r.de);if(st.c)bmax=Math.max(bmax,r.dc)});
-    var A=nice(lmax,4),Bs=nice(bmax,4);
-    var x=function(i){return L+(n===1?0:i*w/(n-1))},y=function(v){return T+h-v/A.top*h},yb=function(v){return T+h-v/Bs.top*h};
-    var s='<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Course enrolments and certificates by month">';
-    for(var i=0;i*A.step<=A.top+1e-9;i++){var v=i*A.step,yy=y(v).toFixed(1);s+='<line x1="'+L+'" x2="'+(W-R)+'" y1="'+yy+'" y2="'+yy+'" stroke="#dee7ef"/><text x="'+(L-10)+'" y="'+yy+'" dy="4" text-anchor="end" font-size="13" fill="#4a6b82">'+fmt(v)+'</text>'}
-    if(st.bars){for(var j=0;j*Bs.step<=Bs.top+1e-9;j++){var vb=j*Bs.step;s+='<text x="'+(W-R+10)+'" y="'+yb(vb).toFixed(1)+'" dy="4" font-size="13" fill="#4a6b82">'+fmt(vb)+'</text>'}
-      var bw=Math.max(2,w/n*0.7),half=(st.e&&st.c)?bw/2:bw;
-      cum.forEach(function(r,i){var x0=x(i)-bw/2;if(st.e)s+='<rect x="'+x0.toFixed(1)+'" y="'+yb(r.de).toFixed(1)+'" width="'+half.toFixed(1)+'" height="'+(T+h-yb(r.de)).toFixed(1)+'" fill="#91b5d9"/>';if(st.c)s+='<rect x="'+(x0+(st.e?half:0)).toFixed(1)+'" y="'+yb(r.dc).toFixed(1)+'" width="'+half.toFixed(1)+'" height="'+(T+h-yb(r.dc)).toFixed(1)+'" fill="#ffd29c"/>'})}
-    cum.forEach(function(r,i){if(r.m.slice(5)==="01"||i===0)s+='<text x="'+x(i).toFixed(1)+'" y="'+(H-12)+'" text-anchor="'+(i===0?"start":"middle")+'" font-size="13" fill="#4a6b82">'+(i===0?mName(r.m):r.m.slice(0,4))+'</text>'});
-    function path(k){return cum.map(function(r,i){return(i?"L":"M")+x(i).toFixed(1)+" "+y(r[k]).toFixed(1)}).join(" ")}
-    if(st.e)s+='<path d="'+path("e")+' L'+x(n-1).toFixed(1)+' '+(T+h)+' L'+L+' '+(T+h)+' Z" fill="#e6f0f8" fill-opacity="'+(st.bars?0.5:1)+'"/><path d="'+path("e")+'" fill="none" stroke="#0468b1" stroke-width="3" stroke-linejoin="round"/>';
-    if(st.c)s+='<path d="'+path("c")+'" fill="none" stroke="#f08a24" stroke-width="3" stroke-linejoin="round"/>';
-    s+='<line class="guide" x1="0" x2="0" y1="'+T+'" y2="'+(T+h)+'" stroke="#002f4c" stroke-dasharray="3 3" visibility="hidden"/><g class="dots"></g>';
-    s+='<rect x="'+L+'" y="'+T+'" width="'+w+'" height="'+h+'" fill="transparent" class="hit"/></svg>';
-    box.innerHTML=s;
-    var svg=box.querySelector("svg"),guide=svg.querySelector(".guide"),dots=svg.querySelector(".dots"),hit=svg.querySelector(".hit");
-    function at(ev){var r=svg.getBoundingClientRect(),cx=(ev.touches?ev.touches[0].clientX:ev.clientX),px=(cx-r.left)/r.width*W;var i=Math.round((px-L)/(w/(n-1||1)));return Math.max(0,Math.min(n-1,i))}
-    function move(ev){var i=at(ev),r=cum[i],X=x(i).toFixed(1);guide.setAttribute("x1",X);guide.setAttribute("x2",X);guide.setAttribute("visibility","visible");
-      dots.innerHTML=(st.e?'<circle cx="'+X+'" cy="'+y(r.e).toFixed(1)+'" r="5" fill="#0468b1"/>':'')+(st.c?'<circle cx="'+X+'" cy="'+y(r.c).toFixed(1)+'" r="5" fill="#f08a24" stroke="#fff" stroke-width="2"/>':'');
-      var t='<b>'+mName(r.m,true)+'</b>';if(st.e)t+='Course enrolments: '+fmt(r.e)+' in total, '+fmt(r.de)+' this month<br>';if(st.c)t+='Certificates: '+fmt(r.c)+' in total, '+fmt(r.dc)+' this month';
-      var cx=ev.touches?ev.touches[0].clientX:ev.clientX,cy=ev.touches?ev.touches[0].clientY:ev.clientY;showTip(t,cx,cy)}
-    function out(){guide.setAttribute("visibility","hidden");dots.innerHTML="";hideTip()}
-    hit.addEventListener("mousemove",move);hit.addEventListener("mouseleave",out);hit.addEventListener("touchstart",move,{passive:true});hit.addEventListener("touchmove",move,{passive:true});hit.addEventListener("touchend",out);
-  }
-  draw();
-}
-
-function spark(monthly){
-  if(!WIN.length)return '';
-  var by={};(monthly||[]).forEach(function(r){by[r[0]]=r[1]});
-  var max=1;WIN.forEach(function(m){max=Math.max(max,by[m]||0)});var bw=132/12;
-  return '<svg class="spark" viewBox="0 0 132 30" role="img" aria-label="New enrolments each month, '+mName(WIN[0])+' to '+mName(WIN[11])+'">'+WIN.map(function(m,i){var v=by[m],hgt=v>0?Math.max(2,v/max*28):1;return '<rect x="'+(i*bw+1).toFixed(1)+'" y="'+(30-hgt).toFixed(1)+'" width="'+(bw-2).toFixed(1)+'" height="'+hgt.toFixed(1)+'" fill="'+(v>0?"#0468b1":"#cde1f0")+'"><title>'+mName(m)+': '+fmt(v||0)+' new enrolments</title></rect>'}).join("")+'</svg>';
-}
-
-// ── the world map: land as light-blue dots, a bubble per country at its centre ──
-function worldMap(el,countries){
-  var land=[];try{land=JSON.parse(D.land)}catch(e){}
-  var W=1000,H=470,X=function(lon){return (lon+170)/360*W},Y=function(lat){return (78-lat)/138*H};
-  var s='<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Map of where learners come from" style="width:100%;height:auto;display:block">';
-  for(var i=0;i+1<land.length;i+=2){if(land[i+1]<-58)continue;s+='<circle cx="'+X(land[i]).toFixed(1)+'" cy="'+Y(land[i+1]).toFixed(1)+'" r="3.4" fill="#cde1f0"/>'}
-  var placed=countries.filter(function(c){return c.length>=4}),max=placed.length?placed[0][1]:1;
-  placed.slice().reverse().forEach(function(c){var r=4+24*Math.sqrt(c[1]/max);s+='<circle class="pin" data-c="'+esc(c[0])+'" data-n="'+c[1]+'" cx="'+X(c[2]).toFixed(1)+'" cy="'+Y(c[3]).toFixed(1)+'" r="'+r.toFixed(1)+'" fill="#0468b1" fill-opacity=".55" stroke="#0468b1" stroke-width="1.5"/>'});
-  el.innerHTML=s+'</svg>';
-  el.querySelectorAll(".pin").forEach(function(p){p.addEventListener("mousemove",function(ev){showTip('<b>'+p.getAttribute("data-c")+'</b>'+fmt(p.getAttribute("data-n"))+' enrolments',ev.clientX,ev.clientY)});p.addEventListener("mouseleave",hideTip)});
-}
-function bars(list,known){
-  var top=list.slice(0,10),max=top.length?top[0][1]:1;
-  return top.map(function(c){return '<div class="bar-row"><div class="bar-l">'+esc(c[0])+'<span><i style="width:'+Math.max(2,c[1]/max*100).toFixed(1)+'%"></i></span></div><div class="bar-n">'+fmt(c[1])+'</div><div class="bar-p">'+(known?(c[1]/known*100).toFixed(1)+'%':'')+'</div></div>'}).join("");
-}
-function questions(list){
-  if(!list||!list.length)return '';
-  return '<div class="q-row head"><span>Question</span><span>Average out of 5</span><span class="num">Average</span><span class="num">4 or 5</span></div>'
-    +list.map(function(q){return '<div class="q-row"><div class="q-t">'+esc(q.t)+(q.t!==q.q?'<small>'+esc(q.q)+'</small>':'')+'</div><div class="q-bar"><i style="width:'+(q.avg/5*100).toFixed(1)+'%"></i></div><div class="num">'+q.avg.toFixed(2)+'</div><div class="num">'+q.hi+'%</div></div>'}).join("");
-}
-// two large figures for the survey: the average rating with stars, and the share who rated it 4 or 5
-function star(f,id){return '<svg viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient id="'+id+'"><stop offset="'+f+'" stop-color="#ffc145"/><stop offset="'+f+'" stop-color="#cde1f0"/></linearGradient></defs><path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5-4.8-4.6 6.6-.9z" fill="url(#'+id+')" stroke="#e0a520" stroke-width=".8"/></svg>'}
-var STARN=0;
-function bigSurvey(rating,resp,qs){var o=(qs||[]).filter(function(q){return /overall satisfaction/i.test(q.t+" "+q.q)})[0],h="";
-  if(rating){var r=+rating,st="";for(var i=0;i<5;i++)st+=star(Math.max(0,Math.min(1,r-i)).toFixed(2),"st"+(STARN++));h+='<div class="big"><div class="big-v">'+r.toFixed(2)+'<small>/ 5</small></div><div><div class="big-l">Overall rating</div><div class="big-s">Average of '+fmt(resp)+' survey responses</div><div class="stars" role="img" aria-label="'+r.toFixed(2)+' out of 5 stars">'+st+'</div></div></div>'}
-  if(o)h+='<div class="big"><div class="big-v">'+o.hi+'%</div><div><div class="big-l">Rated it 4 or 5 out of 5</div><div class="big-s">For overall satisfaction, of '+fmt(o.n)+' who answered</div><div class="share"><i style="width:'+o.hi+'%"></i></div></div></div>';
-  return h}
-// the summary to its first sentence and three quotes, each with a way to see the rest
-function voices(summary,list,note){var h="";
-  if(summary){var ss=String(summary).match(/[^.!?]+[.!?]+["')\\]]*(\\s+|$)/g)||[summary],head=ss.slice(0,1).join(""),rest=ss.slice(1).join("");
-    h+='<div class="summary"><span>'+esc(head)+'</span>'+(rest?'<span hidden>'+esc(rest)+'</span><button type="button" class="more" data-more="summary">Read the full summary</button>':"")+'<small>'+note+'</small></div>'}
-  var q=list||[];if(q.length)h+='<div class="quotes">'+quotes(q.slice(0,3))+(q.length>3?'<div hidden style="display:contents">'+quotes(q.slice(3))+'</div>':"")+'</div>'+(q.length>3?'<p class="quotes-more"><button type="button" class="more" data-more="quotes">Show '+(q.length-3)+' more '+(q.length-3===1?"quote":"quotes")+'</button></p>':"");
-  return h}
-document.addEventListener("click",function(ev){var b=ev.target.closest?ev.target.closest("[data-more]"):null;if(!b)return;
-  if(b.getAttribute("data-more")==="summary"){var sp=b.previousElementSibling;sp.hidden=false;b.remove()}
-  else{var box=b.parentNode.previousElementSibling,hid=box.querySelector("div[hidden]");if(hid)hid.hidden=false;b.parentNode.remove()}});
-// learner stories from the blog: a card each, opening the full story
-function storyCards(list,showCourses){return '<div class="story-grid">'+list.map(function(s){var who=[s.n,s.r,s.w].filter(Boolean).join(", ");var cs=showCourses&&s.c.length?'<div class="story-c">About <b>'+s.c.map(function(i){return esc(D.courses[i].name)}).join("</b>, <b>")+'</b></div>':"";
-  var inner=(s.i?'<div class="story-img" style="background-image:url(\\''+esc(s.i)+'\\')"></div>':"")+'<div class="story-in"><div class="story-t">'+esc(s.t)+'</div>'+(who?'<div class="story-who">'+esc(who)+'</div>':"")+(s.s?'<p class="story-s">'+esc(s.s)+'</p>':"")+(s.q?'<p class="story-q">'+esc(s.q)+'</p>':"")+cs+(s.u?'<span class="story-go">Read the story &rarr;</span>':"")+'</div>';
-  return s.u?'<a class="story" href="'+esc(s.u)+'" target="_blank" rel="noopener noreferrer">'+inner+'</a>':'<div class="story">'+inner+'</div>'}).join("")+'</div>'}
-function storiesBlock(list,showCourses,lead){return list&&list.length?'<div class="stories"><h3>Learner stories</h3><p>'+lead+'</p>'+storyCards(list,showCourses)+'</div>':""}
-function quotes(list){return (list||[]).map(function(q){return '<figure class="quote"><blockquote>'+esc(q.t)+'</blockquote><figcaption><b>'+esc(q.w)+'</b>'+(q.c?'<span>'+esc(q.c)+'</span>':'')+'</figcaption></figure>'}).join("")}
-function surveyInfo(x,what){return {e:"Learning impact",b:'<p>From the survey learners fill in at the end of each course. They were asked '+what+', on a scale of 1 to 5; this is the share who answered 4 or 5.</p>'+fact("Learners who answered this question",fmt(x.n))+fact("Answered 4 or 5",fmt(Math.round(x.n*x.pct/100))+" ("+x.pct+"%)")+'<p class="note">Only learners who finish the survey are counted, so the share describes those who answered, not every learner.</p>'}}
-function timeInfo(min,time,enrol){return {e:"Learning impact",t:"Learning time",b:'<p>The time learners spent in the course pages, as SURGhub records it, added up across every learner. It counts time with a course open, not time spent studying away from SURGhub.</p>'+fact("In total",esc(time))+(perHead(min,enrol)?fact("On average per enrolment",perHead(min,enrol)):"")}}
-function impactStats(I){return [I.time?stat(esc(I.time),"Learning time","Recorded across all learners",timeInfo(T.min,I.time,T.enrol)):"",I.contentNew?stat(I.contentNew.pct+"%","Found the content new","Of "+fmt(I.contentNew.n)+" who answered",surveyInfo(I.contentNew,"how much of the content was new to them")):"",I.willApply?stat(I.willApply.pct+"%","Are likely to apply it at work","Of "+fmt(I.willApply.n)+" who answered",surveyInfo(I.willApply,"how likely they are to apply what they learnt in their work")):"",I.careerValue?stat(I.careerValue.pct+"%","Rate it important for their work","Of "+fmt(I.careerValue.n)+" who answered",surveyInfo(I.careerValue,"how important the course is for their work")):""].join("")}
-
-// ── the header: a faint globe, with arcs from Geneva to where most learners are ──
-function globe(){
-  var svg=$("globe");if(!svg)return;var land=[];try{land=JSON.parse(D.land)}catch(e){}
-  var W=1400,H=560,cx=1080,cy=300,R=290,rad=Math.PI/180,lon0=14*rad,lat0=22*rad,sl0=Math.sin(lat0),cl0=Math.cos(lat0);
-  function vec(lon,lat){var a=lon*rad,b=lat*rad;return [Math.cos(b)*Math.cos(a),Math.cos(b)*Math.sin(a),Math.sin(b)]}
-  function pv(v,k){var lon=Math.atan2(v[1],v[0]),lat=Math.asin(Math.max(-1,Math.min(1,v[2]))),l=lon-lon0,z=sl0*Math.sin(lat)+cl0*Math.cos(lat)*Math.cos(l);k=k||1;return {x:cx+k*R*Math.cos(lat)*Math.sin(l),y:cy-k*R*(cl0*Math.sin(lat)-sl0*Math.cos(lat)*Math.cos(l)),z:z}}
-  function pr(lon,lat){return pv(vec(lon,lat))}
-  function line(pts){var d="",pen=false;pts.forEach(function(q){if(q.z>0){d+=(pen?"L":"M")+q.x.toFixed(1)+" "+q.y.toFixed(1);pen=true}else pen=false});return d}
-  svg.setAttribute("viewBox","0 0 "+W+" "+H);svg.setAttribute("preserveAspectRatio","xMaxYMid slice");
-  var s='<defs><radialGradient id="gl" cx="38%" cy="32%" r="75%"><stop offset="0" stop-color="#ffffff" stop-opacity=".10"/><stop offset="1" stop-color="#ffffff" stop-opacity=".02"/></radialGradient></defs>';
-  s+='<circle cx="'+cx+'" cy="'+cy+'" r="'+R+'" fill="url(#gl)" stroke="#ffffff" stroke-opacity=".22" stroke-width="1.5"/>';
-  for(var lo=-180;lo<180;lo+=30){var m=[];for(var la=-90;la<=90;la+=4)m.push(pr(lo,la));s+='<path d="'+line(m)+'" fill="none" stroke="#ffffff" stroke-opacity=".12"/>'}
-  for(var la2=-60;la2<=60;la2+=30){var p2=[];for(var lo2=-180;lo2<=180;lo2+=4)p2.push(pr(lo2,la2));s+='<path d="'+line(p2)+'" fill="none" stroke="#ffffff" stroke-opacity=".12"/>'}
-  for(var k=0;k+1<land.length;k+=2){if(land[k+1]>68)continue;var q=pr(land[k],land[k+1]);if(q.z>0.02)s+='<circle cx="'+q.x.toFixed(1)+'" cy="'+q.y.toFixed(1)+'" r="'+(1.4+1.6*q.z).toFixed(1)+'" fill="#91b5d9" fill-opacity="'+(0.25+0.45*q.z).toFixed(2)+'"/>'}
-  // arcs lifted off the surface, from the hub to the countries with the most learners
-  var hub=vec(6.14,46.2),cols=["#ffc145","#ff9734","#91b5d9","#f27bb7"],ends="",n=0;
-  D.countries.filter(function(c){return c.length>=4}).forEach(function(c){if(n>=16)return;var to=vec(c[2],c[3]),e=pv(to);if(e.z<0.15)return;
-    var dot=hub[0]*to[0]+hub[1]*to[1]+hub[2]*to[2],om=Math.acos(Math.max(-1,Math.min(1,dot)));if(om<0.08)return;
-    var arc=[];for(var t=0;t<=1.0001;t+=1/32){var a1=Math.sin((1-t)*om)/Math.sin(om),a2=Math.sin(t*om)/Math.sin(om),v=[a1*hub[0]+a2*to[0],a1*hub[1]+a2*to[1],a1*hub[2]+a2*to[2]];arc.push(pv(v,1+0.22*om/Math.PI*Math.sin(Math.PI*t)))}
-    var col=cols[n%cols.length];var d=arc.map(function(q,i){return(i?"L":"M")+q.x.toFixed(1)+" "+q.y.toFixed(1)}).join("");
-    s+='<path d="'+d+'" fill="none" stroke="'+col+'" stroke-width="1.4" stroke-opacity=".55" stroke-linecap="round"/><path class="arc" d="'+d+'" pathLength="100" fill="none" stroke="'+col+'" stroke-width="2.4" stroke-linecap="round" stroke-dasharray="7 93" style="animation-delay:-'+(n*0.7).toFixed(1)+'s"/>';
-    ends+='<circle cx="'+e.x.toFixed(1)+'" cy="'+e.y.toFixed(1)+'" r="4" fill="'+col+'" stroke="#112f4f" stroke-width="1.5"/>';n++});
-  var h0=pv(hub);s+=ends+'<circle cx="'+h0.x.toFixed(1)+'" cy="'+h0.y.toFixed(1)+'" r="11" fill="#ffffff" fill-opacity=".14"/><circle cx="'+h0.x.toFixed(1)+'" cy="'+h0.y.toFixed(1)+'" r="5.5" fill="#ffffff" stroke="#112f4f" stroke-width="2"/>';
-  svg.innerHTML=s;
-}
-globe();
-
-// ── the main page ──
-D.courses.forEach(function(c,i){c.i=i;c.rate=c.enrol?c.cert/c.enrol*100:0});
-var T=D.totals,RANGE=WIN.length?mName(WIN[0])+" to "+mName(WIN[11]):"the last 12 months";
-function enrolInfo(x,share){var b=busiest(x.monthly,1);return {t:"Course enrolments",b:'<p>Every enrolment in '+(share!=null?"this course":"your courses")+', whether or not the learner has started. One person who takes two courses counts twice, so this is more than the number of people.</p>'
-  +fact("New in "+RANGE,fmt(last12(x.monthly,1)))+(b?fact("Busiest month",mName(b[0],true)+", "+fmt(b[1])):"")+(share!=null?fact("Share of all "+esc(D.name)+" enrolments",share):"")}}
-function certInfo(x,avg){var rate=x.enrol?(x.cert/x.enrol*100).toFixed(1)+"%":"–";return {t:"Certificates",b:'<p>Course certificates learners earned by completing the course. The certification rate is certificates divided by enrolments; recent enrolments lower it for a while, as those learners are still working through the course.</p>'
-  +fact("Certification rate",rate)+(avg?fact("Across all your courses",avg):"")+fact("Earned in "+RANGE,fmt(last12(x.monthly,2)))}}
-function ratingInfo(n,best){return {t:"Average rating",b:'<p>The average of the overall rating learners give in the survey at the end of the course, on a scale of 1 to 5.</p>'+fact("Survey responses",fmt(n))+(best?fact("Highest rated course (20 or more responses)",esc(best.name)+", "+best.rating.toFixed(2)):"")+'<p class="note">Only learners who finish the survey are counted.</p>'}}
-var byEnrol=D.courses.slice().sort(function(a,b){return b.enrol-a.enrol});
-var best=D.courses.filter(function(c){return c.resp>=20&&c.rating}).sort(function(a,b){return b.rating-a.rating})[0];
-$("stats").innerHTML=[stat(fmt(T.enrol),"Course enrolments","One learner can enrol in several courses",enrolInfo({monthly:D.monthly})),
-  stat(fmt(T.cert),"Certificates",T.rate?T.rate+"% of enrolments":"",certInfo({enrol:T.enrol,cert:T.cert,monthly:D.monthly})),
-  T.countries?stat(fmt(T.countries),"Countries","Where learners gave their country",{t:"Countries",b:'<p>The countries learners give in their SURGhub profile. Not every learner gives one, so this counts the countries we know of.</p>'+fact("Enrolments with a known country",fmt(T.known)+" of "+fmt(T.enrol))+D.countries.slice(0,5).map(function(c,i){return fact((i+1)+". "+esc(c[0]),fmt(c[1]))}).join("")+(D.firsts.length?'<p class="note">You have more learners than any other SURGhub provider from '+esc(D.firsts.slice(0,8).join(", "))+(D.firsts.length>8?" and "+(D.firsts.length-8)+" more":"")+'.</p>':"")+'<p><a href="#sec-map">See the map</a></p>'}):"",
-  T.rating?stat(T.rating,"Average rating","Out of 5, from "+fmt(T.resp)+" survey responses",ratingInfo(T.resp,best)):"",
-  stat(fmt(T.courses),T.courses===1?"Course":"Courses","On SURGhub",{t:"Your courses",b:'<p>Your courses on SURGhub that these figures include. The five with the most enrolments:</p>'+byEnrol.slice(0,5).map(function(c){return fact('<a href="#course-'+c.i+'">'+esc(c.name)+'</a>',fmt(c.enrol))}).join("")+'<p><a href="#sec-courses">See every course</a></p>'})].join("");
-$("awards").innerHTML=recog(D.awards,"award")+(D.firsts.length?recog(["More learners than any other provider from "+list(D.firsts.slice(0,6))+(D.firsts.length>6?", and "+(D.firsts.length-6)+" more countries":"")],"globe"):"");
-growth($("growth"),D.monthly);
-if(D.countries.length){$("map-intro").textContent="Learners from "+fmt(D.countries.length)+" countries took your courses. Point at a circle to see the number; the ten largest are listed.";worldMap($("map"),D.countries);$("toplist").innerHTML='<h3>The ten largest</h3>'+bars(D.countries,T.known)+'<p class="note">Country is known for '+fmt(T.known)+' of '+fmt(T.enrol)+' enrolments; shares are of those.</p>'}else $("sec-map").hidden=true;
-var I=impactStats(D.impact);if(I)$("impact").innerHTML=I;else $("sec-impact").hidden=true;
-if(D.questions.length){$("survey-intro").textContent="Every question with at least three answers, across "+fmt(T.resp)+" survey responses. The bar shows the average out of 5; the last column the share answering 4 or 5.";$("questions").innerHTML=questions(D.questions);$("survey-big").innerHTML=bigSurvey(T.rating,T.resp,D.questions)}else $("sec-survey").hidden=true;
-if(D.summary||D.quotes.length)$("voices").innerHTML=voices(D.summary,D.quotes,"A summary of the written answers in the end-of-course surveys.");
-$("stories").innerHTML=storiesBlock(D.stories,true,"Stories published on the SURGhub blog by learners who took your courses.");
-if(!D.summary&&!D.quotes.length&&!D.stories.length)$("sec-voices").hidden=true;
-
-// ── the course table: sortable, each row opens the course page ──
-var cols=[{k:"name",t:"Course"},{k:"enrol",t:"Enrolments"},{k:"cert",t:"Certificates"},{k:"rate",t:"Cert. rate"},{k:"rating",t:"Rating"},{k:"resp",t:"Responses"},{k:"spark",t:"Last 12 months"}];
-var sortK="enrol",sortDir=-1;
-function table(){
-  var rows=D.courses.slice().sort(function(a,b){var x=a[sortK],y=b[sortK];if(sortK==="name")return sortDir*String(x).localeCompare(String(y));return sortDir*((x||0)-(y||0))});
-  $("ctable").innerHTML='<thead><tr>'+cols.map(function(c){return c.k==="spark"?'<th title="New enrolments in each month">'+c.t+(WIN.length?'<br><span style="font-weight:400;letter-spacing:0;text-transform:none">'+mName(WIN[0])+' to '+mName(WIN[11])+'</span>':'')+'</th>':'<th'+(c.k===sortK?' aria-sort="'+(sortDir>0?"ascending":"descending")+'"':'')+'><button data-k="'+c.k+'">'+c.t+'</button></th>'}).join("")+'</tr></thead><tbody>'
-    +rows.map(function(c){return '<tr tabindex="0" data-i="'+c.i+'"><td class="cn">'+esc(c.name)+'</td><td>'+fmt(c.enrol)+'</td><td>'+fmt(c.cert)+'</td><td>'+(c.enrol?c.rate.toFixed(1)+"%":"–")+'</td><td>'+(c.rating?c.rating.toFixed(2):"–")+'</td><td>'+fmt(c.resp)+'</td><td class="sp">'+spark(c.monthly)+'</td></tr>'}).join("")+'</tbody>';
-  $("ctable").querySelectorAll("th button").forEach(function(b){b.addEventListener("click",function(ev){ev.stopPropagation();var k=b.getAttribute("data-k");if(k===sortK)sortDir=-sortDir;else{sortK=k;sortDir=k==="name"?1:-1}table()})});
-  $("ctable").querySelectorAll("tbody tr").forEach(function(r){var go=function(){location.hash="course-"+r.getAttribute("data-i")};r.addEventListener("click",go);r.addEventListener("keydown",function(ev){if(ev.key==="Enter"||ev.key===" "){ev.preventDefault();go()}})});
-}
-table();
-
-// ── a course's own page ──
-function coursePage(c){
-  var rc=c.ratings||[],rate=c.enrol?(c.cert/c.enrol*100).toFixed(1)+"%":"–";
-  var h='<section style="padding:32px 0 0"><div class="wrap"><a class="back" href="#sec-courses">&larr; All courses</a></div></section>'
-   +'<section style="padding-top:28px"><div class="wrap"><p class="eyebrow">At a glance</p><h2>This course in numbers</h2><p class="intro">Choose a figure to see what it counts.</p>'
-   +'<div class="stats">'+[stat(fmt(c.enrol),"Course enrolments",fmt(last12(c.monthly,1))+" in the last 12 months",enrolInfo(c,T.enrol?(c.enrol/T.enrol*100).toFixed(1)+"%":"–")),stat(fmt(c.cert),"Certificates",rate+" of enrolments",certInfo(c,T.rate?T.rate+"%":"")),c.rating?stat(c.rating.toFixed(2),"Average rating","Out of 5, from "+fmt(c.resp)+" responses",ratingInfo(c.resp,null)):"",c.time?stat(esc(c.time),"Learning time","Recorded across all learners",timeInfo(c.min,c.time,c.enrol)):""].join("")+'</div>'
-   +(c.awards.length?'<ul class="tags">'+recog(c.awards,"award")+'</ul>':"")+'</div></section>'
-   +'<section><div class="wrap"><p class="eyebrow">Growth</p><h2>Enrolments and certificates over time</h2><div class="card"><div id="cgrowth"></div></div></div></section>'
-   +(rc.length?'<section><div class="wrap"><p class="eyebrow">Ratings</p><h2>Average rating by month</h2><p class="intro">From the end-of-course survey; the bar height is the number of ratings that month. Point at a bar for the figures.</p><div class="card"><div id="cratings" class="chart"></div></div></div></section>':"")
-   +(c.countries.length?'<section><div class="wrap"><p class="eyebrow">Reach</p><h2>Where this course\\'s learners are</h2><div class="card"><div class="two"><div>'+bars(c.countries.slice(0,5),c.known)+'</div><div>'+bars(c.countries.slice(5,10),c.known)+'</div></div><p class="note">Country is known for '+fmt(c.known)+' of '+fmt(c.enrol)+' enrolments; shares are of those.</p></div></div></section>':"")
-   +(c.questions.length?'<section><div class="wrap"><p class="eyebrow">Survey insights</p><h2>How learners rate this course</h2><div class="big2">'+bigSurvey(c.rating,c.resp,c.questions)+'</div><div class="card">'+questions(c.questions)+'</div></div></section>':"")
-   +((c.summary||c.quotes.length||(c.stories||[]).length)?'<section><div class="wrap"><p class="eyebrow">Learner voices</p><h2>What learners say</h2>'+storiesBlock((c.stories||[]).map(function(id){return D.stories.filter(function(s){return s.id===id})[0]}).filter(Boolean),false,"Stories published on the SURGhub blog by learners who took this course.")+voices(c.summary,c.quotes,"A summary of the written answers in this course\\'s survey.")+'</div></section>':"")
-   +'<section style="padding-top:0"><div class="wrap"><a class="back" href="#sec-courses">&larr; All courses</a></div></section>';
-  $("course").innerHTML=h;
-  growth($("cgrowth"),c.monthly);
-  if(rc.length){var el=$("cratings"),W=1000,H=240,L=48,R=16,Tp=16,B=36,w=W-L-R,hh=H-Tp-B,n=rc.length,mx=1;rc.forEach(function(r){mx=Math.max(mx,r[2])});var bw=Math.max(3,w/n*0.7);
-    var s='<svg viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Average rating by month">';[1,2,3,4,5].forEach(function(v){var yy=(Tp+hh-v/5*hh).toFixed(1);s+='<line x1="'+L+'" x2="'+(W-R)+'" y1="'+yy+'" y2="'+yy+'" stroke="#dee7ef"/><text x="'+(L-10)+'" y="'+yy+'" dy="4" text-anchor="end" font-size="13" fill="#4a6b82">'+v+'</text>'});
-    rc.forEach(function(r,i){var cx=L+(n===1?w/2:i*w/(n-1)),hb=Math.max(2,r[2]/mx*hh*0.5);s+='<rect class="rb" data-i="'+i+'" x="'+(cx-bw/2).toFixed(1)+'" y="'+(Tp+hh-hb).toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+hb.toFixed(1)+'" fill="#cde1f0"/>';if(r[0].slice(5)==="01"||i===0)s+='<text x="'+cx.toFixed(1)+'" y="'+(H-10)+'" text-anchor="'+(i===0?"start":"middle")+'" font-size="13" fill="#4a6b82">'+(i===0?mName(r[0]):r[0].slice(0,4))+'</text>'});
-    s+='<path d="'+rc.map(function(r,i){var cx=L+(n===1?w/2:i*w/(n-1));return(i?"L":"M")+cx.toFixed(1)+" "+(Tp+hh-r[1]/5*hh).toFixed(1)}).join(" ")+'" fill="none" stroke="#f08a24" stroke-width="3"/></svg>';
-    el.innerHTML=s;el.querySelectorAll(".rb").forEach(function(b){var r=rc[+b.getAttribute("data-i")];b.addEventListener("mousemove",function(ev){showTip("<b>"+mName(r[0],true)+"</b>Average "+r[1].toFixed(2)+" out of 5, from "+fmt(r[2])+" ratings",ev.clientX,ev.clientY)});b.addEventListener("mouseleave",hideTip)})}
-}
-function route(){
-  var hs=String(location.hash),m=hs.match(/^#course-(\\d+)$/),c=m?D.courses[+m[1]]:null;
-  hideTip();
-  if(c){coursePage(c);$("main").hidden=true;$("course").hidden=false;$("hero-title").textContent=c.name;$("hero-lead").textContent="A course by "+D.name+" on SURGhub, the UN Global Surgery Learning Hub. Figures to "+D.asOf+".";$("hero-actions").hidden=true;window.scrollTo(0,0)}
-  else{var was=!$("course").hidden;$("course").hidden=true;$("main").hidden=false;$("hero-title").textContent=D.name;$("hero-lead").textContent="Your courses on SURGhub, the UN Global Surgery Learning Hub. Figures to "+D.asOf+".";$("hero-actions").hidden=false;
-    var t=hs.length>1?document.getElementById(hs.slice(1)):null;if(was||t)(t||$("sec-courses")).scrollIntoView()}
-}
-// the navigation: hide links to empty sections, mark the section in view
-var navLinks=[].slice.call(document.querySelectorAll("#nav a"));
-navLinks.forEach(function(a){var t=document.getElementById(a.getAttribute("href").slice(1));if(!t||t.hidden)a.hidden=true});
-if(window.IntersectionObserver){var seen={};var io=new IntersectionObserver(function(es){es.forEach(function(e){seen[e.target.id]=e.isIntersecting});var on=null;navLinks.forEach(function(a){if(!on&&seen[a.getAttribute("href").slice(1)])on=a});navLinks.forEach(function(a){a.classList.toggle("on",a===on)})},{rootMargin:"-80px 0px -55% 0px"});
-  navLinks.forEach(function(a){var t=document.getElementById(a.getAttribute("href").slice(1));if(t)io.observe(t)})}
-window.addEventListener("hashchange",route);route();
-})();`;
-    },
+    // The page's own script lives in partnerReportPage.js as an ordinary function; its source goes into the page.
+    _prScript() { return '(' + this._prPageScript.toString() + ')();'; },
 });

@@ -15,7 +15,17 @@ ctx.App = {
   escapeHtml: (t) => String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])),
   formatNumber: (n) => Number(n).toLocaleString('en-GB'), formatLearningTime: (m) => (m / 525960).toFixed(1) + ' yrs',
   scrubPersonal: (t) => String(t).replace(/[\w.+-]+@[\w-]+\.[\w.]+/g, '[email]'),
-  _emailDemoMap: { 'a@x.org': { profession: 'nurse', country: 'Kenya' } },
+  _emailDemoMap: { 'a@x.org': { profession: 'nurse', country: 'Kenya' }, 'b@y.org': { country: 'Nigeria' } },
+  _rawCompletion: [
+    { email: 'a@x.org', name: 'Ann Example', course: 'Burns', start_date: '2026-09-03', certificate: true, certificate_date: '2026-10-01' },
+    { email: 'b@y.org', name: 'Bo Example', course: 'Burns', enrolled_date: '2026-10-20T08:00:00Z', start_date: '2026-10-21' },
+    { email: 'c@z.org', course: 'Other provider course', start_date: '2026-10-05' },
+    { email: 'd@z.org', course: 'Burns', start_date: '2099-01-01' },
+  ],
+  _cfMeta: { byId: { burns: { tags: { Featured: true }, featured: [{ from: '2026-10-22' }] } } },
+  coursesFeedBuild: () => ({ courses: [{ id: 'burns', tags: ['Featured', 'Free', 'Popular', 'Trending'] }] }),
+  computeAwards: () => ({ categories: [{ key: 'courses', providerOnly: true }, { key: 'enrol' }, { key: 'rating' }] }),
+  _currentQuarterLabel: () => 'Q4 2026',
   _surveyQTitle: (q) => /satisfaction/i.test(q) ? 'Overall satisfaction' : '',
   async _assembleReportData() {
     return {
@@ -26,40 +36,47 @@ ctx.App = {
       surveyQRows: [{ q: 'How would you rate your overall satisfaction?', title: 'Overall satisfaction', avg: 4.7, n: 380, hiPct: 96.4 }],
       fbSummaries: { '@provider:GSF - Global Surgery Foundation': { s: 'Learners value it.' } },
       testimonials: [{ t: 'This changed how I manage burns, write to me at me@mail.com for more', r: 5, e: 'a@x.org', _course: 'Burns' }, { t: 'Too short', e: '' }],
-      providerAwards: [{ label: 'Highest Rated', rank: 1, total: 29, valueFmt: '4.72 / 5' }],
-      providerCountryAwards: [{ country: 'Nigeria', rank: 1 }],
+      providerAwards: [{ key: 'rating', label: 'Highest Rated', rank: 1, total: 29, valueFmt: '4.72 / 5' }],
+      providerCountryAwards: [{ country: 'Nigeria', rank: 1, learners: 500, total: 12 }],
       coursesSorted: [
-        { Course: 'Burns', Learners: 1000, Certificates: 250, Rating: '4.80', Responses: 350, LearningMinutes: 400000,
+        { Course: 'Burns', CourseId: 'burns', Learners: 1000, Certificates: 250, Rating: '4.80', Responses: 350, LearningMinutes: 400000,
           QuestionStats: JSON.stringify([{ q: 'How would you rate your overall satisfaction?', avg: 4.8, n: 340, dist: { 4: 40, 5: 290 } }]) },
         { Course: HARD, Learners: 200, Certificates: 50, Rating: 0, Responses: 0 },
       ],
       courseTimelines: { Burns: { '2026-09': { e: 60, c: 6 } } },
       courseCountryData: { Burns: { top10: [['Nigeria', 400], ['Kenya', 200]], totalWithCountry: 600 } },
       courseRatings: { Burns: { '2026-09': { sum: 48, count: 10 }, '2026-12': { sum: 5, count: 1 } } },
-      courseAwardMap: { Burns: [{ label: 'Most Enrolments', rank: 2, total: 150 }] },
+      courseAwardMap: { Burns: [{ key: 'enrol', label: 'Most Enrolments', rank: 2, total: 150, valueFmt: '1,000' }] },
     };
   },
 };
 vm.createContext(ctx);
-vm.runInContext(fs.readFileSync(path.join(ROOT, 'js', 'partnerReport.js'), 'utf8'), ctx, { filename: 'partnerReport.js' });
+for (const f of ['partnerReport.js', 'partnerReportPage.js']) vm.runInContext(fs.readFileSync(path.join(ROOT, 'js', f), 'utf8'), ctx, { filename: f });
 
 (async () => {
   const html = await ctx.App._buildPartnerReportHtml('GSF - Global Surgery Foundation');
   const D = JSON.parse(html.match(/<script>var DATA=([\s\S]*?);\n/)[1]);
   check('the title is the full name', /<h1 id="hero-title">Global Surgery Foundation<\/h1>/.test(html) && D.name === 'Global Surgery Foundation');
-  check('every section Seb asked for is there: map, learning impact, survey insights, voices, a course table and course pages', ['id="sec-map"', 'id="sec-impact"', 'id="sec-survey"', 'id="sec-voices"', 'id="ctable"', 'id="course"', '<!--SH-DOWNLOADS-->'].every(x => html.includes(x)));
+  check('every section Seb asked for is there: map, learning impact, survey insights, voices, a course table and course pages', ['id="sec-map"', 'id="sec-impact"', 'id="sec-survey"', 'id="sec-voices"', 'id="ctable"', 'id="page"', '<!--SH-DOWNLOADS-->'].every(x => html.includes(x)));
   check('months run to the data-through month and no further, gaps filled', D.monthly.map(m => m[0]).join() === '2026-08,2026-09,2026-10' && D.monthly[1][1] === 0);
   check('countries sorted, with map positions where known, "Unknown" left out', D.countries[0][0] === 'Nigeria' && D.countries[0].length === 4 && D.countries.find(c => c[0] === 'Atlantis').length === 2 && !D.countries.some(c => c[0] === 'Unknown') && D.totals.known === 802);
   check('learning impact and survey questions come through', D.impact.contentNew.pct === 80 && D.impact.time === '1.0 yrs' && D.questions[0].t === 'Overall satisfaction' && D.questions[0].hi === 96);
   const burns = D.courses[0];
   check('a course carries its own figures, months, countries, ratings by month, questions and awards', burns.enrol === 1000 && burns.monthly.length === 2 && burns.countries.length === 2 && burns.ratings.length === 1 && burns.ratings[0][1] === 4.8
-    && burns.questions[0].hi === 97 && /Most enrolments: number 2 of 150 courses/.test(burns.awards[0]), JSON.stringify(burns).slice(0, 300));
+    && burns.questions[0].hi === 97 && JSON.stringify(burns.awards) === '[{"k":"enrol","r":2,"n":150,"v":"1,000"}]', JSON.stringify(burns).slice(0, 300));
   check('quotes keep no email address and say who in words, never a name', D.quotes.length === 1 && !/@/.test(JSON.stringify(D.quotes)) && D.quotes[0].w === 'Nurse, Kenya' && !/a@x\.org/.test(html));
   check('short fragments are left out of the quotes', !D.quotes.some(q => /Too short/.test(q.t)));
-  check('recognition reads as a sentence, without a second rating figure', D.awards[0] === 'Highest rated of 29 providers on SURGhub' && D.firsts[0] === 'Nigeria');
+  check('awards carry their category, place and value; the categories and country leads come too', JSON.stringify(D.awards) === '[{"k":"rating","r":1,"n":29,"v":"4.72 / 5"}]' && D.cats.length === 3 && D.cats[0].p === true && D.caw[0].c === 'Nigeria' && D.caw[0].t === 12 && D.awAsOf === 'Q4 2026');
+  check('the page shows gold, silver and bronze medals and a dialog of every award', ['function medal(', 'Gold', 'Silver', 'Bronze', 'All awards and how they are decided', 'Not in the top three'].every(x => html.includes(x)));
   check('a course name cannot break out of the page script', !html.includes('</script><img') && html.split('</script>').length === 2 && D.courses[1].name === HARD);
   check('no outside scripts or styles: the page works on its own', !/<script[^>]+src=/.test(html) && !/<link[^>]+stylesheet/.test(html));
-  check('the page script has the interactions: hover read-out, switches, monthly bars, sorting, course pages, the same 12 months in every small chart', ['showTip(', 'aria-pressed', 'Numbers each month', 'aria-sort', 'location.hash="course-"', 'var WIN='].every(x => html.includes(x)));
+  check('the page script has the interactions: hover read-out, switches, monthly bars, sorting, course pages, the same 12 months in every small chart', ['showTip(', 'aria-pressed', 'Numbers each month', 'aria-sort', "location.hash = 'course-'", 'var WIN = '].every(x => html.includes(x)));
+  check('the dated records behind a period hold course, days and country only: no email, name or id, nothing outside the courses or in the future', D.recs.length === 2 && !/@|Example/.test(JSON.stringify([D.recs, D.rc])) && D.rc.join() === 'Kenya,Nigeria' && D.recs[1][1] === Math.round(Date.UTC(2026, 9, 20) / 864e5) && D.recs[0][2] === Math.round(Date.UTC(2026, 9, 1) / 864e5) && D.recs[1][2] === -1 && D.dataTo === '2026-10-20' && D.dataFrom === '2026-09-03', JSON.stringify([D.recs, D.dataTo]));
+  check('a period bar with presets, custom dates and a comparison', ['Last 30 days', 'Last full quarter', 'This year so far', 'Choose dates', 'The previous period', 'The same dates a year earlier', 'id="period"'].every(x => html.includes(x)));
+  check('the provider\'s average rating by month across its courses', JSON.stringify(D.ratings) === '[["2026-09",4.8,10]]' && html.includes('id="ratings-box"'));
+  check('course labels as on surghub.org (not Free) and when it was featured', JSON.stringify(burns.tags) === '["Popular","Trending"]' && JSON.stringify(burns.featured) === '[["2026-10-22",""]]' && html.includes('function featuredText('));
+  check('it says how often it is updated and links to a methodology page', /Updated about once a week; last updated \d+ \w+ \d{4}/.test(html) && html.includes('href="#methodology"') && html.includes('function methodology(') && D.updated.length === 10);
+  check('the header globe joins learner countries to each other, not to one centre', html.includes('joined to each other: no centre') && !/vec\(6\.14, ?46\.2\)/.test(html));
   const css = html.match(/<style>([\s\S]*?)<\/style>/)[1];
   check('Arial Bold as on the website, never Arial Black', !/Arial Black/.test(css) && /\.hero h1\{[^}]*font-weight:700/.test(css));
   check('figures are plain, without boxes with a coloured line above', !/border-top:\s*\d+px solid var\(--(ac|orange|gold|pink|blue)/.test(css) && !/stat-i/.test(html));
@@ -67,7 +84,7 @@ vm.runInContext(fs.readFileSync(path.join(ROOT, 'js', 'partnerReport.js'), 'utf8
   check('the brand accents are used beside the blues', ['--orange', '--gold', '--pink', '--green'].every(x => css.includes(x)));
   check('figure cards open a dialog that explains them, closable with Escape', html.includes('<dialog id="info"') && ['data-info', 'showModal', 'Escape', 'aria-haspopup="dialog"', 'enrolInfo(', 'certInfo('].every(x => html.includes(x)));
   check('a navigation bar links to the sections', html.includes('<nav aria-label="Sections"') && html.includes('href="#sec-courses"') && html.includes('id="sec-courses"'));
-  check('voices start short: the summary opens on one sentence, three quotes, with a way to read the rest', ['data-more="summary"', 'Read the full summary', 'q.slice(0,3)', 'ss.slice(0,1)'].every(x => html.includes(x)));
+  check('voices start short: the summary opens on one sentence, three quotes, with a way to read the rest', ['data-more="summary"', 'Read the full summary', 'q.slice(0, 3)', 'ss.slice(0, 1)'].every(x => html.includes(x)));
   check('survey insights lead with the overall rating and the share rating it 4 or 5', html.includes('id="survey-big"') && html.includes('function bigSurvey(') && html.includes('Rated it 4 or 5 out of 5'));
   check('the menu links to the downloads; the footer carries the joint-initiative line, without the GSF logo', html.includes('href="#sec-downloads">Downloads</a></nav>') && /joint initiative of the Global Surgery Foundation \(GSF\) and UNITAR/.test(html) && !/f-brand">\$\{|f-brand"><img/.test(html));
   console.log('\n' + ok + '/' + (ok + bad) + ' passed');

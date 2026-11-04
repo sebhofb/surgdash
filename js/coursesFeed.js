@@ -66,13 +66,29 @@ Object.assign(window.App, {
 
     async _cfLoad() {
         const get = async (k) => { try { const v = await Storage.getItem(k); return (v && typeof v === 'object') ? v : null; } catch (e) { return null; } };
-        if (!this._cfMeta) this._cfMeta = Object.assign({ byId: {} }, (await get(this.CF_META_KEY)) || {});
+        if (!this._cfMeta) {
+            this._cfMeta = Object.assign({ byId: {} }, (await get(this.CF_META_KEY)) || {});
+            // When a course was featured, kept so partner dashboards can say "Featured in October 2026" after
+            // the tag moves on (Seb, 4 Nov 2026). The history began on 4 Nov 2026; a course featured before then
+            // gets 22 Oct 2026, the day the Featured tag was introduced and the current one was set.
+            let seeded = false;
+            Object.keys(this._cfMeta.byId).forEach(id => { const m = this._cfMeta.byId[id]; if (m && m.tags && m.tags.Featured === true && !Array.isArray(m.featured)) { m.featured = [{ from: '2026-10-22' }]; seeded = true; } });
+            if (seeded) await this._cfSaveMeta();
+        }
         if (!this._cfSlugs) this._cfSlugs = Object.assign({ byId: {} }, (await get(this.CF_SLUG_KEY)) || {});
         if (!this._cfState) this._cfState = (await get(this.CF_STATE_KEY)) || {};
     },
     async _cfSaveMeta() { this._cfMetaRev = (this._cfMetaRev || 0) + 1; try { await Storage.setItem(this.CF_META_KEY, this._cfMeta); } catch (e) { __swallowed(e, 'cf.meta'); } },
     CF_TAGS: ['Featured', 'Free', 'Popular', 'Trending', 'Top rated', 'CME/CPD', 'New'],
     CF_MANUAL_TAGS: ['Featured'],            // no rule: on only when set by hand
+    // Featured history per course: m.featured = [{ from: 'YYYY-MM-DD', to?: 'YYYY-MM-DD' }], the open one current.
+    _cfFeaturedLog(m, on) {
+        const today = new Date().toISOString().slice(0, 10);
+        const list = Array.isArray(m.featured) ? m.featured : (m.featured = []);
+        const open = list.find(f => f && !f.to);
+        if (on && !open) list.push({ from: today });
+        if (!on && open) open.to = today;
+    },
     // A tag's override for one course: true / false, or undefined (automatic). CME/CPD keeps its
     // directory tick box (`cme`), the others live under `tags`.
     _cfTagOverride(id, tag) {
@@ -368,9 +384,10 @@ Object.assign(window.App, {
                 const name = (id) => { const d = (this.data || []).find(r => r && !r.IsShell && r.CourseId === id); return d ? d.Course : id; };
                 const list = others.map(id => '"' + name(id) + '"').join(', ');
                 if (!confirm('Only one course can be featured. Featuring "' + name(courseId) + '" removes the Featured tag from ' + list + '. Continue?')) return;
-                others.forEach(id => { const x = this._cfMeta.byId[id]; if (x.tags) delete x.tags.Featured; if (Array.isArray(x.extraTags)) x.extraTags = x.extraTags.filter(t => !/^featured$/i.test(t)); });
+                others.forEach(id => { const x = this._cfMeta.byId[id]; if (x.tags) delete x.tags.Featured; if (Array.isArray(x.extraTags)) x.extraTags = x.extraTags.filter(t => !/^featured$/i.test(t)); this._cfFeaturedLog(x, false); });
             }
         }
+        if (tag === 'Featured') this._cfFeaturedLog(m, next === true);
         if (tag === 'CME/CPD') { if (next === undefined) delete m.cme; else m.cme = next; }
         else { m.tags = m.tags || {}; if (next === undefined) delete m.tags[tag]; else m.tags[tag] = next; }
         await this._cfSaveMeta(); if (this.renderView) this.renderView();
