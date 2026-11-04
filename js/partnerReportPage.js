@@ -79,11 +79,12 @@ Object.assign(window.App, {
             var body = '<span class="stat-v">' + v + '</span><span class="stat-l">' + l + '</span>' + (s ? '<span class="stat-s">' + s + '</span>' : '') + (d ? '<span class="stat-d">' + d + '</span>' : '');
             if (!inf) return '<div class="stat" style="cursor:default">' + body + '</div>';
             inf.v = v; inf.l = l;
-            return '<button type="button" class="stat" data-info="' + info(inf) + '" aria-haspopup="dialog">' + body + '<span class="stat-m">What this counts</span></button>';
+            return '<button type="button" class="stat" data-info="' + info(inf) + '" aria-haspopup="dialog" title="More about this figure">' + body + '</button>';
         }
         function fact(l, v) { return '<div class="fact"><span>' + l + '</span><b>' + v + '</b></div>'; }
         function openInfo(i) {
             var x = INFO[i]; if (!x) return; lastFocus = document.activeElement;
+            dlg.classList.toggle('wide', !!x.wide);
             $('info-e').textContent = x.e || 'About this figure'; $('info-t').textContent = x.t || x.l || ''; $('info-v').innerHTML = x.v || ''; $('info-b').innerHTML = x.b;
             if (dlg.showModal) { if (!dlg.open) dlg.showModal(); } else dlg.setAttribute('open', ''); $('info-x').focus();
         }
@@ -91,6 +92,7 @@ Object.assign(window.App, {
         $('info-x').addEventListener('click', closeInfo);
         dlg.addEventListener('click', function (ev) { if (ev.target === dlg) { closeInfo(); return; } var a = ev.target.closest ? ev.target.closest("a[href^='#']") : null; if (a) { lastFocus = null; closeInfo(); } });
         document.addEventListener('keydown', function (ev) { if (ev.key === 'Escape' && dlg.hasAttribute('open')) closeInfo(); });
+        document.addEventListener('click', function (ev) { var b = ev.target.closest ? ev.target.closest('[data-reset]') : null; if (!b) return; var k = $('p-k'); if (k) { k.value = 'all'; k.dispatchEvent(new Event('change')); } });
         document.addEventListener('click', function (ev) { var b = ev.target.closest ? ev.target.closest('[data-info]') : null; if (b) { ev.preventDefault(); openInfo(+b.getAttribute('data-info')); } });
 
         // ── awards: medals and what each one means ──
@@ -117,15 +119,19 @@ Object.assign(window.App, {
         function awardLines(list, who) {
             return awardsFor(list).map(function (a) { var d = AW[a.k] || [a.k, '']; return '<li>' + medal(a.r, 30) + '<span><b>' + esc(d[0]) + '</b><small>' + ord(a.r) + ' of ' + fmt(a.n) + ' ' + who + (a.v ? ' · ' + esc(a.v) : '') + '</small></span></li>'; }).join('');
         }
+        var AWG = [['Reach', ['enrol', 'reach', 'mission', 'courses']], ['Completion', ['certs', 'completion', 'q90']], ['Quality and engagement', ['rating', 'impact', 'mins']]];
         function awardsDialog(list, who, course) {
-            var won = {}; (list || []).forEach(function (a) { won[a.k] = a; });
-            var cats = D.cats.filter(function (c) { return !(course && c.p); });
-            var rows = cats.map(function (c) {
-                var a = won[c.k], d = AW[c.k] || [c.k, ''];
-                return '<div class="aw-row">' + medal(a ? a.r : 0, 34) + '<div><b>' + esc(d[0]) + '</b><p>' + esc(d[1]) + '</p><span class="' + (a ? 'aw-won' : 'aw-not') + '">' + (a ? MEDAL[a.r][2] + ': ' + ord(a.r) + ' of ' + fmt(a.n) + ' ' + who + (a.v ? ' (' + esc(a.v) + ')' : '') : 'Not in the top three') + '</span></div></div>';
+            var won = {}, have = [], grouped = {}; (list || []).forEach(function (a) { won[a.k] = a; });
+            D.cats.forEach(function (c) { if (!(course && c.p)) have.push(c.k); });
+            AWG.forEach(function (g) { g[1].forEach(function (k) { grouped[k] = 1; }); });
+            var groups = AWG.map(function (g) { return [g[0], g[1].filter(function (k) { return have.indexOf(k) >= 0; })]; }).concat([['Other', have.filter(function (k) { return !grouped[k]; })]]).filter(function (g) { return g[1].length; });
+            var body = groups.map(function (g) {
+                return '<h4>' + esc(g[0]) + '</h4><div class="aw-grid">' + g[1].map(function (k) {
+                    var a = won[k], d = AW[k] || [k, ''];
+                    return '<div class="aw-cell' + (a ? ' won' : '') + '">' + medal(a ? a.r : 0, 34) + '<div><b>' + esc(d[0]) + '</b>' + (a ? '<span class="aw-won">' + MEDAL[a.r][2] + ': ' + ord(a.r) + ' of ' + fmt(a.n) + ' ' + who + (a.v ? ' (' + esc(a.v) + ')' : '') + '</span>' : '') + '<p>' + esc(d[1]) + '</p></div></div>';
+                }).join('') + '</div>';
             }).join('');
-            var ctry = course ? '' : (D.caw.length ? '<h4>Most learners from a country</h4><p>Among providers, for every country with at least 25 learners on SURGhub.</p>' + D.caw.slice().sort(function (a, b) { return a.r - b.r || b.n - a.n; }).map(function (c) { return '<div class="aw-row aw-c">' + medal(c.r, 26) + '<div><b>' + esc(c.c) + '</b><span class="aw-won">' + ord(c.r) + ' of ' + fmt(c.t) + ' providers · ' + fmt(c.n) + ' learners</span></div></div>'; }).join('') : '');
-            return { e: 'Awards', t: 'SURGhub awards', b: '<p>SURGhub recognises the top three ' + who + ' in each category: gold for first, silver for second, bronze for third. Standings are for all time and are worked out again at every update' + (D.awAsOf ? ' (' + esc(D.awAsOf) + ')' : '') + '.</p>' + rows + ctry + '<p><a href="#methodology">How awards are decided</a></p>' };
+            return { e: 'Awards', t: 'SURGhub awards', wide: true, b: '<p>SURGhub recognises the top three ' + who + ' in each category: gold for first, silver for second, bronze for third. Standings are for all time and are worked out again at every update' + (D.awAsOf ? ' (' + esc(D.awAsOf) + ')' : '') + '.</p>' + body + '<p class="note"><a href="#methodology">How awards are decided</a></p>' };
         }
 
         // ── course labels (Popular, Trending, …) and Featured ──
@@ -158,7 +164,15 @@ Object.assign(window.App, {
             if (ft) out.push(['Featured', ft]);
             (c.tags || []).forEach(function (t) { if (BADGE[t] && t !== 'Featured') out.push([t, BADGE[t][1]]); });
             if (!out.length) return '';
-            return '<span class="badges">' + out.map(function (b) { var d = BADGE[b[0]]; return '<button type="button" class="badge b-' + d[0] + '" data-info="' + info({ e: 'Course label', t: b[1], b: '<p>' + esc(d[2]) + '</p><p class="note">Labels follow the same rules as on surghub.org and are worked out again at every update.</p><p><a href="#methodology">About course labels</a></p>' }) + '"><svg viewBox="0 0 24 24" aria-hidden="true">' + BI[d[0]] + '</svg>' + esc(b[1]) + '</button>'; }).join('') + '</span>';
+            return '<span class="badges">' + out.map(function (b) { var d = BADGE[b[0]]; return '<button type="button" class="badge b-' + d[0] + '" data-info="' + info(labelsInfo(b[0], b[1])) + '"><svg viewBox="0 0 24 24" aria-hidden="true">' + BI[d[0]] + '</svg>' + esc(b[1]) + '</button>'; }).join('') + '</span>';
+        }
+        // every label there is and what it means; `focus` (the one chosen) comes first and is marked
+        function labelsInfo(focus, text) {
+            var order = ['Featured', 'Popular', 'Trending', 'Top rated', 'New', 'CME/CPD'];
+            if (focus) order = [focus].concat(order.filter(function (k) { return k !== focus; }));
+            return { e: 'Course labels', t: focus ? text : 'Course labels', b: '<p>Courses carry the same labels as on surghub.org. They are worked out again at every update, except Featured, which the SURGhub team sets.</p>'
+                + order.map(function (k) { var d = BADGE[k]; return '<div class="lb-row' + (k === focus ? ' on' : '') + '"><span class="badge static b-' + d[0] + '"><svg viewBox="0 0 24 24" aria-hidden="true">' + BI[d[0]] + '</svg>' + esc(k === focus && text ? text : d[1]) + '</span><p>' + esc(d[2]) + '</p></div>'; }).join('')
+                + '<p class="note"><a href="#methodology">More in the methodology</a></p>' };
         }
 
         // ── charts ──
@@ -241,14 +255,15 @@ Object.assign(window.App, {
             var W = 1000, H = 240, L = 48, R = 16, Tp = 16, B = 36, w = W - L - R, hh = H - Tp - B, n = rc.length, mx = 1; rc.forEach(function (r) { mx = Math.max(mx, r[2]); });
             var bw = Math.max(3, w / n * 0.7), am = P.a ? dstr(P.a).slice(0, 7) : null, bm = P.b ? dstr(P.b).slice(0, 7) : null;
             var inP = function (m) { return !am || (m >= am && m <= bm); };
-            var x = function (i) { return L + (n === 1 ? w / 2 : i * w / (n - 1)); };
+            var x = function (i) { return L + (n === 1 ? w / 2 : i * w / (n - 1)); }, y = function (v) { return Tp + hh - v / 5 * hh; };
             var s = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Average rating by month">';
-            [1, 2, 3, 4, 5].forEach(function (v) { var yy = (Tp + hh - v / 5 * hh).toFixed(1); s += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + yy + '" y2="' + yy + '" stroke="#dee7ef"/><text x="' + (L - 10) + '" y="' + yy + '" dy="4" text-anchor="end" font-size="13" fill="#4a6b82">' + v + '</text>'; });
-            rc.forEach(function (r, i) { var hb = Math.max(2, r[2] / mx * hh * 0.5); s += '<rect class="rb" data-i="' + i + '" x="' + (x(i) - bw / 2).toFixed(1) + '" y="' + (Tp + hh - hb).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + hb.toFixed(1) + '" fill="' + (inP(r[0]) ? '#cde1f0' : '#eef3f8') + '"/>'; if (r[0].slice(5) === '01' || i === 0) s += '<text x="' + x(i).toFixed(1) + '" y="' + (H - 10) + '" text-anchor="' + (i === 0 ? 'start' : 'middle') + '" font-size="13" fill="#4a6b82">' + (i === 0 ? mName(r[0]) : r[0].slice(0, 4)) + '</text>'; });
-            s += '<path d="' + rc.map(function (r, i) { return (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + (Tp + hh - r[1] / 5 * hh).toFixed(1); }).join(' ') + '" fill="none" stroke="#f08a24" stroke-width="3" stroke-opacity="' + (am ? 0.35 : 1) + '"/>';
-            if (am) { var seg = []; rc.forEach(function (r, i) { if (inP(r[0])) seg.push((seg.length ? 'L' : 'M') + x(i).toFixed(1) + ' ' + (Tp + hh - r[1] / 5 * hh).toFixed(1)); }); if (seg.length) s += '<path d="' + seg.join(' ') + '" fill="none" stroke="#f08a24" stroke-width="3"/>'; }
-            el.innerHTML = s + '</svg>';
-            el.querySelectorAll('.rb').forEach(function (b) { var r = rc[+b.getAttribute('data-i')]; b.addEventListener('mousemove', function (ev) { showTip('<b>' + mName(r[0], true) + '</b>Average ' + r[1].toFixed(2) + ' out of 5, from ' + fmt(r[2]) + ' ratings', ev.clientX, ev.clientY); }); b.addEventListener('mouseleave', hideTip); });
+            [1, 2, 3, 4, 5].forEach(function (v) { var yy = y(v).toFixed(1); s += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + yy + '" y2="' + yy + '" stroke="#dee7ef"/><text x="' + (L - 10) + '" y="' + yy + '" dy="4" text-anchor="end" font-size="13" fill="#4a6b82">' + v + '</text>'; });
+            rc.forEach(function (r, i) { var hb = Math.max(2, r[2] / mx * hh * 0.5); s += '<rect x="' + (x(i) - bw / 2).toFixed(1) + '" y="' + (Tp + hh - hb).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + hb.toFixed(1) + '" fill="' + (inP(r[0]) ? '#cde1f0' : '#eef3f8') + '"/>'; if (r[0].slice(5) === '01' || i === 0) s += '<text x="' + x(i).toFixed(1) + '" y="' + (H - 10) + '" text-anchor="' + (i === 0 ? 'start' : 'middle') + '" font-size="13" fill="#4a6b82">' + (i === 0 ? mName(r[0]) : r[0].slice(0, 4)) + '</text>'; });
+            s += '<path d="' + rc.map(function (r, i) { return (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(r[1]).toFixed(1); }).join(' ') + '" fill="none" stroke="#f08a24" stroke-width="3" stroke-opacity="' + (am ? 0.35 : 1) + '"/>';
+            if (am) { var seg = []; rc.forEach(function (r, i) { if (inP(r[0])) seg.push((seg.length ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(r[1]).toFixed(1)); }); if (seg.length) s += '<path d="' + seg.join(' ') + '" fill="none" stroke="#f08a24" stroke-width="3"/>'; }
+            s += '<line class="guide" x1="0" x2="0" y1="' + Tp + '" y2="' + (Tp + hh) + '" stroke="#002f4c" stroke-dasharray="3 3" visibility="hidden"/><g class="dots"></g><rect x="' + (L - bw / 2) + '" y="' + Tp + '" width="' + (w + bw) + '" height="' + hh + '" fill="transparent" class="hit"/></svg>';
+            el.innerHTML = s;
+            hover(el, n, x, W, L, w, function (i) { var r = rc[i]; return { pts: [[y(r[1]), '#f08a24']], html: '<b>' + mName(r[0], true) + '</b>Average ' + r[1].toFixed(2) + ' out of 5<br>' + fmt(r[2]) + ' ratings' }; });
         }
         // the last twelve months of new enrolments as small bars: the same months for every course
         var WIN = (function () { var end = D.through || (D.monthly.length ? D.monthly[D.monthly.length - 1][0] : ''); if (!end) return []; var p = end.split('-').map(Number), y = p[0], m = p[1], out = []; for (var i = 0; i < 12; i++) { out.unshift(y + '-' + (m < 10 ? '0' : '') + m); m--; if (!m) { m = 12; y--; } } return out; })();
@@ -347,6 +362,14 @@ Object.assign(window.App, {
         }
         globe();
 
+        // ── a reminder in each section that follows the period, with a way back to all time ──
+        function pwarn() {
+            if (!P.a) return '';
+            var cr = cmpRange();
+            return '<div class="pwarn" role="note"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg><span>Showing <b>' + esc(span(P.a, P.b)) + '</b>' + (cr ? ', compared with ' + esc(span(cr[0], cr[1])) : '') + ', not all time</span><button type="button" data-reset>Show all time</button></div>';
+        }
+        function fillPw() { var h = pwarn(); [].forEach.call(document.querySelectorAll('[data-pw]'), function (e) { e.innerHTML = h; }); }
+
         // ── the period bar ──
         function periodBar() {
             var el = $('period'); if (!el) return;
@@ -436,7 +459,9 @@ Object.assign(window.App, {
                 if (D.ratings.length > 1) { $('ratings-box').hidden = false; ratingChart($('ratings'), D.ratings); } else $('ratings-box').hidden = true;
             } else $('sec-survey').hidden = true;
             $('impact-note').hidden = !P.a;
+            if ($('labels-all')) $('labels-all').innerHTML = D.courses.some(function (c) { return (c.tags || []).length || (c.featured || []).length; }) ? '<button type="button" class="more" data-info="' + info(labelsInfo()) + '">What the course labels mean</button>' : '';
             table();
+            fillPw();
         }
 
         // ── the course table: sortable, each row opens the course page ──
@@ -468,15 +493,16 @@ Object.assign(window.App, {
             var cs = c.countries, known = c.known, tot = c.enrol;
             if (P.a) { var g = agg(c.i, P.a, P.b); cs = ctryList(g.ct).map(function (x) { return [x[0], x[1]]; }); known = g.known; tot = g.e; }
             var h = '<section style="padding:32px 0 0"><div class="wrap"><a class="back" href="#sec-courses">&larr; All courses</a>' + (badges(c) ? '<div class="c-badges">' + badges(c) + '</div>' : '') + '</div></section>'
-                + '<section style="padding-top:28px"><div class="wrap"><p class="eyebrow">At a glance</p><h2>This course in numbers</h2><p class="intro">' + (P.a ? 'For ' + esc(span(P.a, P.b)) + '. ' : '') + 'Choose a figure to see what it counts.</p><div class="stats">' + figures(c.i) + '</div>'
+                + '<section style="padding-top:28px"><div class="wrap"><p class="eyebrow">At a glance</p><h2>This course in numbers</h2><div data-pw></div><p class="intro">Choose a figure to see what it counts.</p><div class="stats">' + figures(c.i) + '</div>'
                 + (aw.length ? '<ul class="tags">' + awardLines(aw, 'courses') + '</ul><p class="aw-all"><button type="button" class="more" data-info="' + info(awardsDialog(aw, 'courses', true)) + '">All course awards and how they are decided</button></p>' : '') + '</div></section>'
-                + '<section><div class="wrap"><p class="eyebrow">Growth</p><h2>Enrolments and certificates over time</h2><div class="card"><div id="cgrowth"></div></div></div></section>'
-                + (rc.length ? '<section><div class="wrap"><p class="eyebrow">Ratings</p><h2>Average rating by month</h2><p class="intro">From the end-of-course survey; the bar height is the number of ratings that month. Point at a bar for the figures.' + (P.a ? ' Months outside the period are faded.' : '') + '</p><div class="card"><div id="cratings" class="chart"></div></div></div></section>' : '')
-                + (cs.length ? '<section><div class="wrap"><p class="eyebrow">Reach</p><h2>Where this course\'s learners are</h2>' + (P.a ? '<p class="intro">Learners who enrolled in ' + esc(span(P.a, P.b)) + '.</p>' : '') + '<div class="card"><div class="two"><div>' + bars(cs.slice(0, 5), known) + '</div><div>' + bars(cs.slice(5, 10), known) + '</div></div><p class="note">Country is known for ' + fmt(known) + ' of ' + fmt(tot) + ' enrolments; shares are of those.</p></div></div></section>' : '')
+                + '<section><div class="wrap"><p class="eyebrow">Growth</p><h2>Enrolments and certificates over time</h2><div data-pw></div><div class="card"><div id="cgrowth"></div></div></div></section>'
+                + (rc.length ? '<section><div class="wrap"><p class="eyebrow">Ratings</p><h2>Average rating by month</h2><div data-pw></div><p class="intro">From the end-of-course survey; the bar height is the number of ratings that month. Point at the chart to read a month.' + (P.a ? ' Months outside the period are faded.' : '') + '</p><div class="card"><div id="cratings" class="chart"></div></div></div></section>' : '')
+                + (cs.length ? '<section><div class="wrap"><p class="eyebrow">Reach</p><h2>Where this course\'s learners are</h2><div data-pw></div>' + (P.a ? '<p class="intro">Learners who enrolled in the period.</p>' : '') + '<div class="card"><div class="two"><div>' + bars(cs.slice(0, 5), known) + '</div><div>' + bars(cs.slice(5, 10), known) + '</div></div><p class="note">Country is known for ' + fmt(known) + ' of ' + fmt(tot) + ' enrolments; shares are of those.</p></div></div></section>' : '')
                 + (c.questions.length ? '<section><div class="wrap"><p class="eyebrow">Survey insights</p><h2>How learners rate this course</h2>' + (P.a ? '<p class="intro">All time: the survey questions are not broken down by period.</p>' : '') + '<div class="big2">' + bigSurvey(c.rating, c.resp, c.questions) + '</div><div class="card">' + questions(c.questions) + '</div></div></section>' : '')
                 + ((c.summary || c.quotes.length || (c.stories || []).length) ? '<section><div class="wrap"><p class="eyebrow">Learner voices</p><h2>What learners say</h2>' + storiesBlock((c.stories || []).map(function (id) { return D.stories.filter(function (s) { return s.id === id; })[0]; }).filter(Boolean), false, 'Stories published on the SURGhub blog by learners who took this course.') + voices(c.summary, c.quotes, 'A summary of the written answers in this course\'s survey.') + '</div></section>' : '')
                 + '<section style="padding-top:0"><div class="wrap"><a class="back" href="#sec-courses">&larr; All courses</a></div></section>';
             $('page').innerHTML = h;
+            fillPw();
             if (P.a) periodChart($('cgrowth'), c.i); else growth($('cgrowth'), c.monthly);
             if (rc.length) ratingChart($('cratings'), rc);
         }
@@ -535,10 +561,14 @@ Object.assign(window.App, {
         // the navigation: hide links to empty sections, mark the section in view
         var navLinks = [].slice.call(document.querySelectorAll('#nav a'));
         navLinks.forEach(function (a) { var t = document.getElementById(a.getAttribute('href').slice(1)); if (!t || t.hidden) a.hidden = true; });
-        if (window.IntersectionObserver) {
-            var seen = {}, io = new IntersectionObserver(function (es) { es.forEach(function (e) { seen[e.target.id] = e.isIntersecting; }); var on = null; navLinks.forEach(function (a) { if (!on && seen[a.getAttribute('href').slice(1)]) on = a; }); navLinks.forEach(function (a) { a.classList.toggle('on', a === on); }); }, { rootMargin: '-140px 0px -55% 0px' });
-            navLinks.forEach(function (a) { var t = document.getElementById(a.getAttribute('href').slice(1)); if (t) io.observe(t); });
+        function markNav() {
+            var on = null, atEnd = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 4, vis = navLinks.filter(function (a) { var t = document.getElementById(a.getAttribute('href').slice(1)); return !a.hidden && t && t.offsetParent !== null; });
+            if (!$('main').hidden) { if (atEnd && vis.length) on = vis[vis.length - 1]; else vis.forEach(function (a) { var t = document.getElementById(a.getAttribute('href').slice(1)); if (t.getBoundingClientRect().top <= Math.max(220, window.innerHeight * 0.35)) on = a; }); }
+            navLinks.forEach(function (a) { a.classList.toggle('on', a === on); });
         }
-        window.addEventListener('hashchange', route); route();
+        var navTick = false;
+        window.addEventListener('scroll', function () { if (navTick) return; navTick = true; setTimeout(function () { navTick = false; markNav(); }, 60); }, { passive: true });
+        window.addEventListener('resize', markNav);
+        window.addEventListener('hashchange', function () { route(); markNav(); }); route(); markNav();
     },
 });

@@ -67,7 +67,12 @@ for (const f of ['partnerReport.js', 'partnerReportPage.js']) vm.runInContext(fs
   check('quotes keep no email address and say who in words, never a name', D.quotes.length === 1 && !/@/.test(JSON.stringify(D.quotes)) && D.quotes[0].w === 'Nurse, Kenya' && !/a@x\.org/.test(html));
   check('short fragments are left out of the quotes', !D.quotes.some(q => /Too short/.test(q.t)));
   check('awards carry their category, place and value; the categories and country leads come too', JSON.stringify(D.awards) === '[{"k":"rating","r":1,"n":29,"v":"4.72 / 5"}]' && D.cats.length === 3 && D.cats[0].p === true && D.caw[0].c === 'Nigeria' && D.caw[0].t === 12 && D.awAsOf === 'Q4 2026');
-  check('the page shows gold, silver and bronze medals and a dialog of every award', ['function medal(', 'Gold', 'Silver', 'Bronze', 'All awards and how they are decided', 'Not in the top three'].every(x => html.includes(x)));
+  check('the page shows gold, silver and bronze medals and a dialog of every award, grouped in two columns, without the country list or "not in the top three"', ['function medal(', 'Gold', 'Silver', 'Bronze', 'All awards and how they are decided', "['Reach', ['enrol'", 'Quality and engagement', 'aw-grid', 'wide: true'].every(x => html.includes(x)) && !html.includes('Not in the top three') && !/function awardsDialog[\s\S]{0,1800}D\.caw/.test(html));
+  check('figure cards do without a "What this counts" line each', !html.includes('<span class="stat-m">What this counts'));
+  check('one dialog explains every course label', html.includes('function labelsInfo(') && html.includes('What the course labels mean'));
+  check('a chosen period is flagged in each section that follows it, with a way back to all time', html.includes('function pwarn(') && (html.match(/data-pw/g) || []).length >= 6 && html.includes('Show all time') && html.includes('data-reset'));
+  check('the menu marks the last section at the very end of the page', html.includes('function markNav(') && html.includes('atEnd'));
+  check('the rating chart reads out a month anywhere on it, the line included', /function ratingChart[\s\S]{0,4000}hover\(el, n, x/.test(html));
   check('a course name cannot break out of the page script', !html.includes('</script><img') && html.split('</script>').length === 2 && D.courses[1].name === HARD);
   check('no outside scripts or styles: the page works on its own', !/<script[^>]+src=/.test(html) && !/<link[^>]+stylesheet/.test(html));
   check('the page script has the interactions: hover read-out, switches, monthly bars, sorting, course pages, the same 12 months in every small chart', ['showTip(', 'aria-pressed', 'Numbers each month', 'aria-sort', "location.hash = 'course-'", 'var WIN = '].every(x => html.includes(x)));

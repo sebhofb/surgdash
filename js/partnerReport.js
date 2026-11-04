@@ -210,15 +210,15 @@ Object.assign(window.App, {
 
 <main id="main">
 <section id="sec-numbers" class="lift"><div class="wrap">
-  <div class="stats" id="stats"></div><ul class="tags" id="awards"></ul><p class="aw-all" id="awards-all"></p>
+  <div data-pw></div><div class="stats" id="stats"></div><ul class="tags" id="awards"></ul><p class="aw-all" id="awards-all"></p>
   <p class="note" id="numbers-note"></p>
 </div></section>
-${sec('sec-growth', '', 'Growth', 'Enrolments and certificates over time', '<p class="intro" id="growth-intro"></p><div class="card"><div id="growth"></div></div>')}
-${sec('sec-map', 'band', 'Reach', 'Where your learners are', '<p class="intro" id="map-intro"></p><div class="card map-card"><div id="map"></div><div id="toplist"></div></div>')}
+${sec('sec-growth', '', 'Growth', 'Enrolments and certificates over time', '<div data-pw></div><p class="intro" id="growth-intro"></p><div class="card"><div id="growth"></div></div>')}
+${sec('sec-map', 'band', 'Reach', 'Where your learners are', '<div data-pw></div><p class="intro" id="map-intro"></p><div class="card map-card"><div id="map"></div><div id="toplist"></div></div>')}
 ${sec('sec-impact', 'dark', 'Learning impact', 'What the learning changes', '<p class="intro">From the survey at the end of each course: the share of learners answering 4 or 5 on a scale of 1 to 5. Choose a figure for the question behind it.</p><div class="stats" id="impact"></div><p class="note" id="impact-note" hidden>All time: the survey questions are not broken down by period.</p>')}
-${sec('sec-survey', '', 'Survey insights', 'How learners rate the courses', '<div class="big2" id="survey-big"></div><div class="card" id="ratings-box"><h3>Average rating by month</h3><p class="note" style="margin:0 0 12px">From the end-of-course survey; the bar height is the number of ratings that month. Point at a bar for the figures.</p><div id="ratings" class="chart"></div></div><p class="intro" id="survey-intro" style="margin-top:32px"></p><div class="card"><div id="questions"></div></div>')}
+${sec('sec-survey', '', 'Survey insights', 'How learners rate the courses', '<div data-pw></div><div class="big2" id="survey-big"></div><div class="card" id="ratings-box"><h3>Average rating by month</h3><p class="note" style="margin:0 0 12px">From the end-of-course survey; the bar height is the number of ratings that month. Point at the chart to read a month.</p><div id="ratings" class="chart"></div></div><p class="intro" id="survey-intro" style="margin-top:32px"></p><div class="card"><div id="questions"></div></div>')}
 ${sec('sec-voices', 'band warm', 'Learner voices', 'What learners say', '<div id="voices"></div><div id="stories"></div>')}
-${sec('sec-courses', '', 'Courses', 'Course by course', '<p class="intro">Choose a column to sort; choose a course to see its own page.</p><div class="card table-card"><div class="table-scroll"><table class="ctable" id="ctable"></table></div></div>')}
+${sec('sec-courses', '', 'Courses', 'Course by course', '<div data-pw></div><p class="intro">Choose a column to sort; choose a course to see its own page. <span id="labels-all"></span></p><div class="card table-card"><div class="table-scroll"><table class="ctable" id="ctable"></table></div></div>')}
 
 <!--SH-DOWNLOADS-->
 
@@ -288,10 +288,9 @@ h3{font-weight:700;font-size:19px;line-height:1.25;margin:0 0 12px;color:var(--n
 .stat-v{font-weight:700;font-size:46px;line-height:1;letter-spacing:-.01em;white-space:nowrap;color:var(--blue)}
 .stat-l{margin-top:12px;font-size:17px;line-height:1.35}
 .stat-s{margin-top:4px;font-size:14px;line-height:1.4;color:var(--muted)}
-.stat-m{margin-top:auto;padding-top:12px;font-size:14px;font-weight:700;color:var(--blue);text-decoration:underline;text-underline-offset:4px;text-decoration-color:rgba(4,104,177,.35)}.stat:hover .stat-m{text-decoration-color:currentColor}
 section.dark .stat{color:#fff;background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.2)}section.dark .stat:hover{background:rgba(255,255,255,.11);border-color:rgba(255,255,255,.35)}
-section.dark .stat-v{color:var(--gold)}section.dark .stat-s{color:rgba(255,255,255,.75)}section.dark .stat-m{color:#fff;text-decoration-color:rgba(255,255,255,.4)}
-.tags{list-style:none;display:flex;flex-wrap:wrap;gap:12px 40px;margin:28px 0 0;padding:0}.tags:empty{display:none}
+section.dark .stat-v{color:var(--gold)}section.dark .stat-s{color:rgba(255,255,255,.75)}
+.tags{list-style:none;display:flex;flex-wrap:wrap;gap:24px 64px;margin:48px 0 0;padding:0}.tags:empty{display:none}
 .tags li{display:flex;align-items:flex-start;gap:10px;font-size:16px;line-height:1.4;color:var(--navy);max-width:560px}
 .tags svg{flex:none;width:22px;height:22px;margin-top:-1px;fill:none;stroke:var(--orange-d);stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .card{background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 1px 3px rgba(0,47,76,.08),0 1px 2px rgba(0,47,76,.06);padding:28px}
@@ -375,7 +374,17 @@ footer .f-small{display:block;padding-top:20px;padding-bottom:28px;border-top:1p
 section.dark .up{color:#9be06b}section.dark .down{color:#ff9b8f}
 .legend-cmp{display:inline-flex;align-items:center;gap:8px;font-size:14px;color:var(--muted);margin-left:6px}.legend-cmp i{width:22px;border-top:2px dashed var(--muted)}
 .tags li b{display:block}.tags li small{display:block;font-size:13px;color:var(--muted);margin-top:2px}.tags .medal{flex:none;width:30px;height:30px;margin-top:-2px;stroke:none;fill:initial}
-.aw-all{margin:16px 0 0}.aw-all:empty{display:none}
+.aw-all{margin:28px 0 0}.aw-all:empty{display:none}#numbers-note{margin-top:32px}
+.aw-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px 28px}
+.aw-cell{display:grid;grid-template-columns:38px 1fr;gap:10px;align-items:start;padding:12px 0;border-top:1px solid var(--line)}.aw-cell b{font-size:15px}.aw-cell p{margin:3px 0 0;font-size:13.5px;line-height:1.5;color:var(--muted)}
+.aw-cell .aw-won{display:block;margin-top:2px}.aw-cell:not(.won) b{color:var(--muted)}
+.info.wide{max-width:920px}.info h4{font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--blue);margin:22px 0 4px}
+.lb-row{display:grid;grid-template-columns:minmax(150px,auto) 1fr;gap:14px;align-items:start;padding:12px 0;border-top:1px solid var(--line)}.lb-row p{margin:0;font-size:14.5px}.lb-row.on{background:var(--warm);margin:0 -12px;padding:12px}
+.badge.static{cursor:default}.badge.static:hover{border-color:var(--line2)}
+.pwarn{display:inline-flex;align-items:center;flex-wrap:wrap;gap:8px 12px;margin:0 0 20px;padding:8px 12px;border-radius:9px;background:#fff3d6;border:1px solid #f3cf7a;font-size:14px;color:var(--navy)}
+.pwarn svg{width:16px;height:16px;fill:none;stroke:#9a6b00;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.pwarn button{all:unset;cursor:pointer;font-weight:700;color:var(--blue);text-decoration:underline;text-underline-offset:3px}.pwarn button:focus-visible{box-shadow:0 0 0 2px #002f4c,0 0 0 5px #ffc145;border-radius:3px}
+[data-pw]:empty{display:none}
 .aw-row{display:grid;grid-template-columns:40px 1fr;gap:12px;align-items:start;padding:12px 0;border-top:1px solid var(--line)}.aw-row p{margin:2px 0 4px;font-size:14px;color:var(--muted)}.aw-row b{font-size:15px}
 .aw-c{padding:8px 0}.aw-won{font-size:14px;font-weight:700;color:var(--navy)}.aw-not{font-size:14px;color:var(--muted)}
 .info h4{font-size:17px;margin:20px 0 4px}.info{max-width:640px}
@@ -390,7 +399,7 @@ section.dark .up{color:#9be06b}section.dark .down{color:#ff9b8f}
 @keyframes flow{from{stroke-dashoffset:100}to{stroke-dashoffset:0}}.globe .arc{animation:flow 6s linear infinite}
 @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}.globe .arc{animation:none;stroke-opacity:0}.stat{transition:none}}
 @media (max-width:900px){.globe{opacity:.35}.p-now{margin-left:0;width:100%}.top nav{display:none}.hero-in{grid-template-columns:1fr;padding-top:40px}.logos{justify-self:start;order:-1;padding:16px 20px;gap:18px}.logos img{height:52px}}
-@media (max-width:760px){.period{position:static}.hero h1{font-size:32px}.two,.map-card{grid-template-columns:1fr}.notes{columns:1}.stats{grid-template-columns:1fr 1fr;gap:12px}.big2{grid-template-columns:1fr}.big{flex-direction:column;align-items:flex-start;gap:12px;padding:24px}.big-v{font-size:56px}h2{font-size:25px}.stat-v{font-size:38px}.stat{padding:20px 16px}section{padding:52px 0}.brand img{height:36px}footer .wrap{grid-template-columns:1fr}.q-row{grid-template-columns:minmax(0,1fr) 60px 56px}.q-row .q-bar{display:none}.q-row.head span:nth-child(2){display:none}.info-in{padding:24px 20px}}
+@media (max-width:760px){.period{position:static}.hero h1{font-size:32px}.two,.map-card{grid-template-columns:1fr}.notes{columns:1}.stats{grid-template-columns:1fr 1fr;gap:12px}.aw-grid{grid-template-columns:1fr}.tags{gap:20px}.big2{grid-template-columns:1fr}.big{flex-direction:column;align-items:flex-start;gap:12px;padding:24px}.big-v{font-size:56px}h2{font-size:25px}.stat-v{font-size:38px}.stat{padding:20px 16px}section{padding:52px 0}.brand img{height:36px}footer .wrap{grid-template-columns:1fr}.q-row{grid-template-columns:minmax(0,1fr) 60px 56px}.q-row .q-bar{display:none}.q-row.head span:nth-child(2){display:none}.info-in{padding:24px 20px}}
 @media print{.top,.period{position:static}.dl,.toggles,.actions{display:none}section{break-inside:avoid}.globe .arc{animation:none}}`;
     },
 
