@@ -193,46 +193,62 @@ Object.assign(window.App, {
     // The team page, once decrypted: every published provider with its link. It also
     // remembers each provider's password in this browser (the same localStorage key the
     // provider pages use), so from here every report opens without a password prompt.
+    // The team page (/team/) in the GSF design, like the provider dashboards (Seb, 4 Nov 2026): a navy bar and
+    // header, a search box, all of SURGhub first, then a white logo tile per provider. Opening it once stores
+    // every provider's password in this browser, so their dashboards open without asking.
     _pdTeamHtml(list, overall, teamPassword) {
         const esc = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-        const at = new Date().toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'UTC' }) + ' UTC';
+        const now = new Date(), at = now.toLocaleString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }) + ', ' + now.toLocaleString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' }) + ' UTC';
         const initials = (n) => String(n).replace(/[^\p{L}\p{N} ]/gu, ' ').split(/\s+/).filter(w => w && !/^(of|and|the|for|de|des|in)$/i.test(w)).slice(0, 3).map(w => w[0].toUpperCase()).join('');
-        // A white tile per provider with its logo (the click target), the name small beneath.
-        const cards = list.map(x => '<a class="card" href="/' + esc(x.slug) + '/" data-k="' + esc((x.name + ' ' + x.slug).toLowerCase()) + '" title="Open the ' + esc(x.name) + ' report">'
-            + '<span class="logo">' + (x.logo ? '<img src="' + esc(x.logo) + '" alt="' + esc(x.name) + '" loading="lazy">' : '<span class="ini">' + esc(initials(x.name)) + '</span>') + '</span>'
+        const gsfLogo = this._pdBuildImage('gsf_logo_white_web.png');
+        const cards = list.map(x => '<a class="card" href="/' + esc(x.slug) + '/" data-k="' + esc((x.name + ' ' + x.slug).toLowerCase()) + '" title="Open the ' + esc(x.name) + ' dashboard">'
+            + '<span class="logo">' + (x.logo ? '<img src="' + esc(x.logo) + '" alt="" loading="lazy">' : '<span class="ini">' + esc(initials(x.name)) + '</span>') + '</span>'
             + '<span class="n">' + esc(x.name) + '</span></a>').join('');
         const pw = {}; list.forEach(x => { pw[x.slug] = x.password; });
-        // All of SURGhub first: a wide card with the headline numbers, opening the platform report.
-        const num = (v) => (v == null || v === '' || isNaN(v)) ? '' : Number(v).toLocaleString('en-GB', { maximumFractionDigits: 2 });
+        const num = (v, d) => (v == null || v === '' || isNaN(v)) ? '' : Number(v).toLocaleString('en-GB', { minimumFractionDigits: d || 0, maximumFractionDigits: d || 0 });
         let hub = '';
         if (overall) {
             pw[this.PD_PLATFORM_SLUG] = teamPassword;
-            const stat = (v, l) => num(v) ? '<span class="st"><b>' + num(v) + '</b><i>' + l + '</i></span>' : '';
+            const stat = (v, l) => v ? '<span class="st"><b>' + v + '</b><i>' + l + '</i></span>' : '';
             hub = '<a class="hub" href="/' + this.PD_PLATFORM_SLUG + '/" data-k="surghub all overall platform" title="Open the report for all of SURGhub">'
-                + '<span class="hub-top">' + (overall.logo ? '<img src="' + esc(overall.logo) + '" alt="SURGhub">' : '') + '<span><span class="eye">All providers</span><span class="ht">SURGhub overall</span></span><span class="go">Open report →</span></span>'
-                + '<span class="stats">' + stat(overall.learners, 'enrolled learners') + stat(overall.certificates, 'certificates') + stat(overall.courses, 'courses') + stat(overall.providers, 'providers') + stat(overall.countries, 'countries') + (overall.rating ? stat(Math.round(overall.rating * 100) / 100, 'avg rating') : '') + '</span></a>';
+                + '<span class="hub-top">' + (overall.logo ? '<span class="hub-logo"><img src="' + esc(overall.logo) + '" alt="SURGhub"></span>' : '') + '<span class="hub-t"><span class="eye">Every provider</span><span class="ht">All of SURGhub</span></span><span class="go">Open the report &rarr;</span></span>'
+                + '<span class="stats">' + stat(num(overall.learners), 'Course enrolments') + stat(num(overall.certificates), 'Certificates') + stat(num(overall.courses), 'Courses') + stat(num(overall.providers), 'Providers') + stat(num(overall.countries), 'Countries') + (Number(overall.rating) > 0 ? stat(num(overall.rating, 2), 'Average rating, weighted') : '') + '</span></a>';
         }
-        return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow,noarchive"><title>SURGhub reports · GSF team</title>'
-            + '<style>*{box-sizing:border-box}body{margin:0;background:#001523;color:#eef4f9;font:15px/1.5 Arial,Helvetica,sans-serif}.w{max-width:1120px;margin:0 auto;padding:44px 20px 64px}'
-            + '.top{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:26px}.eye{font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#FFC145;margin:0 0 6px}'
-            + 'h1{margin:0 0 4px;font-size:28px;line-height:1.15}p{margin:0;color:#9fb3c8;font-size:13px}'
-            + 'input{width:min(320px,100%);padding:11px 14px;border-radius:10px;border:1px solid #2c4a60;background:#0b2233;color:#eef4f9;font-size:15px;outline:none}input:focus{border-color:#FFC145}'
-            + '.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(176px,1fr));gap:18px}'
-            + '.card{display:flex;flex-direction:column;gap:9px;text-decoration:none;color:inherit}'
-            + '.logo{display:flex;align-items:center;justify-content:center;height:124px;padding:16px 18px;border-radius:14px;background:#fff;border:2px solid transparent;box-shadow:0 1px 2px rgba(0,0,0,.3);transition:transform .15s,border-color .15s,box-shadow .15s}'
-            + '.logo img{max-width:100%;max-height:100%;object-fit:contain;display:block}'
-            + '.ini{font-size:30px;font-weight:800;letter-spacing:.04em;color:#0b4f7c}'
-            + '.card:hover .logo,.card:focus-visible .logo{transform:translateY(-3px);border-color:#FFC145;box-shadow:0 10px 24px rgba(0,0,0,.45)}.card:focus-visible{outline:none}'
-            + '.n{font-size:12px;line-height:1.35;color:#9fb3c8;text-align:center;padding:0 4px}.card:hover .n{color:#eef4f9}'
-            + '.hub{grid-column:1/-1;display:flex;flex-direction:column;gap:18px;padding:22px 26px;border-radius:16px;text-decoration:none;color:#eef4f9;background:linear-gradient(135deg,#0B4F7C,#002F4C 70%);border:2px solid transparent;box-shadow:0 1px 2px rgba(0,0,0,.3);transition:transform .15s,border-color .15s,box-shadow .15s}'
-            + '.hub:hover,.hub:focus-visible{transform:translateY(-3px);border-color:#FFC145;box-shadow:0 10px 24px rgba(0,0,0,.45);outline:none}'
-            + '.hub-top{display:flex;align-items:center;gap:16px}.hub-top img{height:52px;width:auto;border-radius:10px}.hub-top .eye{display:block;margin:0}.ht{display:block;font-size:22px;font-weight:800}.go{margin-left:auto;font-size:13px;font-weight:700;color:#FFC145;white-space:nowrap}'
-            + '.stats{display:flex;flex-wrap:wrap;gap:12px 34px}.st b{display:block;font-size:26px;line-height:1.1;font-family:Georgia,serif}.st i{font-style:normal;font-size:12px;color:#9fb3c8}'
-            + '.none{display:none;color:#9fb3c8;font-size:14px;margin-top:8px}@media (max-width:520px){.grid{grid-template-columns:repeat(2,1fr);gap:12px}.logo{height:100px;padding:12px}.hub{padding:18px}.go{display:none}.hub-top img{height:40px}.ht{font-size:18px}.stats{gap:10px 22px}.st b{font-size:21px}}</style></head>'
-            + '<body><div class="w"><div class="top"><div><div class="eye">GSF team</div><h1>SURGhub partner reports</h1><p>' + list.length + ' provider' + (list.length === 1 ? '' : 's') + ' · published ' + esc(at) + ' · click a logo to open that report</p></div>'
-            + '<input id="q" type="search" placeholder="Find a provider" autofocus></div><div class="grid">' + hub + cards + '</div><div class="none" id="none">No provider matches.</div></div>'
+        const css = ':root{--blue:#0468b1;--navy:#002f4c;--deep:#0d233a;--gold:#ffc145;--line:#dee7ef;--line2:#cde1f0;--paper:#f3f7fb;--muted:#4a6b82}'
+            + '*{box-sizing:border-box}[hidden]{display:none!important}body{margin:0;background:#fff;color:var(--navy);font:16px/1.55 Arial,"Helvetica Neue",Helvetica,sans-serif}'
+            + '.wrap{max-width:1200px;margin:0 auto;padding:0 24px}a{color:var(--blue)}'
+            + '.top{background:var(--deep)}.top .wrap{display:flex;align-items:center;justify-content:space-between;gap:16px;height:72px}.top img{height:42px;display:block}.top span{color:var(--gold);font-size:14px;letter-spacing:.03em;text-transform:uppercase}'
+            + '.hero{background:radial-gradient(ellipse 50% 90% at 82% 50%,#1e4a73 0,#0d233a 75%);color:#fff;clip-path:polygon(0 0,100% 0,100% 100%,0 calc(100% - 22px))}.hero .wrap{padding-top:56px;padding-bottom:78px}'
+            + '.eye{font-size:15px;color:var(--gold);margin:0 0 8px}h1{font-size:46px;line-height:1.1;margin:0}.lead{font-size:18px;color:rgba(255,255,255,.88);margin:14px 0 0;max-width:640px}.sub{display:block;margin-top:8px;font-size:15px;color:rgba(255,255,255,.62)}'
+            + '.bar{position:sticky;top:0;z-index:5;background:#fff;border-bottom:1px solid var(--line);box-shadow:0 6px 16px rgba(0,47,76,.06)}.bar .wrap{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding-top:12px;padding-bottom:12px}'
+            + '.bar label{font-weight:700;font-size:14px}.search{position:relative}.search svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);width:16px;height:16px;fill:none;stroke:var(--muted);stroke-width:2}'
+            + 'input{width:min(360px,80vw);font:15px Arial,sans-serif;color:var(--navy);border:1px solid var(--line2);border-radius:9px;padding:9px 12px 9px 36px;outline:none}input:focus-visible{box-shadow:0 0 0 2px #002f4c,0 0 0 5px #ffc145}.count{color:var(--muted);font-size:14px;margin-left:auto}'
+            + 'main{padding:40px 0 72px}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:22px}'
+            + '.hub{grid-column:1/-1;display:flex;flex-direction:column;gap:22px;padding:26px 28px;border-radius:12px;text-decoration:none;color:var(--navy);background:var(--paper);border:1px solid var(--line2);transition:transform .15s,box-shadow .15s,border-color .15s}'
+            + '.hub:hover,.hub:focus-visible{transform:translateY(-2px);border-color:var(--blue);box-shadow:0 12px 28px rgba(0,47,76,.12);outline:none}.hub:focus-visible{box-shadow:0 0 0 2px #002f4c,0 0 0 5px #ffc145}'
+            + '.hub-top{display:flex;align-items:center;gap:18px}.hub-logo{background:#fff;border-radius:9px;padding:8px 12px;border:1px solid var(--line)}.hub-logo img{height:44px;display:block}.hub-t .eye{display:block;margin:0;color:var(--blue);font-size:14px}.ht{display:block;font-size:24px;font-weight:700}'
+            + '.go{margin-left:auto;font-weight:700;color:var(--blue);white-space:nowrap;text-decoration:underline;text-underline-offset:4px}'
+            + '.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px}.st{background:#fff;border:1px solid var(--line2);border-radius:9px;padding:14px 16px}.st b{display:block;font-size:28px;line-height:1.1;color:var(--blue)}.st i{display:block;font-style:normal;font-size:13px;color:var(--muted);margin-top:4px}'
+            + 'h2{font-size:24px;margin:44px 0 16px;grid-column:1/-1}'
+            + '.card{display:flex;flex-direction:column;gap:10px;text-decoration:none;color:var(--navy)}'
+            + '.logo{display:flex;align-items:center;justify-content:center;height:120px;padding:16px 18px;border-radius:12px;background:#fff;border:1px solid var(--line2);transition:transform .15s,border-color .15s,box-shadow .15s}'
+            + '.logo img{max-width:100%;max-height:100%;object-fit:contain;display:block}.ini{font-size:30px;font-weight:700;letter-spacing:.04em;color:var(--blue)}'
+            + '.card:hover .logo,.card:focus-visible .logo{transform:translateY(-2px);border-color:var(--blue);box-shadow:0 12px 28px rgba(0,47,76,.12)}.card:focus-visible{outline:none}.card:focus-visible .logo{box-shadow:0 0 0 2px #002f4c,0 0 0 5px #ffc145}'
+            + '.n{font-size:14px;font-weight:700;line-height:1.35;text-align:center;padding:0 4px}.card:hover .n{color:var(--blue)}'
+            + '.none{color:var(--muted);margin-top:12px}'
+            + 'footer{background:var(--deep);color:rgba(255,255,255,.8);font-size:14px}footer .wrap{padding-top:36px;padding-bottom:36px;max-width:1200px}footer b{display:block;color:#fff;font-size:16px;margin-bottom:8px}footer p{margin:0;max-width:720px;line-height:1.6}'
+            + '@media (max-width:640px){h1{font-size:32px}.grid{grid-template-columns:repeat(2,1fr);gap:14px}.logo{height:96px;padding:12px}.hub{padding:18px}.go{display:none}.count{margin-left:0;width:100%}}';
+        return '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow,noarchive"><title>SURGhub partner dashboards · GSF team</title>'
+            + '<style>' + css + '</style></head><body>'
+            + '<header class="top"><div class="wrap">' + (gsfLogo ? '<img src="' + gsfLogo + '" alt="Global Surgery Foundation">' : '<b style="color:#fff">Global Surgery Foundation</b>') + '<span>GSF team</span></div></header>'
+            + '<div class="hero"><div class="wrap"><p class="eye">SURGhub partner dashboards</p><h1>Every provider\'s dashboard</h1>'
+            + '<p class="lead">Choose a provider to open its dashboard; this page opens them all without their passwords.<span class="sub">Published ' + esc(at) + '<span id="age"></span>. Updated about once a week.</span></p></div></div>'
+            + '<div class="bar"><div class="wrap"><label for="q">Find a provider</label><span class="search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input id="q" type="search" placeholder="Name or address" autofocus></span><span class="count" id="count">' + list.length + ' provider' + (list.length === 1 ? '' : 's') + '</span></div></div>'
+            + '<main><div class="wrap"><div class="grid">' + hub + '<h2>Providers</h2>' + cards + '</div><p class="none" id="none" hidden>No provider matches.</p></div></main>'
+            + '<footer><div class="wrap"><b>SURGhub, the UN Global Surgery Learning Hub</b><p>SURGhub is a joint initiative of the Global Surgery Foundation (GSF) and UNITAR (United Nations Institute for Training and Research), supported by the Royal College of Surgeons in Ireland (RCSI), and implemented in association with the Johnson &amp; Johnson Foundation. This page is for the GSF team; please do not share its link or password.</p></div></footer>'
             + '<script>(function(){var P=' + JSON.stringify(pw).replace(/</g, '\\u003c') + ';try{Object.keys(P).forEach(function(s){localStorage.setItem("surghub-report:/"+s+"/",P[s]);localStorage.setItem("surghub-report:/"+s+"/index.html",P[s])})}catch(x){}'
-            + 'var q=document.getElementById("q"),no=document.getElementById("none");q.addEventListener("input",function(){var v=q.value.toLowerCase().trim(),n=0;[].forEach.call(document.querySelectorAll(".card,.hub"),function(r){var on=!v||r.getAttribute("data-k").indexOf(v)>=0;r.style.display=on?"":"none";if(on)n++});no.style.display=n?"none":"block"})})();<\/script></body></html>';
+            + 'var D=' + JSON.stringify(now.toISOString().slice(0, 10)) + ',t=new Date(),n=Math.round((Date.UTC(t.getFullYear(),t.getMonth(),t.getDate())-Date.parse(D))/864e5);document.getElementById("age").textContent=" ("+(n<=0?"today":n===1?"yesterday":n+" days ago")+")";'
+            + 'var q=document.getElementById("q"),no=document.getElementById("none"),ct=document.getElementById("count"),tot=' + list.length + ';q.addEventListener("input",function(){var v=q.value.toLowerCase().trim(),n=0;[].forEach.call(document.querySelectorAll(".card,.hub"),function(r){var on=!v||r.getAttribute("data-k").indexOf(v)>=0;r.style.display=on?"":"none";if(on&&r.className==="card")n++});no.hidden=!!n||!v;ct.textContent=v?n+" of "+tot+" providers":tot+" providers"})})();<\/script></body></html>';
     },
     _pdBuildImage(f) {
         try { const p = electronAPI.path.join(electronAPI.appPath, 'build', f); return electronAPI.fs.existsSync(p) ? 'data:image/png;base64,' + electronAPI.fs.readFileBase64(p) : ''; }
@@ -305,10 +321,6 @@ Object.assign(window.App, {
         if (Object.keys(s.providers).some(k => k !== provider && s.providers[k].slug === slug)) { alert('"' + slug + '" is already used by another provider.'); this._pdRerender(); return; }
         if (slug === p.slug) return;
         p.slug = slug; p.published = null; await this._pdSave(); this._pdRerender();
-    },
-    async pdSetDesign(provider, value) {
-        const s = await this._pdLoad(); const p = s.providers[provider]; if (!p) return;
-        p.design = value === 'white' || value === 'gsf' ? value : ''; p.published = null; await this._pdSave(); this._pdRerender();
     },
     async pdNewPassword(provider) {
         if (!confirm('Give ' + provider + ' a new password?\n\nThe old password stops working at the next publish. Send them the new one.')) return;
@@ -391,12 +403,12 @@ Object.assign(window.App, {
                 try {
                     if (!p.slug) p.slug = this._pdNiceSlug(prov, prov);
                     if (!p.password) p.password = this._pdNewPassword();
-                    // 'gsf': the page in the GSF design (partnerReport.js); else the dark report, optionally turned white
-                    const gsf = p.design === 'gsf' && !!this._buildPartnerReportHtml;
+                    // Every provider's page is in the GSF design (partnerReport.js; Seb, 4 Nov 2026: the Dark / White
+                    // choice is gone). The dark report is only a fallback if that builder is missing.
+                    const gsf = !!this._buildPartnerReportHtml;
                     let html = gsf ? await this._buildPartnerReportHtml(prov) : await this._buildDarkReportHtml(prov);
                     if (!html) { failed.push(prov + ': no data'); continue; }
-                    const white = !gsf && p.design === 'white' && !!this.reportToWhite;
-                    if (white) html = this.reportToWhite(html);
+                    const white = false;
                     // The downloads: each encrypted with the provider's password under a random name.
                     const manifest = [];
                     for (const a of await this._pdAttachments(prov, anonUsers, failed)) {
@@ -435,8 +447,8 @@ Object.assign(window.App, {
             for (const prov of built) list.push({ name: this.providerFolderName ? this.providerFolderName(prov) : prov, slug: s.providers[prov].slug, password: s.providers[prov].password,
                 logo: this._providerLogoFor ? await this._pdThumb(this._providerLogoFor(prov)) : '' });
             list.sort((a, b) => a.name.localeCompare(b.name));
-            if (overall) overall.logo = await this._pdThumb(this._pdBuildImage('SURGhub_app_square_white.png') || this._pdBuildImage('surghub_logo_white.png'));
-            files.push({ path: this.PD_TEAM_SLUG + '/index.html', content: this._pdPageHtml(await this._pdEncrypt(this._pdTeamHtml(list, overall, s.teamPassword), s.teamPassword), 'SURGhub reports · GSF team', 'Enter the team password.') });
+            if (overall) overall.logo = await this._pdThumb(this._pdBuildImage('surghub_logo_color.png') || this._pdBuildImage('SURGhub_app_square_white.png'));
+            files.push({ path: this.PD_TEAM_SLUG + '/index.html', content: this._pdPageHtml(await this._pdEncrypt(this._pdTeamHtml(list, overall, s.teamPassword), s.teamPassword), 'SURGhub partner dashboards · GSF team', 'Enter the team password.') });
         }
         // The GSF website's six headline figures (websiteMetrics.js), published with the site.
         let wm = null;
@@ -585,7 +597,6 @@ Object.assign(window.App, {
                 + '<td class="py-2 pr-3"><label class="inline-flex items-center gap-2 cursor-pointer"><input type="checkbox" ' + (on ? 'checked' : '') + ' onchange="App.pdSetEnabled(\'' + pe + '\', this.checked)"> <span class="' + (on ? 'font-semibold text-gsf-prussian' : '') + '">' + esc(this.providerFolderName ? this.providerFolderName(prov) : prov) + '</span></label></td>'
                 + '<td class="py-2 pr-3 font-mono text-[11px] whitespace-nowrap">' + (on && p.slug ? (s.baseUrl ? esc(String(s.baseUrl).replace(/^https?:\/\//, '') + '/') + '<input type="text" value="' + esc(p.slug) + '" title="Edit to change the address; the old one stops working at the next publish" onchange="App.pdSetSlug(\'' + pe + '\', this.value)" class="w-40 font-mono text-[11px] border rounded px-1.5 py-0.5 outline-none focus:ring-2 focus:ring-gsf-boston/30">' : '<span class="text-amber-700 font-sans">set the web address first</span>') : '') + '</td>'
                 + '<td class="py-2 pr-3 font-mono text-[11px] whitespace-nowrap">' + (on && p.password ? esc(p.password) : '') + '</td>'
-                + '<td class="py-2 pr-3">' + (on ? '<select onchange="App.pdSetDesign(\'' + pe + '\', this.value)" class="text-[11px] border rounded px-1 py-0.5 bg-white"><option value=""' + (p.design === 'white' || p.design === 'gsf' ? '' : ' selected') + '>Dark</option><option value="white"' + (p.design === 'white' ? ' selected' : '') + '>White</option><option value="gsf"' + (p.design === 'gsf' ? ' selected' : '') + '>GSF website</option></select>' : '') + '</td>'
                 + '<td class="py-2 pr-3 text-[11px] whitespace-nowrap">' + (on ? (live ? '<span class="text-emerald-700">live · ' + esc(when(p.published.at)) + '</span>' : '<span class="text-amber-700">at the next publish</span>') : '') + '</td>'
                 + '<td class="py-2 text-right whitespace-nowrap">' + (on && p.slug && s.baseUrl ? (live ? '<button onclick="App.pdOpen(\'' + pe + '\')" class="text-[11px] font-bold text-gsf-boston hover:underline mr-2">Open</button>' : '') + '<button onclick="App.pdCopy(\'' + pe + '\', this)" class="text-[11px] font-bold text-gsf-boston hover:underline mr-2">Copy</button><button onclick="App.pdEmail(\'' + pe + '\')" class="text-[11px] font-bold text-gsf-boston hover:underline mr-2">Email…</button><button onclick="App.pdNewPassword(\'' + pe + '\')" class="text-[11px] text-slate-500 hover:underline" title="If a link and password have gone further than they should: the old password stops working at the next publish">New password</button>' : '') + '</td></tr>';
         }).join('');
@@ -607,7 +618,7 @@ Object.assign(window.App, {
                 + '<button onclick="App.pdCopyTeam(this)" class="font-bold text-gsf-boston hover:underline">Copy password</button>'
                 + '<button onclick="App.pdNewTeamPassword()" class="text-slate-500 hover:underline">New password</button>'
                 + '<span class="text-slate-400">Every provider in one list, for GSF only. Unlocking it once lets that browser open every report without its password.</span></div>' : '')
-            + '<div class="overflow-x-auto max-h-[420px] overflow-y-auto custom-scrollbar"><table class="w-full text-left text-xs"><thead class="text-slate-400 sticky top-0 bg-white"><tr><th class="py-2 pr-3 font-medium"><label class="inline-flex items-center gap-2 cursor-pointer" title="Switch every provider on or off"><input type="checkbox" ' + (allOn ? 'checked' : '') + ' onchange="App.pdSetAllEnabled(this.checked)"> Provider</label></th><th class="py-2 pr-3 font-medium">Link</th><th class="py-2 pr-3 font-medium">Password</th><th class="py-2 pr-3 font-medium">Design</th><th class="py-2 pr-3 font-medium">Status</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>'
+            + '<div class="overflow-x-auto max-h-[420px] overflow-y-auto custom-scrollbar"><table class="w-full text-left text-xs"><thead class="text-slate-400 sticky top-0 bg-white"><tr><th class="py-2 pr-3 font-medium"><label class="inline-flex items-center gap-2 cursor-pointer" title="Switch every provider on or off"><input type="checkbox" ' + (allOn ? 'checked' : '') + ' onchange="App.pdSetAllEnabled(this.checked)"> Provider</label></th><th class="py-2 pr-3 font-medium">Link</th><th class="py-2 pr-3 font-medium">Password</th><th class="py-2 pr-3 font-medium">Status</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>'
             + '<div class="flex items-center gap-3 flex-wrap mt-4">'
             + '<button onclick="App.pdPublishNow()" ' + (enabled ? '' : 'disabled') + ' class="px-4 py-2 rounded-lg text-sm font-bold ' + (enabled ? 'bg-gsf-prussian text-white hover:bg-slate-900' : 'bg-slate-100 text-slate-400 cursor-not-allowed') + '">Publish now</button>'
             + '<span class="text-xs ' + (lp ? (lp.ok ? 'text-emerald-700' : 'text-amber-700') : 'text-slate-400') + '">' + (lp ? 'Last publish ' + esc(when(lp.at)) + ': ' + esc(lp.note) : enabled + ' switched on · not published yet') + '</span>'

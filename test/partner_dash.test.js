@@ -163,10 +163,10 @@ async function openPage(html, pw) {
 check('…uploaded encrypted: no provider name, link or password readable', !/Lifebox|\/gsf\/|GSF - Global Surgery Foundation/.test(teamWrapped) && !teamWrapped.includes(lbP.password));
   const teamOpen = await openPage(teamWrapped, teamPw);
   check('…a provider password does not open it', (await openPage(teamWrapped, lbP.password)).written === null);
-  check('…the team password opens a list of every published provider with its link', /href="\/gsf\/"/.test(teamOpen.written || '') && /href="\/lifebox\/"/.test(teamOpen.written || '') && /SURGhub partner reports/.test(teamOpen.written || ''));
+  check('…the team password opens a list of every published provider with its link', /href="\/gsf\/"/.test(teamOpen.written || '') && /href="\/lifebox\/"/.test(teamOpen.written || '') && /SURGhub partner dashboards/.test(teamOpen.written || ''));
   check('…as a logo tile per provider (initials where there is no logo), each tile opening that report',
     /<a class="card" href="\/lifebox\/"[^>]*><span class="logo"><img src="data:image\/png;base64,TElGRUJPWA=="/.test(teamOpen.written) && /<a class="card" href="\/gsf\/"[^>]*><span class="logo"><span class="ini">G<\/span>/.test(teamOpen.written) && /<span class="n">Lifebox<\/span>/.test(teamOpen.written));
-  check('…with a SURGhub-overall card first: headline numbers, opening /surghub/', /<a class="hub" href="\/surghub\/"/.test(teamOpen.written) && teamOpen.written.indexOf('class="hub"') < teamOpen.written.indexOf('class="card"') && /110,828<\/b><i>enrolled learners/.test(teamOpen.written) && /34,689<\/b><i>certificates/.test(teamOpen.written) && /4\.71<\/b><i>avg rating/.test(teamOpen.written));
+  check('…with a SURGhub-overall card first: headline numbers, opening /surghub/', /<a class="hub" href="\/surghub\/"/.test(teamOpen.written) && teamOpen.written.indexOf('class="hub"') < teamOpen.written.indexOf('class="card"') && /110,828<\/b><i>Course enrolments/.test(teamOpen.written) && /34,689<\/b><i>Certificates/.test(teamOpen.written) && /4\.71<\/b><i>Average rating, weighted/.test(teamOpen.written));
   const hubOpen = await openPage(contentOf('surghub/index.html'), teamPw);
   check('the SURGhub-wide report opens with the team password, and with no provider password', /ALL OF SURGHUB/.test(hubOpen.written || '') && (await openPage(contentOf('surghub/index.html'), gsfP.password)).written === null);
   const ls = {};
@@ -198,30 +198,24 @@ check('…uploaded encrypted: no provider name, link or password readable', !/Li
   await App.pdCopy('Lifebox');
   check('the message to the provider carries the link and the password', ctx.__clip.includes(App._pdUrl(App._pd.providers.Lifebox.slug)) && ctx.__clip.includes(App._pd.providers.Lifebox.password));
 
-  // ── the white design ──
-  await App.pdSetDesign('GSF - Global Surgery Foundation', 'white');
-  check('choosing a design marks the page for the next publish', App._pd.providers['GSF - Global Surgery Foundation'].design === 'white' && App._pd.providers['GSF - Global Surgery Foundation'].published === null);
-  calls.length = 0; ghRefExists = true;
-  await App.publishPartnerDashboards({ silent: true });
-  const tc2 = calls.filter(c => c.url.endsWith('/git/trees')), sub = (dir) => { const t = JSON.parse(tc2[tc2.length - 1].body).tree.find(x => x.path === dir); return treeBySha[t.sha]; };
-  const pageOf = (dir) => blobBySha[sub(dir).find(x => x.path === 'index.html').sha];
-  const gsfW = new TextDecoder().decode(await decryptJson(JSON.stringify(JSON.parse(pageOf('gsf').match(/var P=(\{[^;]*\});/)[1])), App._pd.providers['GSF - Global Surgery Foundation'].password));
-  const lbD = new TextDecoder().decode(await decryptJson(JSON.stringify(JSON.parse(pageOf(App._pd.providers.Lifebox.slug).match(/var P=(\{[^;]*\});/)[1])), App._pd.providers.Lifebox.password));
-  check('GSF is published white (page, text and downloads bar), Lifebox stays dark', /id="white-theme"/.test(gsfW) && /background:#ffffff;color:#0b2233/i.test(gsfW) && /id="sh-dl" style="[^"]*background:#ffffff/.test(gsfW) && !/white-theme/.test(lbD) && /background:#001523/.test(lbD));
-  check('the panel offers Dark / White per provider', /App\.pdSetDesign\('GSF - Global Surgery Foundation', this\.value\)[^>]*><option value="">Dark<\/option><option value="white" selected>White/.test(App._partnerDashHtml()));
-  // ── the GSF website design (partnerReport.js, 3 Nov 2026) ──
+  // ── every provider in the GSF design (Seb, 4 Nov 2026: no Dark / White choice) ──
+  check('the panel has no design choice', !/pdSetDesign|>Design</.test(App._partnerDashHtml()) && typeof App.pdSetDesign === 'undefined');
   App._buildPartnerReportHtml = async (prov) => '<html><body>GSF DESIGN FOR ' + prov + ' <!--SH-DOWNLOADS--> end</body></html>';
-  await App.pdSetDesign('GSF - Global Surgery Foundation', 'gsf');
-  check('the panel offers the GSF website design', App._pd.providers['GSF - Global Surgery Foundation'].design === 'gsf' && /<option value="gsf" selected>GSF website<\/option>/.test(App._partnerDashHtml()));
+  App._pd.providers['GSF - Global Surgery Foundation'].design = 'white';   // an old choice is ignored
   calls.length = 0; ghRefExists = true;
   await App.publishPartnerDashboards({ silent: true });
   const tc3 = calls.filter(c => c.url.endsWith('/git/trees')), sub3 = (dir) => { const t = JSON.parse(tc3[tc3.length - 1].body).tree.find(x => x.path === dir); return treeBySha[t.sha]; };
+  const dec3 = async (dir, pw) => new TextDecoder().decode(await decryptJson(JSON.stringify(JSON.parse(blobBySha[sub3(dir).find(x => x.path === 'index.html').sha].match(/var P=(\{[^;]*\});/)[1])), pw));
   const page3 = blobBySha[sub3('gsf').find(x => x.path === 'index.html').sha];
-  const gsfG = new TextDecoder().decode(await decryptJson(JSON.stringify(JSON.parse(page3.match(/var P=(\{[^;]*\});/)[1])), App._pd.providers['GSF - Global Surgery Foundation'].password));
-  check('GSF is published in the GSF design, the downloads as a section in the page (not a floating bar) that the top menu links to', /GSF DESIGN FOR GSF - Global Surgery Foundation/.test(gsfG) && /<section id="sec-downloads"><div class="wrap"><p class="eyebrow">Downloads<\/p>[\s\S]*id="sh-dl" class="dl"/.test(gsfG) && !/position:fixed/.test(gsfG) && !/<!--SH-DOWNLOADS-->/.test(gsfG) && /fetch\(f\.file/.test(gsfG));
+  const gsfG = await dec3('gsf', App._pd.providers['GSF - Global Surgery Foundation'].password);
+  const lbG = await dec3(App._pd.providers.Lifebox.slug, App._pd.providers.Lifebox.password);
+  check('every provider is published in the GSF design, an old Dark / White choice ignored', /GSF DESIGN FOR GSF - Global Surgery Foundation/.test(gsfG) && /GSF DESIGN FOR Lifebox/.test(lbG) && !/white-theme|background:#001523/.test(gsfG + lbG));
+  check('the downloads are a section in the page (not a floating bar) that the top menu links to', /<section id="sec-downloads"><div class="wrap"><p class="eyebrow">Downloads<\/p>[\s\S]*id="sh-dl" class="dl"/.test(gsfG) && !/position:fixed/.test(gsfG) && !/<!--SH-DOWNLOADS-->/.test(gsfG) && /fetch\(f\.file/.test(gsfG));
   check('the password page is in the GSF design: navy band, strong-blue button, the same form fields', /\.band\{background:#002f4c/.test(page3) && /background:#0468b1;color:#ffffff/.test(page3) && /id="pw"/.test(page3) && /id="rm"/.test(page3) && /id="go"/.test(page3));
+  const team3 = await dec3('team', App._pd.teamPassword);
+  check('the team page is in the GSF design: navy bar and header, search, all of SURGhub, a tile per provider, the joint-initiative footer', /--deep:#0d233a/.test(team3) && /class="hero"/.test(team3) && /id="q" type="search"/.test(team3) && /class="card" href="\/gsf\/"/.test(team3) && /joint initiative of the Global Surgery Foundation/.test(team3) && !/background:#001523/.test(team3));
+  check('…and still stores each provider\'s password in the browser, and says how old it is', /localStorage\.setItem\("surghub-report:\/"\+s\+"\/"/.test(team3) && /"yesterday"/.test(team3) && team3.includes(App._pd.providers.Lifebox.password));
   delete App._buildPartnerReportHtml;
-  await App.pdSetDesign('GSF - Global Surgery Foundation', '');
 
   // ── the select-all tick ──
   await App.pdSetAllEnabled(true);
