@@ -41,6 +41,11 @@ Object.assign(window.App, {
             return hit ? this._prImage('provider_logos/' + hit) : '';
         } catch (e) { return ''; }
     },
+    // Registered SURGhub accounts, as on the dashboard: the newest audience record, else the unique-user count.
+    _prRegistered() {
+        try { const a = this._dashAudSnap ? this._dashAudSnap() : null; return Number((a && a.TotalUsers) || this.platformUniqueUsers || 0) || 0; }
+        catch (e) { __swallowed(e, 'pr.registered'); return 0; }
+    },
     _prLastDay(ym) {
         const m = String(ym || '').match(/^(\d{4})-(\d{2})/); if (!m) return '';
         return new Date(Date.UTC(+m[1], +m[2], 0)).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
@@ -157,21 +162,16 @@ Object.assign(window.App, {
         const today = new Date(), todayN = Math.round(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()) / 86400000);
         const normC = (x) => String(x || '').toLowerCase().replace(/[^a-z0-9]/g, '');
         const byName = {}; courses.forEach((c, i) => { const k = normC(c.name); if (byName[k] == null) byName[k] = i; });
-        // Learners: distinct people (by email) enrolled in these courses. In the page each person is only a number
-        // (1, 2, 3… in order of first appearance on this page), so a period can count people as well as enrolments.
-        const demo = this._emailDemoMap || {}, rc = [], rcIdx = {}, recs = [], person = {};
-        let people = 0;
+        const demo = this._emailDemoMap || {}, rc = [], rcIdx = {}, recs = [];
         let dMin = Infinity, dMax = -1;
         (Array.isArray(this._rawCompletion) ? this._rawCompletion : []).forEach(r => {
             const i = r ? byName[normC(r.course)] : null; if (i == null) return;
-            const em = String(r.email || '').trim().toLowerCase();
-            if (em && person[em] == null) person[em] = ++people;
             let e = dayOf(r.enrolled_date || r.start_date), c = r.certificate ? dayOf(r.certificate_date) : -1;
             if (e > todayN) e = -1; if (c > todayN) c = -1;
             if (e < 0 && c < 0) return;
             const dm = r.email ? demo[String(r.email).trim().toLowerCase()] : null, cn = dm && dm.country ? String(dm.country).trim() : '';
             let k = -1; if (cn && !/^(unknown|nan|n\/a)$/i.test(cn)) { if (rcIdx[cn] == null) { rcIdx[cn] = rc.length; rc.push(cn); } k = rcIdx[cn]; }
-            recs.push([i, e, c, k, em ? person[em] : 0]);
+            recs.push([i, e, c, k]);
             [e, c].forEach(d => { if (d >= 0) { dMin = Math.min(dMin, d); dMax = Math.max(dMax, d); } });
         });
         const dStr = (n) => new Date(n * 86400000).toISOString().slice(0, 10);
@@ -186,7 +186,8 @@ Object.assign(window.App, {
         const provs = platform ? (D.topProviders || []).map(p => ({ n: provShort(p.name), full: p.name, courses: p.courses, enrol: p.lrn, cert: p.cert, rating: p.avg ? +Number(p.avg).toFixed(2) : 0, slug: links[p.name] || '' })) : [];
         const DATA = {
             name, asOf, through, platform, provs, updated: dStr(todayN), dataTo: dMax >= 0 ? dStr(dMax) : '', dataFrom: dMin < Infinity ? dStr(dMin) : '',
-            totals: { providers: platform ? (D.providerCount || provs.length) : 0, learners: people, enrol: D.totalLrn, cert: D.totalCert, rate: D.certRate, rating: Number(D.avgRating) > 0 ? Number(D.avgRating).toFixed(2) : '', resp: D.totalResp, time: lt(D.totalMin), min: Math.round(Number(D.totalMin) || 0), courses: courses.length, countries: countries.length, known },
+            // All of SURGhub: registered learners = every SURGhub account, the dashboard's figure (Seb, 4 Nov 2026)
+            totals: { providers: platform ? (D.providerCount || provs.length) : 0, registered: platform ? this._prRegistered() : 0, enrol: D.totalLrn, cert: D.totalCert, rate: D.certRate, rating: Number(D.avgRating) > 0 ? Number(D.avgRating).toFixed(2) : '', resp: D.totalResp, time: lt(D.totalMin), min: Math.round(Number(D.totalMin) || 0), courses: courses.length, countries: countries.length, known },
             monthly: this._prMonthly(D.provTimeline, through),
             countries, land: G.LAND || '[]',
             impact: { time: lt(D.totalMin), contentNew: pick(si.contentNew), willApply: pick(si.willApply), careerValue: pick(si.careerValue) },
